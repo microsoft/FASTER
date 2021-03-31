@@ -107,16 +107,16 @@ namespace FASTER.core
 
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        private void InternalRecoverFromLatestCheckpoints(int numPagesToPreload, bool undoFutureVersions)
+        private void InternalRecoverFromLatestCheckpoints(int numPagesToPreload, bool undoNextVersion)
         {
             GetRecoveryInfoFromLatestCheckpoints(out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo);
-            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoFutureVersions);
+            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion);
         }
 
-        private ValueTask InternalRecoverFromLatestCheckpointsAsync(int numPagesToPreload, bool undoFutureVersions, CancellationToken cancellationToken)
+        private ValueTask InternalRecoverFromLatestCheckpointsAsync(int numPagesToPreload, bool undoNextVersion, CancellationToken cancellationToken)
         {
             GetRecoveryInfoFromLatestCheckpoints(out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo);
-            return InternalRecoverAsync(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoFutureVersions, cancellationToken);
+            return InternalRecoverAsync(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion, cancellationToken);
         }
 
         private void GetRecoveryInfoFromLatestCheckpoints(out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo)
@@ -183,16 +183,16 @@ namespace FASTER.core
             return l1 <= l2;
         }
 
-        private void InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoFutureVersions)
+        private void InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoNextVersion)
         {
             GetRecoveryInfo(indexToken, hybridLogToken, out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo);
-            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoFutureVersions);
+            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion);
         }
 
-        private ValueTask InternalRecoverAsync(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoFutureVersions, CancellationToken cancellationToken)
+        private ValueTask InternalRecoverAsync(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoNextVersion, CancellationToken cancellationToken)
         {
             GetRecoveryInfo(indexToken, hybridLogToken, out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo);
-            return InternalRecoverAsync(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoFutureVersions, cancellationToken);
+            return InternalRecoverAsync(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion, cancellationToken);
         }
 
         private void GetRecoveryInfo(Guid indexToken, Guid hybridLogToken, out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo)
@@ -234,7 +234,7 @@ namespace FASTER.core
             }
         }
 
-        private void InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoFutureVersions)
+        private void InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion)
         {
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 RecoverFuzzyIndex(recoveredICInfo);
@@ -246,7 +246,7 @@ namespace FASTER.core
             // Make index consistent for version v
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
-                RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, CheckpointType.FoldOver, undoFutureVersions);
+                RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, undoNextVersion);
                 readOnlyAddress = tailAddress;
             }
             else
@@ -255,9 +255,9 @@ namespace FASTER.core
                     headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
 
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
-                RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.version, CheckpointType.Snapshot, undoFutureVersions);
+                RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, undoNextVersion);
                 // Then recover snapshot into mutable region
-                recoveredHLCInfo.info.version = RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.startLogicalAddress, recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.version, recoveredHLCInfo.info.guid, undoFutureVersions, recoveredHLCInfo.deltaLog);
+                RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.startLogicalAddress, recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, undoNextVersion, recoveredHLCInfo.deltaLog);
 
                 readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
             }
@@ -271,14 +271,13 @@ namespace FASTER.core
 
             // Recover session information
             hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
-            systemState.version = recoveredHLCInfo.info.version + 1;
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
 
             recoveredHLCInfo.deltaLog?.Dispose();
             recoveredHLCInfo.deltaFileDevice?.Dispose();
         }
 
-        private async ValueTask InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoFutureVersions, CancellationToken cancellationToken)
+        private async ValueTask InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, CancellationToken cancellationToken)
         {
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 await RecoverFuzzyIndexAsync(recoveredICInfo, cancellationToken);
@@ -290,7 +289,7 @@ namespace FASTER.core
             // Make index consistent for version v
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
-                await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.version, CheckpointType.FoldOver, undoFutureVersions, cancellationToken);
+                await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, undoNextVersion, cancellationToken);
                 readOnlyAddress = tailAddress;
             }
             else
@@ -299,9 +298,9 @@ namespace FASTER.core
                     headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
 
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
-                await RecoverHybridLogAsync (scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.version, CheckpointType.Snapshot, undoFutureVersions, cancellationToken);
+                await RecoverHybridLogAsync (scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, undoNextVersion, cancellationToken);
                 // Then recover snapshot into mutable region
-                recoveredHLCInfo.info.version = await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.startLogicalAddress, recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.version, recoveredHLCInfo.info.guid, undoFutureVersions, recoveredHLCInfo.deltaLog, cancellationToken);
+                await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.startLogicalAddress, recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, undoNextVersion, recoveredHLCInfo.deltaLog, cancellationToken);
 
                 readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
             }
@@ -315,7 +314,6 @@ namespace FASTER.core
 
             // Recover session information
             hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
-            systemState.version = recoveredHLCInfo.info.version + 1;
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
 
             recoveredHLCInfo.deltaLog?.Dispose();
@@ -414,7 +412,7 @@ namespace FASTER.core
             return true;
         }
 
-        private void RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, int version, CheckpointType checkpointType, bool undoFutureVersions)
+        private void RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, int nextVersion, CheckpointType checkpointType, bool undoNextVersion)
         {
             if (untilAddress <= scanFromAddress)
                 return;
@@ -429,7 +427,7 @@ namespace FASTER.core
                 int pageIndex = hlog.GetPageIndexForPage(page);
                 recoveryStatus.WaitRead(pageIndex);
 
-                if (ProcessReadPage(recoverFromAddress, untilAddress, version, undoFutureVersions, recoveryStatus, page, pageIndex))
+                if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, undoNextVersion, recoveryStatus, page, pageIndex))
                 {
                     // Page was modified due to undoFutureVersion. Flush it to disk; the callback issues the after-capacity read request if necessary.
                     hlog.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
@@ -450,7 +448,7 @@ namespace FASTER.core
             WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
         }
 
-        private async ValueTask RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, int version, CheckpointType checkpointType, bool undoFutureVersions, CancellationToken cancellationToken)
+        private async ValueTask RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, int nextVersion, CheckpointType checkpointType, bool undoNextVersion, CancellationToken cancellationToken)
         {
             if (untilAddress <= scanFromAddress)
                 return;
@@ -465,7 +463,7 @@ namespace FASTER.core
                 int pageIndex = hlog.GetPageIndexForPage(page);
                 await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken);
 
-                if (ProcessReadPage(recoverFromAddress, untilAddress, version, undoFutureVersions, recoveryStatus, page, pageIndex))
+                if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, undoNextVersion, recoveryStatus, page, pageIndex))
                 {
                     // Page was modified due to undoFutureVersion. Flush it to disk; the callback issues the after-capacity read request if necessary.
                     hlog.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
@@ -501,7 +499,7 @@ namespace FASTER.core
             return new RecoveryStatus(capacity, startPage, endPage, untilAddress, checkpointType);
         }
 
-        private bool ProcessReadPage(long recoverFromAddress, long untilAddress, int version, bool undoFutureVersions, RecoveryStatus recoveryStatus, long page, int pageIndex)
+        private bool ProcessReadPage(long recoverFromAddress, long untilAddress, int nextVersion, bool undoNextVersion, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
             var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
@@ -517,7 +515,7 @@ namespace FASTER.core
                     pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
 
                 var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
-                if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, version, undoFutureVersions))
+                if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, undoNextVersion))
                 {
                     // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
                     recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -541,7 +539,7 @@ namespace FASTER.core
                 await recoveryStatus.WaitFlushAsync(hlog.GetPageIndexForPage(page), cancellationToken);
         }
 
-        private int RecoverHybridLogFromSnapshotFile(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, int version, Guid guid, bool undoFutureVersions, DeltaLog deltaLog)
+        private void RecoverHybridLogFromSnapshotFile(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, int nextVersion, Guid guid, bool undoNextVersion, DeltaLog deltaLog)
         {
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadFirst);
 
@@ -572,14 +570,14 @@ namespace FASTER.core
                 }
 
                 // Apply delta
-                hlog.ApplyDelta(deltaLog, page, end, ref version);
+                hlog.ApplyDelta(deltaLog, page, end);
 
                 for (long p = page; p < end; p++)
                 {
                     int pageIndex = hlog.GetPageIndexForPage(p);
 
                     if (recoverFromAddress < hlog.GetStartLogicalAddress(p + 1) && recoverFromAddress < untilAddress)
-                        ProcessReadSnapshotPage(scanFromAddress, untilAddress, version, undoFutureVersions, recoveryStatus, p, pageIndex);
+                        ProcessReadSnapshotPage(scanFromAddress, untilAddress, nextVersion, undoNextVersion, recoveryStatus, p, pageIndex);
 
                     // Issue next read
                     if (p + capacity < endPage)
@@ -596,10 +594,9 @@ namespace FASTER.core
 
             WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
             recoveryStatus.Dispose();
-            return version;
         }
 
-        private async ValueTask<int> RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, int version, Guid guid, bool undoFutureVersions, DeltaLog deltaLog, CancellationToken cancellationToken)
+        private async ValueTask RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, int nextVersion, Guid guid, bool undoNextVersion, DeltaLog deltaLog, CancellationToken cancellationToken)
         {
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadFirst);
 
@@ -630,14 +627,14 @@ namespace FASTER.core
                 }
 
                 // Apply delta
-                hlog.ApplyDelta(deltaLog, page, end, ref version);
+                hlog.ApplyDelta(deltaLog, page, end);
 
                 for (long p = page; p < end; p++)
                 {
                     int pageIndex = hlog.GetPageIndexForPage(p);
 
                     if (recoverFromAddress < hlog.GetStartLogicalAddress(p + 1) && recoverFromAddress < untilAddress)
-                        ProcessReadSnapshotPage(scanFromAddress, untilAddress, version, undoFutureVersions, recoveryStatus, p, pageIndex);
+                        ProcessReadSnapshotPage(scanFromAddress, untilAddress, nextVersion, undoNextVersion, recoveryStatus, p, pageIndex);
 
                     // Issue next read
                     if (p + capacity < endPage)
@@ -654,7 +651,6 @@ namespace FASTER.core
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken);
             recoveryStatus.Dispose();
-            return version;
         }
 
         private void GetSnapshotPageRangesToRead(long fromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, Guid guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity,
@@ -693,7 +689,7 @@ namespace FASTER.core
             numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
         }
 
-        private void ProcessReadSnapshotPage(long fromAddress, long untilAddress, int version, bool undoFutureVersions, RecoveryStatus recoveryStatus, long page, int pageIndex)
+        private void ProcessReadSnapshotPage(long fromAddress, long untilAddress, int nextVersion, bool undoNextVersion, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             // Page at hand
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
@@ -719,7 +715,7 @@ namespace FASTER.core
 
                 var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
                 RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
-                                startLogicalAddress, physicalAddress, version, undoFutureVersions);
+                                startLogicalAddress, physicalAddress, nextVersion, undoNextVersion);
             }
 
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
@@ -730,7 +726,7 @@ namespace FASTER.core
                                      long untilLogicalAddressInPage,
                                      long pageLogicalAddress,
                                      long pagePhysicalAddress,
-                                     int version, bool undoFutureVersions)
+                                     int nextVersion, bool undoNextVersion)
         {
             bool touched = false;
 
@@ -762,7 +758,7 @@ namespace FASTER.core
                     entry = default;
                     FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
 
-                    if (info.Version <= version || !undoFutureVersions)
+                    if (info.Version != RecordInfo.GetShortVersion(nextVersion) || !undoNextVersion)
                     {
                         entry.Address = pageLogicalAddress + pointer;
                         entry.Tag = tag;

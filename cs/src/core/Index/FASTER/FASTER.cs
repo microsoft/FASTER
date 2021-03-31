@@ -408,30 +408,30 @@ namespace FASTER.core
         /// Recover from the latest valid checkpoint (blocking operation)
         /// </summary>
         /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
-        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        public void Recover(int numPagesToPreload = -1, bool undoFutureVersions = true)
+        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        public void Recover(int numPagesToPreload = -1, bool undoNextVersion = true)
         {
-            InternalRecoverFromLatestCheckpoints(numPagesToPreload, undoFutureVersions);
+            InternalRecoverFromLatestCheckpoints(numPagesToPreload, undoNextVersion);
         }
 
         /// <summary>
         /// Asynchronously recover from the latest valid checkpoint (blocking operation)
         /// </summary>
         /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
-        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        public ValueTask RecoverAsync(int numPagesToPreload = -1, bool undoFutureVersions = true, CancellationToken cancellationToken = default)
-            => InternalRecoverFromLatestCheckpointsAsync(numPagesToPreload, undoFutureVersions, cancellationToken);
+        public ValueTask RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default)
+            => InternalRecoverFromLatestCheckpointsAsync(numPagesToPreload, undoNextVersion, cancellationToken);
 
         /// <summary>
         /// Recover from specific token (blocking operation)
         /// </summary>
         /// <param name="fullCheckpointToken">Token</param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
-        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        public void Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoFutureVersions = true)
+        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        public void Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
         {
-            InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoFutureVersions);
+            InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion);
         }
 
         /// <summary>
@@ -439,10 +439,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fullCheckpointToken">Token</param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
-        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        public ValueTask RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoFutureVersions = true, CancellationToken cancellationToken = default) 
-            => InternalRecoverAsync(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoFutureVersions, cancellationToken);
+        public ValueTask RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default) 
+            => InternalRecoverAsync(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, cancellationToken);
 
         /// <summary>
         /// Recover from specific index and log token (blocking operation)
@@ -450,10 +450,10 @@ namespace FASTER.core
         /// <param name="indexCheckpointToken"></param>
         /// <param name="hybridLogCheckpointToken"></param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
-        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        public void Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoFutureVersions = true)
+        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        public void Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
         {
-            InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoFutureVersions);
+            InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion);
         }
 
         /// <summary>
@@ -462,10 +462,10 @@ namespace FASTER.core
         /// <param name="indexCheckpointToken"></param>
         /// <param name="hybridLogCheckpointToken"></param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
-        /// <param name="undoFutureVersions">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        public ValueTask RecoverAsync(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoFutureVersions = true, CancellationToken cancellationToken = default) 
-            => InternalRecoverAsync(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoFutureVersions, cancellationToken);
+        public ValueTask RecoverAsync(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default) 
+            => InternalRecoverAsync(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, cancellationToken);
 
         /// <summary>
         /// Wait for ongoing checkpoint to complete

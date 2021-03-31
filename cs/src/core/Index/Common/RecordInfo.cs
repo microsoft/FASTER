@@ -105,12 +105,6 @@ namespace FASTER.core
         [FieldOffset(0)]
         private long word;
 
-        public RecordInfo(int version)
-        {
-            word = 0;
-            Version = version;
-        }
-
         public static void WriteInfo(ref RecordInfo info, int checkpointVersion, bool tombstone, bool invalidBit, long previousAddress)
         {
             info.word = default;
@@ -249,5 +243,8 @@ namespace FASTER.core
         {
             return kTotalSizeInBytes;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int GetShortVersion(int version) => version & (int)kVersionMaskInInteger;
     }
 }

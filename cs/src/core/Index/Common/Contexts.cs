@@ -191,6 +191,10 @@ namespace FASTER.core
         /// </summary>
         public int version;
         /// <summary>
+        /// Next Version
+        /// </summary>
+        public int nextVersion;
+        /// <summary>
         /// Flushed logical address
         /// </summary>
         public long flushedLogicalAddress;
@@ -281,6 +285,9 @@ namespace FASTER.core
 
             value = reader.ReadLine();
             version = int.Parse(value);
+
+            value = reader.ReadLine();
+            nextVersion = int.Parse(value);
 
             value = reader.ReadLine();
             flushedLogicalAddress = long.Parse(value);
@@ -376,6 +383,7 @@ namespace FASTER.core
                     writer.WriteLine(guid);
                     writer.WriteLine(useSnapshotFile);
                     writer.WriteLine(version);
+                    writer.WriteLine(nextVersion);
                     writer.WriteLine(flushedLogicalAddress);
                     writer.WriteLine(startLogicalAddress);
                     writer.WriteLine(finalLogicalAddress);
@@ -424,6 +432,7 @@ namespace FASTER.core
         {
             Debug.WriteLine("******** HybridLog Checkpoint Info for {0} ********", guid);
             Debug.WriteLine("Version: {0}", version);
+            Debug.WriteLine("Next Version: {0}", nextVersion);
             Debug.WriteLine("Is Snapshot?: {0}", useSnapshotFile == 1);
             Debug.WriteLine("Flushed LogicalAddress: {0}", flushedLogicalAddress);
             Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);

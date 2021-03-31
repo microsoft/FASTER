@@ -24,12 +24,13 @@ namespace FASTER.core
                         faster._hybridLogCheckpointToken = Guid.NewGuid();
                         faster.InitializeHybridLogCheckpoint(faster._hybridLogCheckpointToken, next.version);
                     }
-
+                    faster._hybridLogCheckpoint.info.version = next.version;
                     faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.startLogicalAddress);
                     break;
                 case Phase.WAIT_FLUSH:
                     faster._hybridLogCheckpoint.info.headAddress = faster.hlog.HeadAddress;
                     faster._hybridLogCheckpoint.info.beginAddress = faster.hlog.BeginAddress;
+                    faster._hybridLogCheckpoint.info.nextVersion = next.version;
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     CollectMetadata(next, faster);

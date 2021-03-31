@@ -428,7 +428,7 @@ namespace FASTER.core
                 {
                     ref var info = ref GetInfo(physicalAddress);
                     var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
-                    if (info.Version == new RecordInfo(version).Version)
+                    if (info.Version == RecordInfo.GetShortVersion(version))
                     {
                         int size = sizeof(long) + sizeof(int) + alignedRecordSize;
                         if (destOffset + size > entryLength)
@@ -455,7 +455,7 @@ namespace FASTER.core
                 deltaLog.Seal(destOffset);
         }
 
-        internal void ApplyDelta(DeltaLog log, long startPage, long endPage, ref int version)
+        internal void ApplyDelta(DeltaLog log, long startPage, long endPage)
         {
             if (log == null) return;
 
@@ -477,7 +477,6 @@ namespace FASTER.core
                     {
                         var destination = GetPhysicalAddress(address);
                         Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
-                        version = GetInfo(destination).Version;
                     }
                     physicalAddress += size;
                 }
