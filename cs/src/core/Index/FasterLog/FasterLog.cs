@@ -857,6 +857,7 @@ namespace FASTER.core
         private void CommitCallback(CommitInfo commitInfo)
         {
             TaskCompletionSource<LinkedCommitInfo> _commitTcs = default;
+            LinkedCommitInfo lci = default;
 
             // We can only allow serial monotonic synchronous commit
             lock (this)
@@ -891,12 +892,12 @@ namespace FASTER.core
                 {
                     commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                 }
+                lci = new LinkedCommitInfo
+                {
+                    CommitInfo = commitInfo,
+                    NextTask = commitTcs.Task
+                };
             }
-            var lci = new LinkedCommitInfo
-            {
-                CommitInfo = commitInfo,
-                NextTask = commitTcs.Task
-            };
 
             if (commitInfo.ErrorCode == 0)
                 _commitTcs?.TrySetResult(lci);
