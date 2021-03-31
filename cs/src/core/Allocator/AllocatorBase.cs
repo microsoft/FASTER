@@ -492,6 +492,7 @@ namespace FASTER.core
             info.Version = version;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void MarkPage(long logicalAddress, int version)
         {
             var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
