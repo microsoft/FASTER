@@ -397,21 +397,26 @@ namespace FASTER.core
         /// </summary>
         /// <param name="startAddress"></param>
         /// <param name="endAddress"></param>
+        /// <param name="prevEndAddress"></param>
         /// <param name="version"></param>
         /// <param name="deltaLog"></param>
-        internal virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, DeltaLog deltaLog)
+        internal virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
         {
             long startPage = GetPage(startAddress);
             long endPage = GetPage(endAddress);
             if (endAddress > GetStartLogicalAddress(endPage))
                 endPage++;
 
+            long prevEndPage = GetPage(prevEndAddress);
+
             deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
             int destOffset = 0;
 
             for (long p = startPage; p < endPage; p++)
             {
-                if (PageStatusIndicator[p % BufferSize].Dirty < version)
+                // All RCU pages need to be added to delta
+                // For IPU-only pages, prune based on dirty bit
+                if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
                     continue;
 
                 var logicalAddress = p << LogPageSizeBits;
@@ -484,20 +489,18 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Mark(long logicalAddress, ref RecordInfo info, int version)
-        {
-            var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
-            if (PageStatusIndicator[offset].Dirty != version)
-                PageStatusIndicator[offset].Dirty = version;
-            info.Version = version;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void MarkPage(long logicalAddress, int version)
         {
             var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
             if (PageStatusIndicator[offset].Dirty != version)
                 PageStatusIndicator[offset].Dirty = version;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void MarkPageAtomic(long logicalAddress, int version)
+        {
+            var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
+            Utility.MonotonicUpdate(ref PageStatusIndicator[offset].Dirty, version, out _);
         }
 
         internal void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,

@@ -1015,7 +1015,7 @@ namespace FASTER.core
             }
         }
 
-        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, int version, DeltaLog deltaLog)
+        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
         {
             throw new FasterException("Incremental snapshots not supported with generic allocator");
         }

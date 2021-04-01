@@ -351,7 +351,10 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 if (!recordInfo.Tombstone
                     && fasterSession.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
+                {
+                    hlog.MarkPage(logicalAddress, sessionCtx.version);
                     return OperationStatus.SUCCESS;
+                }
                 goto CreateNewRecord;
             }
 
@@ -375,6 +378,8 @@ namespace FASTER.core
                     if (!recordInfo.Tombstone
                         && fasterSession.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
                     {
+                        if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
+                        else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
                         status = OperationStatus.SUCCESS;
                         goto LatchRelease; // Release shared latch (if acquired)
                     }
@@ -508,7 +513,6 @@ namespace FASTER.core
             var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
             BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession);
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            hlog.MarkPage(newLogicalAddress, sessionCtx.version);
             RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                            sessionCtx.version,
                            tombstone: false, invalidBit: false,
@@ -633,7 +637,10 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 if (!recordInfo.Tombstone
                     && fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
+                {
+                    hlog.MarkPage(logicalAddress, sessionCtx.version);
                     return OperationStatus.SUCCESS;
+                }
                 goto CreateNewRecord;
             }
 
@@ -663,6 +670,8 @@ namespace FASTER.core
 
                         if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
                         {
+                            if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
+                            else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
                             status = OperationStatus.SUCCESS;
                             goto LatchRelease; // Release shared latch (if acquired)
                         }
@@ -855,7 +864,6 @@ namespace FASTER.core
                             hlog.GetRecordSize(physicalAddress, ref input, fasterSession);
             BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession);
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            hlog.MarkPage(newLogicalAddress, sessionCtx.version);
             RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
                             tombstone: false, invalidBit: false,
                             latestLogicalAddress);
@@ -1077,6 +1085,8 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 ref Value value = ref hlog.GetValue(physicalAddress);
                 fasterSession.ConcurrentDeleter(ref hlog.GetKey(physicalAddress), ref value, ref recordInfo, logicalAddress);
+                if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
+                else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
                 if (WriteDefaultOnDelete)
                     value = default;
 
@@ -1113,7 +1123,6 @@ namespace FASTER.core
                 var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
                 BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession);
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                hlog.MarkPage(newLogicalAddress, sessionCtx.version);
                 RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
                                sessionCtx.version, tombstone:true, invalidBit:false,
                                latestLogicalAddress);

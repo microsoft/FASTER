@@ -302,6 +302,7 @@ namespace FASTER.core
                     faster.hlog.AsyncFlushDeltaToDevice(
                         faster._hybridLogCheckpoint.info.startLogicalAddress,
                         faster._hybridLogCheckpoint.info.finalLogicalAddress,
+                        faster._lastSnapshotCheckpoint.info.finalLogicalAddress,
                         faster._hybridLogCheckpoint.prevVersion,
                         faster._hybridLogCheckpoint.deltaLog);
                     break;
