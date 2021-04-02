@@ -204,7 +204,7 @@ namespace FASTER.core
                         return;
                     }
                 }
-               
+
                 try
                 {
                     numBytes = await readTask;
@@ -395,7 +395,7 @@ namespace FASTER.core
                     memory?.Return();
 #endif
                     // Sequentialize all writes to same handle
-                    ((FileStream)logWriteHandle).Flush(true);
+                    await ((FileStream)logWriteHandle).FlushAsync();
                     streampool?.Return(logWriteHandle);
 
                     // Issue user callback
