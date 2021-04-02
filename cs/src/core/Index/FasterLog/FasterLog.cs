@@ -1258,19 +1258,5 @@ namespace FASTER.core
                 *(ulong*)dest = Utility.XorBytes(dest + 8, length + 4);
             }
         }
-
-        /// <summary>
-        /// Do we need to await a commit to make forward progress?
-        /// </summary>
-        /// <param name="committedUntilAddress"></param>
-        /// <param name="tailAddress"></param>
-        /// <returns></returns>
-        private bool NeedToWait(long committedUntilAddress, long tailAddress)
-        {
-            Thread.Yield();
-            return
-                allocator.GetPage(committedUntilAddress) <=
-                (allocator.GetPage(tailAddress) - allocator.BufferSize);
-        }
     }
 }
