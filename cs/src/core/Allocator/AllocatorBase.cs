@@ -242,7 +242,7 @@ namespace FASTER.core
         /// <summary>
         /// The task ato be waited on for flush completion by the initiator of an operation
         /// </summary>
-        internal Task FlushTask => flushTcs.Task;
+        internal Task<long> FlushTask => flushTcs.Task;
 
         #region Abstract methods
         /// <summary>
@@ -876,6 +876,21 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Try allocate, spin for RETRY_NOW case
+        /// </summary>
+        /// <param name="numSlots">Number of slots to allocate</param>
+        /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long TryAllocateRetryNow(int numSlots = 1)
+        {
+            long logicalAddress;
+            while ((logicalAddress = TryAllocate(numSlots)) < 0)
+                Thread.Yield();
+            return logicalAddress;
+        }
+
+        
         private bool CannotAllocate(int page) => page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits);
 
         private bool NeedToWait(int page) => page >= BufferSize + (FlushedUntilAddress >> LogPageSizeBits);
