@@ -218,6 +218,7 @@ namespace FASTER.core
             {
                 return (int)(((word & kVersionMaskInWord) >> kVersionShiftInWord) & kVersionMaskInInteger);
             }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
                 word &= ~kVersionMaskInWord;

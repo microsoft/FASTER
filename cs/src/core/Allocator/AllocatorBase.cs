@@ -492,7 +492,7 @@ namespace FASTER.core
         internal void MarkPage(long logicalAddress, int version)
         {
             var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
-            if (PageStatusIndicator[offset].Dirty != version)
+            if (PageStatusIndicator[offset].Dirty < version)
                 PageStatusIndicator[offset].Dirty = version;
         }
 
