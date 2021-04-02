@@ -1,17 +1,14 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
-using System.Net.Sockets;
-using System.Text;
 using System.Threading;
 using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    public class SimpleDprFinderBackend
+    public class SimpleDprFinderBackend : IDisposable
     {
         public class State
         {
@@ -117,7 +114,9 @@ namespace FASTER.libdpr
         // Recovery reports are processed on the same thread as graph traversal to avoid concurrency and ensure
         // correctness. As soon as the cluster acknowledges a failure and enters recovery mode, it must stop giving 
         // guarantees. Single-threaded processing makes this easier.
-        private ConcurrentQueue<(WorkerVersion, long)> recoveryReports = new ConcurrentQueue<(WorkerVersion, long)>();
+        private ConcurrentQueue<(WorkerVersion, long, Action)> recoveryReports = new ConcurrentQueue<(WorkerVersion, long, Action)>();
+        // callbacks to invoke on the next persist completion
+        private List<Action> callbacks = new List<Action>();
 
         /* Persistence */
         private IDevice persistentStorage;
@@ -195,11 +194,12 @@ namespace FASTER.libdpr
                         if (precedenceGraph.TryRemove(new WorkerVersion(entry.Item1.Worker, v), out var list))
                             objectPool.Return(list);
                     }
+                    callbacks.Add(entry.Item3);
                 }
 
                 // No guarantees if recovery is in progress
                 if (volatileState.worldLines.Any(pair =>
-                    pair.Value != persistentState.worldLines[Worker.CLUSTER_MANAGER]))
+                    pair.Value != volatileState.worldLines[Worker.CLUSTER_MANAGER]))
                     return;
             }
 
@@ -238,6 +238,7 @@ namespace FASTER.libdpr
         public void PersistState()
         {
             var completed = new ManualResetEventSlim();
+            List<Action> acks;
             State copy;
             lock (volatileState)
             {
@@ -245,6 +246,8 @@ namespace FASTER.libdpr
                 // Deep copy the state to use for persistence and later as cached state for external access
                 copy = new State(volatileState);
                 volatileState.hasUpdates = false;
+                acks = new List<Action>(callbacks);
+                callbacks.Clear();
             }
 
             int size;
@@ -255,18 +258,21 @@ namespace FASTER.libdpr
             Debug.Assert(size <= persistentStorage.SegmentSize);
             unsafe
             {
+                // TODO(Tianyu): Not atomic --- need checksum
                 fixed (byte* b = &serializationBuffer[0])
                     persistentStorage.WriteAsync((IntPtr) b, 0, (ulong) 0, (uint) size,
                         (e, n, o) =>
                         {
                             // TODO(Tianyu): error handling?
-                            Interlocked.Exchange(ref persistentState, copy);
                             completed.Set();
                         },
                         null);
             }
 
             completed.Wait();
+            Interlocked.Exchange(ref persistentState, copy);
+            foreach (var callback in acks)
+                callback();
         }
 
         /// <summary>
@@ -289,11 +295,16 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="wv">worker version that is recovered, or (CLUSTER_MANAGER, 0) if triggering recovery for the cluster</param>
         /// <param name="worldLine"> the new worldline the worker is on</param>
-        public void ReportRecovery(WorkerVersion wv, long worldLine)
+        public void ReportRecovery(WorkerVersion wv, long worldLine, Action callback)
         {
-            recoveryReports.Enqueue(ValueTuple.Create(wv, worldLine));
+            recoveryReports.Enqueue(ValueTuple.Create(wv, worldLine, callback));
         }
 
         public State GetPersistentState() => persistentState;
+
+        public void Dispose()
+        {
+            persistentStorage?.Dispose();
+        }
     }
 }

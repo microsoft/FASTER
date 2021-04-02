@@ -1,33 +1,54 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Resources;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    public class SimpleDprFinderServer
+    public class SimpleDprFinderServer : IDisposable
     {
-        private string ip;
-        private int port;
+        private static readonly byte[] OkResponse = Encoding.GetEncoding("ASCII").GetBytes("+OK\r\n");
+        private readonly string ip;
+        private readonly int port;
         private Socket servSocket;
 
-        private IDevice persistentStorage;
-        private Dictionary<WorkerVersion, List<WorkerVersion>> precedenceGraph;
-        private Dictionary<Worker, long> persistedCut;
+        private readonly SimpleDprFinderBackend backend;
+        private ManualResetEventSlim termination;
+        private Thread ioThread, processThread;
 
-        public SimpleDprFinderServer(string ip, int port, IDevice persistentStorage)
+        public SimpleDprFinderServer(string ip, int port, SimpleDprFinderBackend backend)
         {
             this.ip = ip;
             this.port = port;
-            this.persistentStorage = persistentStorage;
-            precedenceGraph = new Dictionary<WorkerVersion, List<WorkerVersion>>();
-            persistedCut = new Dictionary<Worker, long>();
+            this.backend = backend;
         }
 
         public void StartServer()
         {
+            termination = new ManualResetEventSlim();
+            ioThread = new Thread(() =>
+            {
+                while (!termination.IsSet)
+                {
+                    // TODO(Tianyu): Need to throttle/tune I/O frequency?
+                    backend.PersistState();
+                }
+            });
+
+            processThread = new Thread(() =>
+            {
+                while (!termination.IsSet)
+                {
+                    backend.TryFindDprCut();
+                }
+            });
+            
             var ipAddr = IPAddress.Parse(ip);
             var endPoint = new IPEndPoint(ipAddr, port);
             servSocket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
@@ -38,12 +59,18 @@ namespace FASTER.libdpr
             acceptEventArg.Completed += AcceptEventArg_Completed;
             if (!servSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
+            
         }
         
-        public void StopServer()
+        public void Dispose()
         {
             servSocket.Dispose();
             // TODO(Tianyu): Clean shutdown of client connections
+
+            termination.Set();
+            ioThread.Join();
+            processThread.Join();
+            backend.Dispose();
         }
         
         private bool HandleNewClientConnection(SocketAsyncEventArgs e)
@@ -80,11 +107,16 @@ namespace FASTER.libdpr
             switch (command.commandType)
             {
                 case DprFinderCommand.Type.NEW_CHECKPOINT:
-                    
+                    backend.NewCheckpoint(command.wv, command.deps);
+                    // Ack immediately as the graph is not required to be fault-tolerant
+                    socket.Send(OkResponse);
                     break;
                 case DprFinderCommand.Type.REPORT_RECOVERY:
+                    // Can only send ack after recovery has been logged and fault-tolerant
+                    backend.ReportRecovery(command.wv, command.worldLine, () => socket.Send(OkResponse));
                     break;
                 case DprFinderCommand.Type.SYNC:
+                    socket.SendSyncResponse(backend.GetPersistentState());
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();

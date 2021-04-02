@@ -71,6 +71,12 @@ namespace FASTER.libdpr
             return head - offset;
         }
         
+        public static int WriteRedisBulkString(byte[] src, int srcOffset, int size, byte[] dst, int dstOffset)
+        {
+            // TODO(Tianyu): Implement.
+            return 0;
+        }
+        
         public static int WriteRedisBulkString(long val, byte[] buf, int offset)
         {
             var head = offset;
@@ -167,15 +173,7 @@ namespace FASTER.libdpr
             return head - offset;
         }
 
-        private static bool StringEqual(ReadOnlySpan<byte> bytes, int size, string comparand)
-        {
-            if (size != comparand.Length) return false;
-            for (var i = 0; i < size; i++)
-                if (bytes[i] != (byte) comparand[i])
-                    return false;
-            return true;
-        }
-        
+
         internal class DprFinderRedisProtocolConnState
         {
             private Socket socket;
@@ -278,7 +276,7 @@ namespace FASTER.libdpr
             reusableMessageBuffers.Return(buf);
         }
         
-        public static void SendSyncResponse(this Socket socket, long clusterWorldLine, long maxVersion, Dictionary<Worker, long> cut)
+        public static void SendSyncResponse(this Socket socket, SimpleDprFinderBackend.State state)
         {
             var buf = reusableMessageBuffers.Checkout();
             // TODO(Tianyu): Implement
