@@ -1791,21 +1791,31 @@ namespace FASTER.core
             while (true)
             {
                 var flushTask = allocator.FlushTask;
-                if ((logicalAddress = allocator.TryAllocate(recordSize)) != 0)
+                logicalAddress = allocator.TryAllocate(recordSize);
+                if (logicalAddress > 0)
                     return;
-                allocator.TryComplete();
-                InternalRefresh(ctx, fasterSession);
-                if (++spins < Constants.kFlushSpinCount)
+                if (logicalAddress == 0)
                 {
-                    Thread.Yield();
-                    continue;
+                    if (spins++ < Constants.kFlushSpinCount)
+                    {
+                        Thread.Yield();
+                        continue;
+                    }
+                    if (isAsync) return;
+                    try
+                    {
+                        epoch.Suspend();
+                        flushTask.GetAwaiter().GetResult();
+                    }
+                    finally
+                    {
+                        epoch.Resume();
+                    }
                 }
 
-                // Async wait/retry is handled at the caller level
-                if (isAsync)
-                    return;
-                flushTask.GetAwaiter().GetResult();
-                spins = 0;
+                allocator.TryComplete();
+                InternalRefresh(ctx, fasterSession);
+                Thread.Yield();
             }
         }
 

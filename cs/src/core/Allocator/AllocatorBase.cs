@@ -770,11 +770,16 @@ namespace FASTER.core
                 throw new FasterException("Entry does not fit on page");
 
             PageOffset localTailPageOffset = default;
+            localTailPageOffset.PageAndOffset = TailPageOffset.PageAndOffset;
 
             // Necessary to check because threads keep retrying and we do not
             // want to overflow offset more than once per thread
-            if (TailPageOffset.Offset > PageSize)
-                return 0;
+            if (localTailPageOffset.Offset > PageSize)
+            {
+                if (NeedToWait(localTailPageOffset.Page + 1))
+                    return 0; // RETRY_LATER
+                return -1; // RETRY_NOW
+            }
 
             // Determine insertion index.
             localTailPageOffset.PageAndOffset = Interlocked.Add(ref TailPageOffset.PageAndOffset, numSlots);
@@ -785,26 +790,33 @@ namespace FASTER.core
             #region HANDLE PAGE OVERFLOW
             if (localTailPageOffset.Offset > PageSize)
             {
-                if (offset > PageSize)
-                {
-                    return 0;
-                }
-
-                // The thread that "makes" the offset incorrect
-                // is the one that is elected to fix it and
-                // shift read-only/head.
-
+                // All overflow threads try to shift addresses
                 long shiftAddress = ((long)(localTailPageOffset.Page + 1)) << LogPageSizeBits;
                 PageAlignedShiftReadOnlyAddress(shiftAddress);
                 PageAlignedShiftHeadAddress(shiftAddress);
 
-                if (CannotAllocate(localTailPageOffset.Page + 1))
+                if (offset > PageSize)
                 {
-                    // We should not allocate the next page; reset to end of page
-                    // so that next attempt can retry
+                    if (NeedToWait(localTailPageOffset.Page + 1))
+                        return 0; // RETRY_LATER
+                    return -1; // RETRY_NOW
+                }
+
+                if (NeedToWait(localTailPageOffset.Page + 1))
+                {
+                    // Reset to end of page so that next attempt can retry
                     localTailPageOffset.Offset = PageSize;
                     Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
-                    return 0;
+                    return 0; // RETRY_LATER
+                }
+
+                // The thread that "makes" the offset incorrect should allocate next page and set new tail
+                if (CannotAllocate(localTailPageOffset.Page + 1))
+                {
+                    // Reset to end of page so that next attempt can retry
+                    localTailPageOffset.Offset = PageSize;
+                    Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+                    return -1; // RETRY_NOW
                 }
 
                 // Allocate next page in advance, if needed
@@ -815,10 +827,10 @@ namespace FASTER.core
                 }
 
                 localTailPageOffset.Page++;
-                localTailPageOffset.Offset = 0;
+                localTailPageOffset.Offset = numSlots;
                 TailPageOffset = localTailPageOffset;
-
-                return 0;
+                page++;
+                offset = 0;
             }
             #endregion
 
@@ -838,27 +850,35 @@ namespace FASTER.core
             while (true)
             {
                 var flushTask = this.FlushTask;
-                var result = this.TryAllocate(numSlots);
-                if (result != 0)
-                    return result;
-                this.TryComplete();
-                if (++spins < Constants.kFlushSpinCount)
+                var logicalAddress = this.TryAllocate(numSlots);
+                if (logicalAddress > 0)
+                    return logicalAddress;
+                if (logicalAddress == 0)
                 {
-                    Thread.Yield();
-                    continue;
+                    if (spins++ < Constants.kFlushSpinCount)
+                    {
+                        Thread.Yield();
+                        continue;
+                    }
+                    try
+                    {
+                        epoch.Suspend();
+                        await flushTask.WithCancellationAsync(token);
+                    }
+                    finally
+                    {
+                        epoch.Resume();
+                    }
                 }
-
-                // Async wait/retry is handled at the caller level
-                await flushTask.WithCancellationAsync(token);
-                spins = 0;
+                this.TryComplete();
+                epoch.ProtectAndDrain();
+                Thread.Yield();
             }
         }
 
-        private bool CannotAllocate(int page)
-        {
-            return
-                (page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits));
-        }
+        private bool CannotAllocate(int page) => page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits);
+
+        private bool NeedToWait(int page) => page >= BufferSize + (FlushedUntilAddress >> LogPageSizeBits);
 
         /// <summary>
         /// Used by applications to make the current state of the database immutable quickly
@@ -1166,9 +1186,16 @@ namespace FASTER.core
                             ErrorCode = errorCode
                         });
 
-                    var _flushTcs = flushTcs;
-                    flushTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    _flushTcs.TrySetResult(errorCode);
+                    var newFlushTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    while (true)
+                    {
+                        var _flushTcs = flushTcs;
+                        if (Interlocked.CompareExchange(ref flushTcs, newFlushTcs, _flushTcs) == _flushTcs)
+                        {
+                            _flushTcs.TrySetResult(errorCode);
+                            break;
+                        }
+                    }
 
                     if (errorList.Count > 0)
                     {
