@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using FASTER.core;
 using FASTER.devices;
 using NUnit.Framework;
+using Microsoft.Azure.Storage.Blob;
+using Microsoft.Azure.Storage;
 
 namespace FASTER.test
 {
@@ -35,6 +37,35 @@ namespace FASTER.test
                 device.Dispose();
                 checkpointManager.PurgeAll();
                 checkpointManager.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("FasterLog")]
+        public async ValueTask PageBlobFasterLogTestWithLease([Values] LogChecksumType logChecksum, [Values] FasterLogTests.IteratorType iteratorType)
+        {
+
+            // Need this environment variable set AND Azure Storage Emulator running
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+            {
+                // Set up the blob manager so can set lease to it
+                CloudStorageAccount storageAccount = CloudStorageAccount.DevelopmentStorageAccount;
+                var cloudBlobClient = storageAccount.CreateCloudBlobClient();
+                CloudBlobContainer blobContainer = cloudBlobClient.GetContainerReference("test-container");
+                blobContainer.CreateIfNotExists();
+                var mycloudBlobDir = blobContainer.GetDirectoryReference(@"BlobManager/MyLeaseTest1");
+
+                var blobMgr = new DefaultBlobManager(true, mycloudBlobDir);
+                var device = new AzureStorageDevice(EMULATED_STORAGE_STRING, $"{TEST_CONTAINER}", "PageBlobFasterLogTestWithLease", "fasterlogLease.log", deleteOnClose: true, underLease: true, blobManager: blobMgr);
+
+                var checkpointManager = new DeviceLogCommitCheckpointManager(
+                    new AzureStorageNamedDeviceFactory(EMULATED_STORAGE_STRING),
+                    new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/PageBlobFasterLogTestWithLease"));
+                await FasterLogTest1(logChecksum, device, checkpointManager, iteratorType);
+                device.Dispose();
+                checkpointManager.PurgeAll();
+                checkpointManager.Dispose();
+                blobContainer.Delete();
             }
         }
 

@@ -39,6 +39,15 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        public void PageBlobWriteReadWithLease()
+        {
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+                TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "PageBlobWriteRead", "BasicDiskFASTERTests",null,true,true));
+        }
+
+
+        [Test]
+        [Category("FasterKV")]
         public void TieredWriteRead()
         {
             IDevice tested;
