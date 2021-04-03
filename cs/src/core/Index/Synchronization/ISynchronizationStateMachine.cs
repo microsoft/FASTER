@@ -13,6 +13,12 @@ namespace FASTER.core
     internal interface ISynchronizationStateMachine
     {
         /// <summary>
+        /// Returns the version that we expect this state machine to end up at when back to REST, or -1 if not yet known.
+        /// </summary>
+        /// <returns> The version that we expect this state machine to end up at when back to REST </returns>
+        long ToVersion();
+
+        /// <summary>
         /// This function models the transition function of a state machine.
         /// </summary>
         /// <param name="start">The current state of the state machine</param>
@@ -135,6 +141,8 @@ namespace FASTER.core
     internal abstract class SynchronizationStateMachineBase : ISynchronizationStateMachine
     {
         private readonly ISynchronizationTask[] tasks;
+        private long toVersion = -1;
+        
 
         /// <summary>
         /// Construct a new SynchronizationStateMachine with the given tasks. The order of tasks given is the
@@ -146,6 +154,15 @@ namespace FASTER.core
             this.tasks = tasks;
         }
 
+        /// <summary>
+        /// Sets ToVersion for return. Defaults to -1 if not set
+        /// </summary>
+        /// <param name="v"> toVersion </param>
+        protected void SetToVersion(long v) => toVersion = v;
+
+        /// <inheritdoc />
+        public long ToVersion() => toVersion;
+        
         /// <inheritdoc />
         public abstract SystemState NextState(SystemState start);
 
