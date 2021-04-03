@@ -1,49 +1,101 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net.Sockets;
+using System.Text;
+using System.Threading;
 
 namespace FASTER.libdpr
 {
+    public class DictionaryDprTableSnapshot : IDprTableSnapshot
+    {
+        private readonly Dictionary<Worker, long> cprTableSnapshot;
+
+        public DictionaryDprTableSnapshot(Dictionary<Worker, long> cprTableSnapshot)
+        {
+            this.cprTableSnapshot = cprTableSnapshot;
+        }
+
+        public long SafeVersion(Worker worker)
+        {
+            return !cprTableSnapshot.TryGetValue(worker, out var safeVersion) ? 0 : safeVersion;
+        }
+    }
+
     public class SimpleDprFinder : IDprFinder
     {
         private readonly Worker me;
-        private Dictionary<Worker, long> recoverableCut;
-        private long systemWorldLine;
+        private SimpleDprFinderBackend.State lastKnownState;
+        private long maxVersion;
+
         private Socket dprFinderConn;
-        private byte[] buffer = new byte[1 << 15];
-        
+        private byte[] recvBuffer = new byte[1 << 20];
+
+        private DprFinderResponseParser parser = new DprFinderResponseParser();
+
         public long SafeVersion(Worker worker)
         {
-            throw new System.NotImplementedException();
+            return lastKnownState.cut[worker];
         }
 
         public IDprTableSnapshot ReadSnapshot()
         {
-            throw new System.NotImplementedException();
+            return new DictionaryDprTableSnapshot(lastKnownState.cut);
         }
 
         public long SystemWorldLine()
         {
-            throw new System.NotImplementedException();
+            return lastKnownState.worldLines[Worker.CLUSTER_MANAGER];
         }
 
         public long GlobalMaxVersion()
         {
-            throw new System.NotImplementedException();
+            return maxVersion;
         }
 
         public void ReportNewPersistentVersion(WorkerVersion persisted, IEnumerable<WorkerVersion> deps)
         {
-            throw new System.NotImplementedException();
+            lock (dprFinderConn)
+            {
+                dprFinderConn.SendNewCheckpointCommand(persisted, deps);
+                var received = dprFinderConn.Receive(recvBuffer);
+                Debug.Assert(received == 5 && Encoding.ASCII.GetString(recvBuffer, 0, received).Equals("+OK\r\n"));
+            }
         }
 
         public void Refresh()
         {
-            throw new System.NotImplementedException();
+            lock (dprFinderConn)
+            {
+                dprFinderConn.SendSyncCommand();
+                ProcessSyncResponse();
+                var newState = new SimpleDprFinderBackend.State(recvBuffer, parser.stringStart);
+                Interlocked.Exchange(ref lastKnownState, newState);
+            }
+
         }
+
+        private void ProcessSyncResponse()
+        {
+            int i = 0, receivedSize = 0;
+            while (true)
+            {
+                receivedSize += dprFinderConn.Receive(recvBuffer);
+                for (; i < receivedSize; i++)
+                {
+                    if (parser.ProcessChar(i, recvBuffer)) return;
+                }
+            }
+        }
+        
 
         public void ReportRecovery(long worldLine, WorkerVersion latestRecoveredVersion)
         {
-            throw new System.NotImplementedException();
+            lock (dprFinderConn)
+            {
+                dprFinderConn.SendReportRecoveryCommand(latestRecoveredVersion, worldLine);
+                var received = dprFinderConn.Receive(recvBuffer);
+                Debug.Assert(received == 5 && Encoding.ASCII.GetString(recvBuffer, 0, received).Equals("+OK\r\n"));
+            }
         }
     }
 }

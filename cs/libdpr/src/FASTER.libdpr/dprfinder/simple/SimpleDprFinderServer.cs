@@ -116,7 +116,7 @@ namespace FASTER.libdpr
                     backend.ReportRecovery(command.wv, command.worldLine, () => socket.Send(OkResponse));
                     break;
                 case DprFinderCommand.Type.SYNC:
-                    socket.SendSyncResponse(backend.GetPersistentState());
+                    socket.SendSyncResponse(backend.MaxVersion(), backend.GetPersistentState());
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();

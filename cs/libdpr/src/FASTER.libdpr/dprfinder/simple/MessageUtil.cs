@@ -73,8 +73,24 @@ namespace FASTER.libdpr
         
         public static int WriteRedisBulkString(byte[] src, int srcOffset, int size, byte[] dst, int dstOffset)
         {
-            // TODO(Tianyu): Implement.
-            return 0;
+            var head = dstOffset;
+            if (head + 1 >= dst.Length) return 0;
+            dst[head++] = (byte) '$';
+
+            var sizeLen = LongToDecimalString(size, dst, head);
+            if (sizeLen == 0) return 0;
+            head += sizeLen;
+
+            if (head + 4 + size >= dst.Length) return 0;
+            dst[head++] = (byte) '\r';
+            dst[head++] = (byte) '\n';
+
+            Array.Copy(src, srcOffset, dst, head, size);
+            head += size;
+
+            dst[head++] = (byte) '\r';
+            dst[head++] = (byte) '\n';
+            return head - dstOffset;
         }
         
         public static int WriteRedisBulkString(long val, byte[] buf, int offset)
@@ -155,7 +171,6 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\n';
             return head - offset;
         }
-
         
         public static int WriteRedisArrayHeader(int numElems, byte[] buf, int offset)
         {
@@ -172,13 +187,12 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\n';
             return head - offset;
         }
-
-
+        
         internal class DprFinderRedisProtocolConnState
         {
             private Socket socket;
             private int readHead, bytesRead, commandStart = 0;
-            private SimpleRedisParser parser = new SimpleRedisParser();
+            private DprFinderCommandParser parser = new DprFinderCommandParser();
             private Action<DprFinderCommand, Socket> commandHandler;
 
             internal DprFinderRedisProtocolConnState(Socket socket, Action<DprFinderCommand, Socket> commandHandler)
@@ -276,10 +290,13 @@ namespace FASTER.libdpr
             reusableMessageBuffers.Return(buf);
         }
         
-        public static void SendSyncResponse(this Socket socket, SimpleDprFinderBackend.State state)
+        public static void SendSyncResponse(this Socket socket, long maxVersion, (byte[], int) serializedState)
         {
             var buf = reusableMessageBuffers.Checkout();
-            // TODO(Tianyu): Implement
+            var head = WriteRedisArrayHeader(2, buf, 0);
+            head += WriteRedisBulkString(maxVersion, buf, head);
+            head += WriteRedisBulkString(serializedState.Item1, 0, serializedState.Item2, buf, head);
+            socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         } 
      

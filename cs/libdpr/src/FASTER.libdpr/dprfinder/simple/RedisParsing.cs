@@ -7,6 +7,39 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
+    internal class DprFinderResponseParser
+    {
+        // TODO(Tianyu): This is not right --- need to parse array before parsing bulk string
+        internal int size = -1;
+        internal int stringStart = -1;
+        
+        public bool ProcessChar(int readHead, byte[] buf)
+        {
+            if (readHead == 0)
+            {
+                Debug.Assert((char) buf[readHead] == '$');
+                size = -1;
+            }
+            switch ((char) buf[readHead])
+            {
+                case '\n':
+                    if (buf[readHead - 1] != '\r') return false;
+                    if (size == -1)
+                    {
+                        // Implicit message start at 0 always
+                        size = (int) MessageUtil.LongFromDecimalString(buf, 1, readHead - 2);
+                        stringStart = readHead + 1;
+                        return false;
+                    }
+
+                    return readHead == stringStart + size + 2;
+                default:
+                    // Nothing to do
+                    return false;
+            }
+        }
+    }
+
     internal struct DprFinderCommand
     {
         internal enum Type
@@ -21,16 +54,8 @@ namespace FASTER.libdpr
         internal long worldLine;
         internal List<WorkerVersion> deps;
     }
-
-    internal enum RedisMessageType
-    {
-        SIMPLE_STRING,
-        ARRAY,
-        ERROR,
-        BULK_STRING
-    }
-
-    internal enum ParserState
+    
+    internal enum CommandParserState
     {
         NONE,
         NUM_ARGS,
@@ -39,14 +64,14 @@ namespace FASTER.libdpr
         ARG_WL,
         ARG_DEPS,
     }
-    
-    internal class SimpleRedisParser
+
+    internal class DprFinderCommandParser
     {
         internal DprFinderCommand currentCommand;
-        internal ParserState parserState;
+        internal CommandParserState commandParserState;
         internal int currentCommandStart = -1, currentFragmentStart, size, stringStart;
 
-        internal SimpleRedisParser()
+        internal DprFinderCommandParser()
         {
             currentCommand.deps = new List<WorkerVersion>();
         }
@@ -59,7 +84,7 @@ namespace FASTER.libdpr
             switch ((char) buf[readHead])
             {
                 case '*':
-                    parserState = ParserState.NUM_ARGS;
+                    commandParserState = CommandParserState.NUM_ARGS;
                     currentFragmentStart = readHead;
                     break;
                 default:
@@ -102,24 +127,24 @@ namespace FASTER.libdpr
             return false;
         }
 
-        public unsafe bool ProcessChar(int readHead, byte[] buf)
+        internal unsafe bool ProcessChar(int readHead, byte[] buf)
         {
-            switch (parserState)
+            switch (commandParserState)
             {
-                case ParserState.NONE:
+                case CommandParserState.NONE:
                     ProcessCommandStart(readHead, buf);
                     return false;
-                case ParserState.NUM_ARGS:
+                case CommandParserState.NUM_ARGS:
                 {
                     if (ProcessRedisInt(readHead, buf, out var size))
                     {
                         Debug.Assert(size == 1 || size == 3);
-                        parserState = ParserState.COMMAND_TYPE;
+                        commandParserState = CommandParserState.COMMAND_TYPE;
                     }
 
                     return false;
                 }
-                case ParserState.COMMAND_TYPE:
+                case CommandParserState.COMMAND_TYPE:
                     if (ProcessRedisBulkString(readHead, buf))
                     {
                         if (buf[stringStart] == 'N')
@@ -127,26 +152,26 @@ namespace FASTER.libdpr
                             Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
                                 .Equals("NewCheckpoint"));
                             currentCommand.commandType = DprFinderCommand.Type.NEW_CHECKPOINT;
-                            parserState = ParserState.ARG_WV;
+                            commandParserState = CommandParserState.ARG_WV;
                         }
                         else if (buf[stringStart] == 'R')
                         {
                             Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
                                 .Equals("ReportRecovery"));
                             currentCommand.commandType = DprFinderCommand.Type.REPORT_RECOVERY;
-                            parserState = ParserState.ARG_WV;
+                            commandParserState = CommandParserState.ARG_WV;
                         }
                         else if (buf[stringStart] == 'S')
                         {
                             Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size).Equals("SYNC"));
                             currentCommand.commandType = DprFinderCommand.Type.SYNC;
-                            parserState = ParserState.NONE;
+                            commandParserState = CommandParserState.NONE;
                             return true;
                         }
                     }
 
                     return false;
-                case ParserState.ARG_WV:
+                case CommandParserState.ARG_WV:
                     // TODO(Tianyu): change WorkerVersion to 8 bytes.
                     if (ProcessRedisBulkString(readHead, buf))
                     {
@@ -157,29 +182,31 @@ namespace FASTER.libdpr
                         currentCommand.wv = new WorkerVersion(workerId, version);
                         if (currentCommand.commandType == DprFinderCommand.Type.NEW_CHECKPOINT)
                         {
-                            parserState = ParserState.ARG_DEPS;
+                            commandParserState = CommandParserState.ARG_DEPS;
                         }
                         else if (currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY)
                         {
-                            parserState = ParserState.ARG_WL;
+                            commandParserState = CommandParserState.ARG_WL;
                         }
                         else
                         {
                             Debug.Assert(false);
                         }
                     }
+
                     return false;
-                case ParserState.ARG_WL:
+                case CommandParserState.ARG_WL:
                     if (ProcessRedisBulkString(readHead, buf))
                     {
                         Debug.Assert(size == sizeof(long));
                         Debug.Assert(currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY);
                         currentCommand.worldLine = BitConverter.ToInt32(buf, stringStart);
-                        parserState = ParserState.NONE;
+                        commandParserState = CommandParserState.NONE;
                         return true;
                     }
+
                     return false;
-                case ParserState.ARG_DEPS:
+                case CommandParserState.ARG_DEPS:
                     if (ProcessRedisBulkString(readHead, buf))
                     {
                         Debug.Assert(currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY);
@@ -188,13 +215,17 @@ namespace FASTER.libdpr
                         for (var i = 0; i < numDeps; i++)
                         {
                             // TODO(Tianyu): Replace with WV version
-                            var workerId = BitConverter.ToInt32(buf, stringStart + sizeof(int) + i * sizeof(WorkerVersion));
-                            var version = BitConverter.ToInt32(buf, stringStart + 2 * sizeof(int) + i * sizeof(WorkerVersion));
+                            var workerId = BitConverter.ToInt32(buf,
+                                stringStart + sizeof(int) + i * sizeof(WorkerVersion));
+                            var version = BitConverter.ToInt32(buf,
+                                stringStart + 2 * sizeof(int) + i * sizeof(WorkerVersion));
                             currentCommand.deps.Add(new WorkerVersion(workerId, version));
                         }
-                        parserState = ParserState.NONE;
+
+                        commandParserState = CommandParserState.NONE;
                         return true;
                     }
+
                     return false;
                 default:
                     throw new NotImplementedException("Unrecognized Parser state");

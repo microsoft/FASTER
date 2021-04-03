@@ -27,9 +27,9 @@ namespace FASTER.libdpr
                 cut = new Dictionary<Worker, long>();
             }
 
-            public State(byte[] buf)
+            public State(byte[] buf, int offset)
             {
-                var head = 0;
+                var head = offset;
                 head = ReadDictionaryFromBytes(buf, head, cut);
                 ReadDictionaryFromBytes(buf, head, worldLines);
             }
@@ -120,7 +120,10 @@ namespace FASTER.libdpr
 
         /* Persistence */
         private IDevice persistentStorage;
-        private State persistentState;
+        // Only keep the serialized persistent state for shipping to clients, as the DprFinder never needs to interpret
+        // this information.
+        private byte[] serializedPersistentState;
+        private int serializedPersistentStateSize;
 
         /* Reused data structure for graph and traversal */
         private SimpleObjectPool<List<WorkerVersion>> objectPool =
@@ -268,9 +271,16 @@ namespace FASTER.libdpr
                         },
                         null);
             }
-
+            
             completed.Wait();
-            Interlocked.Exchange(ref persistentState, copy);
+            
+            // Atomically updates the current stashed copy of persistent state and its size for client consumption.
+            lock (serializedPersistentState)
+            {
+                Interlocked.Exchange(ref serializedPersistentState, serializationBuffer);
+                serializedPersistentStateSize = size;
+            }
+            
             foreach (var callback in acks)
                 callback();
         }
@@ -300,7 +310,15 @@ namespace FASTER.libdpr
             recoveryReports.Enqueue(ValueTuple.Create(wv, worldLine, callback));
         }
 
-        public State GetPersistentState() => persistentState;
+        public (byte[], int) GetPersistentState()
+        {
+            lock (serializedPersistentState)
+            {
+                return ValueTuple.Create(serializedPersistentState, serializedPersistentStateSize);
+            }
+        }
+
+        public long MaxVersion() => maxVersion;
 
         public void Dispose()
         {
