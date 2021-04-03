@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -172,7 +174,8 @@ namespace FASTER.core
                 case Phase.PREPARE:
                     nextState.phase = Phase.IN_PROGRESS;
                     // TODO: Move to long for system state as well. 
-                    nextState.version = (int)(targetVersion == -1 ? start.version + 1 : targetVersion + 1);
+                    SetToVersion(targetVersion == -1 ? start.version + 1 : targetVersion);
+                    nextState.version = (int) ToVersion();
                     break;
                 case Phase.IN_PROGRESS:
                     // This phase has no effect if using relaxed CPR model

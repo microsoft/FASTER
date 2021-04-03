@@ -148,6 +148,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SpinLock()
         {
+            // Note: Any improvements here should be done in IntExclusiveLocker.SpinLock() as well.
             while (true)
             {
                 long expected_word = word;
@@ -242,5 +243,8 @@ namespace FASTER.core
         {
             return kTotalSizeInBytes;
         }
+        
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int GetShortVersion(long version) => (int) (version & kVersionMaskInInteger);
     }
 }

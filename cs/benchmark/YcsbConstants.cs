@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-
 namespace FASTER.benchmark
 {
     enum BenchmarkType : int
@@ -10,6 +8,12 @@ namespace FASTER.benchmark
         Ycsb,
         SpanByte,
         ConcurrentDictionaryYcsb
+    };
+
+    enum LockImpl : int
+    {
+        None,
+        RecordInfo
     };
 
     enum AddressLineNum : int

@@ -321,20 +321,22 @@ namespace FASTER.core
                 _fasterKV._functions.CheckpointCompletionCallback(guid, commitPoint);
             }
 
-            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
+            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             {
                 _fasterKV._functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
             }
 
-            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, long address)
+            public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
             {
                 return _fasterKV._functions.ConcurrentWriter(ref key, ref src, ref dst);
             }
 
+            public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
+
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
                 => _fasterKV._functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
 
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, long oldAddress, long newAddress)
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
             {
                 _fasterKV._functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
             }
@@ -354,12 +356,12 @@ namespace FASTER.core
                 return _fasterKV._variableLengthStructForInput.GetLength(ref t, ref input);
             }
 
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value, long address)
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value)
             {
                 _fasterKV._functions.InitialUpdater(ref key, ref input, ref value);
             }
 
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, long address)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 return _fasterKV._functions.InPlaceUpdater(ref key, ref input, ref value);
             }
@@ -379,7 +381,7 @@ namespace FASTER.core
                 _fasterKV._functions.SingleReader(ref key, ref input, ref value, ref dst);
             }
 
-            public void SingleWriter(ref Key key, ref Value src, ref Value dst, long address)
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst)
             {
                 _fasterKV._functions.SingleWriter(ref key, ref src, ref dst);
             }
@@ -396,6 +398,12 @@ namespace FASTER.core
             {
                 _fasterKV._functions.UpsertCompletionCallback(ref key, ref value, ctx);
             }
+
+            public bool SupportsLocking => false;
+
+            public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) { }
+
+            public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => true;
 
             public IHeapContainer<Input> GetHeapContainer(ref Input input)
             {

@@ -55,8 +55,8 @@ each file on disk to be 1GB (the default), we can set `SegmentSizeBits` S to 30,
 * `CopyReadsToTail`: This boolean setting indicates whether reads should be copied to the tail of the log. This
 is useful when reads are infrequent, but will be followed by an update, or subsequent reads.
 
-* `ReadCache`: This setting is used to enable our new feature, a separate read cache. If reads are
-frequent, we recommend instead the read cache instead of `CopyReadsToTail`, as the latter can inflate
+* `ReadCacheSettings`: This setting is used to enable our new feature, a separate read cache. If reads are
+frequent, we recommend the read cache instead of `CopyReadsToTail`, as the latter can inflate
 log growth unnecessarily.
 
 ## Configuring the Read Cache

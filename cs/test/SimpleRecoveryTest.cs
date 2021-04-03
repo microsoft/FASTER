@@ -91,7 +91,7 @@ namespace FASTER.test.recovery.sumstore.simple
             AdInput inputArg = default;
             Output output = default;
 
-            var session1 = fht1.NewSession(new SimpleFunctions());
+            var session1 = fht1.NewSession(new AdSimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
@@ -106,7 +106,7 @@ namespace FASTER.test.recovery.sumstore.simple
             else
                 fht2.Recover(token);
 
-            var session2 = fht2.NewSession(new SimpleFunctions());
+            var session2 = fht2.NewSession(new AdSimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
                 var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
@@ -164,7 +164,7 @@ namespace FASTER.test.recovery.sumstore.simple
             AdInput inputArg = default;
             Output output = default;
 
-            var session1 = fht1.NewSession(new SimpleFunctions());
+            var session1 = fht1.NewSession(new AdSimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
@@ -179,7 +179,7 @@ namespace FASTER.test.recovery.sumstore.simple
             else 
                 fht2.Recover(token);
 
-            var session2 = fht2.NewSession(new SimpleFunctions());
+            var session2 = fht2.NewSession(new AdSimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
                 var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
@@ -233,7 +233,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             NumClicks value;
 
-            var session1 = fht1.NewSession(new SimpleFunctions());
+            var session1 = fht1.NewSession(new AdSimpleFunctions());
             var address = 0L;
             for (int key = 0; key < numOps; key++)
             {
@@ -264,68 +264,34 @@ namespace FASTER.test.recovery.sumstore.simple
         }
     }
 
-    public class SimpleFunctions : IFunctions<AdId, NumClicks, AdInput, Output, Empty>
+    public class AdSimpleFunctions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
-        public void RMWCompletionCallback(ref AdId key, ref AdInput input, Empty ctx, Status status)
-        {
-        }
-
-        public void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output.value.numClicks == key.adId);
         }
 
-        public void UpsertCompletionCallback(ref AdId key, ref NumClicks input, Empty ctx)
-        {
-        }
-
-        public void DeleteCompletionCallback(ref AdId key, Empty ctx)
-        {
-        }
-
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-        }
-
         // Read functions
-        public void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
-        {
-            dst.value = value;
-        }
+        public override void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
 
-        public void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
-        {
-            dst.value = value;
-        }
-
-        // Upsert functions
-        public void SingleWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
-        {
-            dst = src;
-        }
-
-        public bool ConcurrentWriter(ref AdId key, ref NumClicks src, ref NumClicks dst)
-        {
-            dst = src;
-            return true;
-        }
+        public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
 
         // RMW functions
-        public void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
         {
             value = input.numClicks;
         }
 
-        public bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
 
-        public void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }
