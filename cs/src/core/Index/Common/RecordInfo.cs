@@ -244,8 +244,8 @@ namespace FASTER.core
         {
             return kTotalSizeInBytes;
         }
-
+        
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetShortVersion(int version) => version & (int)kVersionMaskInInteger;
+        public static int GetShortVersion(long version) => (int) (version & kVersionMaskInInteger);
     }
 }
