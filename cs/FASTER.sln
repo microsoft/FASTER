@@ -59,6 +59,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VersionedRead", "samples\Re
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MemOnlyCache", "samples\MemOnlyCache\MemOnlyCache.csproj", "{998D4C78-B0C5-40FF-9BDC-716BAC8CF864}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AsyncStress", "playground\AsyncStress\AsyncStress.csproj", "{9EFCF8C5-320B-473C-83DE-3815981D465B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -235,6 +237,14 @@ Global
 		{998D4C78-B0C5-40FF-9BDC-716BAC8CF864}.Release|Any CPU.Build.0 = Release|x64
 		{998D4C78-B0C5-40FF-9BDC-716BAC8CF864}.Release|x64.ActiveCfg = Release|x64
 		{998D4C78-B0C5-40FF-9BDC-716BAC8CF864}.Release|x64.Build.0 = Release|x64
+		{9EFCF8C5-320B-473C-83DE-3815981D465B}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{9EFCF8C5-320B-473C-83DE-3815981D465B}.Debug|Any CPU.Build.0 = Debug|x64
+		{9EFCF8C5-320B-473C-83DE-3815981D465B}.Debug|x64.ActiveCfg = Debug|x64
+		{9EFCF8C5-320B-473C-83DE-3815981D465B}.Debug|x64.Build.0 = Debug|x64
+		{9EFCF8C5-320B-473C-83DE-3815981D465B}.Release|Any CPU.ActiveCfg = Release|x64
+		{9EFCF8C5-320B-473C-83DE-3815981D465B}.Release|Any CPU.Build.0 = Release|x64
+		{9EFCF8C5-320B-473C-83DE-3815981D465B}.Release|x64.ActiveCfg = Release|x64
+		{9EFCF8C5-320B-473C-83DE-3815981D465B}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -263,6 +273,7 @@ Global
 		{EBE313E5-22D2-4C74-BA1F-16B60404B335} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 		{33ED9E1B-1EF0-4984-A07A-7A26C205A446} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 		{998D4C78-B0C5-40FF-9BDC-716BAC8CF864} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
+		{9EFCF8C5-320B-473C-83DE-3815981D465B} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}
