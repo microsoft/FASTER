@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net.Sockets;
 
@@ -70,29 +71,7 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\n';
             return head - offset;
         }
-        
-        public static int WriteRedisBulkString(byte[] src, int srcOffset, int size, byte[] dst, int dstOffset)
-        {
-            var head = dstOffset;
-            if (head + 1 >= dst.Length) return 0;
-            dst[head++] = (byte) '$';
 
-            var sizeLen = LongToDecimalString(size, dst, head);
-            if (sizeLen == 0) return 0;
-            head += sizeLen;
-
-            if (head + 4 + size >= dst.Length) return 0;
-            dst[head++] = (byte) '\r';
-            dst[head++] = (byte) '\n';
-
-            Array.Copy(src, srcOffset, dst, head, size);
-            head += size;
-
-            dst[head++] = (byte) '\r';
-            dst[head++] = (byte) '\n';
-            return head - dstOffset;
-        }
-        
         public static int WriteRedisBulkString(long val, byte[] buf, int offset)
         {
             var head = offset;
@@ -108,6 +87,7 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\n';
 
             BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val);
+            head += sizeof(long);
 
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
@@ -293,9 +273,26 @@ namespace FASTER.libdpr
         public static void SendSyncResponse(this Socket socket, long maxVersion, (byte[], int) serializedState)
         {
             var buf = reusableMessageBuffers.Checkout();
-            var head = WriteRedisArrayHeader(2, buf, 0);
-            head += WriteRedisBulkString(maxVersion, buf, head);
-            head += WriteRedisBulkString(serializedState.Item1, 0, serializedState.Item2, buf, head);
+            var head = 0;
+            Debug.Assert(head + 1 >= buf.Length);
+            buf[head++] = (byte) '$';
+
+            var size = LongToDecimalString(sizeof(long) + serializedState.Item2, buf, head);
+            Debug.Assert(size != 0);
+            head += size;
+
+            Debug.Assert(head + 4 + sizeof(long) + serializedState.Item2 < buf.Length);
+            buf[head++] = (byte) '\r';
+            buf[head++] = (byte) '\n';
+
+            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), maxVersion);
+            head += sizeof(long);
+            Array.Copy(serializedState.Item1, 0, buf, head, serializedState.Item2);
+            head += serializedState.Item2;
+
+            buf[head++] = (byte) '\r';
+            buf[head++] = (byte) '\n';
+            
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         } 

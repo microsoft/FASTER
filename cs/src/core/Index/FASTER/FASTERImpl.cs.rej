@@ -1,0 +1,10 @@
+diff a/cs/src/core/Index/FASTER/FASTERImpl.cs b/cs/src/core/Index/FASTER/FASTERImpl.cs	(rejected hunks)
+@@ -162,7 +162,7 @@
+             }
+             #endregion
+ 
+-            if (sessionCtx.phase == Phase.PREPARE && GetLatestRecordVersion(ref entry, sessionCtx.version) > sessionCtx.version)
++            if (sessionCtx.phase == Phase.PREPARE && GetLatestRecordShortVersion(ref entry, sessionCtx.version) > sessionCtx.version)
+             {
+                 status = OperationStatus.CPR_SHIFT_DETECTED;
+                 goto CreatePendingContext; // Pivot thread

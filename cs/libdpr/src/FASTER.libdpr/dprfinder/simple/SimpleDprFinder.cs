@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Sockets;
@@ -68,7 +69,8 @@ namespace FASTER.libdpr
             {
                 dprFinderConn.SendSyncCommand();
                 ProcessSyncResponse();
-                var newState = new SimpleDprFinderBackend.State(recvBuffer, parser.stringStart);
+                maxVersion = BitConverter.ToInt64(recvBuffer, parser.stringStart);
+                var newState = new SimpleDprFinderBackend.State(recvBuffer, parser.stringStart + sizeof(long));
                 Interlocked.Exchange(ref lastKnownState, newState);
             }
 

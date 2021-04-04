@@ -9,7 +9,6 @@ namespace FASTER.libdpr
 {
     internal class DprFinderResponseParser
     {
-        // TODO(Tianyu): This is not right --- need to parse array before parsing bulk string
         internal int size = -1;
         internal int stringStart = -1;
         
