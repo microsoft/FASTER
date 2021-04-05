@@ -13,14 +13,19 @@ namespace FASTER.core
     /// Supports sync get (TryGet) for fast path
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    class AsyncPool<T> : IDisposable where T : IDisposable
+    public class AsyncPool<T> : IDisposable where T : IDisposable
     {
         readonly int size;
+        readonly SemaphoreSlim handleAvailable;
+        readonly ConcurrentQueue<T> itemQueue;
         bool disposed = false;
-        SemaphoreSlim handleAvailable;
-        ConcurrentQueue<T> itemQueue;
         int disposedCount = 0;
 
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="size"></param>
+        /// <param name="creator"></param>
         public AsyncPool(int size, Func<T> creator)
         {
             this.size = 1;
@@ -30,7 +35,12 @@ namespace FASTER.core
                 itemQueue.Enqueue(creator());
         }
 
-        public async Task<T> GetAsync(CancellationToken token = default)
+        /// <summary>
+        /// Get item
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public async ValueTask<T> GetAsync(CancellationToken token = default)
         {
             for (; ; )
             {
@@ -43,6 +53,11 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Try get item
+        /// </summary>
+        /// <param name="item"></param>
+        /// <returns></returns>
         public bool TryGet(out T item)
         {
             if (disposed)
@@ -53,12 +68,20 @@ namespace FASTER.core
             return itemQueue.TryDequeue(out item);
         }
 
+        /// <summary>
+        /// Return item to pool
+        /// </summary>
+        /// <param name="item"></param>
         public void Return(T item)
         {
             itemQueue.Enqueue(item);
-            handleAvailable.Release();
+            if (handleAvailable.CurrentCount < itemQueue.Count)
+                handleAvailable.Release();
         }
 
+       /// <summary>
+       /// Dispose
+       /// </summary>
         public void Dispose()
         {
             disposed = true;

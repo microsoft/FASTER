@@ -1,6 +1,5 @@
 ﻿using FASTER.core;
 using System;
-using System.Collections.Concurrent;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -8,20 +7,13 @@ namespace AsyncStress
 {
     public class FasterWrapper
     {
-        private readonly FasterKV<int, int> store;
-        private readonly SimpleFunctions<int, int, Empty> _simpleFunctions;
-        private readonly ConcurrentQueue<ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int, Empty>>> _sessionPool;
-        private readonly FasterKV<int, int>.ClientSessionBuilder<int, int, Empty> _clientSessionBuilder;
-
-        public int NumSessions => _sessionPool.Count;
+        readonly FasterKV<int, int> _store;
+        readonly AsyncPool<ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int, Empty>>> _sessionPool;
 
         public FasterWrapper()
         {
-            _simpleFunctions = new SimpleFunctions<int, int, Empty>();
-            _sessionPool = new ConcurrentQueue<ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int, Empty>>>();
-
-            string logDirectory ="d:/FasterLogs";
-            string logFileName = Guid.NewGuid().ToString();
+            var logDirectory ="d:/FasterLogs";
+            var logFileName = Guid.NewGuid().ToString();
             var logSettings = new LogSettings
             {
                 LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true),
@@ -29,39 +21,33 @@ namespace AsyncStress
                 MemorySizeBits = 13
             };
 
-            store = new FasterKV<int, int>(1L << 20, logSettings);
-            _clientSessionBuilder = store.For(_simpleFunctions);
+            _store = new FasterKV<int, int>(1L << 20, logSettings);
+            _sessionPool = new AsyncPool<ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int, Empty>>>(logSettings.LogDevice.ThrottleLimit, () => _store.For(new SimpleFunctions<int, int, Empty>()).NewSession(new SimpleFunctions<int, int, Empty>()));
         }
 
         public async Task UpsertAsync(int key, int value)
         {
-            var session = GetPooledSession();
+            if (!_sessionPool.TryGet(out var session))
+                session = await _sessionPool.GetAsync();
             var r = await session.UpsertAsync(key, value);
             while (r.Status == Status.PENDING)
                 r = await r.CompleteAsync();
-            _sessionPool.Enqueue(session);
+            _sessionPool.Return(session);
         }
 
         public async Task<(Status, int?)> ReadAsync(int key)
         {
-            var session = GetPooledSession();
-            (Status, int) result = (await session.ReadAsync(key).ConfigureAwait(false)).Complete();
-            _sessionPool.Enqueue(session);
+            if (!_sessionPool.TryGet(out var session))
+                session = await _sessionPool.GetAsync();
+            var result = (await session.ReadAsync(key).ConfigureAwait(false)).Complete();
+            _sessionPool.Return(session);
             return result;
-        }
-
-        private ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int, Empty>> GetPooledSession()
-        {
-            if (_sessionPool.TryDequeue(out var result))
-                return result;
-            return _clientSessionBuilder.NewSession<SimpleFunctions<int, int, Empty>>();
         }
 
         public void Dispose()
         {
-            foreach (var session in _sessionPool)
-                session.Dispose();
-            store.Dispose();
+            _sessionPool.Dispose();
+            _store.Dispose();
         }
     }
 }

@@ -17,7 +17,7 @@ namespace AsyncStress
         {
             Stopwatch stopWatch = new Stopwatch();
             const int numOperations = 1_000_000;
-            const bool singleThreadUpsert = true;
+            const bool singleThreadUpsert = false;
             const bool singleThreadRead = false;
             var writeTasks = new ConcurrentDictionary<long, Task>();
             var readTasks = new ConcurrentDictionary<long, Task<(Status, int?)>>();
