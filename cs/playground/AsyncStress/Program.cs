@@ -23,7 +23,7 @@ namespace AsyncStress
             var readTasks = new Task<(Status, int)>[numOperations];
 
             // Insert
-            Console.WriteLine($"    Inserting {numOperations} records ...");
+            Console.WriteLine($"    Inserting {numOperations} records {(singleThreadUpsert ? "single-threaded" : "multi-threaded")} ...");
             stopWatch.Start();
             if (singleThreadUpsert)
             {
@@ -39,7 +39,7 @@ namespace AsyncStress
             Console.WriteLine($"    Insertion complete in {stopWatch.ElapsedMilliseconds} ms");
 
             // Read
-            Console.WriteLine($"    Reading {numOperations} records ...");
+            Console.WriteLine($"    Reading {numOperations} records {(singleThreadUpsert ? "single-threaded" : "multi-threaded")} ...");
             stopWatch.Restart();
             if (singleThreadRead)
             {
