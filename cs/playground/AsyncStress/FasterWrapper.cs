@@ -16,7 +16,7 @@ namespace AsyncStress
             var logFileName = Guid.NewGuid().ToString();
             var logSettings = new LogSettings
             {
-                LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true),
+                LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: true),
                 PageSizeBits = 12,
                 MemorySizeBits = 13
             };
@@ -24,7 +24,10 @@ namespace AsyncStress
             Console.WriteLine($"    Using {logSettings.LogDevice.GetType()}");
 
             _store = new FasterKV<int, int>(1L << 20, logSettings);
-            _sessionPool = new AsyncPool<ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int, Empty>>>(logSettings.LogDevice.ThrottleLimit, () => _store.For(new SimpleFunctions<int, int, Empty>()).NewSession(new SimpleFunctions<int, int, Empty>()));
+            _sessionPool = new AsyncPool<ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int, Empty>>>(
+                    logSettings.LogDevice.ThrottleLimit, 
+                    () => _store.For(new SimpleFunctions<int, int, Empty>()).NewSession(new SimpleFunctions<int, int, Empty>())
+            );
         }
 
         public async Task UpsertAsync(int key, int value)

@@ -10,14 +10,30 @@ namespace AsyncStress
 {
     public class Program
     {
-        public static async Task Main() => await ProfileStore(new FasterWrapper());
+        static bool singleThreadUpsert = false;
+        static bool singleThreadRead = false;
+
+        public static async Task Main(string[] args)
+        {
+            if (args.Length > 0)
+            {
+                foreach (var arg in args)
+                {
+                    if (arg == "su")
+                        singleThreadUpsert = true;
+                    else if (arg == "sr")
+                        singleThreadRead = true;
+                    else
+                        throw new ApplicationException($"Unknown switch: {arg}");
+                }
+            }
+            await ProfileStore(new FasterWrapper());
+        }
 
         private static async Task ProfileStore(FasterWrapper store)
         {
             Stopwatch stopWatch = new Stopwatch();
             const int numOperations = 1_000_000;
-            const bool singleThreadUpsert = false;
-            const bool singleThreadRead = false;
             var writeTasks = new Task[numOperations];
             var readTasks = new Task<(Status, int)>[numOperations];
 

@@ -170,11 +170,19 @@ namespace FASTER.benchmark
                         if (!initValueSet.Contains(value))
                         {
                             if (init_count >= init_keys.Length)
-                                continue;
+                            {
+                                if (distribution == YcsbConstants.ZipfDist)
+                                    continue;
 
-                            initValueSet.Add(value);
-                            keySetter.Set(init_keys, init_count, value);
-                            ++init_count;
+                                // Uniform distribution at current small-data counts is about a 1% hit rate, which is too slow here, so just modulo.
+                                value %= init_keys.Length;
+                            }
+                            else
+                            {
+                                initValueSet.Add(value);
+                                keySetter.Set(init_keys, init_count, value);
+                                ++init_count;
+                            }
                         }
                         keySetter.Set(txn_keys, txn_count, value);
                         ++txn_count;
