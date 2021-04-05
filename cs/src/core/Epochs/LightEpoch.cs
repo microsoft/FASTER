@@ -42,9 +42,10 @@ namespace FASTER.core
 
         /// <summary>
         /// List of action, epoch pairs containing actions to performed 
-        /// when an epoch becomes safe to reclaim.
+        /// when an epoch becomes safe to reclaim. Marked volatile to
+        /// ensure latest value is seen by the last suspended thread.
         /// </summary>
-        private int drainCount = 0;
+        private volatile int drainCount = 0;
         private readonly EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
 
         /// <summary>
@@ -182,6 +183,9 @@ namespace FASTER.core
         {
             while (drainCount > 0)
             {
+                // Barrier ensures we see the latest epoch table entries. Ensures
+                // that the last suspended thread drains all pending actions.
+                Thread.MemoryBarrier();
                 for (int index = 1; index <= kTableSize; ++index)
                 {
                     int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
@@ -250,8 +254,7 @@ namespace FASTER.core
             Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
                 "Trying to release unprotected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
-            (*(tableAligned + entry)).localCurrentEpoch = 0;
-            (*(tableAligned + entry)).threadId = 0;
+            (*(tableAligned + entry)).epochAndThreadId = 0;
 
             threadEntryIndexCount--;
             if (threadEntryIndexCount == 0)
@@ -450,6 +453,9 @@ namespace FASTER.core
             /// </summary>
             [FieldOffset(4)]
             public int threadId;
+
+            [FieldOffset(0)]
+            public long epochAndThreadId;
 
             [FieldOffset(8)]
             public int reentrant;
