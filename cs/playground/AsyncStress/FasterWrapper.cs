@@ -35,7 +35,7 @@ namespace AsyncStress
             _sessionPool.Return(session);
         }
 
-        public async Task<(Status, int?)> ReadAsync(int key)
+        public async Task<(Status, int)> ReadAsync(int key)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = await _sessionPool.GetAsync();

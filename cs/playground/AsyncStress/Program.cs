@@ -19,8 +19,8 @@ namespace AsyncStress
             const int numOperations = 1_000_000;
             const bool singleThreadUpsert = false;
             const bool singleThreadRead = false;
-            var writeTasks = new ConcurrentDictionary<long, Task>();
-            var readTasks = new ConcurrentDictionary<long, Task<(Status, int?)>>();
+            var writeTasks = new Task[numOperations];
+            var readTasks = new Task<(Status, int)>[numOperations];
 
             // Insert
             Console.WriteLine($"    Inserting {numOperations} records ...");
@@ -32,8 +32,8 @@ namespace AsyncStress
             }
             else
             {
-                Parallel.For(0, numOperations, key => writeTasks.TryAdd(key, store.UpsertAsync(key, key)));
-                await Task.WhenAll(writeTasks.Values).ConfigureAwait(false);
+                Parallel.For(0, numOperations, key => writeTasks[key] = store.UpsertAsync(key, key));
+                await Task.WhenAll(writeTasks).ConfigureAwait(false);
             }
             stopWatch.Stop();
             Console.WriteLine($"    Insertion complete in {stopWatch.ElapsedMilliseconds} ms");
@@ -51,8 +51,8 @@ namespace AsyncStress
             }
             else
             {
-                Parallel.For(0, numOperations, key => readTasks.TryAdd(key, store.ReadAsync(key)));
-                await Task.WhenAll(readTasks.Values).ConfigureAwait(false);
+                Parallel.For(0, numOperations, key => readTasks[key] = store.ReadAsync(key));
+                await Task.WhenAll(readTasks).ConfigureAwait(false);
             }
             stopWatch.Stop();
             Console.WriteLine($"    Reads complete in {stopWatch.ElapsedMilliseconds} ms");
