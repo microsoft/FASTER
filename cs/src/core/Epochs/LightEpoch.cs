@@ -254,7 +254,8 @@ namespace FASTER.core
             Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
                 "Trying to release unprotected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
-            (*(tableAligned + entry)).epochAndThreadId = 0;
+            (*(tableAligned + entry)).localCurrentEpoch = 0;
+            (*(tableAligned + entry)).threadId = 0;
 
             threadEntryIndexCount--;
             if (threadEntryIndexCount == 0)
@@ -453,9 +454,6 @@ namespace FASTER.core
             /// </summary>
             [FieldOffset(4)]
             public int threadId;
-
-            [FieldOffset(0)]
-            public long epochAndThreadId;
 
             [FieldOffset(8)]
             public int reentrant;
