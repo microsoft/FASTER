@@ -21,6 +21,8 @@ namespace AsyncStress
                 MemorySizeBits = 13
             };
 
+            Console.WriteLine($"    Using {logSettings.LogDevice.GetType()}");
+
             _store = new FasterKV<int, int>(1L << 20, logSettings);
             _sessionPool = new AsyncPool<ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int, Empty>>>(logSettings.LogDevice.ThrottleLimit, () => _store.For(new SimpleFunctions<int, int, Empty>()).NewSession(new SimpleFunctions<int, int, Empty>()));
         }
