@@ -66,12 +66,27 @@ namespace FASTER.test
             int numEntries = 1000;
             int numEnqueueThreads = 1;
             int numIterThreads = 1;
+            bool commitThread = false;
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
             {
                 entry[i] = (byte)i;
             }
+
+            bool disposeCommitThread = false;
+            var commit =
+                new Thread(() =>
+                {
+                    while (!disposeCommitThread)
+                    {
+                        Thread.Sleep(10);
+                        log.Commit(true);
+                    }
+                });
+
+            if (commitThread)
+                commit.Start();
 
             Thread[] th = new Thread[numEnqueueThreads];
             for (int t = 0; t < numEnqueueThreads; t++)
@@ -95,7 +110,13 @@ namespace FASTER.test
             for (int t = 0; t < numEnqueueThreads; t++)
                 th[t].Join();
 
-            // Commit to the log
+            if (commitThread)
+            {
+                disposeCommitThread = true;
+                commit.Join();
+            }
+
+            // Final commit to the log
             log.Commit(true);
             
             // flag to make sure data has been checked 
