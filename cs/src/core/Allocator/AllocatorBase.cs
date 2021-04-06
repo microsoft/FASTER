@@ -886,7 +886,7 @@ namespace FASTER.core
         {
             long logicalAddress;
             while ((logicalAddress = TryAllocate(numSlots)) < 0)
-                Thread.Yield();
+                epoch.ProtectAndDrain();
             return logicalAddress;
         }
 
