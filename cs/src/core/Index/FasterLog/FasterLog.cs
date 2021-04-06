@@ -27,6 +27,8 @@ namespace FASTER.core
         private readonly GetMemory getMemory;
         private readonly int headerSize;
         private readonly LogChecksumType logChecksum;
+        private readonly WorkQueueLIFO<CommitInfo> commitQueue;
+
         internal readonly bool readOnlyMode;
 
         private TaskCompletionSource<LinkedCommitInfo> commitTcs
@@ -146,7 +148,7 @@ namespace FASTER.core
             CommittedUntilAddress = Constants.kFirstValidAddress;
             CommittedBeginAddress = Constants.kFirstValidAddress;
             SafeTailAddress = Constants.kFirstValidAddress;
-
+            commitQueue = new WorkQueueLIFO<CommitInfo>(ci => SerialCommitCallbackWorker(ci));
             allocator = new BlittableAllocator<Empty, byte>(
                 logSettings.GetLogSettings(), null,
                 null, epoch, CommitCallback);
@@ -846,10 +848,18 @@ namespace FASTER.core
         /// </summary>
         private void CommitCallback(CommitInfo commitInfo)
         {
-            TaskCompletionSource<LinkedCommitInfo> _commitTcs = default;
+            commitQueue.EnqueueAndTryWork(commitInfo, asTask: true);
+        }
 
-            // We can only allow serial monotonic synchronous commit
-            lock (this)
+        private void SerialCommitCallbackWorker(CommitInfo commitInfo)
+        {
+            // Check if commit is already covered
+            if (CommittedBeginAddress >= commitInfo.BeginAddress &&
+                CommittedUntilAddress >= commitInfo.UntilAddress &&
+                commitInfo.ErrorCode == 0)
+                return;
+
+            if (commitInfo.ErrorCode == 0)
             {
                 if (CommittedBeginAddress > commitInfo.BeginAddress)
                     commitInfo.BeginAddress = CommittedBeginAddress;
@@ -873,15 +883,10 @@ namespace FASTER.core
 
                 // Update completed address for persisted iterators
                 info.CommitIterators(PersistedIterators);
-
-                _commitTcs = commitTcs;
-                // If task is not faulted, create new task
-                // If task is faulted due to commit exception, create new task
-                if (commitTcs.Task.Status != TaskStatus.Faulted || commitTcs.Task.Exception.InnerException as CommitFailureException != null)
-                {
-                    commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-                }
             }
+
+            var _commitTcs = commitTcs;
+            commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
             var lci = new LinkedCommitInfo
             {
                 CommitInfo = commitInfo,
