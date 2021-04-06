@@ -48,7 +48,7 @@ namespace FasterLogMLSDTest
         public static void ManagedLocalStoreBasicTest()
         {
             int entryLength = 20;
-            int numEntries = 100000;
+            int numEntries = 500_000;
             int numEnqueueThreads = 1;
             int numIterThreads = 1;
             bool commitThread = false;
@@ -90,10 +90,17 @@ namespace FasterLogMLSDTest
                     }
                 });
             }
+
+            Console.WriteLine("Populating log...");
+            var sw = Stopwatch.StartNew();
+
             for (int t = 0; t < numEnqueueThreads; t++)
                 th[t].Start();
             for (int t = 0; t < numEnqueueThreads; t++)
                 th[t].Join();
+
+            sw.Stop();
+            Console.WriteLine($"{numEntries} items enqueued to the log by {numEnqueueThreads} threads in {sw.ElapsedMilliseconds} ms");
 
             if (commitThread)
             {
@@ -134,10 +141,15 @@ namespace FasterLogMLSDTest
                     });
             }
 
+            sw.Restart();
+
             for (int t = 0; t < numIterThreads; t++)
                 th2[t].Start();
             for (int t = 0; t < numIterThreads; t++)
                 th2[t].Join();
+
+            sw.Stop();
+            Console.WriteLine($"{numEntries} items iterated in the log by {numIterThreads} threads in {sw.ElapsedMilliseconds} ms");
 
             // if data verification was skipped, then pop a fail
             if (datacheckrun == false)

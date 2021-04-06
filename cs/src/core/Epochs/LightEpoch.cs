@@ -289,7 +289,7 @@ namespace FASTER.core
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>
-        public int BumpCurrentEpoch()
+        private int BumpCurrentEpoch()
         {
             int nextEpoch = Interlocked.Add(ref CurrentEpoch, 1);
 
@@ -305,7 +305,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="onDrain">Trigger action</param>
         /// <returns></returns>
-        public int BumpCurrentEpoch(Action onDrain)
+        public void BumpCurrentEpoch(Action onDrain)
         {
             int PriorEpoch = BumpCurrentEpoch() - 1;
 
@@ -352,8 +352,6 @@ namespace FASTER.core
             }
 
             ProtectAndDrain();
-
-            return PriorEpoch + 1;
         }
 
         /// <summary>

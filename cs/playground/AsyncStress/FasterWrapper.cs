@@ -16,7 +16,7 @@ namespace AsyncStress
             var logFileName = Guid.NewGuid().ToString();
             var logSettings = new LogSettings
             {
-                LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: true),
+                LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true),
                 PageSizeBits = 12,
                 MemorySizeBits = 13
             };
