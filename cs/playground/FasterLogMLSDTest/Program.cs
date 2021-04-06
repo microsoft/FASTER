@@ -11,8 +11,6 @@ namespace FasterLogMLSDTest
     {
         private static FasterLog log;
         private static IDevice device;
-        private static FasterLog logFullParams;
-        private static IDevice deviceFullParams;
         static readonly byte[] entry = new byte[100];
         private static string commitPath;
 
@@ -29,15 +27,10 @@ namespace FasterLogMLSDTest
             device = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStore.log", deleteOnClose: true);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
 
-            deviceFullParams = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStoreFullParams.log", deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
-            logFullParams = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
-
             ManagedLocalStoreBasicTest();
 
             log.Dispose();
             device.Dispose();
-            logFullParams.Dispose();
-            deviceFullParams.Dispose();
 
             // Clean up log files
             if (Directory.Exists(commitPath))
