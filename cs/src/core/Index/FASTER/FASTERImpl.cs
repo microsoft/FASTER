@@ -1792,6 +1792,10 @@ namespace FASTER.core
                 FasterSession fasterSession, bool isAsync)
                 where FasterSession : IFasterSession
         {
+            logicalAddress = allocator.TryAllocate(recordSize);
+            if (logicalAddress > 0)
+                return;
+
             var spins = 0;
             while (true)
             {
