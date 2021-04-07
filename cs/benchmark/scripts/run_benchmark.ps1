@@ -9,11 +9,12 @@
 
     This script functions best if you have a dedicated performance-testing machine that is not your build machine. Use the following steps:
     1. Create a directory on the perf machine for your test
-    2. Xcopy the baseline build's Release directory to your perf folder. This script will start at the netcoreapp3.1 directory to traverse to FASTER.benchmark.exe.
-       Name this folder something that indicates its role, such as 'baseline'.
-    3. Similarly, xcopy the new build's Release directory to your perf folder, naming it with some indication of what was changed, for example 'refactor_FASTERImpl".
-    4. Copy this script and, if you will want to compare runs on the perf machine, compare_runs.ps1 to the perf folder.
-    5. In a remote desktop on the perf machine, change to your folder, and run this file with those directory names. See .EXAMPLE for details.
+    2. You may either copy already-built binaries (e.g. containing changes you don't want to push) to the performance directory, or supply branch names to be git-cloned and built:
+        A. Copy existing build: Xcopy the baseline build's Release directory to your perf folder, as well as all comparison builds. This script will start at the netcoreapp3.1 directory to traverse to FASTER.benchmark.exe. Name these folders something that indicates their role, such as 'baseline', 'master' / 'branch', etc.
+            -or-
+        B. Supply branch names to be built: In the ExeDirs argument, pass the names of all branches you want to run. For each branch name, this script will clone that branch into a directory named as that branch, build FASTER.sln for Release, and run the FASTER.benchmark.exe from its built location.
+    3. Copy this script and, if you will want to compare runs on the perf machine, compare_runs.ps1 to the perf folder.
+    4. In a remote desktop on the perf machine, change to your folder, and run this file with those directory names. See .EXAMPLE for details.
 
 .PARAMETER ExeDirs
     One or more directories from which to run FASTER.benchmark.exe builds. This is a Powershell array of strings; thus from the windows command line 
@@ -38,17 +39,27 @@
     Used primarily to debug changes to this script or do a quick one-off run; the default is false.
 
 .EXAMPLE
-    ./run_benchmark.ps1 './baseline','./refactor_FASTERImpl'
+    pwsh -c "./run_benchmark.ps1 './baseline','./refactor_FASTERImpl'"
 
     If run from your perf directory using the setup from .DESCRIPTION, this will create and populate the following folders:
-        results_baseline
-        results_refactor_FASTERImpl
+        ./results/baseline
+        ./results/refactor_FASTERImpl
     You can then run compare.ps1 on those two directories.
 
 .EXAMPLE
-    ./run_benchmark.ps1 './baseline','./refactor_FASTERImpl' -RunSeconds 3 -NumThreads 8 -UseRecover
+    pwsh -c "./run_benchmark.ps1 './baseline','./refactor_FASTERImpl' -RunSeconds 3 -NumThreads 8 -UseRecover"
 
     Does a quick run (e.g. test changes to this file).
+
+.EXAMPLE
+    pwsh -c "./run_benchmark.ps1 './baseline','./one_local_change','./another_local_change' <other args>"
+
+    Runs 3 directories.
+
+.EXAMPLE
+    pwsh -c "./run_benchmark.ps1 master,branch_with_my_changes -CloneAndBuild <other args>"
+
+    Clones the master branch to the .\master folder, the branch_with_my_changes to the branch_with_my_changes folder, and runs those with any <other args> specified.
 #>
 param (
   [Parameter(Mandatory=$true)] [string[]]$ExeDirs,
@@ -56,7 +67,7 @@ param (
   [Parameter(Mandatory=$false)] [int]$ThreadCount = -1,
   [Parameter(Mandatory=$false)] [int]$lockMode = -1,
   [Parameter(Mandatory=$false)] [switch]$UseRecover,
-  [Parameter(Mandatory=$false)] [switch]$CloneAndBuild,
+  [Parameter(Mandatory=$false)] [switch]$CloneAndBuild
 )
 
 if (-not(Test-Path d:/data)) {
@@ -87,7 +98,7 @@ Foreach ($exeName in $exeNames) {
     throw "Cannot find: $exeName"
 }
 
-$resultDirs = [String[]]($ExeDirs | ForEach-Object{"./results_" + (Get-Item $_).Name})
+$resultDirs = [String[]]($ExeDirs | ForEach-Object{"./results/" + (Get-Item $_).Name})
 Foreach ($resultDir in $resultDirs) {
     Write-Host $resultDir
     if (Test-Path $resultDir) {
