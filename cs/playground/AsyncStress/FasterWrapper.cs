@@ -1,6 +1,7 @@
 ﻿using FASTER.core;
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace AsyncStress
@@ -9,6 +10,9 @@ namespace AsyncStress
     {
         readonly FasterKV<int, int> _store;
         readonly AsyncPool<ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int, Empty>>> _sessionPool;
+        
+        // OS Buffering is safe to use in this app because Reads are done after all updates
+        internal static bool useOsReadBuffering = false;
 
         public FasterWrapper()
         {
@@ -16,7 +20,7 @@ namespace AsyncStress
             var logFileName = Guid.NewGuid().ToString();
             var logSettings = new LogSettings
             {
-                LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true),
+                LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
                 PageSizeBits = 12,
                 MemorySizeBits = 13
             };
@@ -30,23 +34,83 @@ namespace AsyncStress
             );
         }
 
-        public async Task UpsertAsync(int key, int value)
+        // This can be used to verify the same amount data is loaded.
+        public long TailAddress => _store.Log.TailAddress;
+
+        // Indicates how many Upsert operations went pending
+        public int UpsertPendingCount = 0;
+
+        public async ValueTask UpsertAsync(int key, int value)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = await _sessionPool.GetAsync();
             var r = await session.UpsertAsync(key, value);
             while (r.Status == Status.PENDING)
+            {
+                Interlocked.Increment(ref UpsertPendingCount);
                 r = await r.CompleteAsync();
+            }
             _sessionPool.Return(session);
         }
 
-        public async Task<(Status, int)> ReadAsync(int key)
+        public void Upsert(int key, int value)
+        {
+            if (!_sessionPool.TryGet(out var session))
+                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
+            var status = session.Upsert(key, value);
+            if (status == Status.PENDING)
+            {
+                // This should not happen for sync Upsert().
+                Interlocked.Increment(ref UpsertPendingCount);
+                session.CompletePending();
+            }
+            _sessionPool.Return(session);
+        }
+
+        public async ValueTask UpsertChunkAsync(int start, int count)
+        {
+            using var session = _store.For(new SimpleFunctions<int, int, Empty>()).NewSession(new SimpleFunctions<int, int, Empty>());
+
+            for (var ii = 0; ii < count; ++ii)
+            {
+                var key = start + ii;
+                var r = await session.UpsertAsync(key, key);
+                while (r.Status == Status.PENDING)
+                {
+                    Interlocked.Increment(ref UpsertPendingCount);
+                    r = await r.CompleteAsync();
+                }
+            }
+        }
+
+        public async ValueTask<(Status, int)> ReadAsync(int key)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = await _sessionPool.GetAsync();
             var result = (await session.ReadAsync(key).ConfigureAwait(false)).Complete();
             _sessionPool.Return(session);
             return result;
+        }
+
+        public ValueTask<(Status, int)> Read(int key)
+        {
+            if (!_sessionPool.TryGet(out var session))
+                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
+            // TODO: Modify Functions to use sync Read()
+            var result = session.ReadAsync(key).GetAwaiter().GetResult().Complete();
+            _sessionPool.Return(session);
+            return new ValueTask<(Status, int)>(result);
+        }
+
+        public async ValueTask ReadChunkAsync(int start, int count, ValueTask<(Status, int)>[] readTasks)
+        {
+            using var session = _store.For(new SimpleFunctions<int, int, Empty>()).NewSession(new SimpleFunctions<int, int, Empty>());
+
+            for (var ii = 0; ii < count; ++ii)
+            {
+                var key = start + ii;
+                readTasks[key] = new ValueTask<(Status, int)>((await session.ReadAsync(key).ConfigureAwait(false)).Complete());
+            }
         }
 
         public void Dispose()

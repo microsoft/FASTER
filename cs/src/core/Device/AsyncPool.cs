@@ -28,7 +28,7 @@ namespace FASTER.core
         /// <param name="creator"></param>
         public AsyncPool(int size, Func<T> creator)
         {
-            this.size = 1;
+            this.size = size;
             this.handleAvailable = new SemaphoreSlim(size);
             this.itemQueue = new ConcurrentQueue<T>();
             for (int i = 0; i < size; i++)
