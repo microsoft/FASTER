@@ -607,9 +607,6 @@ namespace FASTER.test
         {
             InputStruct input = default;
             OutputStruct output = default;
-
-            long invalidAddress = Constants.kInvalidAddress;
-
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
             var readAtAddress = fht.Log.BeginAddress;

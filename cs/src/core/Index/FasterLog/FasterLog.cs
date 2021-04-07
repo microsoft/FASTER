@@ -93,6 +93,18 @@ namespace FASTER.core
             = new ConcurrentDictionary<string, FasterLogScanIterator>();
 
         /// <summary>
+        /// Version number to track changes to commit metadata (begin address and persisted iterators)
+        /// </summary>
+        private long commitMetadataVersion;
+
+        /// <summary>
+        /// Committed view of commitMetadataVersion
+        /// </summary>
+        private long persistedCommitMetadataVersion;
+
+        internal Dictionary<string, long> LastPersistedIterators;
+
+        /// <summary>
         /// Numer of references to log, including itself
         /// Used to determine disposability of log
         /// </summary>
@@ -415,7 +427,7 @@ namespace FASTER.core
             var tailAddress = untilAddress;
             if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
 
-            while (CommittedUntilAddress < tailAddress) Thread.Yield();
+            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion) Thread.Yield();
         }
 
         /// <summary>
@@ -433,13 +445,10 @@ namespace FASTER.core
             var tailAddress = untilAddress;
             if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
 
-            if (CommittedUntilAddress >= tailAddress)
-                return;
-
-            while (true)
+            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
                 var linkedCommitInfo = await task.WithCancellationAsync(token);
-                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress)
+                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     task = linkedCommitInfo.NextTask;
                 else
                     break;
@@ -471,10 +480,10 @@ namespace FASTER.core
             var task = CommitTask;
             var tailAddress = CommitInternal();
 
-            while (CommittedUntilAddress < tailAddress)
+            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
                 var linkedCommitInfo = await task.WithCancellationAsync(token);
-                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress)
+                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     task = linkedCommitInfo.NextTask;
                 else
                     break;
@@ -493,10 +502,10 @@ namespace FASTER.core
             if (prevCommitTask == null) prevCommitTask = CommitTask;
             var tailAddress = CommitInternal();
 
-            while (CommittedUntilAddress < tailAddress)
+            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
                 var linkedCommitInfo = await prevCommitTask.WithCancellationAsync(token);
-                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress)
+                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     prevCommitTask = linkedCommitInfo.NextTask;
                 else
                     return linkedCommitInfo.NextTask;
@@ -854,15 +863,17 @@ namespace FASTER.core
         private void SerialCommitCallbackWorker(CommitInfo commitInfo)
         {
             // Check if commit is already covered
-            if (CommittedBeginAddress >= commitInfo.BeginAddress &&
+            if (CommittedBeginAddress >= BeginAddress &&
                 CommittedUntilAddress >= commitInfo.UntilAddress &&
+                persistedCommitMetadataVersion >= commitMetadataVersion &&
                 commitInfo.ErrorCode == 0)
                 return;
 
             if (commitInfo.ErrorCode == 0)
             {
-                if (CommittedBeginAddress > commitInfo.BeginAddress)
-                    commitInfo.BeginAddress = CommittedBeginAddress;
+                // Capture CMV first, so metadata prior to CMV update is visible to commit
+                long _localCMV = commitMetadataVersion;
+
                 if (CommittedUntilAddress > commitInfo.FromAddress)
                     commitInfo.FromAddress = CommittedUntilAddress;
                 if (CommittedUntilAddress > commitInfo.UntilAddress)
@@ -870,7 +881,7 @@ namespace FASTER.core
 
                 FasterLogRecoveryInfo info = new FasterLogRecoveryInfo
                 {
-                    BeginAddress = commitInfo.BeginAddress,
+                    BeginAddress = BeginAddress,
                     FlushedUntilAddress = commitInfo.UntilAddress
                 };
 
@@ -878,8 +889,12 @@ namespace FASTER.core
                 info.SnapshotIterators(PersistedIterators);
 
                 logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
+
+                LastPersistedIterators = info.Iterators;
                 CommittedBeginAddress = info.BeginAddress;
                 CommittedUntilAddress = info.FlushedUntilAddress;
+                if (_localCMV > persistedCommitMetadataVersion)
+                    persistedCommitMetadataVersion = _localCMV;
 
                 // Update completed address for persisted iterators
                 info.CommitIterators(PersistedIterators);
@@ -897,6 +912,29 @@ namespace FASTER.core
                 _commitTcs?.TrySetResult(lci);
             else
                 _commitTcs.TrySetException(new CommitFailureException(lci, $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}"));
+        }
+
+        private bool IteratorsChanged()
+        {
+            var _lastPersistedIterators = LastPersistedIterators;
+            if (_lastPersistedIterators == null)
+            {
+                if (PersistedIterators.Count == 0)
+                    return false;
+                return true;
+            }
+            if (_lastPersistedIterators.Count != PersistedIterators.Count)
+                return true;
+            foreach (var item in _lastPersistedIterators)
+            {
+                if (PersistedIterators.TryGetValue(item.Key, out var other))
+                {
+                    if (item.Value != other.requestedCompletedUntilAddress) return true;
+                }
+                else
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -955,7 +993,7 @@ namespace FASTER.core
             // Update commit to release pending iterators.
             var lci = new LinkedCommitInfo
             {
-                CommitInfo = new CommitInfo { BeginAddress = BeginAddress, FromAddress = BeginAddress, UntilAddress = FlushedUntilAddress },
+                CommitInfo = new CommitInfo { FromAddress = BeginAddress, UntilAddress = FlushedUntilAddress },
                 NextTask = commitTcs.Task
             };
             _commitTcs?.TrySetResult(lci);
@@ -1184,14 +1222,16 @@ namespace FASTER.core
                 // May need to commit begin address and/or iterators
                 epoch.Suspend();
                 var beginAddress = allocator.BeginAddress;
-                if (beginAddress > CommittedBeginAddress || PersistedIterators.Count > 0)
+                if (beginAddress > CommittedBeginAddress || IteratorsChanged())
+                {
+                    Interlocked.Increment(ref commitMetadataVersion);
                     CommitCallback(new CommitInfo
                     {
-                        BeginAddress = beginAddress,
                         FromAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
                         UntilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
                         ErrorCode = 0
                     });
+                }
             }
 
             return tailAddress;

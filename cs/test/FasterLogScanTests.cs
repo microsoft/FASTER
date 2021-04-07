@@ -28,7 +28,6 @@ namespace FASTER.test
         static int entryLength = 100;
         static int numEntries = 1000;
         static int entryFlag = 9999;
-        private GetMemory getMemoryData;    // TODO unused
 
         // Create and populate the log file so can do various scans
         [SetUp]

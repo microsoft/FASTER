@@ -1195,7 +1195,6 @@ namespace FASTER.core
                     FlushCallback?.Invoke(
                         new CommitInfo
                         {
-                            BeginAddress = BeginAddress,
                             FromAddress = oldFlushedUntilAddress,
                             UntilAddress = currentFlushedUntilAddress,
                             ErrorCode = errorCode
