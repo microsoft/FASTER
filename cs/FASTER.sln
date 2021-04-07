@@ -61,7 +61,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MemOnlyCache", "samples\Mem
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AsyncStress", "playground\AsyncStress\AsyncStress.csproj", "{9EFCF8C5-320B-473C-83DE-3815981D465B}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterLogMLSDTest", "playground\FasterLogMLSDTest\FasterLogMLSDTest.csproj", "{E8C7FB0F-38B8-468A-B1CA-8793DF8F2693}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FasterLogStress", "playground\FasterLogMLSDTest\FasterLogStress.csproj", "{E8C7FB0F-38B8-468A-B1CA-8793DF8F2693}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

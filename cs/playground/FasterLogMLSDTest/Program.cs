@@ -2,10 +2,9 @@
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
-using System.Threading.Tasks;
 using FASTER.core;
 
-namespace FasterLogMLSDTest
+namespace FasterLogStress
 {
     public class Program
     {
@@ -16,7 +15,7 @@ namespace FasterLogMLSDTest
 
         public static void Main()
         {
-            commitPath = "FasterLogMLSDTest/";
+            commitPath = "FasterLogStress/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
             // We loop to ensure clean-up as deleteOnClose does not always work for MLSD
