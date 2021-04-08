@@ -1787,7 +1787,7 @@ namespace FASTER.core
                 FasterSession fasterSession)
                 where FasterSession : IFasterSession
         {
-            logicalAddress = hlog.TryAllocate(recordSize);
+            logicalAddress = readcache.TryAllocate(recordSize);
             if (logicalAddress > 0)
                 return;
             SpinBlockAllocate(readcache, recordSize, out logicalAddress, currentCtx, fasterSession, isAsync: false);
