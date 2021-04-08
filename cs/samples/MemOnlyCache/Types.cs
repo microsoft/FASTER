@@ -2,14 +2,13 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
+using System.Threading;
 
 namespace MemOnlyCache
 {
-    public sealed class CacheKey : IFasterEqualityComparer<CacheKey>
+    public struct CacheKey : IFasterEqualityComparer<CacheKey>
     {
         public long key;
-
-        public CacheKey() { }
 
         public CacheKey(long first)
         {
@@ -23,16 +22,45 @@ namespace MemOnlyCache
 
     public sealed class CacheValue
     {
-        public long value;
+        public byte[] value;
 
-        public CacheValue(long first)
+        public CacheValue(int size, byte firstByte)
         {
-            value = first;
+            value = new byte[size];
+            value[0] = firstByte;
         }
+
+        public int GetSize => value.Length + 48; // heap size for byte array incl. ~48 bytes ref/array overheads
     }
 
     /// <summary>
     /// Callback for FASTER operations
     /// </summary>
-    public sealed class CacheFunctions : SimpleFunctions<CacheKey, CacheValue> { }
+    public sealed class CacheFunctions : AdvancedSimpleFunctions<CacheKey, CacheValue>
+    {
+        readonly CacheSizeTracker sizeTracker;
+
+        public CacheFunctions(CacheSizeTracker sizeTracker)
+        {
+            this.sizeTracker = sizeTracker;
+        }
+
+        public override bool ConcurrentWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst, ref RecordInfo recordInfo, long address)
+        {
+            var old = Interlocked.Exchange(ref dst, src);
+            sizeTracker.AddSize(dst.GetSize - old.GetSize);
+            return true;
+        }
+
+        public override void SingleWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst)
+        {
+            dst = src;
+            sizeTracker.AddSize(src.GetSize);
+        }
+
+        public override void ConcurrentDeleter(ref CacheKey key, ref CacheValue value, ref RecordInfo recordInfo, long address)
+        {
+            sizeTracker.AddSize(-value.GetSize);
+        }
+    }
 }

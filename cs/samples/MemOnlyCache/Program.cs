@@ -19,6 +19,11 @@ namespace MemOnlyCache
         const int DbSize = 10_000_000;
 
         /// <summary>
+        /// Max value size
+        /// </summary>
+        const int MaxValueSize = 1000;
+
+        /// <summary>
         /// Number of threads accessing FASTER instances
         /// </summary>
         const int kNumThreads = 1;
@@ -39,11 +44,13 @@ namespace MemOnlyCache
         const double Theta = 0.99;
 
         /// <summary>
-        /// Whether to upsert the data automatically on a cache miss
+        /// Whether to upsert the key on a cache miss
         /// </summary>
         const bool UpsertOnCacheMiss = true;
 
         static FasterKV<CacheKey, CacheValue> h;
+        static CacheSizeTracker sizeTracker;
+
         static long totalReads = 0;
 
         static void Main()
@@ -70,10 +77,8 @@ namespace MemOnlyCache
             var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)); 
 
             h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, comparer: new CacheKey());
-            
-            // Register subscriber to receive notifications of log evictions from memory
-            h.Log.SubscribeEvictions(new LogObserver());
-            
+            sizeTracker = new CacheSizeTracker(h, logSettings.MemorySizeBits);
+
             PopulateStore(numRecords);
             ContinuousRandomWorkload();
             
@@ -85,7 +90,7 @@ namespace MemOnlyCache
 
         private static void PopulateStore(int count)
         {
-            using var s = h.For(new CacheFunctions()).NewSession<CacheFunctions>();
+            using var s = h.For(new CacheFunctions(sizeTracker)).NewSession<CacheFunctions>();
 
             Random r = new Random(0);
             Console.WriteLine("Writing random keys to fill cache");
@@ -94,7 +99,7 @@ namespace MemOnlyCache
             {
                 int k = r.Next(DbSize);
                 var key = new CacheKey(k);
-                var value = new CacheValue(k);
+                var value = new CacheValue(1 + r.Next(MaxValueSize - 1), (byte)key.key);
                 s.Upsert(ref key, ref value);
             }
         }
@@ -130,7 +135,7 @@ namespace MemOnlyCache
         {
             Console.WriteLine("Issuing {0} random read workload of {1} reads from thread {2}", UseUniform ? "uniform" : "zipf", DbSize, threadid);
 
-            using var session = h.For(new CacheFunctions()).NewSession<CacheFunctions>();
+            using var session = h.For(new CacheFunctions(sizeTracker)).NewSession<CacheFunctions>();
 
             var rnd = new Random(threadid);
             var zipf = new ZipfGenerator(rnd, DbSize, Theta);
@@ -146,7 +151,17 @@ namespace MemOnlyCache
                 {
                     Interlocked.Add(ref totalReads, 256);
                     if (i % (1024 * 1024 * 16) == 0) // report after every 16M ops
-                        Console.WriteLine("Hit rate: {0:N2}; Evict count: {1}", statusFound / (double)(statusFound + statusNotFound), LogObserver.EvictCount);
+                    {
+                        Console.WriteLine("Hit rate: {0:N2}; Memory footprint: {1:N2}KB", statusFound / (double)(statusFound + statusNotFound), sizeTracker.TotalSize / (double)1024);
+
+                        // GC -> report -> pause to verify accurate memory reporting
+                        /*
+                        GC.Collect();
+                        GC.WaitForFullGCComplete();
+                        Console.WriteLine("Hit rate: {0:N2}; Memory footprint: {1:N2}KB", statusFound / (double)(statusFound + statusNotFound), sizeTracker.TotalSize / (double)1024);
+                        Thread.Sleep(1000000);
+                        */
+                    }
                 }
                 int op = WritePercent == 0 ? 0 : rnd.Next(100);
                 long k = UseUniform ? rnd.Next(DbSize) : zipf.Next();
@@ -155,7 +170,7 @@ namespace MemOnlyCache
 
                 if (op < WritePercent)
                 {
-                    var value = new CacheValue(k);
+                    var value = new CacheValue(1 + rnd.Next(MaxValueSize - 1), (byte)key.key);
                     session.Upsert(ref key, ref value);
                 }
                 else
@@ -168,13 +183,13 @@ namespace MemOnlyCache
                             statusNotFound++;
                             if (UpsertOnCacheMiss)
                             {
-                                var value = new CacheValue(k);
+                                var value = new CacheValue(1 + rnd.Next(MaxValueSize - 1), (byte)key.key);
                                 session.Upsert(ref key, ref value);
                             }
                             break;
                         case Status.OK:
                             statusFound++;
-                            if (output.value != key.key)
+                            if (output.value[0] != (byte)key.key)
                                 throw new Exception("Read error!");
                             break;
                         default:
@@ -183,26 +198,6 @@ namespace MemOnlyCache
                 }
                 i++;
             }
-        }
-    }
-
-    class LogObserver : IObserver<IFasterScanIterator<CacheKey, CacheValue>>
-    {
-        public static int EvictCount = 0;
-
-        public void OnCompleted() { }
-
-        public void OnError(Exception error) { }
-
-        public void OnNext(IFasterScanIterator<CacheKey, CacheValue> iter)
-        {
-            int cnt = 0;
-            while (iter.GetNext(out RecordInfo info, out CacheKey _, out CacheValue _))
-            {
-                if (!info.Tombstone) // ignore deleted records being evicted
-                    cnt++;
-            }
-            Interlocked.Add(ref EvictCount, cnt);
         }
     }
 }
