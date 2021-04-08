@@ -35,6 +35,8 @@ namespace FASTER.core
         internal readonly IVariableLengthStruct<Value, Input> variableLengthStruct;
         internal readonly IVariableLengthStruct<Input> inputVariableLengthStruct;
 
+        internal FasterKV<Key, Value>.CompletedOutputs<Input, Output, Context> pendingResults;
+
         internal readonly InternalFasterSession FasterSession;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
@@ -143,6 +145,7 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+            this.pendingResults?.Dispose();
             CompletePending(true);
             fht.DisposeClientSession(ID);
 
@@ -229,7 +232,7 @@ namespace FASTER.core
         /// <param name="serialNo"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (Status, Output) Read(Key key, Context userContext = default, long serialNo = 0)
+        public (Status status, Output output) Read(Key key, Context userContext = default, long serialNo = 0)
         {
             Input input = default;
             Output output = default;
@@ -624,11 +627,33 @@ namespace FASTER.core
         /// <param name="spinWaitForCommit">Extend spin-wait until ongoing commit/checkpoint, if any, completes</param>
         /// <returns></returns>
         public bool CompletePending(bool spinWait = false, bool spinWaitForCommit = false)
+            => CompletePending(null, spinWait, spinWaitForCommit);
+
+        /// <summary>
+        /// Sync complete all outstanding pending operations
+        /// Async operations (ReadAsync) must be completed individually
+        /// </summary>
+        /// <param name="completedOutputs">Outputs completed by this operation</param>
+        /// <param name="spinWait">Spin-wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCommit">Extend spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <returns></returns>
+        public bool CompletePending(out FasterKV<Key, Value>.CompletedOutputs<Input, Output, Context> completedOutputs, bool spinWait = false, bool spinWaitForCommit = false)
+        {
+            if (this.pendingResults is null)
+                this.pendingResults = new FasterKV<Key, Value>.CompletedOutputs<Input, Output, Context>();
+            else
+                this.pendingResults.Dispose();
+            var result = CompletePending(this.pendingResults.outputList, spinWait, spinWaitForCommit);
+            completedOutputs = this.pendingResults;
+            return result;
+        }
+
+        private bool CompletePending(List<FasterKV<Key, Value>.CompletedOutput<Input, Output, Context>> completedOutputs, bool spinWait = false, bool spinWaitForCommit = false)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                var result = fht.InternalCompletePending(ctx, FasterSession, spinWait);
+                var result = fht.InternalCompletePending(ctx, FasterSession, spinWait, completedOutputs);
                 if (spinWaitForCommit)
                 {
                     if (spinWait != true)
@@ -637,10 +662,10 @@ namespace FASTER.core
                     }
                     do
                     {
-                        fht.InternalCompletePending(ctx, FasterSession, spinWait);
+                        fht.InternalCompletePending(ctx, FasterSession, spinWait, completedOutputs);
                         if (fht.InRestPhase())
                         {
-                            fht.InternalCompletePending(ctx, FasterSession, spinWait);
+                            fht.InternalCompletePending(ctx, FasterSession, spinWait, completedOutputs);
                             return true;
                         }
                     } while (spinWait);

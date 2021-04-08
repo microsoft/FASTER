@@ -209,7 +209,7 @@ namespace FASTER.core
             /// Complete the read operation, after any I/O is completed.
             /// </summary>
             /// <returns>The read result, or throws an exception if error encountered.</returns>
-            public (Status, Output) Complete()
+            public (Status status, Output output) Complete()
             {
                 if (status != Status.PENDING)
                     return (status, output);
@@ -221,7 +221,7 @@ namespace FASTER.core
             /// Complete the read operation, after any I/O is completed.
             /// </summary>
             /// <returns>The read result and the previous address in the Read key's hash chain, or throws an exception if error encountered.</returns>
-            public (Status, Output) Complete(out RecordInfo recordInfo)
+            public (Status status, Output output) Complete(out RecordInfo recordInfo)
             {
                 if (status != Status.PENDING)
                 {

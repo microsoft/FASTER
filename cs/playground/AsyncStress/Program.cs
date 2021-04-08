@@ -9,13 +9,14 @@ namespace AsyncStress
 {
     public class Program
     {
+        // ThreadingMode descriptions are listed in Usage()
         enum ThreadingMode
         {
-            None,           // Do not run this operation
-            Single,         // Run this operation single-threaded
-            ParallelAsync,  // Run this operation using Parallel.For with an Async lambda
-            ParallelSync,   // Run this operation using Parallel.For with an Sync lambda and parallelism limited to numTasks
-            Chunks          // Run this operation using a set number of tasks to operate on partitioned chunks
+            None,
+            Single,
+            ParallelAsync,
+            ParallelSync,
+            Chunks
         }
         static ThreadingMode upsertThreadingMode = ThreadingMode.ParallelAsync;
         static ThreadingMode readThreadingMode = ThreadingMode.ParallelAsync;
@@ -37,7 +38,7 @@ namespace AsyncStress
             Console.WriteLine($"    Single:         Run this operation single-threaded");
             Console.WriteLine($"    ParallelAsync:  Run this operation using Parallel.For with an Async lambda");
             Console.WriteLine($"    ParallelSync:   Run this operation using Parallel.For with an Sync lambda and parallelism limited to numTasks");
-            Console.WriteLine($"    Chunks:         Run this operation using a set number of tasks to operate on partitioned chunks");
+            Console.WriteLine($"    Chunks:         Run this operation using a set number of async tasks to operate on partitioned chunks");
         }
 
         public static async Task Main(string[] args)
@@ -142,6 +143,7 @@ namespace AsyncStress
             {
                 Console.WriteLine($"    Reading {numOperations} records with {threadingModeString(readThreadingMode)} (OS buffering: {FasterWrapper.useOsReadBuffering}) ...");
                 var readTasks = new ValueTask<(Status, int)>[numOperations];
+                var readPendingString = string.Empty;
 
                 var sw = Stopwatch.StartNew();
                 if (readThreadingMode == ThreadingMode.Single)
@@ -165,6 +167,7 @@ namespace AsyncStress
                     Parallel.For(0, numOperations, parallelOptions, key => readTasks[key] = store.Read(key));
                     foreach (var task in readTasks)
                         await task;
+                    readPendingString = $"; Pending = {store.ReadPendingCount}";
                 }
                 else
                 {
@@ -176,7 +179,7 @@ namespace AsyncStress
                 }
 
                 sw.Stop();
-                Console.WriteLine($"    Reads complete in {sw.ElapsedMilliseconds} ms");
+                Console.WriteLine($"    Reads complete in {sw.ElapsedMilliseconds} ms{readPendingString}");
 
                 // Verify
                 Console.WriteLine("    Verifying read results ...");

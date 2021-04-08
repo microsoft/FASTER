@@ -2,18 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
 using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test
 {
-
 
     //** NOTE - more detailed / in depth Read tests in ReadAddressTests.cs 
     //** These tests ensure the basics are fully covered
@@ -42,8 +36,6 @@ namespace FASTER.test
             fht = null;
             log.Dispose();
         }
-
-
 
         [Test]
         [Category("FasterKV")]
@@ -764,7 +756,5 @@ namespace FASTER.test
             s.Read(ref key, ref output);
             Assert.IsTrue(output == 10);
         }
-     
-
     }
 }

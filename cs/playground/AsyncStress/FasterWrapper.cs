@@ -1,8 +1,12 @@
 ﻿using FASTER.core;
+using Xunit;
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Linq;
 
 namespace AsyncStress
 {
@@ -37,8 +41,9 @@ namespace AsyncStress
         // This can be used to verify the same amount data is loaded.
         public long TailAddress => _store.Log.TailAddress;
 
-        // Indicates how many Upsert operations went pending
+        // Indicates how many operations went pending
         public int UpsertPendingCount = 0;
+        public int ReadPendingCount = 0;
 
         public async ValueTask UpsertAsync(int key, int value)
         {
@@ -98,8 +103,16 @@ namespace AsyncStress
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
-            // TODO: Modify Functions to use sync Read()
-            var result = session.ReadAsync(key).GetAwaiter().GetResult().Complete();
+            var result = session.Read(key);
+            if (result.status == Status.PENDING)
+            {
+                Interlocked.Increment(ref ReadPendingCount);
+                session.CompletePending(out var completedOutputs, spinWait: true);
+                Assert.Equal(1, completedOutputs.Outputs.Count);
+                Assert.Equal(key, completedOutputs.Outputs[0].Key);
+                result = (Status.OK, completedOutputs.Outputs[0].Output);
+                completedOutputs.Dispose();
+            }
             _sessionPool.Return(session);
             return new ValueTask<(Status, int)>(result);
         }

@@ -66,6 +66,88 @@ namespace FASTER.core
 
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
+        /// <summary>
+        /// A list of <see cref="CompletedOutputs{TInput, TOutput, TContext}"/> for completed outputs from a pending operation.
+        /// </summary>
+        /// <typeparam name="TInput">The session input type</typeparam>
+        /// <typeparam name="TOutput">The session output type</typeparam>
+        /// <typeparam name="TContext">The session context type</typeparam>
+        /// <remarks>The session holds this list and returns an enumeration to the caller of an appropriate CompletePending overload. The session will handle
+        /// disposing and clearing this list, but it is best if the caller calls Dispose() after processing the results, so the key, input, and heap containers
+        /// are released as soon as possible.</remarks>
+        public class CompletedOutputs<TInput, TOutput, TContext> : IDisposable
+        {
+            internal List<CompletedOutput<TInput, TOutput, TContext>> outputList = new List<CompletedOutput<TInput, TOutput, TContext>>();
+
+            /// <summary>
+            /// The enumeration of completed results.
+            /// </summary>
+            public IReadOnlyList<CompletedOutput<TInput, TOutput, TContext>> Outputs => this.outputList;
+
+            /// <inheritdoc/>
+            public void Dispose()
+            {
+                foreach (var result in this.outputList)
+                    result.Dispose();
+                outputList.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Structure to hold a key and its output for a pending operation.
+        /// </summary>
+        /// <typeparam name="TInput">The session input type</typeparam>
+        /// <typeparam name="TOutput">The session output type</typeparam>
+        /// <typeparam name="TContext">The session context type</typeparam>
+        /// <remarks>The session holds a list of these that it returns to the caller of an appropriate CompletePending overload. The session will handle disposing
+        /// and clearing, and will manage Dispose(), but it is best if the caller calls Dispose() after processing the results, so the key, input, and heap containers
+        /// are released as soon as possible.</remarks>
+        public struct CompletedOutput<TInput, TOutput, TContext>
+        {
+            private IHeapContainer<Key> keyContainer;
+            private IHeapContainer<TInput> inputContainer;
+
+            /// <summary>
+            /// The key for this pending operation.
+            /// </summary>
+            public ref Key Key => ref keyContainer.Get();
+
+            /// <summary>
+            /// The input for this pending operation.
+            /// </summary>
+            public ref TInput Input => ref inputContainer.Get();
+
+            /// <summary>
+            /// The output for this pending operation.
+            /// </summary>
+            public TOutput Output { get; }
+
+            /// <summary>
+            /// The context for this pending operation.
+            /// </summary>
+            public TContext Context { get; }
+
+            internal CompletedOutput(IHeapContainer<Key> key, IHeapContainer<TInput> input, ref TOutput output, ref TContext context)
+            {
+                this.keyContainer = key;
+                this.inputContainer = input;
+                this.Output = output;
+                this.Context = context;
+            }
+
+            internal void Dispose()
+            {
+                var tempKeyContainer = keyContainer;
+                keyContainer = default;
+                var tempInputContainer = inputContainer;
+                inputContainer = default;
+                if (tempKeyContainer is { })
+                    tempKeyContainer.Dispose();
+                if (tempInputContainer is { })
+                    tempInputContainer.Dispose();
+            }
+        }
+
         internal struct PendingContext<Input, Output, Context>
         {
             // User provided information
@@ -92,6 +174,23 @@ namespace FASTER.core
             internal const byte kSkipCopyReadsToTail = 0x04;
             internal const byte kIsAsync = 0x08;
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal IHeapContainer<Key> DetachKey()
+            {
+                var tempKeyContainer = this.key;
+                this.key = default; // transfer ownership
+                return tempKeyContainer;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal IHeapContainer<Input> DetachInput()
+            {
+                var tempInputContainer = this.input;
+                this.input = default; // transfer ownership
+                return tempInputContainer;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static byte GetOperationFlags(ReadFlags readFlags, bool noKey = false)
             {
                 Debug.Assert((byte)ReadFlags.SkipReadCache == kSkipReadCache);

@@ -81,7 +81,7 @@ namespace FASTER.core
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
         /// <returns>A tuple of (<see cref="Status"/>, <typeparamref name="Output"/>)</returns>
-        public (Status, Output) Read(Key key, Context userContext = default, long serialNo = 0);
+        public (Status status, Output output) Read(Key key, Context userContext = default, long serialNo = 0);
 
         /// <summary>
         /// Read operation that accepts a <paramref name="recordInfo"/> ref argument to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
