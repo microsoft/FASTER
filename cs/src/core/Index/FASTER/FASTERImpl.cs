@@ -1771,8 +1771,13 @@ namespace FASTER.core
                 out long logicalAddress,
                 FasterExecutionContext<Input, Output, Context> ctx,
                 FasterSession fasterSession, bool isAsync = false)
-                where FasterSession : IFasterSession 
-            => BlockAllocate(hlog, recordSize, out logicalAddress, ctx, fasterSession, isAsync);
+                where FasterSession : IFasterSession
+        {
+            logicalAddress = hlog.TryAllocate(recordSize);
+            if (logicalAddress > 0)
+                return;
+            SpinBlockAllocate(hlog, recordSize, out logicalAddress, ctx, fasterSession, isAsync);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void BlockAllocateReadCache<Input, Output, Context, FasterSession>(
@@ -1780,11 +1785,16 @@ namespace FASTER.core
                 out long logicalAddress,
                 FasterExecutionContext<Input, Output, Context> currentCtx,
                 FasterSession fasterSession)
-                where FasterSession : IFasterSession 
-            => BlockAllocate(readcache, recordSize, out logicalAddress, currentCtx, fasterSession, isAsync: false);
+                where FasterSession : IFasterSession
+        {
+            logicalAddress = hlog.TryAllocate(recordSize);
+            if (logicalAddress > 0)
+                return;
+            SpinBlockAllocate(readcache, recordSize, out logicalAddress, currentCtx, fasterSession, isAsync: false);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void BlockAllocate<Input, Output, Context, FasterSession>(
+        private void SpinBlockAllocate<Input, Output, Context, FasterSession>(
                 AllocatorBase<Key, Value> allocator,
                 int recordSize,
                 out long logicalAddress,
@@ -1792,10 +1802,6 @@ namespace FASTER.core
                 FasterSession fasterSession, bool isAsync)
                 where FasterSession : IFasterSession
         {
-            logicalAddress = allocator.TryAllocate(recordSize);
-            if (logicalAddress > 0)
-                return;
-
             var spins = 0;
             while (true)
             {

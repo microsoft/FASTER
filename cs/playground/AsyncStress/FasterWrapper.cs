@@ -69,7 +69,8 @@ namespace AsyncStress
 
         public async ValueTask UpsertChunkAsync(int start, int count)
         {
-            using var session = _store.For(new SimpleFunctions<int, int, Empty>()).NewSession(new SimpleFunctions<int, int, Empty>());
+            if (!_sessionPool.TryGet(out var session))
+                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
 
             for (var ii = 0; ii < count; ++ii)
             {
@@ -81,6 +82,7 @@ namespace AsyncStress
                     r = await r.CompleteAsync();
                 }
             }
+            _sessionPool.Return(session);
         }
 
         public async ValueTask<(Status, int)> ReadAsync(int key)
@@ -104,13 +106,15 @@ namespace AsyncStress
 
         public async ValueTask ReadChunkAsync(int start, int count, ValueTask<(Status, int)>[] readTasks)
         {
-            using var session = _store.For(new SimpleFunctions<int, int, Empty>()).NewSession(new SimpleFunctions<int, int, Empty>());
+            if (!_sessionPool.TryGet(out var session))
+                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
 
             for (var ii = 0; ii < count; ++ii)
             {
                 var key = start + ii;
                 readTasks[key] = new ValueTask<(Status, int)>((await session.ReadAsync(key).ConfigureAwait(false)).Complete());
             }
+            _sessionPool.Return(session);
         }
 
         public void Dispose()

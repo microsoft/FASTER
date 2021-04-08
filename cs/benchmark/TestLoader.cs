@@ -361,7 +361,7 @@ namespace FASTER.benchmark
             {
                 Console.WriteLine($"Checkpointing FasterKV to {this.BackupPath} for fast restart");
                 Stopwatch sw = Stopwatch.StartNew();
-                store.TakeFullCheckpoint(out _);
+                store.TakeFullCheckpoint(out _, CheckpointType.Snapshot);
                 store.CompleteCheckpointAsync().GetAwaiter().GetResult();
                 sw.Stop();
                 Console.WriteLine($"  Completed checkpoint in {(double)sw.ElapsedMilliseconds / 1000:N3} seconds");
