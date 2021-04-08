@@ -6,12 +6,12 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    public class ClientVersionTrackerEnumerator : IEnumerator<(long, WorkerVersion)>
+    internal class ClientVersionTrackerEnumerator : IEnumerator<(long, WorkerVersion)>
     {
         private IEnumerator<KeyValuePair<WorkerVersion, List<long>>> versionEnumerator;
         private IEnumerator<long> opEnumerator;
 
-        public ClientVersionTrackerEnumerator(Dictionary<WorkerVersion, List<long>> dict)
+        internal ClientVersionTrackerEnumerator(Dictionary<WorkerVersion, List<long>> dict)
         {
             versionEnumerator = dict.GetEnumerator();
         } 
@@ -41,7 +41,8 @@ namespace FASTER.libdpr
         }
     }
     
-    public class ClientVersionTracker : IEnumerable<(long, WorkerVersion)>
+    // TODO(Tianyu): Documentation
+    internal class ClientVersionTracker : IEnumerable<(long, WorkerVersion)>
     {
         private ThreadLocalObjectPool<List<long>> listPool = new ThreadLocalObjectPool<List<long>>(() => new List<long>());
         // TODO(Tianyu): Use a more compact representation for encoding completed operation versions
@@ -51,9 +52,9 @@ namespace FASTER.libdpr
         private long largestSeqNum = 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long LargestSeqNum() => largestSeqNum;
+        internal long LargestSeqNum() => largestSeqNum;
 
-        public void Add(long serialNum, WorkerVersion executedAt)
+        internal void Add(long serialNum, WorkerVersion executedAt)
         {
             largestSeqNum = Math.Max(largestSeqNum, serialNum);
             if (!versionMappings.TryGetValue(executedAt, out var list))
@@ -65,11 +66,11 @@ namespace FASTER.libdpr
             list.Add(serialNum);
         }
         
-        public void ResolveOperations(IDprTableSnapshot dprTable)
+        internal void ResolveOperations(IDprStateSnapshot dprState)
         {
             foreach (var entry in versionMappings)
             {
-                if (dprTable.SafeVersion(entry.Key.Worker) >= entry.Key.Version)
+                if (dprState.SafeVersion(entry.Key.Worker) >= entry.Key.Version)
                 {
                     entry.Value.Clear();
                     listPool.Return(entry.Value);
@@ -83,11 +84,11 @@ namespace FASTER.libdpr
             toRemove.Clear();
         }
 
-        public void HandleRollback(IDprTableSnapshot dprTable, ref CommitPoint limit)
+        internal void HandleRollback(IDprStateSnapshot dprState, ref CommitPoint limit)
         {
             foreach (var entry in versionMappings)
             {
-                if (dprTable.SafeVersion(entry.Key.Worker) < entry.Key.Version)
+                if (dprState.SafeVersion(entry.Key.Worker) < entry.Key.Version)
                 {
                     limit.ExcludedSerialNos.AddRange(entry.Value);
                     listPool.Return(entry.Value);

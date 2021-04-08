@@ -7,6 +7,7 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
+    // TODO(Tianyu): Document
     public class DprClientSession
     {
         private Guid guid;

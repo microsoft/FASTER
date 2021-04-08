@@ -7,18 +7,6 @@ using System.Threading;
 
 namespace FASTER.libdpr
 {
-    public class GlobalMinDprTableSnapshot: IDprTableSnapshot
-    {
-        private readonly long globalSafeVersion;
-
-        public GlobalMinDprTableSnapshot(long globalSafeVersion)
-        {
-            this.globalSafeVersion = globalSafeVersion;
-        }
-        
-        public long SafeVersion(Worker worker) => globalSafeVersion;
-    }
-    
     // Simple single-threaded server
     public class SimpleTestDprFinderServer
     {
@@ -157,9 +145,9 @@ namespace FASTER.libdpr
             return systemWorldLine;
         }
 
-        public IDprTableSnapshot ReadSnapshot()
+        public IDprStateSnapshot ReadSnapshot()
         {
-            return new GlobalMinDprTableSnapshot(globalSafeVersionNum);
+            return new GlobalMinDprStateSnapshot(globalSafeVersionNum);
         }
 
         public void ReportNewPersistentVersion(WorkerVersion persisted, IEnumerable<WorkerVersion> deps)

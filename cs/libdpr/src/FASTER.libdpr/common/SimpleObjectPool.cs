@@ -5,6 +5,7 @@ using System.Threading;
 
 namespace FASTER.libdpr
 {
+    // TODO(Tianyu): Document
     public class SimpleObjectPool<T> where T : class
     {
         private Func<T> factory;

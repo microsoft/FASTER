@@ -2,6 +2,7 @@ using System;
 
 namespace FASTER.libdpr
 {
+    // TODO(Tianyu): Document
     public struct Worker
     {
         public static Worker CLUSTER_MANAGER = new Worker(0);

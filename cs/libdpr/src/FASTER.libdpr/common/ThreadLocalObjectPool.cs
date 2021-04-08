@@ -12,14 +12,14 @@ namespace FASTER.libdpr
         // Not expecting a lot of concurrency on the stack. Should be pretty cheap.
         private SpinLock latch;
 
-        public LightConcurrentStack(int maxCapacity = 128)
+        internal LightConcurrentStack(int maxCapacity = 128)
         {
             stack = new T[maxCapacity];
             tail = 0;
             latch = new SpinLock();
         }
         
-        public bool TryPush(T elem)
+        internal bool TryPush(T elem)
         {
             var lockTaken = false;
             latch.Enter(ref lockTaken);
@@ -34,7 +34,7 @@ namespace FASTER.libdpr
             return true;
         }
 
-        public bool TryPop(out T elem)
+        internal bool TryPop(out T elem)
         {
             elem = null;
             var lockTaken = false;
@@ -52,6 +52,7 @@ namespace FASTER.libdpr
         }
     }
 
+    // TODO(Tianyu): Document
     public class ThreadLocalObjectPool<T> where T : class
     {
         private Func<T> factory;

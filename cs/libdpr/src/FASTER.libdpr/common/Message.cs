@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.libdpr
 {
+    // TODO(Tianyu): Document
     /// <summary>
     /// DPR metadata associated with each batch. Laid out continuously as:
     /// header | deps (WorkerVersion[]) | message metadata (DprMessageHeader[])

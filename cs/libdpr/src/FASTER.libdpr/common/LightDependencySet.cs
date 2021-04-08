@@ -8,6 +8,7 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
+    // TODO(Tianyu): Document
     public class LightDependencySet : IEnumerable<WorkerVersion>
     {
         private const int MaxSizeBits = 8;

@@ -5,7 +5,7 @@ namespace FASTER.libdpr
     /// <summary>
     /// A DprTableSnapshot is a consistent view of the current DPR cut in a  
     /// </summary>
-    public interface IDprTableSnapshot
+    public interface IDprStateSnapshot
     {
         /// <summary>
         /// For a given version, returns the largest version number that is recoverable. Method may return arbitrary
@@ -37,7 +37,7 @@ namespace FASTER.libdpr
         /// Obtains a consistent snapshot of current DPR cut of the system.
         /// </summary>
         /// <returns> a consistent snapshot of current DPR cut of the system </returns>
-        IDprTableSnapshot ReadSnapshot();
+        IDprStateSnapshot ReadSnapshot();
 
         /// <summary>
         /// Returns the current system world-line.

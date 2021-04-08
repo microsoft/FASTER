@@ -3,6 +3,7 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
+    // TODO(Tianyu): Document
     public class DprRollbackException : Exception
     {
         public CommitPoint rollbackPoint;

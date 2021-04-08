@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.libdpr
 {
+    // TODO(Tianyu): Document
     public class DprClient
     {
         private IDprFinder dprFinder;
@@ -23,6 +24,7 @@ namespace FASTER.libdpr
             termination = new ManualResetEventSlim();
         }
         
+        // TODO(Tianyu): Change to not start thread
         public void Start()
         {
             termination = new ManualResetEventSlim();

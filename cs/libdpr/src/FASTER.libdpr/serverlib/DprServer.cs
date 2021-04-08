@@ -223,6 +223,12 @@ namespace FASTER.libdpr
             return 0;
         }
 
+        /// <summary>
+        /// Force the execution of a checkpoint ahead of the schedule specified at creation time.
+        ///
+        /// Resets the checkpoint schedule to happen checkpoint_milli after this invocation. 
+        /// </summary>
+        /// <param name="targetVersion"> the version to jump to after the checkpoint</param>
         public void ForceCheckpoint(long targetVersion = -1)
         {
             stateObject.BeginCheckpoint(targetVersion);

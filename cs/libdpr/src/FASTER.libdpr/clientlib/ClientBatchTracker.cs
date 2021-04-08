@@ -5,16 +5,16 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    public struct BatchInfo
+    internal struct BatchInfo
     {
-        public const int MaxHeaderSize = 4096;
-        public int batchId;
-        public bool allocated;
-        public Worker workerId;
-        public long startSeqNum, endSeqNum;
-        public readonly byte[] header;
+        private const int MaxHeaderSize = 4096;
+        internal int batchId;
+        internal bool allocated;
+        internal Worker workerId;
+        internal long startSeqNum, endSeqNum;
+        internal readonly byte[] header;
 
-        public BatchInfo(int batchId)
+        internal BatchInfo(int batchId)
         {
             this.batchId = batchId;
             allocated = false;
@@ -25,12 +25,12 @@ namespace FASTER.libdpr
         }
     }
 
-    public class ClientBatchTracker : IEnumerable<BatchInfo>
+    internal class ClientBatchTracker : IEnumerable<BatchInfo>
     {
         private BatchInfo[] buffers;
         private ConcurrentQueue<int> freeBuffers;
 
-        internal class Enumerator : IEnumerator<BatchInfo>
+        private class Enumerator : IEnumerator<BatchInfo>
         {
             private ClientBatchTracker tracker;
             private int i = 0;
@@ -65,7 +65,7 @@ namespace FASTER.libdpr
             }
         }
 
-        public ClientBatchTracker(int preallocateNumber = 8192)
+        internal ClientBatchTracker(int preallocateNumber = 8192)
         {
             buffers = new BatchInfo[preallocateNumber];
             freeBuffers = new ConcurrentQueue<int>();
@@ -76,7 +76,7 @@ namespace FASTER.libdpr
             }
         }
 
-        public bool TryGetBatchInfo(out BatchInfo info)
+        internal bool TryGetBatchInfo(out BatchInfo info)
         {
             info = default;
             if (freeBuffers.TryDequeue(out var id))
@@ -88,9 +88,9 @@ namespace FASTER.libdpr
             return false;
         }
 
-        public BatchInfo GetBatch(int id) => buffers[id];
+        internal BatchInfo GetBatch(int id) => buffers[id];
 
-        public void FinishBatch(int id)
+        internal void FinishBatch(int id)
         {
             var info = GetBatch(id);
             // Signals invalid batch
@@ -98,7 +98,7 @@ namespace FASTER.libdpr
             freeBuffers.Enqueue(info.batchId);
         }
 
-        public void HandleRollback(ref CommitPoint limit)
+        internal void HandleRollback(ref CommitPoint limit)
         {
             // TODO(Tianyu): Eventually need to account for discrepancies between checkpoint and local checkpoint
             // membership information
