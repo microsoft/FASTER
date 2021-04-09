@@ -60,7 +60,11 @@ namespace FASTER.core
                 while (_queue.TryPop(out var workItem))
                 {
                     Interlocked.Decrement(ref _count);
-                    _work(workItem);
+                    try
+                    {
+                        _work(workItem);
+                    }
+                    catch { }
                 }
 
                 int count = _count;
