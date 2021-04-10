@@ -56,6 +56,11 @@ namespace MemOnlyCache
         static FasterKV<CacheKey, CacheValue> h;
         static CacheSizeTracker sizeTracker;
         static long totalReads = 0;
+        static long targetSize = 1_000_000_000; // target size for FASTER, we vary this during the run
+
+        // Cache hit stats
+        static long statusNotFound = 0;
+        static long statusFound = 0;
 
         static void Main()
         {
@@ -123,13 +128,39 @@ namespace MemOnlyCache
             sw.Start();
             var _lastReads = totalReads;
             var _lastTime = sw.ElapsedMilliseconds;
+            int count = 0;
             while (true)
             {
-                Thread.Sleep(1000);
+                Thread.Sleep(1500);
                 var tmp = totalReads;
                 var tmp2 = sw.ElapsedMilliseconds;
 
-                Console.WriteLine("Throughput: {0:0.00}K ops/sec", (_lastReads - tmp) / (double)(_lastTime - tmp2));
+                Console.WriteLine("Throughput: {0,8:0.00}K ops/sec; Hit rate: {1:N2}; Memory footprint: {2,11:N2}KB", (_lastReads - tmp) / (double)(_lastTime - tmp2), statusFound / (double)(statusFound + statusNotFound), sizeTracker.TotalSizeBytes / 1024.0);
+
+                Interlocked.Exchange(ref statusFound, 0);
+                Interlocked.Exchange(ref statusNotFound, 0);
+
+                // Optional: perform GC collection to verify accurate memory reporting in task manager
+                // GC.Collect();
+                // GC.WaitForFullGCComplete();
+
+                // As demo, reduce target size by 100MB each time we report memory footprint
+                count++;
+                if (count % 4 == 0)
+                {
+                    if (targetSize > 300_000_000)
+                    {
+                        targetSize -= 100_000_000;
+                        sizeTracker.SetTargetSizeBytes(targetSize);
+                    }
+                    else
+                    {
+                        targetSize = 1_000_000_000;
+                        sizeTracker.SetTargetSizeBytes(targetSize);
+                    }
+                    Console.WriteLine("**** Setting target memory: {0,11:N2}KB", targetSize / 1024.0);
+                }
+
                 _lastReads = tmp;
                 _lastTime = tmp2;
             }
@@ -144,31 +175,18 @@ namespace MemOnlyCache
             var rnd = new Random(threadid);
             var zipf = new ZipfGenerator(rnd, DbSize, Theta);
 
-            int statusNotFound = 0;
-            int statusFound = 0;
             CacheValue output = default;
+            int localStatusFound = 0, localStatusNotFound = 0;
 
             int i = 0;
             while (true)
             {
                 if ((i % 256 == 0) && (i > 0))
                 {
+                    Interlocked.Add(ref statusFound, localStatusFound);
+                    Interlocked.Add(ref statusNotFound, localStatusNotFound);
                     Interlocked.Add(ref totalReads, 256);
-                    if (i % (1024 * 1024 * 4) == 0) // report after every 8M ops
-                    {
-                        // Optional: perform GC collection to verify accurate memory reporting in task manager
-                        // GC.Collect();
-                        // GC.WaitForFullGCComplete();
-                        Console.WriteLine("Hit rate: {0:N2}; Memory footprint: {1:N2}KB", statusFound / (double)(statusFound + statusNotFound), sizeTracker.TotalSizeBytes / (double)1024);
-
-                        // As demo, reduce target size by 50MB each time we report memory footprint
-                        long targetSize = sizeTracker.TotalSizeBytes - 50_000_000;
-                        if (targetSize > 200_000_000)
-                        {
-                            Console.WriteLine("Setting target size in bytes: {0:N2}", targetSize);
-                            sizeTracker.SetTargetSizeBytes(targetSize);
-                        }
-                    }
+                    localStatusFound = localStatusNotFound = 0;
                 }
                 int op = WritePercent == 0 ? 0 : rnd.Next(100);
                 long k = UseUniform ? rnd.Next(DbSize) : zipf.Next();
@@ -187,7 +205,7 @@ namespace MemOnlyCache
                     switch (status)
                     {
                         case Status.NOTFOUND:
-                            statusNotFound++;
+                            localStatusNotFound++;
                             if (UpsertOnCacheMiss)
                             {
                                 var value = new CacheValue(1 + rnd.Next(MaxValueSize - 1), (byte)key.key);
@@ -195,7 +213,7 @@ namespace MemOnlyCache
                             }
                             break;
                         case Status.OK:
-                            statusFound++;
+                            localStatusFound++;
                             if (output.value[0] != (byte)key.key)
                                 throw new Exception("Read error!");
                             break;

@@ -101,9 +101,9 @@ namespace FASTER.core
         protected readonly int SegmentBufferSize;
 
         /// <summary>
-        /// How many pages we leave empty between tail and head
+        /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
-        private int extraLag;
+        private int emptyPageCount;
 
         /// <summary>
         /// HeadOFfset lag address
@@ -554,7 +554,7 @@ namespace FASTER.core
 
             LogMutableFraction = settings.MutableFraction;
 
-            ExtraLag = 0;
+            EmptyPageCount = 0;
 
             // Segment size
             LogSegmentSizeBits = settings.SegmentSizeBits;
@@ -645,39 +645,52 @@ namespace FASTER.core
 
 
         /// <summary>
-        /// How many pages we leave empty between tail and head
+        /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
-        public int ExtraLag
+        public int EmptyPageCount
         {
-            get => extraLag;
+            get => emptyPageCount;
 
             set
             {
                 // HeadOffset lag (from tail).
                 var headOffsetLagSize = BufferSize - 1;
-                if (value >= headOffsetLagSize) return;
+                if (value > headOffsetLagSize) return;
                 if (value < 0) return;
 
-                int oldLag;
-                lock (this) // linearize all setters of ExtraLag
+                int oldEPC;
+                lock (this) // linearize all setters of EmptyPageCount
                 {
-                    oldLag = extraLag;
-                    extraLag = value;
-                    headOffsetLagSize -= extraLag;
+                    oldEPC = emptyPageCount;
+                    emptyPageCount = value;
+                    headOffsetLagSize -= emptyPageCount;
 
                     ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
                     HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
                 }
 
-                // Force eviction
-                if (value > oldLag)
+                // Force eviction now if empty page count has increased
+                if (value > oldEPC)
                 {
-                    var _tailAddress = GetTailAddress();
-                    PageAlignedShiftReadOnlyAddress(_tailAddress);
-                    PageAlignedShiftHeadAddress(_tailAddress);
+                    bool prot = true;
+                    if (!epoch.ThisInstanceProtected())
+                        prot = false;
+
+                    if (!prot) epoch.Resume();
+                    try
+                    {
+                        var _tailAddress = GetTailAddress();
+                        PageAlignedShiftReadOnlyAddress(_tailAddress);
+                        PageAlignedShiftHeadAddress(_tailAddress);
+                    }
+                    finally
+                    {
+                        if (!prot) epoch.Suspend();
+                    }
                 }
             }
         }
+
         /// <summary>
         /// Delete in-memory portion of the log
         /// </summary>

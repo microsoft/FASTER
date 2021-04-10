@@ -63,12 +63,12 @@ namespace FASTER.core
         public int FixedRecordSize => allocator.GetFixedRecordSize();
 
         /// <summary>
-        /// Extra lag
+        /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
-        public int ExtraLag
+        public int EmptyPageCount
         {
-            get => allocator.ExtraLag;
-            set { allocator.ExtraLag = value; }
+            get => allocator.EmptyPageCount;
+            set { allocator.EmptyPageCount = value; }
         }
 
         /// <summary>

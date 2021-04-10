@@ -34,7 +34,11 @@ namespace MemOnlyCache
         public CacheSizeTracker(FasterKV<CacheKey, CacheValue> store, int memorySizeBits, long targetMemoryBytes = long.MaxValue)
         {
             this.store = store;
-            this.TargetSizeBytes = targetMemoryBytes;
+            if (targetMemoryBytes < long.MaxValue)
+            {
+                Console.WriteLine("**** Setting initial target memory: {0,11:N2}KB", targetMemoryBytes / 1024.0);
+                this.TargetSizeBytes = targetMemoryBytes;
+            }
 
             storeSize = store.IndexSize * 64;
             storeSize += 1L << memorySizeBits;
@@ -52,7 +56,7 @@ namespace MemOnlyCache
             if (newTargetSize < TargetSizeBytes)
             {
                 TargetSizeBytes = newTargetSize;
-                if (store.Log.ExtraLag < store.Log.BufferSize - 1) store.Log.ExtraLag++; // trigger eviction to start the memory reduction process
+                store.Log.EmptyPageCount++; // trigger eviction to start the memory reduction process
             }
             else
                 TargetSizeBytes = newTargetSize;
@@ -71,10 +75,11 @@ namespace MemOnlyCache
             }
             Interlocked.Add(ref storeSize, -size);
 
-            if (TotalSizeBytes > TargetSizeBytes && store.Log.ExtraLag < store.Log.BufferSize - 1)
-                store.Log.ExtraLag++;
-            else if (TotalSizeBytes < TargetSizeBytes && store.Log.ExtraLag > 0)
-                store.Log.ExtraLag--;
+            // Adjust empty page count to drive towards desired memory utilization
+            if (TotalSizeBytes > TargetSizeBytes)
+                store.Log.EmptyPageCount++;
+            else if (TotalSizeBytes < TargetSizeBytes)
+                store.Log.EmptyPageCount--;
         }
         public void OnCompleted() { }
         public void OnError(Exception error) { }
