@@ -658,19 +658,19 @@ namespace FASTER.core
                 if (value >= headOffsetLagSize) return;
                 if (value < 0) return;
 
-                var oldLag = extraLag;
-                extraLag = value;
+                int oldLag;
+                lock (this) // linearize all setters of ExtraLag
+                {
+                    oldLag = extraLag;
+                    extraLag = value;
+                    headOffsetLagSize -= extraLag;
 
-                headOffsetLagSize -= extraLag;
-
-                // ReadOnlyOffset lag (from tail)
-                ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
-
-                // HeadOffset lag (from tail)
-                HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
+                    ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
+                    HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
+                }
 
                 // Force eviction
-                if (extraLag > oldLag)
+                if (value > oldLag)
                 {
                     var _tailAddress = GetTailAddress();
                     PageAlignedShiftReadOnlyAddress(_tailAddress);
