@@ -101,14 +101,14 @@ namespace FASTER.core
         protected readonly int SegmentBufferSize;
 
         /// <summary>
-        /// HeadOffset lag (from tail)
+        /// How many pages we leave empty between tail and head
         /// </summary>
-        protected readonly bool HeadOffsetExtraLag;
+        private int extraLag;
 
         /// <summary>
         /// HeadOFfset lag address
         /// </summary>
-        protected readonly long HeadOffsetLagAddress;
+        protected long HeadOffsetLagAddress;
 
         /// <summary>
         /// Log mutable fraction
@@ -117,7 +117,7 @@ namespace FASTER.core
         /// <summary>
         /// ReadOnlyOffset lag (from tail)
         /// </summary>
-        protected readonly long ReadOnlyLagAddress;
+        protected long ReadOnlyLagAddress;
 
         #endregion
 
@@ -552,15 +552,9 @@ namespace FASTER.core
             BufferSize = (int)(LogTotalSizeBytes / (1L << LogPageSizeBits));
             BufferSizeMask = BufferSize - 1;
 
-            // HeadOffset lag (from tail).
-            var headOffsetLagSize = BufferSize - 1; // (ReadCache ? ReadCacheHeadOffsetLagNumPages : HeadOffsetLagNumPages);
-            if (BufferSize > 1 && HeadOffsetExtraLag) headOffsetLagSize--;
-
-            HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
-
-            // ReadOnlyOffset lag (from tail). This should not exceed HeadOffset lag.
             LogMutableFraction = settings.MutableFraction;
-            ReadOnlyLagAddress = Math.Min((long)(LogMutableFraction * BufferSize) << LogPageSizeBits, HeadOffsetLagAddress);
+
+            ExtraLag = 0;
 
             // Segment size
             LogSegmentSizeBits = settings.SegmentSizeBits;
@@ -649,6 +643,41 @@ namespace FASTER.core
             OnEvictionObserver?.OnCompleted();
         }
 
+
+        /// <summary>
+        /// How many pages we leave empty between tail and head
+        /// </summary>
+        public int ExtraLag
+        {
+            get => extraLag;
+
+            set
+            {
+                // HeadOffset lag (from tail).
+                var headOffsetLagSize = BufferSize - 1;
+                if (value >= headOffsetLagSize) return;
+                if (value < 0) return;
+
+                var oldLag = extraLag;
+                extraLag = value;
+
+                headOffsetLagSize -= extraLag;
+
+                // ReadOnlyOffset lag (from tail)
+                ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
+
+                // HeadOffset lag (from tail)
+                HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
+
+                // Force eviction
+                if (extraLag > oldLag)
+                {
+                    var _tailAddress = GetTailAddress();
+                    PageAlignedShiftReadOnlyAddress(_tailAddress);
+                    PageAlignedShiftHeadAddress(_tailAddress);
+                }
+            }
+        }
         /// <summary>
         /// Delete in-memory portion of the log
         /// </summary>

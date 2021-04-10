@@ -55,7 +55,6 @@ namespace MemOnlyCache
 
         static FasterKV<CacheKey, CacheValue> h;
         static CacheSizeTracker sizeTracker;
-
         static long totalReads = 0;
 
         static void Main()
@@ -82,7 +81,7 @@ namespace MemOnlyCache
             var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)); 
 
             h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, comparer: new CacheKey());
-            sizeTracker = new CacheSizeTracker(h, logSettings.MemorySizeBits);
+            sizeTracker = new CacheSizeTracker(h, logSettings.MemorySizeBits, 1_000_000_000);
 
             PopulateStore(numRecords);
             ContinuousRandomWorkload();
@@ -155,17 +154,20 @@ namespace MemOnlyCache
                 if ((i % 256 == 0) && (i > 0))
                 {
                     Interlocked.Add(ref totalReads, 256);
-                    if (i % (1024 * 1024 * 16) == 0) // report after every 16M ops
+                    if (i % (1024 * 1024 * 4) == 0) // report after every 8M ops
                     {
-                        Console.WriteLine("Hit rate: {0:N2}; Memory footprint: {1:N2}KB", statusFound / (double)(statusFound + statusNotFound), sizeTracker.TotalSize / (double)1024);
+                        // Optional: perform GC collection to verify accurate memory reporting in task manager
+                        // GC.Collect();
+                        // GC.WaitForFullGCComplete();
+                        Console.WriteLine("Hit rate: {0:N2}; Memory footprint: {1:N2}KB", statusFound / (double)(statusFound + statusNotFound), sizeTracker.TotalSizeBytes / (double)1024);
 
-                        // GC -> report -> pause to verify accurate memory reporting
-                        /*
-                        GC.Collect();
-                        GC.WaitForFullGCComplete();
-                        Console.WriteLine("Hit rate: {0:N2}; Memory footprint: {1:N2}KB", statusFound / (double)(statusFound + statusNotFound), sizeTracker.TotalSize / (double)1024);
-                        Thread.Sleep(1000000);
-                        */
+                        // As demo, reduce target size by 50MB each time we report memory footprint
+                        long targetSize = sizeTracker.TotalSizeBytes - 50_000_000;
+                        if (targetSize > 200_000_000)
+                        {
+                            Console.WriteLine("Setting target size in bytes: {0:N2}", targetSize);
+                            sizeTracker.SetTargetSizeBytes(targetSize);
+                        }
                     }
                 }
                 int op = WritePercent == 0 ? 0 : rnd.Next(100);

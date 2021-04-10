@@ -63,6 +63,20 @@ namespace FASTER.core
         public int FixedRecordSize => allocator.GetFixedRecordSize();
 
         /// <summary>
+        /// Extra lag
+        /// </summary>
+        public int ExtraLag
+        {
+            get => allocator.ExtraLag;
+            set { allocator.ExtraLag = value; }
+        }
+
+        /// <summary>
+        /// Circular buffer size
+        /// </summary>
+        public int BufferSize => allocator.BufferSize;
+
+        /// <summary>
         /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.
         /// </summary>
         /// <param name="untilAddress">Address to shift begin address until</param>
