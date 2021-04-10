@@ -108,10 +108,14 @@ namespace AsyncStress
             {
                 Interlocked.Increment(ref ReadPendingCount);
                 session.CompletePending(out var completedOutputs, spinWait: true);
-                Assert.Equal(1, completedOutputs.Outputs.Count);
-                Assert.Equal(key, completedOutputs.Outputs[0].Key);
-                result = (Status.OK, completedOutputs.Outputs[0].Output);
+                int count = 0;
+                for (; completedOutputs.Next(); ++count)
+                {
+                    Assert.Equal(key, completedOutputs.Current.Key);
+                    result = (Status.OK, completedOutputs.Current.Output);
+                }
                 completedOutputs.Dispose();
+                Assert.Equal(1, count);
             }
             _sessionPool.Return(session);
             return new ValueTask<(Status, int)>(result);

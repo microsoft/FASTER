@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Linq;
 using FASTER.core;
 using NUnit.Framework;
 
@@ -17,7 +16,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/CompletePendingTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>(128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
         }
 
@@ -29,7 +28,7 @@ namespace FASTER.test
             log.Dispose();
         }
 
-        const int numRecords = 500;
+        const int numRecords = 1000;
 
         static KeyStruct NewKeyStruct(int key) => new KeyStruct { kfield1 = key, kfield2 = key + numRecords * 10 };
         static ValueStruct NewValueStruct(int key) => new ValueStruct { vfield1 = key, vfield2 = key + numRecords * 10 };
@@ -37,7 +36,7 @@ namespace FASTER.test
         static InputStruct NewInputStruct(int key) => new InputStruct { ifield1 = key + numRecords * 30, ifield2 = key + numRecords * 40 };
         static ContextStruct NewContextStruct(int key) => new ContextStruct { cfield1 = key + numRecords * 50, cfield2 = key + numRecords * 60 };
 
-        static void VerifyStructs(int key, ref KeyStruct keyStruct, ref InputStruct inputStruct, OutputStruct outputStruct, ContextStruct contextStruct)
+        static void VerifyStructs(int key, ref KeyStruct keyStruct, ref InputStruct inputStruct, ref OutputStruct outputStruct, ref ContextStruct contextStruct)
         {
             Assert.AreEqual(key, keyStruct.kfield1);
             Assert.AreEqual(key + numRecords * 10, keyStruct.kfield2);
@@ -52,11 +51,11 @@ namespace FASTER.test
 
         class ProcessPending
         {
-            // Get the first few outputs in a group.
-            int deferredPendingMax = 0;
-            int deferredPending = 0;
+            // Get the first chunk of outputs as a group, testing realloc.
+            internal int deferredPendingMax = CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc + 1;
+            internal int deferredPending = 0;
 
-            internal void Process(Func<FasterKV<KeyStruct, ValueStruct>.CompletedOutputs<InputStruct, OutputStruct, ContextStruct>> completePendingFunc)
+            internal void Process(Func<CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>> completePendingFunc)
             {
                 if (deferredPending < deferredPendingMax)
                 {
@@ -66,17 +65,25 @@ namespace FASTER.test
 
                 // Get all pending outputs
                 var completedOutputs = completePendingFunc();
-                Assert.AreEqual(deferredPending + 1, completedOutputs.Outputs.Count);
 
-                foreach (var output in completedOutputs.Outputs)
+                Assert.AreEqual(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc *
+                                CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kReallocMultuple, completedOutputs.vector.Length);
+                Assert.AreEqual(deferredPending, completedOutputs.maxIndex);
+                Assert.AreEqual(-1, completedOutputs.currentIndex);
+
+                var count = 0;
+                for (; completedOutputs.Next(); ++count)
                 {
-                    var result = output;
-                    VerifyStructs((int)result.Key.kfield1, ref result.Key, ref result.Input, result.Output, result.Context);
+                    ref var result = ref completedOutputs.Current;
+                    VerifyStructs((int)result.Key.kfield1, ref result.Key, ref result.Input, ref result.Output, ref result.Context);
                 }
                 completedOutputs.Dispose();
+                Assert.AreEqual(deferredPending + 1, count);
+                Assert.AreEqual(-1, completedOutputs.maxIndex);
+                Assert.AreEqual(-1, completedOutputs.currentIndex);
+
                 deferredPending = 0;
-                if (deferredPendingMax > 0)
-                    --deferredPendingMax;
+                deferredPendingMax /= 2;
             }
         }
 
@@ -84,9 +91,8 @@ namespace FASTER.test
         [Category("FasterKV")]
         public void ReadAndCompleteWithPendingOutput()
         {
-            OutputStruct outputStruct = default;
-
             using var session = fht.For(new FunctionsWithContext<ContextStruct>()).NewSession<FunctionsWithContext<ContextStruct>>();
+            Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
 
             for (var ii = 0; ii < numRecords; ++ii)
             {
@@ -97,31 +103,42 @@ namespace FASTER.test
 
             // Flush to make reads go pending.
             fht.Log.FlushAndEvict(wait: true);
-
-            var processPending = new ProcessPending();
+            ProcessPending processPending = null;
 
             for (var ii = 0; ii < numRecords; ++ii)
             {
                 var keyStruct = NewKeyStruct(ii);
                 var inputStruct = NewInputStruct(ii);
                 var contextStruct = NewContextStruct(ii);
+                OutputStruct outputStruct = default;
 
                 // We don't use input or context, but we test that they were carried through correctly.
                 var status = session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
                 if (status == Status.PENDING)
+                {
+                    if (processPending is null)
+                    {
+                        session.CompletePending(spinWait: true);
+                        Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
+                        processPending = new ProcessPending();
+                        continue;
+                    }
                     processPending.Process(() => { session.CompletePending(out var completedOutputs, spinWait: true); return completedOutputs; });
-                else
-                    Assert.IsTrue(status == Status.OK);
+                    continue;
+                }
+                Assert.IsTrue(status == Status.OK);
             }
+
+            Assert.AreEqual(0, processPending.deferredPendingMax);  // This implicitly does a null check as well as ensures processing actually happened
+            Assert.AreEqual(0, processPending.deferredPending);
         }
 
         [Test]
         [Category("FasterKV")]
         public void AdvReadAndCompleteWithPendingOutput()
         {
-            OutputStruct outputStruct = default;
-
             using var session = fht.For(new AdvancedFunctionsWithContext<ContextStruct>()).NewSession<AdvancedFunctionsWithContext<ContextStruct>>();
+            Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
 
             for (var ii = 0; ii < numRecords; ++ii)
             {
@@ -132,22 +149,34 @@ namespace FASTER.test
 
             // Flush to make reads go pending.
             fht.Log.FlushAndEvict(wait: true);
-
-            var processPending = new ProcessPending();
+            ProcessPending processPending = null;
 
             for (var ii = 0; ii < numRecords; ++ii)
             {
                 var keyStruct = NewKeyStruct(ii);
                 var inputStruct = NewInputStruct(ii);
                 var contextStruct = NewContextStruct(ii);
+                OutputStruct outputStruct = default;
 
                 // We don't use input or context, but we test that they were carried through correctly.
                 var status = session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
                 if (status == Status.PENDING)
+                {
+                    if (processPending is null)
+                    {
+                        session.CompletePending(spinWait: true);
+                        Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
+                        processPending = new ProcessPending();
+                        continue;
+                    }
                     processPending.Process(() => { session.CompletePending(out var completedOutputs, spinWait: true); return completedOutputs; });
-                else
-                    Assert.IsTrue(status == Status.OK);
+                    continue;
+                }
+                Assert.IsTrue(status == Status.OK);
             }
+
+            Assert.AreEqual(0, processPending.deferredPendingMax);  // This implicitly does a null check as well as ensures processing actually happened
+            Assert.AreEqual(0, processPending.deferredPending);
         }
     }
 }

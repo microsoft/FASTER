@@ -1305,9 +1305,11 @@ namespace FASTER.core
                     return OperationStatus.NOTFOUND;
 
                 // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
-                ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
+                // With the new overload of CompletePending that returns CompletedOutputs, pendingContext must have the key.
+                if (pendingContext.NoKey)
+                    pendingContext.key = hlog.GetKeyContainer(ref hlog.GetContextRecordKey(ref request));
 
-                fasterSession.SingleReader(ref key, ref pendingContext.input.Get(),
+                fasterSession.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input.Get(),
                                        ref hlog.GetContextRecordValue(ref request), ref pendingContext.output, request.logicalAddress);
 
                 if ((CopyReadsToTail != CopyReadsToTail.None && !pendingContext.SkipCopyReadsToTail) || (UseReadCache && !pendingContext.SkipReadCache))

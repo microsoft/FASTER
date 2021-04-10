@@ -35,7 +35,7 @@ namespace FASTER.core
         internal readonly IVariableLengthStruct<Value, Input> variableLengthStruct;
         internal readonly IVariableLengthStruct<Input> inputVariableLengthStruct;
 
-        internal FasterKV<Key, Value>.CompletedOutputs<Input, Output, Context> pendingResults;
+        internal CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs;
 
         internal readonly InternalFasterSession FasterSession;
 
@@ -145,7 +145,7 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
-            this.pendingResults?.Dispose();
+            this.completedOutputs?.Dispose();
             CompletePending(true);
             fht.DisposeClientSession(ID);
 
@@ -665,7 +665,7 @@ namespace FASTER.core
         /// <param name="spinWaitForCommit">Extend spin-wait until ongoing commit/checkpoint, if any, completes</param>
         /// <returns></returns>
         public bool CompletePending(bool spinWait = false, bool spinWaitForCommit = false)
-            => CompletePending(null, spinWait, spinWaitForCommit);
+            => CompletePending(false, spinWait, spinWaitForCommit);
 
         /// <summary>
         /// Sync complete all outstanding pending operations
@@ -675,23 +675,24 @@ namespace FASTER.core
         /// <param name="spinWait">Spin-wait for all pending operations on session to complete</param>
         /// <param name="spinWaitForCommit">Extend spin-wait until ongoing commit/checkpoint, if any, completes</param>
         /// <returns></returns>
-        public bool CompletePending(out FasterKV<Key, Value>.CompletedOutputs<Input, Output, Context> completedOutputs, bool spinWait = false, bool spinWaitForCommit = false)
+        public bool CompletePending(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool spinWait = false, bool spinWaitForCommit = false)
         {
-            if (this.pendingResults is null)
-                this.pendingResults = new FasterKV<Key, Value>.CompletedOutputs<Input, Output, Context>();
+            if (this.completedOutputs is null)
+                this.completedOutputs = new CompletedOutputIterator<Key, Value, Input, Output, Context>();
             else
-                this.pendingResults.Dispose();
-            var result = CompletePending(this.pendingResults.outputList, spinWait, spinWaitForCommit);
-            completedOutputs = this.pendingResults;
+                this.completedOutputs.Dispose();
+            var result = CompletePending(true, spinWait, spinWaitForCommit);
+            completedOutputs = this.completedOutputs;
             return result;
         }
 
-        private bool CompletePending(List<FasterKV<Key, Value>.CompletedOutput<Input, Output, Context>> completedOutputs, bool spinWait = false, bool spinWaitForCommit = false)
+        private bool CompletePending(bool getOutputs, bool spinWait, bool spinWaitForCommit)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                var result = fht.InternalCompletePending(ctx, FasterSession, spinWait, completedOutputs);
+                var requestedOutputs = getOutputs ? this.completedOutputs : default;
+                var result = fht.InternalCompletePending(ctx, FasterSession, spinWait, requestedOutputs);
                 if (spinWaitForCommit)
                 {
                     if (spinWait != true)
@@ -700,10 +701,10 @@ namespace FASTER.core
                     }
                     do
                     {
-                        fht.InternalCompletePending(ctx, FasterSession, spinWait, completedOutputs);
+                        fht.InternalCompletePending(ctx, FasterSession, spinWait, requestedOutputs);
                         if (fht.InRestPhase())
                         {
-                            fht.InternalCompletePending(ctx, FasterSession, spinWait, completedOutputs);
+                            fht.InternalCompletePending(ctx, FasterSession, spinWait, requestedOutputs);
                             return true;
                         }
                     } while (spinWait);

@@ -143,7 +143,7 @@ namespace FASTER.core
         internal bool InternalCompletePending<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> ctx, 
             FasterSession fasterSession, 
-            bool wait = false, List<CompletedOutput<Input, Output, Context>> completedOutputs = null)
+            bool wait = false, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             do
@@ -280,7 +280,7 @@ namespace FASTER.core
         internal void InternalCompletePendingRequests<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> opCtx, 
             FasterExecutionContext<Input, Output, Context> currentCtx, 
-            FasterSession fasterSession, List<CompletedOutput<Input, Output, Context>> completedOutputs = null)
+            FasterSession fasterSession, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             hlog.TryComplete();
@@ -329,7 +329,7 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> opCtx, 
             FasterExecutionContext<Input, Output, Context> currentCtx, 
             FasterSession fasterSession, 
-            AsyncIOContext<Key, Value> request, List<CompletedOutput<Input, Output, Context>> completedOutputs = null)
+            AsyncIOContext<Key, Value> request, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (opCtx.ioPendingRequests.TryGetValue(request.id, out var pendingContext))
@@ -338,7 +338,7 @@ namespace FASTER.core
                 opCtx.ioPendingRequests.Remove(request.id);
                 InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
                 if (completedOutputs is { })
-                    completedOutputs.Add(new CompletedOutput<Input, Output, Context>(pendingContext.DetachKey(), pendingContext.DetachInput(), ref pendingContext.output, ref pendingContext.userContext));
+                    completedOutputs.Add(pendingContext.DetachKey(), pendingContext.DetachInput(), ref pendingContext.output, ref pendingContext.userContext);
                 pendingContext.Dispose();
             }
         }
