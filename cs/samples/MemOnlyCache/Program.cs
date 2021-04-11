@@ -19,7 +19,12 @@ namespace MemOnlyCache
         const int DbSize = 10_000_000;
 
         /// <summary>
-        /// Max value size
+        /// Max key size; we choose actual size randomly
+        /// </summary>
+        const int MaxKeySize = 100;
+
+        /// <summary>
+        /// Max value size; we choose actual size randomly
         /// </summary>
         const int MaxValueSize = 1000;
 
@@ -98,7 +103,7 @@ namespace MemOnlyCache
             for (int i = 0; i < count; i++)
             {
                 int k = r.Next(DbSize);
-                var key = new CacheKey(k);
+                var key = new CacheKey(k, 1 + r.Next(MaxKeySize - 1));
                 var value = new CacheValue(1 + r.Next(MaxValueSize - 1), (byte)key.key);
                 s.Upsert(ref key, ref value);
             }
@@ -166,7 +171,7 @@ namespace MemOnlyCache
                 int op = WritePercent == 0 ? 0 : rnd.Next(100);
                 long k = UseUniform ? rnd.Next(DbSize) : zipf.Next();
 
-                var key = new CacheKey(k);
+                var key = new CacheKey(k, 1 + rnd.Next(MaxKeySize - 1));
 
                 if (op < WritePercent)
                 {
