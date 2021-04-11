@@ -48,7 +48,7 @@ namespace MemOnlyCache
         }
 
         /// <summary>
-        /// Set target total memory size for FASTER
+        /// Set target total memory size (in bytes) for the FASTER store
         /// </summary>
         /// <param name="newTargetSize">Target size</param>
         public void SetTargetSizeBytes(long newTargetSize)
@@ -62,8 +62,16 @@ namespace MemOnlyCache
                 TargetSizeBytes = newTargetSize;
         }
 
+        /// <summary>
+        /// Add to the tracked size of FASTER. This is called by IFunctions as well as the subscriber to evictions (OnNext)
+        /// </summary>
+        /// <param name="size"></param>
         public void AddTrackedSize(int size) => Interlocked.Add(ref storeSize, size);
 
+        /// <summary>
+        /// Subscriber to pages as they are getting evicted from main memory
+        /// </summary>
+        /// <param name="iter"></param>
         public void OnNext(IFasterScanIterator<CacheKey, CacheValue> iter)
         {
             int size = 0;
@@ -73,7 +81,7 @@ namespace MemOnlyCache
                 if (!info.Tombstone) // ignore deleted records being evicted
                     size += value.GetSize;
             }
-            Interlocked.Add(ref storeSize, -size);
+            AddTrackedSize(-size);
 
             // Adjust empty page count to drive towards desired memory utilization
             if (TotalSizeBytes > TargetSizeBytes)

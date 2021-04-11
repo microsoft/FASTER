@@ -56,7 +56,7 @@ namespace MemOnlyCache
         static FasterKV<CacheKey, CacheValue> h;
         static CacheSizeTracker sizeTracker;
         static long totalReads = 0;
-        static long targetSize = 1_000_000_000; // target size for FASTER, we vary this during the run
+        static long targetSize = 1L << 30; // target size for FASTER, we vary this during the run
 
         // Cache hit stats
         static long statusNotFound = 0;
@@ -82,13 +82,16 @@ namespace MemOnlyCache
             // (8-byte key + 8-byte value + 8-byte header = 24 bytes per record)
             int numRecords = (int)(Math.Pow(2, logSettings.MemorySizeBits) / 24);
 
-            // Targeting 1 record per bucket
+            // Set hash table size targeting 1 record per bucket
             var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)); 
 
             h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, comparer: new CacheKey());
-            sizeTracker = new CacheSizeTracker(h, logSettings.MemorySizeBits, 1_000_000_000);
+            sizeTracker = new CacheSizeTracker(h, logSettings.MemorySizeBits, targetSize);
 
+            // Initially populate store
             PopulateStore(numRecords);
+
+            // Run continuous read/upsert workload
             ContinuousRandomWorkload();
             
             h.Dispose();
@@ -148,14 +151,14 @@ namespace MemOnlyCache
                 count++;
                 if (count % 4 == 0)
                 {
-                    if (targetSize > 300_000_000)
+                    if (targetSize > 1L << 28)
                     {
-                        targetSize -= 100_000_000;
+                        targetSize -= 1L << 27;
                         sizeTracker.SetTargetSizeBytes(targetSize);
                     }
                     else
                     {
-                        targetSize = 1_000_000_000;
+                        targetSize = 1L << 30;
                         sizeTracker.SetTargetSizeBytes(targetSize);
                     }
                     Console.WriteLine("**** Setting target memory: {0,11:N2}KB", targetSize / 1024.0);
