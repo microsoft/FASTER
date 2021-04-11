@@ -89,7 +89,16 @@ namespace MemOnlyCache
             else if (TotalSizeBytes < TargetSizeBytes)
                 store.Log.EmptyPageCount--;
         }
+
+        /// <summary>
+        /// OnCompleted
+        /// </summary>
         public void OnCompleted() { }
+
+        /// <summary>
+        /// OnError
+        /// </summary>
+        /// <param name="error"></param>
         public void OnError(Exception error) { }
     }
 }
