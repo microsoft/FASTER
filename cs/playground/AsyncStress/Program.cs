@@ -123,16 +123,16 @@ namespace AsyncStress
                 else
                 {
                     Debug.Assert(upsertThreadingMode == ThreadingMode.Chunks);
-                    var writeTasks = new ValueTask[numTasks];
+                    var chunkTasks = new ValueTask[numTasks];
                     for (int ii = 0; ii < numTasks; ii++)
                     {
                         var chunk = new (int, int)[chunkSize];
                         for (int i = 0; i < chunkSize; i++) chunk[i] = (ii * chunkSize + i, ii * chunkSize + i);
-                        writeTasks[ii] = store.UpsertChunkAsync(chunk);
+                        chunkTasks[ii] = store.UpsertChunkAsync(chunk);
                     }
-                    foreach (var task in writeTasks)
-                        await task;
-                }
+                    foreach (var chunkTask in chunkTasks)
+                        await chunkTask;
+                }   
                 sw.Stop();
                 Console.WriteLine($"    Insertion complete in {sw.ElapsedMilliseconds} ms; TailAddress = {store.TailAddress}, Pending = {store.UpsertPendingCount}");
             }
@@ -165,7 +165,7 @@ namespace AsyncStress
                         await task;
                 }
                 else if (readThreadingMode == ThreadingMode.ParallelSync)
-                { 
+                {
                     // Without throttling parallelism, this ends up very slow with many threads waiting on completion.
                     var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = numTasks };
                     Parallel.For(0, numOperations, parallelOptions, key => readTasks[key] = store.Read(key));
@@ -183,8 +183,6 @@ namespace AsyncStress
                     }).ToArray();
                     foreach (var chunkTask in chunkTasks)
                         await chunkTask;
-                    foreach (var task in readTasks)
-                        await task;
                 }
 
                 sw.Stop();

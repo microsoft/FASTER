@@ -117,17 +117,30 @@ namespace AsyncStress
             return new ValueTask<(Status, Value)>(result);
         }
 
-        public async ValueTask ReadChunkAsync(Key[] chunk, ValueTask<(Status, Value)>[] readTasks, int offset)
+        public async ValueTask ReadChunkAsync(Key[] chunk, ValueTask<(Status, Value)>[] results, int offset)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
 
+            // Reads in chunk are performed serially
             for (var ii = 0; ii < chunk.Length; ++ii)
-            {
-                readTasks[offset + ii] = new ValueTask<(Status, Value)>((await session.ReadAsync(chunk[ii]).ConfigureAwait(false)).Complete());
-            }
+                results[offset + ii] = new ValueTask<(Status, Value)>((await session.ReadAsync(chunk[ii])).Complete());
             _sessionPool.Return(session);
         }
+
+        public async ValueTask<(Status, Value)[]> ReadChunkAsync(Key[] chunk)
+        {
+            if (!_sessionPool.TryGet(out var session))
+                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
+
+            // Reads in chunk are performed serially
+            (Status, Value)[] result = new (Status, Value)[chunk.Length];
+            for (var ii = 0; ii < chunk.Length; ++ii)
+                result[ii] = (await session.ReadAsync(chunk[ii]).ConfigureAwait(false)).Complete();
+            _sessionPool.Return(session);
+            return result;
+        }
+
 
         public void Dispose()
         {
