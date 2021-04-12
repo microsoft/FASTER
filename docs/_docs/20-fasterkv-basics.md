@@ -127,8 +127,11 @@ You can then perform a sequence of read, upsert, and RMW operations on the sessi
 #### Read
 
 ```cs
+// Sync
 var status = session.Read(ref key, ref output);
 var status = session.Read(ref key, ref input, ref output, context, serialNo);
+
+// Async
 var (status, output) = (await session.ReadAsync(key, input)).Complete();
 ```
 
@@ -142,7 +145,7 @@ var status = session.Upsert(ref key, ref value, context, serialNo);
 // Async with sync operation completion
 var status = (await s1.UpsertAsync(ref key, ref value)).Complete();
 
-// Fully async
+// Fully async (completions may themselves need to go async)
 var r = await session.UpsertAsync(ref key, ref value);
 while (r.Status == Status.PENDING)
    r = await r.CompleteAsync();
