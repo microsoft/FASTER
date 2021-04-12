@@ -658,27 +658,27 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Sync complete all outstanding pending operations
-        /// Async operations (ReadAsync) must be completed individually
+        /// Synchronously complete outstanding pending synchronous operations.
+        /// Async operations must be completed individually.
         /// </summary>
-        /// <param name="spinWait">Spin-wait for all pending operations on session to complete</param>
-        /// <param name="spinWaitForCommit">Extend spin-wait until ongoing commit/checkpoint, if any, completes</param>
-        /// <returns></returns>
-        public bool CompletePending(bool spinWait = false, bool spinWaitForCommit = false)
-            => CompletePending(false, spinWait, spinWaitForCommit);
+        /// <param name="wait">Wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
+            => CompletePending(false, wait, spinWaitForCommit);
 
         /// <summary>
-        /// Sync complete all outstanding pending operations
-        /// Async operations (ReadAsync) must be completed individually
+        /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
+        /// Async operations must be completed individually.
         /// </summary>
         /// <param name="completedOutputs">Outputs completed by this operation</param>
-        /// <param name="spinWait">Spin-wait for all pending operations on session to complete</param>
-        /// <param name="spinWaitForCommit">Extend spin-wait until ongoing commit/checkpoint, if any, completes</param>
-        /// <returns></returns>
-        public bool CompletePending(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool spinWait = false, bool spinWaitForCommit = false)
+        /// <param name="wait">Wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
             InitializeCompletedOutputs();
-            var result = CompletePending(true, spinWait, spinWaitForCommit);
+            var result = CompletePending(true, wait, spinWaitForCommit);
             completedOutputs = this.completedOutputs;
             return result;
         }
@@ -724,17 +724,17 @@ namespace FASTER.core
 
         /// <summary>
         /// Complete all pending synchronous FASTER operations.
-        /// Async operations must be completed individually
+        /// Async operations must be completed individually.
         /// </summary>
         /// <returns></returns>
         public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
             => CompletePendingAsync(false, waitForCommit, token);
 
         /// <summary>
-        /// Complete all pending synchronous FASTER operations and return completed outputs.
-        /// Async operations must be completed individually
+        /// Complete all pending synchronous FASTER operations, returning outputs for the completed operations.
+        /// Async operations must be completed individually.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Outputs completed by this operation</returns>
         public async ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
         {
             InitializeCompletedOutputs();

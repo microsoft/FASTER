@@ -107,7 +107,7 @@ namespace AsyncStress
             if (result.status == Status.PENDING)
             {
                 Interlocked.Increment(ref ReadPendingCount);
-                session.CompletePending(out var completedOutputs, spinWait: true);
+                session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 int count = 0;
                 for (; completedOutputs.Next(); ++count)
                 {

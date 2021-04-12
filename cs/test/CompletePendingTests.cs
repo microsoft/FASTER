@@ -140,7 +140,7 @@ namespace FASTER.test
                 {
                     if (processPending.IsFirst())
                     {
-                        session.CompletePending(spinWait: true);    // Test that this does not instantiate CompletedOutputIterator
+                        session.CompletePending(wait: true);    // Test that this does not instantiate CompletedOutputIterator
                         Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
                         continue;
                     }
@@ -151,7 +151,7 @@ namespace FASTER.test
                         if (isAsync)
                             completedOutputs = await session.CompletePendingWithOutputsAsync();
                         else
-                            session.CompletePending(out completedOutputs, spinWait: true);
+                            session.CompletePendingWithOutputs(out completedOutputs, wait: true);
                         processPending.Process(completedOutputs);
                     }
                     continue;
@@ -194,7 +194,7 @@ namespace FASTER.test
                 {
                     if (processPending.IsFirst())
                     {
-                        session.CompletePending(spinWait: true);    // Test that this does not instantiate CompletedOutputIterator
+                        session.CompletePending(wait: true);    // Test that this does not instantiate CompletedOutputIterator
                         Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
                         continue;
                     }
@@ -205,7 +205,7 @@ namespace FASTER.test
                         if (isAsync)
                             completedOutputs = await session.CompletePendingWithOutputsAsync();
                         else
-                            session.CompletePending(out completedOutputs, spinWait: true);
+                            session.CompletePendingWithOutputs(out completedOutputs, wait: true);
                         processPending.Process(completedOutputs);
                     }
                     continue;
