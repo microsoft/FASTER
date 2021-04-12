@@ -2,22 +2,29 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
+using System;
 using System.Threading;
 
 namespace MemOnlyCache
 {
-    public struct CacheKey : IFasterEqualityComparer<CacheKey>
+    public class CacheKey : IFasterEqualityComparer<CacheKey>
     {
         public long key;
+        public byte[] extra;
 
-        public CacheKey(long first)
+        public CacheKey() { }
+
+        public CacheKey(long key, int extraSize = 0)
         {
-            key = first;
+            this.key = key;
+            extra = new byte[extraSize];
         }
 
         public long GetHashCode64(ref CacheKey key) => Utility.GetHashCode(key.key);
 
         public bool Equals(ref CacheKey k1, ref CacheKey k2) => k1.key == k2.key;
+
+        public int GetSize => sizeof(long) + extra.Length + 48; // heap size incl. ~48 bytes ref/array overheads
     }
 
     public sealed class CacheValue
@@ -55,7 +62,7 @@ namespace MemOnlyCache
         public override void SingleWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst)
         {
             dst = src;
-            sizeTracker.AddSize(src.GetSize);
+            sizeTracker.AddSize(key.GetSize + src.GetSize);
         }
 
         public override void ConcurrentDeleter(ref CacheKey key, ref CacheValue value, ref RecordInfo recordInfo, long address)

@@ -33,8 +33,9 @@ namespace MemOnlyCache
         public void OnNext(IFasterScanIterator<CacheKey, CacheValue> iter)
         {
             int size = 0;
-            while (iter.GetNext(out RecordInfo info, out _, out CacheValue value))
+            while (iter.GetNext(out RecordInfo info, out CacheKey key, out CacheValue value))
             {
+                size += key.GetSize;
                 if (!info.Tombstone) // ignore deleted records being evicted
                     size += value.GetSize;
             }
