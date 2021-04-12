@@ -691,28 +691,28 @@ namespace FASTER.core
                 this.completedOutputs.Dispose();
         }
 
-        private bool CompletePending(bool getOutputs, bool spinWait, bool spinWaitForCommit)
+        private bool CompletePending(bool getOutputs, bool wait, bool spinWaitForCommit)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
                 var requestedOutputs = getOutputs ? this.completedOutputs : default;
-                var result = fht.InternalCompletePending(ctx, FasterSession, spinWait, requestedOutputs);
+                var result = fht.InternalCompletePending(ctx, FasterSession, wait, requestedOutputs);
                 if (spinWaitForCommit)
                 {
-                    if (spinWait != true)
+                    if (wait != true)
                     {
-                        throw new FasterException("Can spin-wait for checkpoint completion only if spinWait is true");
+                        throw new FasterException("Can spin-wait for commit (checkpoint completion) only if wait is true");
                     }
                     do
                     {
-                        fht.InternalCompletePending(ctx, FasterSession, spinWait, requestedOutputs);
+                        fht.InternalCompletePending(ctx, FasterSession, wait, requestedOutputs);
                         if (fht.InRestPhase())
                         {
-                            fht.InternalCompletePending(ctx, FasterSession, spinWait, requestedOutputs);
+                            fht.InternalCompletePending(ctx, FasterSession, wait, requestedOutputs);
                             return true;
                         }
-                    } while (spinWait);
+                    } while (wait);
                 }
                 return result;
             }

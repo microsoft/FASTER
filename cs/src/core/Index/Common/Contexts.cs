@@ -176,6 +176,22 @@ namespace FASTER.core
                 }
             }
 
+            public void WaitPending(LightEpoch epoch)
+            {
+                if (SyncIoPendingCount > 0)
+                {
+                    try
+                    {
+                        epoch.Suspend();
+                        readyResponses.WaitForEntry();
+                    }
+                    finally
+                    {
+                        epoch.Resume();
+                    }
+                }
+            }
+
             public FasterExecutionContext<Input, Output, Context> prevCtx;
         }
     }

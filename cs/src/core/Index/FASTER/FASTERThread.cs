@@ -146,7 +146,7 @@ namespace FASTER.core
             bool wait = false, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            do
+            while (true)
             {
                 bool done = true;
 
@@ -157,8 +157,7 @@ namespace FASTER.core
                     {
                         InternalCompletePendingRequests(ctx.prevCtx, ctx, fasterSession, completedOutputs);
                         InternalCompleteRetryRequests(ctx.prevCtx, ctx, fasterSession);
-                        InternalRefresh(ctx, fasterSession);
-
+                        if (wait) ctx.prevCtx.WaitPending(epoch);
                         done &= (ctx.prevCtx.HasNoPendingRequests);
                     }
                 }
@@ -166,24 +165,16 @@ namespace FASTER.core
 
                 InternalCompletePendingRequests(ctx, ctx, fasterSession, completedOutputs);
                 InternalCompleteRetryRequests(ctx, ctx, fasterSession);
-
+                if (wait) ctx.WaitPending(epoch);
                 done &= (ctx.HasNoPendingRequests);
 
-                if (done)
-                {
-                    return true;
-                }
+                if (done) return true;
 
                 InternalRefresh(ctx, fasterSession);
 
-                if (wait)
-                {
-                    // Yield before checking again
-                    Thread.Yield();
-                }
-            } while (wait);
-
-            return false;
+                if (!wait) return false;
+                Thread.Yield();
+            }
         }
 
         internal bool InRestPhase() => systemState.phase == Phase.REST;
