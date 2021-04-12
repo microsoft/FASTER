@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
 
@@ -54,8 +55,8 @@ namespace FASTER.test
         class ProcessPending
         {
             // Get the first chunk of outputs as a group, testing realloc.
-            internal int deferredPendingMax = CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc + 1;
-            internal int deferredPending = 0;
+            private int deferredPendingMax = CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc + 1;
+            private int deferredPending = 0;
             internal Dictionary<int, long> keyAddressDict = new Dictionary<int, long>();
             private bool isFirst = true;
 
@@ -66,17 +67,18 @@ namespace FASTER.test
                 return temp;
             }
 
-            internal void Process(Func<CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>> completePendingFunc)
+            internal bool DeferPending()
             {
                 if (deferredPending < deferredPendingMax)
                 {
                     ++deferredPending;
-                    return;
+                    return true;
                 }
+                return false;
+            }
 
-                // Get all pending outputs
-                var completedOutputs = completePendingFunc();
-
+            internal void Process(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs)
+            {
                 Assert.AreEqual(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc *
                                 CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kReallocMultuple, completedOutputs.vector.Length);
                 Assert.AreEqual(deferredPending, completedOutputs.maxIndex);
@@ -107,7 +109,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void ReadAndCompleteWithPendingOutput()
+        public async ValueTask ReadAndCompleteWithPendingOutput([Values]bool isAsync)
         {
             using var session = fht.For(new FunctionsWithContext<ContextStruct>()).NewSession<FunctionsWithContext<ContextStruct>>();
             Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
@@ -142,7 +144,16 @@ namespace FASTER.test
                         Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
                         continue;
                     }
-                    processPending.Process(() => { session.CompletePending(out var completedOutputs, spinWait: true); return completedOutputs; });
+
+                    CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
+                    if (!processPending.DeferPending())
+                    {
+                        if (isAsync)
+                            completedOutputs = await session.CompletePendingWithOutputsAsync();
+                        else
+                            session.CompletePending(out completedOutputs, spinWait: true);
+                        processPending.Process(completedOutputs);
+                    }
                     continue;
                 }
                 Assert.IsTrue(status == Status.OK);
@@ -152,7 +163,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void AdvReadAndCompleteWithPendingOutput()
+        public async ValueTask AdvReadAndCompleteWithPendingOutput([Values]bool isAsync)
         {
             using var session = fht.For(new AdvancedFunctionsWithContext<ContextStruct>()).NewSession<AdvancedFunctionsWithContext<ContextStruct>>();
             Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
@@ -187,7 +198,16 @@ namespace FASTER.test
                         Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
                         continue;
                     }
-                    processPending.Process(() => { session.CompletePending(out var completedOutputs, spinWait: true); return completedOutputs; });
+
+                    if (!processPending.DeferPending())
+                    {
+                        CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
+                        if (isAsync)
+                            completedOutputs = await session.CompletePendingWithOutputsAsync();
+                        else
+                            session.CompletePending(out completedOutputs, spinWait: true);
+                        processPending.Process(completedOutputs);
+                    }
                     continue;
                 }
                 Assert.IsTrue(status == Status.OK);

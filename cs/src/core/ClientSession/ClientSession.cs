@@ -639,13 +639,18 @@ namespace FASTER.core
         /// <returns></returns>
         public bool CompletePending(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool spinWait = false, bool spinWaitForCommit = false)
         {
+            InitializeCompletedOutputs();
+            var result = CompletePending(true, spinWait, spinWaitForCommit);
+            completedOutputs = this.completedOutputs;
+            return result;
+        }
+
+        void InitializeCompletedOutputs()
+        {
             if (this.completedOutputs is null)
                 this.completedOutputs = new CompletedOutputIterator<Key, Value, Input, Output, Context>();
             else
                 this.completedOutputs.Dispose();
-            var result = CompletePending(true, spinWait, spinWaitForCommit);
-            completedOutputs = this.completedOutputs;
-            return result;
         }
 
         private bool CompletePending(bool getOutputs, bool spinWait, bool spinWaitForCommit)
@@ -684,7 +689,22 @@ namespace FASTER.core
         /// Async operations (ReadAsync) must be completed individually
         /// </summary>
         /// <returns></returns>
-        public async ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
+            => CompletePendingAsync(false, waitForCommit, token);
+
+        /// <summary>
+        /// Complete all outstanding pending operations asynchronously and return completed outputs
+        /// Async operations (ReadAsync) must be completed individually
+        /// </summary>
+        /// <returns></returns>
+        public async ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
+        {
+            InitializeCompletedOutputs();
+            await CompletePendingAsync(true, waitForCommit, token);
+            return this.completedOutputs;
+        }
+
+        private async ValueTask CompletePendingAsync(bool getOutputs, bool waitForCommit = false, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
 
@@ -692,7 +712,7 @@ namespace FASTER.core
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
             // Complete all pending operations on session
-            await fht.CompletePendingAsync(this.FasterSession, this.ctx, token);
+            await fht.CompletePendingAsync(this.FasterSession, this.ctx, token, getOutputs ? this.completedOutputs : null);
 
             // Wait for commit if necessary
             if (waitForCommit)

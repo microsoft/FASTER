@@ -161,11 +161,14 @@ The sync form of `Read`, `Upsert`, `RMW`, and `Delete` may go pending due to IO 
 
 Pending operations call the appropriate completion callback on the functions object: any or all of `ReadCompletionCallback`, `UpsertCompletionCallback`, `RMWCompletionCallback`, and `DeleteCompletionCallback` may be called, depending on the completed operation(s).
 
-Because it can be inconvenient to communicate the `Output` from `ReadCompletionCallback` to the callsite of `CompletePending()`, there is an overload of `CompletePending()` that returns an iterator over the `Output`s that were completed.
+There is an overload of `CompletePending()` and a `CompletePendingWithOutputsAsync()` that return an iterator over the `Output`s that were completed.
 
 ```cs
-session.CompletePending(true);
+session.CompletePending(spinWait: true);
 session.CompletePending(out var completedOutputs, spinWait: true);
+
+await session.CompletePendingAsync();
+var completedOutputs = session.CompletePendingWithOutputsAsync();
 ```
 
 ### Disposing

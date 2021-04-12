@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
-
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -49,7 +47,8 @@ namespace FASTER.core
         /// </summary>
         /// <returns></returns>
         internal async ValueTask CompletePendingAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                      FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token = default)
+                                      FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token,
+                                      CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
         {
             bool done = true;
 
@@ -62,7 +61,7 @@ namespace FASTER.core
                 {
                     await currentCtx.prevCtx.pendingReads.WaitUntilEmptyAsync(token);
 
-                    await InternalCompletePendingRequestsAsync(currentCtx.prevCtx, currentCtx, fasterSession, token);
+                    await InternalCompletePendingRequestsAsync(currentCtx.prevCtx, currentCtx, fasterSession, token, completedOutputs);
                     Debug.Assert(currentCtx.prevCtx.SyncIoPendingCount == 0);
 
                     if (currentCtx.prevCtx.retryRequests.Count > 0)
@@ -77,7 +76,7 @@ namespace FASTER.core
             }
             #endregion
 
-            await InternalCompletePendingRequestsAsync(currentCtx, currentCtx, fasterSession, token);
+            await InternalCompletePendingRequestsAsync(currentCtx, currentCtx, fasterSession, token, completedOutputs);
 
             fasterSession.UnsafeResumeThread();
             InternalCompleteRetryRequests(currentCtx, currentCtx, fasterSession);
@@ -658,7 +657,7 @@ namespace FASTER.core
             readonly FasterKV<Key, Value> _fasterKV;
             readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
             readonly FasterExecutionContext<Input, Output, Context> _currentCtx;
-            Task _flushTask;
+            readonly Task _flushTask;
             PendingContext<Input, Output, Context> _pendingContext;
             AsyncIOContext<Key, Value> _diskRequest;
             int CompletionComputeStatus;

@@ -280,7 +280,7 @@ namespace FASTER.core
         internal void InternalCompletePendingRequests<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> opCtx, 
             FasterExecutionContext<Input, Output, Context> currentCtx, 
-            FasterSession fasterSession, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
+            FasterSession fasterSession, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             hlog.TryComplete();
@@ -297,7 +297,8 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> opCtx, 
             FasterExecutionContext<Input, Output, Context> currentCtx, 
             FasterSession fasterSession, 
-            CancellationToken token = default)
+            CancellationToken token,
+            CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             while (opCtx.SyncIoPendingCount > 0)
@@ -310,7 +311,7 @@ namespace FASTER.core
                     while (opCtx.readyResponses.Count > 0)
                     {
                         opCtx.readyResponses.TryDequeue(out request);
-                        InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request);
+                        InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request, completedOutputs);
                     }
                     fasterSession.UnsafeSuspendThread();
                 }
@@ -319,7 +320,7 @@ namespace FASTER.core
                     request = await opCtx.readyResponses.DequeueAsync(token);
 
                     fasterSession.UnsafeResumeThread();
-                    InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request);
+                    InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request, completedOutputs);
                     fasterSession.UnsafeSuspendThread();
                 }
             }
@@ -329,7 +330,7 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> opCtx, 
             FasterExecutionContext<Input, Output, Context> currentCtx, 
             FasterSession fasterSession, 
-            AsyncIOContext<Key, Value> request, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
+            AsyncIOContext<Key, Value> request, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (opCtx.ioPendingRequests.TryGetValue(request.id, out var pendingContext))
