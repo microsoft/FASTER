@@ -338,7 +338,7 @@ namespace FASTER.core
                 opCtx.ioPendingRequests.Remove(request.id);
                 InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
                 if (completedOutputs is { })
-                    completedOutputs.Add(pendingContext.DetachKey(), pendingContext.DetachInput(), ref pendingContext.output, ref pendingContext.userContext);
+                    completedOutputs.Add(ref pendingContext);
                 pendingContext.Dispose();
             }
         }
@@ -369,6 +369,7 @@ namespace FASTER.core
             {
                 internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
             }
+            unsafe { pendingContext.recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
 
             request.Dispose();
 
@@ -393,15 +394,12 @@ namespace FASTER.core
 
                 if (pendingContext.type == OperationType.READ)
                 {
-                    RecordInfo recordInfo;
-                    unsafe { recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
-
                     fasterSession.ReadCompletionCallback(ref key,
                                                      ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
                                                      status,
-                                                     recordInfo);
+                                                     pendingContext.recordInfo);
                 }
                 else
                 {

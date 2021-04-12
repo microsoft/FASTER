@@ -38,6 +38,9 @@
     Recover the FasterKV from a checkpoint of a previous run rather than loading it from data.
     Used primarily to debug changes to this script or do a quick one-off run; the default is false.
 
+.PARAMETER CloneAndBuild
+    Clone the repo and switch to the branches in ExeDirs, then build these.
+
 .EXAMPLE
     pwsh -c "./run_benchmark.ps1 './baseline','./refactor_FASTERImpl'"
 

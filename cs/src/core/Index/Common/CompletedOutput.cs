@@ -9,29 +9,29 @@ namespace FASTER.core
     /// <summary>
     /// A list of <see cref="CompletedOutputIterator{TKey, TValue, TInput, TOutput, TContext}"/> for completed outputs from a pending operation.
     /// </summary>
-    /// <typeparam name="Key">The Key type of the <see cref="FasterKV{Key, Value}"/></typeparam>
-    /// <typeparam name="Value">The Value type of the <see cref="FasterKV{Key, Value}"/></typeparam>
+    /// <typeparam name="TKey">The Key type of the <see cref="FasterKV{Key, Value}"/></typeparam>
+    /// <typeparam name="TValue">The Value type of the <see cref="FasterKV{Key, Value}"/></typeparam>
     /// <typeparam name="TInput">The session input type</typeparam>
     /// <typeparam name="TOutput">The session output type</typeparam>
     /// <typeparam name="TContext">The session context type</typeparam>
     /// <remarks>The session holds this list and returns an enumeration to the caller of an appropriate CompletePending overload. The session will handle
     /// disposing and clearing this list, but it is best if the caller calls Dispose() after processing the results, so the key, input, and heap containers
     /// are released as soon as possible.</remarks>
-    public class CompletedOutputIterator<Key, Value, TInput, TOutput, TContext> : IDisposable
+    public class CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> : IDisposable
     {
         internal const int kInitialAlloc = 32;
         internal const int kReallocMultuple = 2;
-        internal CompletedOutput<Key, Value, TInput, TOutput, TContext>[] vector = new CompletedOutput<Key, Value, TInput, TOutput, TContext>[kInitialAlloc];
+        internal CompletedOutput<TKey, TValue, TInput, TOutput, TContext>[] vector = new CompletedOutput<TKey, TValue, TInput, TOutput, TContext>[kInitialAlloc];
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void Add(IHeapContainer<Key> key, IHeapContainer<TInput> input, ref TOutput output, ref TContext context)
+        internal void Add(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext)
         {
             // Note: vector is never null
             if (this.maxIndex >= vector.Length - 1)
                 Array.Resize(ref this.vector, this.vector.Length * kReallocMultuple);
             ++maxIndex;
-            this.vector[maxIndex].Set(key, input, ref output, ref context);
+            this.vector[maxIndex].Set(ref pendingContext);
         }
 
         /// <summary>
@@ -56,7 +56,7 @@ namespace FASTER.core
         /// <exception cref="IndexOutOfRangeException"> if there is no current element, either because Next() has not been called or it has advanced
         ///     past the last element of the array
         /// </exception>
-        public ref CompletedOutput<Key, Value, TInput, TOutput, TContext> Current => ref this.vector[this.currentIndex];
+        public ref CompletedOutput<TKey, TValue, TInput, TOutput, TContext> Current => ref this.vector[this.currentIndex];
 
         /// <inheritdoc/>
         public void Dispose()
@@ -103,12 +103,24 @@ namespace FASTER.core
         /// </summary>
         public TContext Context;
 
-        internal void Set(IHeapContainer<TKey> key, IHeapContainer<TInput> input, ref TOutput output, ref TContext context)
+        /// <summary>
+        /// The header of the record for this operation
+        /// </summary>
+        public RecordInfo RecordInfo;
+
+        /// <summary>
+        /// The logical address of the record for this operation
+        /// </summary>
+        public long Address;
+
+        internal void Set(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext)
         {
-            this.keyContainer = key;
-            this.inputContainer = input;
-            this.Output = output;
-            this.Context = context;
+            this.keyContainer = pendingContext.key;
+            this.inputContainer = pendingContext.input;
+            this.Output = pendingContext.output;
+            this.Context = pendingContext.userContext;
+            this.RecordInfo = pendingContext.recordInfo;
+            this.Address = pendingContext.logicalAddress;
         }
 
         internal void Dispose()

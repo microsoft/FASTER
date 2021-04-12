@@ -212,9 +212,8 @@ namespace FASTER.test.async
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
             for (long key = 0; key < numOps; key++)
             {
-                var r = await s1.UpsertAsync(key, key);
-                while (r.Status == Status.PENDING)
-                    r = await r.CompleteAsync(); // test async version of Upsert completion
+                var status = (await s1.UpsertAsync(key, key)).Complete();   // test sync version of Upsert completion
+                Assert.AreNotEqual(Status.PENDING, status);
             }
 
             Assert.IsTrue(numOps > 100);
@@ -227,11 +226,10 @@ namespace FASTER.test.async
 
             {   // Scope for variables
                 long deleteKey = 99;
-                var r = await s1.DeleteAsync(deleteKey);
-                while (r.Status == Status.PENDING)
-                    r = await r.CompleteAsync(); // test async version of Delete completion
+                var status = (await s1.DeleteAsync(deleteKey)).Complete(); // test sync version of Delete completion
+                Assert.AreNotEqual(Status.PENDING, status);
 
-                var (status, _) = (await s1.ReadAsync(deleteKey)).Complete();
+                (status, _) = (await s1.ReadAsync(deleteKey)).Complete();
                 Assert.IsTrue(status == Status.NOTFOUND);
             }
         }
@@ -285,7 +283,8 @@ namespace FASTER.test.async
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
             for (key = 0; key < numOps; key++)
             {
-                (await s1.RMWAsync(key, key)).Complete();
+                status = (await s1.RMWAsync(key, key)).Complete();
+                Assert.AreNotEqual(Status.PENDING, status);
             }
 
             for (key = 0; key < numOps; key++)
