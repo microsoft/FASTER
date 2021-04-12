@@ -158,7 +158,7 @@ namespace FASTER.core
                         InternalCompletePendingRequests(ctx.prevCtx, ctx, fasterSession, completedOutputs);
                         InternalCompleteRetryRequests(ctx.prevCtx, ctx, fasterSession);
                         if (wait) ctx.prevCtx.WaitPending(epoch);
-                        done &= (ctx.prevCtx.HasNoPendingRequests);
+                        done &= ctx.prevCtx.HasNoPendingRequests;
                     }
                 }
                 #endregion
@@ -166,7 +166,7 @@ namespace FASTER.core
                 InternalCompletePendingRequests(ctx, ctx, fasterSession, completedOutputs);
                 InternalCompleteRetryRequests(ctx, ctx, fasterSession);
                 if (wait) ctx.WaitPending(epoch);
-                done &= (ctx.HasNoPendingRequests);
+                done &= ctx.HasNoPendingRequests;
 
                 if (done) return true;
 

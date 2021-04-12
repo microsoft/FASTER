@@ -31,8 +31,7 @@ namespace StoreAsyncApi
             var checkpointSettings = new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.FoldOver };
             var serializerSettings = new SerializerSettings<CacheKey, CacheValue> { keySerializer = () => new CacheKeySerializer(), valueSerializer = () => new CacheValueSerializer() };
 
-            faster = new FasterKV<CacheKey, CacheValue>
-                (1L << 20, logSettings, checkpointSettings, serializerSettings);
+            faster = new FasterKV<CacheKey, CacheValue>(1L << 20, logSettings, checkpointSettings, serializerSettings);
 
             const int NumParallelTasks = 1;
             ThreadPool.SetMinThreads(2 * Environment.ProcessorCount, 2 * Environment.ProcessorCount);
@@ -64,27 +63,40 @@ namespace StoreAsyncApi
             using var session = faster.For(new CacheFunctions()).NewSession<CacheFunctions>(id.ToString());
             Random rand = new Random(id);
 
-            bool batched = true;
+            bool batched = true; // whether we batch upserts on session
+            bool asyncUpsert = false; // whether we use sync or async upsert calls
+            bool waitForCommit = false; // whether we wait for commit after each operation (or batch) on this session
+            int batchSize = 100; // batch size
 
             await Task.Yield();
 
             var context = new CacheContext();
+            var taskBatch = new ValueTask<FasterKV<CacheKey, CacheValue>.UpsertAsyncResult<CacheInput, CacheOutput, CacheContext>>[batchSize];
+            long seqNo = 0;
 
             if (!batched)
             {
-                // Single commit version - upsert each item and wait for commit
+                // Single upsert at a time, optionally waiting for commit
                 // Needs high parallelism (NumParallelTasks) for perf
-                // Needs separate commit thread to perform regular checkpoints
+                // Separate commit thread performs regular checkpoints
                 while (true)
                 {
                     try
                     {
-
                         var key = new CacheKey(rand.Next());
                         var value = new CacheValue(rand.Next());
-                        session.Upsert(ref key, ref value, context);
-                        await session.WaitForCommitAsync();
-
+                        if (asyncUpsert)
+                        {
+                            var r = session.UpsertAsync(ref key, ref value, context, seqNo++);
+                            while (!r.IsCompleted)
+                                r = (await r).CompleteAsync();
+                        }
+                        else
+                        {
+                            session.Upsert(ref key, ref value, context, seqNo++);
+                        }
+                        if (waitForCommit)
+                            await session.WaitForCommitAsync();
                         Interlocked.Increment(ref numOps);
                     }
                     catch (Exception ex)
@@ -104,12 +116,28 @@ namespace StoreAsyncApi
 
                     var key = new CacheKey(rand.Next());
                     var value = new CacheValue(rand.Next());
-                    session.Upsert(ref key, ref value, context);
-
-                    if (count++ % 100 == 0)
+                    if (asyncUpsert)
                     {
-                        await session.WaitForCommitAsync();
-                        Interlocked.Add(ref numOps, 100);
+                        taskBatch[count % batchSize] = session.UpsertAsync(ref key, ref value, context, seqNo++);
+                    }
+                    else
+                    {
+                        session.Upsert(ref key, ref value, context, seqNo++);
+                    }
+                    if (count++ % batchSize == 0)
+                    {
+                        if (asyncUpsert)
+                        {
+                            for (int i = 0; i < batchSize; i++)
+                            {
+                                var r = taskBatch[i];
+                                while (!r.IsCompleted)
+                                    r = (await r).CompleteAsync();
+                            }
+                        }
+                        if (waitForCommit)
+                            await session.WaitForCommitAsync();
+                        Interlocked.Add(ref numOps, batchSize);
                     }
                 }
             }
@@ -125,13 +153,12 @@ namespace StoreAsyncApi
 
             while (true)
             {
-                Thread.Sleep(5000);
+                Thread.Sleep(1000);
 
                 var nowTime = sw.ElapsedMilliseconds;
                 var nowValue = numOps;
-
                 Console.WriteLine("Operation Throughput: {0} ops/sec, Tail: {1}",
-                    (nowValue - lastValue) / (1000 * (nowTime - lastTime)), faster.Log.TailAddress);
+                    1000.0*(nowValue - lastValue) / (nowTime - lastTime), faster.Log.TailAddress);
                 lastValue = nowValue;
                 lastTime = nowTime;
             }
@@ -141,8 +168,8 @@ namespace StoreAsyncApi
         {
             while (true)
             {
-                Thread.Sleep(5000);
-                faster.TakeFullCheckpointAsync(CheckpointType.FoldOver).GetAwaiter().GetResult();
+                Thread.Sleep(100);
+                faster.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).GetAwaiter().GetResult();
             }
         }
     }

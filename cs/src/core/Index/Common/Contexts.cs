@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -190,6 +191,12 @@ namespace FASTER.core
                         epoch.Resume();
                     }
                 }
+            }
+
+            public async ValueTask WaitPendingAsync(CancellationToken token = default)
+            {
+                if (SyncIoPendingCount > 0)
+                    await readyResponses.WaitForEntryAsync(token);
             }
 
             public FasterExecutionContext<Input, Output, Context> prevCtx;

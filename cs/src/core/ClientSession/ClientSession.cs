@@ -685,16 +685,16 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Complete all outstanding pending operations asynchronously
-        /// Async operations (ReadAsync) must be completed individually
+        /// Complete all pending synchronous FASTER operations.
+        /// Async operations must be completed individually
         /// </summary>
         /// <returns></returns>
         public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
             => CompletePendingAsync(false, waitForCommit, token);
 
         /// <summary>
-        /// Complete all outstanding pending operations asynchronously and return completed outputs
-        /// Async operations (ReadAsync) must be completed individually
+        /// Complete all pending synchronous FASTER operations and return completed outputs.
+        /// Async operations must be completed individually
         /// </summary>
         /// <returns></returns>
         public async ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
@@ -720,8 +720,8 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Check if at least one request is ready for CompletePending to be called on
-        /// Returns completed immediately if there are no outstanding requests
+        /// Check if at least one synchronous request is ready for CompletePending to be called on
+        /// Returns completed immediately if there are no outstanding synchronous requests
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
@@ -744,7 +744,10 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
 
-            // Complete all pending operations on session
+            if (!ctx.prevCtx.pendingReads.IsEmpty || !ctx.pendingReads.IsEmpty)
+                throw new FasterException("Make sure all async operations issued on this session are awaited and completed first");
+
+            // Complete all pending sync operations on session
             await CompletePendingAsync(token: token);
 
             var task = fht.CheckpointTask;

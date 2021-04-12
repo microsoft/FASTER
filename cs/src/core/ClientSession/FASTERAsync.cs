@@ -50,45 +50,50 @@ namespace FASTER.core
                                       FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token,
                                       CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
         {
-            bool done = true;
-
-            #region Previous pending requests
-            if (!RelaxedCPR)
+            while (true)
             {
-                if (currentCtx.phase == Phase.IN_PROGRESS
-                    ||
-                    currentCtx.phase == Phase.WAIT_PENDING)
+                bool done = true;
+
+                #region Previous pending requests
+                if (!RelaxedCPR)
                 {
-                    await currentCtx.prevCtx.pendingReads.WaitUntilEmptyAsync(token);
-
-                    await InternalCompletePendingRequestsAsync(currentCtx.prevCtx, currentCtx, fasterSession, token, completedOutputs);
-                    Debug.Assert(currentCtx.prevCtx.SyncIoPendingCount == 0);
-
-                    if (currentCtx.prevCtx.retryRequests.Count > 0)
+                    if (currentCtx.phase == Phase.IN_PROGRESS || currentCtx.phase == Phase.WAIT_PENDING)
                     {
                         fasterSession.UnsafeResumeThread();
-                        InternalCompleteRetryRequests(currentCtx.prevCtx, currentCtx, fasterSession);
-                        fasterSession.UnsafeSuspendThread();
+                        try
+                        {
+                            InternalCompletePendingRequests(currentCtx.prevCtx, currentCtx, fasterSession, completedOutputs);
+                            InternalCompleteRetryRequests(currentCtx.prevCtx, currentCtx, fasterSession);
+                        }
+                        finally
+                        {
+                            fasterSession.UnsafeSuspendThread();
+                        }
+                        await currentCtx.prevCtx.WaitPendingAsync(token);
+                        done &= currentCtx.prevCtx.HasNoPendingRequests;
                     }
-
-                    done &= (currentCtx.prevCtx.HasNoPendingRequests);
                 }
-            }
-            #endregion
+                #endregion
 
-            await InternalCompletePendingRequestsAsync(currentCtx, currentCtx, fasterSession, token, completedOutputs);
+                fasterSession.UnsafeResumeThread();
+                try
+                {
+                    InternalCompletePendingRequests(currentCtx, currentCtx, fasterSession, completedOutputs);
+                    InternalCompleteRetryRequests(currentCtx, currentCtx, fasterSession);
+                }
+                finally
+                {
+                    fasterSession.UnsafeSuspendThread();
+                }
 
-            fasterSession.UnsafeResumeThread();
-            InternalCompleteRetryRequests(currentCtx, currentCtx, fasterSession);
-            fasterSession.UnsafeSuspendThread();
+                await currentCtx.WaitPendingAsync(token);
+                done &= currentCtx.HasNoPendingRequests;
 
-            Debug.Assert(currentCtx.HasNoPendingRequests);
+                if (done) return;
 
-            done &= (currentCtx.HasNoPendingRequests);
+                InternalRefresh(currentCtx, fasterSession);
 
-            if (!done)
-            {
-                throw new Exception("CompletePendingAsync did not complete");
+                Thread.Yield();
             }
         }
         #endregion CompletePendingAsync
