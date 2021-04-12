@@ -135,25 +135,49 @@ var (status, output) = (await session.ReadAsync(key, input)).Complete();
 #### Upsert
 
 ```cs
+// Sync
 var status = session.Upsert(ref key, ref value);
 var status = session.Upsert(ref key, ref value, context, serialNo);
+
+// Async with sync operation completion
 var status = (await s1.UpsertAsync(ref key, ref value)).Complete();
+
+// Fully async
+var r = await session.UpsertAsync(ref key, ref value);
+while (r.Status == Status.PENDING)
+   r = await r.CompleteAsync();
 ```
 
 #### RMW
 
 ```cs
+// Sync
 var status = session.RMW(ref key, ref input);
 var status = session.RMW(ref key, ref input, context, serialNo);
+
+// Async with sync operation completion (completion may rarely go async)
 var status = (await session.RMWAsync(ref key, ref input)).Complete();
+
+// Fully async (completion may rarely go async)
+var r = await session.RMWAsync(ref key, ref input);
+while (r.Status == Status.PENDING)
+   r = await r.CompleteAsync();
 ```
 
 #### Delete
 
 ```cs
+// Sync
 var status = session.Delete(ref key);
 var status = session.Delete(ref key, context, serialNo);
+
+// Async
 var status = (await s1.DeleteAsync(ref key)).Complete();
+
+// Fully async
+var r = await session.DeleteAsync(ref key);
+while (r.Status == Status.PENDING)
+   r = await r.CompleteAsync();
 ```
 
 ### Pending Operations

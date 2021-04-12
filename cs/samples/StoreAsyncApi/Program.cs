@@ -87,9 +87,9 @@ namespace StoreAsyncApi
                         var value = new CacheValue(rand.Next());
                         if (asyncUpsert)
                         {
-                            var r = session.UpsertAsync(ref key, ref value, context, seqNo++);
-                            while (!r.IsCompleted)
-                                r = (await r).CompleteAsync();
+                            var r = await session.UpsertAsync(ref key, ref value, context, seqNo++);
+                            while (r.Status == Status.PENDING)
+                                r = await r.CompleteAsync();
                         }
                         else
                         {
@@ -130,9 +130,9 @@ namespace StoreAsyncApi
                         {
                             for (int i = 0; i < batchSize; i++)
                             {
-                                var r = taskBatch[i];
-                                while (!r.IsCompleted)
-                                    r = (await r).CompleteAsync();
+                                var r = await taskBatch[i];
+                                while (r.Status == Status.PENDING)
+                                    r = await r.CompleteAsync();
                             }
                         }
                         if (waitForCommit)
