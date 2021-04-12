@@ -30,7 +30,7 @@ namespace AsyncStress
             Console.WriteLine($"    -r <mode>:      Read threading mode (listed below); default is {ThreadingMode.ParallelAsync}");
             Console.WriteLine($"    -t #:           Number of tasks for {ThreadingMode.ParallelSync} and {ThreadingMode.Chunks}; default is {numTasks}");
             Console.WriteLine($"    -n #:           Number of operations; default is {numOperations}");
-            Console.WriteLine($"    -b #:           Use OS buffering for reads; default is {FasterWrapper.useOsReadBuffering}");
+            Console.WriteLine($"    -b #:           Use OS buffering for reads; default is {FasterWrapper<int, int>.useOsReadBuffering}");
             Console.WriteLine($"    -?, /?, --help: Show this screen");
             Console.WriteLine();
             Console.WriteLine($"Threading Modes:");
@@ -65,7 +65,7 @@ namespace AsyncStress
                     else if (arg == "-n")
                         numOperations = int.Parse(nextArg());
                     else if (arg == "-b")
-                        FasterWrapper.useOsReadBuffering = true;
+                        FasterWrapper<int, int>.useOsReadBuffering = true;
                     else if (arg == "-?" || arg == "/?" || arg == "--help")
                     {
                         Usage();
@@ -75,10 +75,10 @@ namespace AsyncStress
                         throw new ApplicationException($"Unknown switch: {arg}");
                 }
             }
-            await ProfileStore(new FasterWrapper());
+            await ProfileStore(new FasterWrapper<int, int>());
         }
 
-        private static async Task ProfileStore(FasterWrapper store)
+        private static async Task ProfileStore(FasterWrapper<int, int> store)
         {
             static string threadingModeString(ThreadingMode threadingMode)
                 => threadingMode switch
@@ -125,7 +125,11 @@ namespace AsyncStress
                     Debug.Assert(upsertThreadingMode == ThreadingMode.Chunks);
                     var writeTasks = new ValueTask[numTasks];
                     for (int ii = 0; ii < numTasks; ii++)
-                        writeTasks[ii] = store.UpsertChunkAsync(ii * chunkSize, chunkSize);
+                    {
+                        var chunk = new (int, int)[chunkSize];
+                        for (int i = 0; i < chunkSize; i++) chunk[i] = (ii * chunkSize + i, ii * chunkSize + i);
+                        writeTasks[ii] = store.UpsertChunkAsync(chunk);
+                    }
                     foreach (var task in writeTasks)
                         await task;
                 }
@@ -141,7 +145,7 @@ namespace AsyncStress
             }
             else
             {
-                Console.WriteLine($"    Reading {numOperations} records with {threadingModeString(readThreadingMode)} (OS buffering: {FasterWrapper.useOsReadBuffering}) ...");
+                Console.WriteLine($"    Reading {numOperations} records with {threadingModeString(readThreadingMode)} (OS buffering: {FasterWrapper<int, int>.useOsReadBuffering}) ...");
                 var readTasks = new ValueTask<(Status, int)>[numOperations];
                 var readPendingString = string.Empty;
 
@@ -171,7 +175,12 @@ namespace AsyncStress
                 }
                 else
                 {
-                    var chunkTasks = Enumerable.Range(0, numTasks).Select(ii => store.ReadChunkAsync(ii * chunkSize, chunkSize, readTasks)).ToArray();
+                    var chunkTasks = Enumerable.Range(0, numTasks).Select(ii =>
+                    {
+                        var chunk = new int[chunkSize];
+                        for (int i = 0; i < chunkSize; i++) chunk[i] = ii * chunkSize + i;
+                        return store.ReadChunkAsync(chunk, readTasks, ii * chunkSize);
+                    }).ToArray();
                     foreach (var chunkTask in chunkTasks)
                         await chunkTask;
                     foreach (var task in readTasks)

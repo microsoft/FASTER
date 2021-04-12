@@ -10,10 +10,10 @@ using System.Linq;
 
 namespace AsyncStress
 {
-    public class FasterWrapper
+    public class FasterWrapper<Key, Value>
     {
-        readonly FasterKV<int, int> _store;
-        readonly AsyncPool<ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int, Empty>>> _sessionPool;
+        readonly FasterKV<Key, Value> _store;
+        readonly AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>>> _sessionPool;
         
         // OS Buffering is safe to use in this app because Reads are done after all updates
         internal static bool useOsReadBuffering = false;
@@ -25,17 +25,17 @@ namespace AsyncStress
             var logSettings = new LogSettings
             {
                 LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
+                ObjectLogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
                 PageSizeBits = 12,
                 MemorySizeBits = 13
             };
 
             Console.WriteLine($"    Using {logSettings.LogDevice.GetType()}");
 
-            _store = new FasterKV<int, int>(1L << 20, logSettings);
-            _sessionPool = new AsyncPool<ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int, Empty>>>(
-                    logSettings.LogDevice.ThrottleLimit, 
-                    () => _store.For(new SimpleFunctions<int, int, Empty>()).NewSession(new SimpleFunctions<int, int, Empty>())
-            );
+            _store = new FasterKV<Key, Value>(1L << 20, logSettings);
+            _sessionPool = new AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>>>(
+                    logSettings.LogDevice.ThrottleLimit,
+                    () => _store.For(new SimpleFunctions<Key, Value, Empty>()).NewSession<SimpleFunctions<Key, Value, Empty>>());
         }
 
         // This can be used to verify the same amount data is loaded.
@@ -45,7 +45,7 @@ namespace AsyncStress
         public int UpsertPendingCount = 0;
         public int ReadPendingCount = 0;
 
-        public async ValueTask UpsertAsync(int key, int value)
+        public async ValueTask UpsertAsync(Key key, Value value)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = await _sessionPool.GetAsync();
@@ -58,7 +58,7 @@ namespace AsyncStress
             _sessionPool.Return(session);
         }
 
-        public void Upsert(int key, int value)
+        public void Upsert(Key key, Value value)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
@@ -72,15 +72,14 @@ namespace AsyncStress
             _sessionPool.Return(session);
         }
 
-        public async ValueTask UpsertChunkAsync(int start, int count)
+        public async ValueTask UpsertChunkAsync((Key, Value)[] chunk)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
 
-            for (var ii = 0; ii < count; ++ii)
+            for (var ii = 0; ii < chunk.Length; ++ii)
             {
-                var key = start + ii;
-                var r = await session.UpsertAsync(key, key);
+                var r = await session.UpsertAsync(chunk[ii].Item1, chunk[ii].Item2);
                 while (r.Status == Status.PENDING)
                 {
                     Interlocked.Increment(ref UpsertPendingCount);
@@ -90,7 +89,7 @@ namespace AsyncStress
             _sessionPool.Return(session);
         }
 
-        public async ValueTask<(Status, int)> ReadAsync(int key)
+        public async ValueTask<(Status, Value)> ReadAsync(Key key)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = await _sessionPool.GetAsync();
@@ -99,7 +98,7 @@ namespace AsyncStress
             return result;
         }
 
-        public ValueTask<(Status, int)> Read(int key)
+        public ValueTask<(Status, Value)> Read(Key key)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
@@ -118,18 +117,17 @@ namespace AsyncStress
                 Assert.Equal(1, count);
             }
             _sessionPool.Return(session);
-            return new ValueTask<(Status, int)>(result);
+            return new ValueTask<(Status, Value)>(result);
         }
 
-        public async ValueTask ReadChunkAsync(int start, int count, ValueTask<(Status, int)>[] readTasks)
+        public async ValueTask ReadChunkAsync(Key[] chunk, ValueTask<(Status, Value)>[] readTasks, int offset)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
 
-            for (var ii = 0; ii < count; ++ii)
+            for (var ii = 0; ii < chunk.Length; ++ii)
             {
-                var key = start + ii;
-                readTasks[key] = new ValueTask<(Status, int)>((await session.ReadAsync(key).ConfigureAwait(false)).Complete());
+                readTasks[offset + ii] = new ValueTask<(Status, Value)>((await session.ReadAsync(chunk[ii]).ConfigureAwait(false)).Complete());
             }
             _sessionPool.Return(session);
         }
