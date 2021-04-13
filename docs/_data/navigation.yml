@@ -42,8 +42,6 @@ docs:
     children:
       - title: "Basics"
         url: /docs/remote-basics/
-      - title: "Samples"
-        url: /docs/remote-samples/
 
   - title: Developer Guide
     children:
