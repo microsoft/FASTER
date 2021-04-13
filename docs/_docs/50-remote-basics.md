@@ -176,7 +176,7 @@ FASTER.benchmark -b 0 -t 1 -n 0 -r 50 -d uniform -i 127.0.0.1 -p 3278
 A more complex scenario is one where we want to store variable-length keys and values in FASTER. Basically, we want
 the client to be able to read and write arbitrary sequences of bytes to the FASTER server. For this, we instantiate
 a variable-length FasterKV store on the server side, using the `SpanByte` concept of FASTER to store the keys and
-values without inline without needing a separate object log. The data wire format is as follows:
+values inline without needing a separate object log. The data wire format is as follows:
 
 ```
 [ 4 byte payload length | payload ]
