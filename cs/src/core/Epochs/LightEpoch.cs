@@ -42,9 +42,10 @@ namespace FASTER.core
 
         /// <summary>
         /// List of action, epoch pairs containing actions to performed 
-        /// when an epoch becomes safe to reclaim.
+        /// when an epoch becomes safe to reclaim. Marked volatile to
+        /// ensure latest value is seen by the last suspended thread.
         /// </summary>
-        private int drainCount = 0;
+        private volatile int drainCount = 0;
         private readonly EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
 
         /// <summary>
@@ -182,6 +183,9 @@ namespace FASTER.core
         {
             while (drainCount > 0)
             {
+                // Barrier ensures we see the latest epoch table entries. Ensures
+                // that the last suspended thread drains all pending actions.
+                Thread.MemoryBarrier();
                 for (int index = 1; index <= kTableSize; ++index)
                 {
                     int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
@@ -285,7 +289,7 @@ namespace FASTER.core
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>
-        public int BumpCurrentEpoch()
+        private int BumpCurrentEpoch()
         {
             int nextEpoch = Interlocked.Add(ref CurrentEpoch, 1);
 
@@ -301,7 +305,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="onDrain">Trigger action</param>
         /// <returns></returns>
-        public int BumpCurrentEpoch(Action onDrain)
+        public void BumpCurrentEpoch(Action onDrain)
         {
             int PriorEpoch = BumpCurrentEpoch() - 1;
 
@@ -348,8 +352,6 @@ namespace FASTER.core
             }
 
             ProtectAndDrain();
-
-            return PriorEpoch + 1;
         }
 
         /// <summary>

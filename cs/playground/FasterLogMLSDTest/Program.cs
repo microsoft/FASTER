@@ -1,34 +1,21 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT license.
-using System;
-using System.Buffers;
-using System.Collections.Generic;
+﻿using System;
+using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using FASTER.core;
-using NUnit.Framework;
 
-
-namespace FASTER.test
+namespace FasterLogStress
 {
-
-    [TestFixture]
-    internal class ManageLocalStorageTests
+    public class Program
     {
-        private FasterLog log;
-        private IDevice device;
-        private FasterLog logFullParams;
-        private IDevice deviceFullParams;
+        private static FasterLog log;
+        private static IDevice device;
         static readonly byte[] entry = new byte[100];
-        private string commitPath;
+        private static string commitPath;
 
-
-        [SetUp]
-        public void Setup()
+        public static void Main()
         {
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+            commitPath = "FasterLogStress/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
             // We loop to ensure clean-up as deleteOnClose does not always work for MLSD
@@ -39,18 +26,10 @@ namespace FASTER.test
             device = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStore.log", deleteOnClose: true);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
 
-            deviceFullParams = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStoreFullParams.log", deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
-            logFullParams = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
+            ManagedLocalStoreBasicTest();
 
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
             log.Dispose();
             device.Dispose();
-            logFullParams.Dispose();
-            deviceFullParams.Dispose();
 
             // Clean up log files
             if (Directory.Exists(commitPath))
@@ -58,12 +37,10 @@ namespace FASTER.test
         }
 
 
-        [Test]
-        [Category("FasterLog")]
-        public void ManagedLocalStoreBasicTest()
+        public static void ManagedLocalStoreBasicTest()
         {
             int entryLength = 20;
-            int numEntries = 1000;
+            int numEntries = 500_000;
             int numEnqueueThreads = 1;
             int numIterThreads = 1;
             bool commitThread = false;
@@ -105,10 +82,17 @@ namespace FASTER.test
                     }
                 });
             }
+
+            Console.WriteLine("Populating log...");
+            var sw = Stopwatch.StartNew();
+
             for (int t = 0; t < numEnqueueThreads; t++)
                 th[t].Start();
             for (int t = 0; t < numEnqueueThreads; t++)
                 th[t].Join();
+
+            sw.Stop();
+            Console.WriteLine($"{numEntries} items enqueued to the log by {numEnqueueThreads} threads in {sw.ElapsedMilliseconds} ms");
 
             if (commitThread)
             {
@@ -118,7 +102,7 @@ namespace FASTER.test
 
             // Final commit to the log
             log.Commit(true);
-            
+
             // flag to make sure data has been checked 
             bool datacheckrun = false;
 
@@ -138,62 +122,30 @@ namespace FASTER.test
                                 datacheckrun = true;
 
                                 if (numEnqueueThreads == 1)
-                                    Assert.IsTrue(result[0] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString());
+                                    if (result[0] != (byte)currentEntry)
+                                        throw new Exception("Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString());
                                 currentEntry++;
                             }
                         }
 
-                        Assert.IsTrue(currentEntry == numEntries * numEnqueueThreads);
+                        if (currentEntry != numEntries * numEnqueueThreads)
+                            throw new Exception("Error");
                     });
             }
+
+            sw.Restart();
 
             for (int t = 0; t < numIterThreads; t++)
                 th2[t].Start();
             for (int t = 0; t < numIterThreads; t++)
                 th2[t].Join();
 
+            sw.Stop();
+            Console.WriteLine($"{numEntries} items iterated in the log by {numIterThreads} threads in {sw.ElapsedMilliseconds} ms");
+
             // if data verification was skipped, then pop a fail
             if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+                throw new Exception("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
-
-        [Test]
-        [Category("FasterLog")]
-        public void ManagedLocalStoreFullParamsTest()
-        {
-
-            int entryLength = 10;
-
-            // Set Default entry data
-            for (int i = 0; i < entryLength; i++)
-            {
-                entry[i] = (byte)i;
-                logFullParams.Enqueue(entry);
-            }
-
-            // Commit to the log
-            logFullParams.Commit(true);
-
-            // Verify  
-            Assert.IsTrue(File.Exists(commitPath + "/log-commits/commit.0.0"));
-            Assert.IsTrue(File.Exists(commitPath + "/ManagedLocalStore.log.0"));
-
-            // Read the log just to verify can actually read it
-            int currentEntry = 0;
-            using (var iter = logFullParams.Scan(0, 100_000_000))
-            {
-                while (iter.GetNext(out byte[] result, out _, out _))
-                {
-                    Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as " + currentEntry.ToString());
-
-                    currentEntry++;
-                }
-            }
-        }
-
-
-
     }
 }
-
-
