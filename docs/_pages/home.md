@@ -63,7 +63,7 @@ NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded se
 
 # News and Updates
 
-* A high-performance remote (TCP) interface to FasterKV is now available! It provides linear server scalability with increasing client sessions, with similar server throughput as embedded FasterKV. We provide a default C# client as well as an ability to extend to other protocols. Learn more [here](docs/remote/).
+* A high-performance remote (TCP) interface to FasterKV is now available! It provides linear server scalability with increasing client sessions, with similar server throughput as embedded FasterKV. We provide a default C# client as well as an ability to extend to other protocols. Learn more [here](docs/remote-basics/).
 
 * Async API support has been improved, with async versions of `Upsert` and `Delete` added. Spin-wait has been significantly reduced in the codebase.
 
