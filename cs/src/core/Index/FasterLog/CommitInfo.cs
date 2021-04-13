@@ -13,11 +13,6 @@ namespace FASTER.core
     public struct CommitInfo
     {
         /// <summary>
-        /// Begin address
-        /// </summary>
-        public long BeginAddress;
-
-        /// <summary>
         /// From address of commit range
         /// </summary>
         public long FromAddress;
