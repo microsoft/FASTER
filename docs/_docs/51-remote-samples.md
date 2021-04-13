@@ -7,4 +7,4 @@ toc: false
 classes: wide
 ---
 
-Details coming soon!
+Samples coming soon!
