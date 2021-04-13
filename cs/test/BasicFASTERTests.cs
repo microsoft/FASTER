@@ -2,18 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
 using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test
 {
-
 
     //** NOTE - more detailed / in depth Read tests in ReadAddressTests.cs 
     //** These tests ensure the basics are fully covered
@@ -42,8 +36,6 @@ namespace FASTER.test
             fht = null;
             log.Dispose();
         }
-
-
 
         [Test]
         [Category("FasterKV")]
@@ -607,9 +599,6 @@ namespace FASTER.test
         {
             InputStruct input = default;
             OutputStruct output = default;
-
-            long invalidAddress = Constants.kInvalidAddress;
-
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
             var readAtAddress = fht.Log.BeginAddress;
@@ -617,7 +606,7 @@ namespace FASTER.test
 
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
-            //**** When Bug Fixed ... use the invalidAddress line
+            //**** TODO: When Bug Fixed ... use the invalidAddress line
             // Bug #136259
             //        Ah—slight bug here.I took a quick look to verify that the logicalAddress passed to SingleReader was kInvalidAddress(0), 
             //and while I got that right for the SingleWriter call, I missed it on the SingleReader.
@@ -767,7 +756,5 @@ namespace FASTER.test
             s.Read(ref key, ref output);
             Assert.IsTrue(output == 10);
         }
-     
-
     }
 }

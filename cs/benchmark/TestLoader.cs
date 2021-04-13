@@ -170,11 +170,19 @@ namespace FASTER.benchmark
                         if (!initValueSet.Contains(value))
                         {
                             if (init_count >= init_keys.Length)
-                                continue;
+                            {
+                                if (distribution == YcsbConstants.ZipfDist)
+                                    continue;
 
-                            initValueSet.Add(value);
-                            keySetter.Set(init_keys, init_count, value);
-                            ++init_count;
+                                // Uniform distribution at current small-data counts is about a 1% hit rate, which is too slow here, so just modulo.
+                                value %= init_keys.Length;
+                            }
+                            else
+                            {
+                                initValueSet.Add(value);
+                                keySetter.Set(init_keys, init_count, value);
+                                ++init_count;
+                            }
                         }
                         keySetter.Set(txn_keys, txn_count, value);
                         ++txn_count;
@@ -353,7 +361,7 @@ namespace FASTER.benchmark
             {
                 Console.WriteLine($"Checkpointing FasterKV to {this.BackupPath} for fast restart");
                 Stopwatch sw = Stopwatch.StartNew();
-                store.TakeFullCheckpoint(out _);
+                store.TakeFullCheckpoint(out _, CheckpointType.Snapshot);
                 store.CompleteCheckpointAsync().GetAwaiter().GetResult();
                 sw.Stop();
                 Console.WriteLine($"  Completed checkpoint in {(double)sw.ElapsedMilliseconds / 1000:N3} seconds");

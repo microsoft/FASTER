@@ -12,7 +12,7 @@ using System.Diagnostics;
 
 namespace FASTER.test.readaddress
 {
-#if false // TODO temporarily deactivated due to removal of addresses from single-writer callbacks
+#if false // TODO temporarily deactivated due to removal of addresses from single-writer callbacks (also add UpsertAsync where we do RMWAsync/Upsert)
     [TestFixture]
     public class ReadAddressTests
     {
@@ -273,7 +273,7 @@ namespace FASTER.test.readaddress
                     if (status == Status.PENDING)
                     {
                         // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(spinWait: true);
+                        session.CompletePending(wait: true);
                         output = context.output;
                         recordInfo = context.recordInfo;
                         status = context.status;
@@ -343,7 +343,7 @@ namespace FASTER.test.readaddress
                     if (status == Status.PENDING)
                     {
                         // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(spinWait: true);
+                        session.CompletePending(wait: true);
                         output = context.output;
                         recordInfo = context.recordInfo;
                         status = context.status;
@@ -361,7 +361,7 @@ namespace FASTER.test.readaddress
                         if (status == Status.PENDING)
                         {
                             // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                            session.CompletePending(spinWait: true);
+                            session.CompletePending(wait: true);
                             output = context.output;
                             recordInfo = context.recordInfo;
                             status = context.status;
@@ -532,7 +532,7 @@ namespace FASTER.test.readaddress
                     if (status == Status.PENDING)
                     {
                         // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(spinWait: true);
+                        session.CompletePending(wait: true);
                         output = context.output;
                         status = context.status;
                         context.Reset();

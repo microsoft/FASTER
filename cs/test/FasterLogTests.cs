@@ -284,37 +284,21 @@ namespace FASTER.test
 
             await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1);
 
-            // This will fail due to page overflow, leaving a "hole"
+            // This no longer fails in latest TryAllocate improvement
             appendResult = log.TryEnqueue(data1, out _);
-            Assert.IsFalse(appendResult);
+            Assert.IsTrue(appendResult);
+            await log.CommitAsync();
             await iter.WaitAsync();
-
-            async Task retryAppend(bool waitTaskIsCompleted)
-            {
-                Assert.IsFalse(waitTaskIsCompleted);
-                Assert.IsTrue(log.TryEnqueue(data1, out _));
-                await log.CommitAsync();
-            }
 
             switch (iteratorType)
             {
                 case IteratorType.Sync:
-                    // Should read the "hole" and return false
-                    Assert.IsFalse(iter.GetNext(out _, out _, out _));
-
-                    // Should wait for next item
-                    var task = iter.WaitAsync();
-                    await retryAppend(task.IsCompleted);
-                    await task;
-
-                    // Now the data is available.
                     Assert.IsTrue(iter.GetNext(out _, out _, out _));
                     break;
                 case IteratorType.AsyncByteVector:
                     {
-                        // Because we have a hole, awaiting MoveNextAsync would hang; instead, hold onto the task that results from WaitAsync() inside MoveNextAsync().
+                        // No more hole
                         var moveNextTask = asyncByteVectorIter.MoveNextAsync();
-                        await retryAppend(moveNextTask.IsCompleted);
 
                         // Now the data is available.
                         Assert.IsTrue(await moveNextTask);
@@ -322,9 +306,8 @@ namespace FASTER.test
                     break;
                 case IteratorType.AsyncMemoryOwner:
                     {
-                        // Because we have a hole, awaiting MoveNextAsync would hang; instead, hold onto the task that results from WaitAsync() inside MoveNextAsync().
+                        // No more hole
                         var moveNextTask = asyncMemoryOwnerIter.MoveNextAsync();
-                        await retryAppend(moveNextTask.IsCompleted);
 
                         // Now the data is available, and must be disposed.
                         Assert.IsTrue(await moveNextTask);
