@@ -27,6 +27,8 @@ namespace FASTER.core
         private readonly GetMemory getMemory;
         private readonly int headerSize;
         private readonly LogChecksumType logChecksum;
+        private readonly WorkQueueLIFO<CommitInfo> commitQueue;
+
         internal readonly bool readOnlyMode;
 
         private TaskCompletionSource<LinkedCommitInfo> commitTcs
@@ -75,6 +77,11 @@ namespace FASTER.core
         internal Task<LinkedCommitInfo> CommitTask => commitTcs.Task;
 
         /// <summary>
+        /// Task notifying log flush completions
+        /// </summary>
+        internal Task<long> FlushTask => allocator.FlushTask;
+
+        /// <summary>
         /// Task notifying refresh uncommitted
         /// </summary>
         internal Task<Empty> RefreshUncommittedTask => refreshUncommittedTcs.Task;
@@ -84,6 +91,18 @@ namespace FASTER.core
         /// </summary>
         internal readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators
             = new ConcurrentDictionary<string, FasterLogScanIterator>();
+
+        /// <summary>
+        /// Version number to track changes to commit metadata (begin address and persisted iterators)
+        /// </summary>
+        private long commitMetadataVersion;
+
+        /// <summary>
+        /// Committed view of commitMetadataVersion
+        /// </summary>
+        private long persistedCommitMetadataVersion;
+
+        internal Dictionary<string, long> LastPersistedIterators;
 
         /// <summary>
         /// Numer of references to log, including itself
@@ -141,7 +160,7 @@ namespace FASTER.core
             CommittedUntilAddress = Constants.kFirstValidAddress;
             CommittedBeginAddress = Constants.kFirstValidAddress;
             SafeTailAddress = Constants.kFirstValidAddress;
-
+            commitQueue = new WorkQueueLIFO<CommitInfo>(ci => SerialCommitCallbackWorker(ci));
             allocator = new BlittableAllocator<Empty, byte>(
                 logSettings.GetLogSettings(), null,
                 null, epoch, CommitCallback);
@@ -230,7 +249,7 @@ namespace FASTER.core
             epoch.Resume();
 
             var length = entry.Length;
-            logicalAddress = allocator.TryAllocate(headerSize + Align(length));
+            logicalAddress = allocator.TryAllocateRetryNow(headerSize + Align(length));
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
@@ -259,7 +278,7 @@ namespace FASTER.core
             epoch.Resume();
 
             var length = entry.Length;
-            logicalAddress = allocator.TryAllocate(headerSize + Align(length));
+            logicalAddress = allocator.TryAllocateRetryNow(headerSize + Align(length));
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
@@ -309,18 +328,15 @@ namespace FASTER.core
             long logicalAddress;
             while (true)
             {
-                var task = @this.CommitTask;
+                var task = @this.FlushTask;
                 if (@this.TryEnqueue(entry, out logicalAddress))
                     break;
-                if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
+                // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await task.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
             return logicalAddress;
@@ -347,18 +363,15 @@ namespace FASTER.core
             long logicalAddress;
             while (true)
             {
-                var task = @this.CommitTask;
+                var task = @this.FlushTask;
                 if (@this.TryEnqueue(entry.Span, out logicalAddress))
                     break;
-                if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
+                // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await task.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
             return logicalAddress;
@@ -385,18 +398,15 @@ namespace FASTER.core
             long logicalAddress;
             while (true)
             {
-                var task = @this.CommitTask;
+                var task = @this.FlushTask;
                 if (@this.TryEnqueue(readOnlySpanBatch, out logicalAddress))
                     break;
-                if (@this.NeedToWait(@this.CommittedUntilAddress, @this.TailAddress))
+                // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await task.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
             return logicalAddress;
@@ -417,7 +427,7 @@ namespace FASTER.core
             var tailAddress = untilAddress;
             if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
 
-            while (CommittedUntilAddress < tailAddress) Thread.Yield();
+            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion) Thread.Yield();
         }
 
         /// <summary>
@@ -435,13 +445,10 @@ namespace FASTER.core
             var tailAddress = untilAddress;
             if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
 
-            if (CommittedUntilAddress >= tailAddress)
-                return;
-
-            while (true)
+            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
                 var linkedCommitInfo = await task.WithCancellationAsync(token);
-                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress)
+                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     task = linkedCommitInfo.NextTask;
                 else
                     break;
@@ -473,10 +480,10 @@ namespace FASTER.core
             var task = CommitTask;
             var tailAddress = CommitInternal();
 
-            while (CommittedUntilAddress < tailAddress)
+            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
                 var linkedCommitInfo = await task.WithCancellationAsync(token);
-                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress)
+                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     task = linkedCommitInfo.NextTask;
                 else
                     break;
@@ -495,10 +502,10 @@ namespace FASTER.core
             if (prevCommitTask == null) prevCommitTask = CommitTask;
             var tailAddress = CommitInternal();
 
-            while (CommittedUntilAddress < tailAddress)
+            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
                 var linkedCommitInfo = await prevCommitTask.WithCancellationAsync(token);
-                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress)
+                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     prevCommitTask = linkedCommitInfo.NextTask;
                 else
                     return linkedCommitInfo.NextTask;
@@ -599,33 +606,31 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
-            Task<LinkedCommitInfo> task;
+            Task<long> flushTask;
+            Task<LinkedCommitInfo> commitTask;
 
             // Phase 1: wait for commit to memory
             while (true)
             {
-                task = CommitTask;
+                flushTask = FlushTask;
+                commitTask = CommitTask;
                 if (TryEnqueue(entry, out logicalAddress))
                     break;
-                if (NeedToWait(CommittedUntilAddress, TailAddress))
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await flushTask.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
-            // since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
             // Phase 2: wait for commit/flush to storage
+            // Since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
             while (true)
             {
                 LinkedCommitInfo linkedCommitInfo;
                 try
                 {
-                    linkedCommitInfo = await task.WithCancellationAsync(token);
+                    linkedCommitInfo = await commitTask.WithCancellationAsync(token);
                 }
                 catch (CommitFailureException e)
                 {
@@ -634,7 +639,7 @@ namespace FASTER.core
                         throw;
                 }
                 if (linkedCommitInfo.CommitInfo.UntilAddress < logicalAddress + 1)
-                    task = linkedCommitInfo.NextTask;
+                    commitTask = linkedCommitInfo.NextTask;
                 else
                     break;
             }
@@ -653,33 +658,31 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
-            Task<LinkedCommitInfo> task;
+            Task<long> flushTask;
+            Task<LinkedCommitInfo> commitTask;
 
             // Phase 1: wait for commit to memory
             while (true)
             {
-                task = CommitTask;
+                flushTask = FlushTask;
+                commitTask = CommitTask;
                 if (TryEnqueue(entry.Span, out logicalAddress))
                     break;
-                if (NeedToWait(CommittedUntilAddress, TailAddress))
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await flushTask.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
-            // since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
             // Phase 2: wait for commit/flush to storage
+            // Since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
             while (true)
             {
                 LinkedCommitInfo linkedCommitInfo;
                 try
                 {
-                    linkedCommitInfo = await task.WithCancellationAsync(token);
+                    linkedCommitInfo = await commitTask.WithCancellationAsync(token);
                 }
                 catch (CommitFailureException e)
                 {
@@ -688,7 +691,7 @@ namespace FASTER.core
                         throw;
                 }
                 if (linkedCommitInfo.CommitInfo.UntilAddress < logicalAddress + 1)
-                    task = linkedCommitInfo.NextTask;
+                    commitTask = linkedCommitInfo.NextTask;
                 else
                     break;
             }
@@ -707,33 +710,31 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
-            Task<LinkedCommitInfo> task;
+            Task<long> flushTask;
+            Task<LinkedCommitInfo> commitTask;
 
             // Phase 1: wait for commit to memory
             while (true)
             {
-                task = CommitTask;
+                flushTask = FlushTask;
+                commitTask = CommitTask;
                 if (TryEnqueue(readOnlySpanBatch, out logicalAddress))
                     break;
-                if (NeedToWait(CommittedUntilAddress, TailAddress))
+                try
                 {
-                    // Wait for *some* commit - failure can be ignored except if the token was signaled (which the caller should handle correctly)
-                    try
-                    {
-                        await task.WithCancellationAsync(token);
-                    }
-                    catch when (!token.IsCancellationRequested) { }
+                    await flushTask.WithCancellationAsync(token);
                 }
+                catch when (!token.IsCancellationRequested) { }
             }
 
-            // since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
             // Phase 2: wait for commit/flush to storage
+            // Since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
             while (true)
             {
                 LinkedCommitInfo linkedCommitInfo;
                 try
                 {
-                    linkedCommitInfo = await task.WithCancellationAsync(token);
+                    linkedCommitInfo = await commitTask.WithCancellationAsync(token);
                 }
                 catch (CommitFailureException e)
                 {
@@ -742,7 +743,7 @@ namespace FASTER.core
                         throw;
                 }
                 if (linkedCommitInfo.CommitInfo.UntilAddress < logicalAddress + 1)
-                    task = linkedCommitInfo.NextTask;
+                    commitTask = linkedCommitInfo.NextTask;
                 else
                     break;
             }
@@ -856,13 +857,23 @@ namespace FASTER.core
         /// </summary>
         private void CommitCallback(CommitInfo commitInfo)
         {
-            TaskCompletionSource<LinkedCommitInfo> _commitTcs = default;
+            commitQueue.EnqueueAndTryWork(commitInfo, asTask: true);
+        }
 
-            // We can only allow serial monotonic synchronous commit
-            lock (this)
+        private void SerialCommitCallbackWorker(CommitInfo commitInfo)
+        {
+            // Check if commit is already covered
+            if (CommittedBeginAddress >= BeginAddress &&
+                CommittedUntilAddress >= commitInfo.UntilAddress &&
+                persistedCommitMetadataVersion >= commitMetadataVersion &&
+                commitInfo.ErrorCode == 0)
+                return;
+
+            if (commitInfo.ErrorCode == 0)
             {
-                if (CommittedBeginAddress > commitInfo.BeginAddress)
-                    commitInfo.BeginAddress = CommittedBeginAddress;
+                // Capture CMV first, so metadata prior to CMV update is visible to commit
+                long _localCMV = commitMetadataVersion;
+
                 if (CommittedUntilAddress > commitInfo.FromAddress)
                     commitInfo.FromAddress = CommittedUntilAddress;
                 if (CommittedUntilAddress > commitInfo.UntilAddress)
@@ -870,7 +881,7 @@ namespace FASTER.core
 
                 FasterLogRecoveryInfo info = new FasterLogRecoveryInfo
                 {
-                    BeginAddress = commitInfo.BeginAddress,
+                    BeginAddress = BeginAddress,
                     FlushedUntilAddress = commitInfo.UntilAddress
                 };
 
@@ -878,20 +889,19 @@ namespace FASTER.core
                 info.SnapshotIterators(PersistedIterators);
 
                 logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
+
+                LastPersistedIterators = info.Iterators;
                 CommittedBeginAddress = info.BeginAddress;
                 CommittedUntilAddress = info.FlushedUntilAddress;
+                if (_localCMV > persistedCommitMetadataVersion)
+                    persistedCommitMetadataVersion = _localCMV;
 
                 // Update completed address for persisted iterators
                 info.CommitIterators(PersistedIterators);
-
-                _commitTcs = commitTcs;
-                // If task is not faulted, create new task
-                // If task is faulted due to commit exception, create new task
-                if (commitTcs.Task.Status != TaskStatus.Faulted || commitTcs.Task.Exception.InnerException as CommitFailureException != null)
-                {
-                    commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-                }
             }
+
+            var _commitTcs = commitTcs;
+            commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
             var lci = new LinkedCommitInfo
             {
                 CommitInfo = commitInfo,
@@ -902,6 +912,29 @@ namespace FASTER.core
                 _commitTcs?.TrySetResult(lci);
             else
                 _commitTcs.TrySetException(new CommitFailureException(lci, $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}"));
+        }
+
+        private bool IteratorsChanged()
+        {
+            var _lastPersistedIterators = LastPersistedIterators;
+            if (_lastPersistedIterators == null)
+            {
+                if (PersistedIterators.Count == 0)
+                    return false;
+                return true;
+            }
+            if (_lastPersistedIterators.Count != PersistedIterators.Count)
+                return true;
+            foreach (var item in _lastPersistedIterators)
+            {
+                if (PersistedIterators.TryGetValue(item.Key, out var other))
+                {
+                    if (item.Value != other.requestedCompletedUntilAddress) return true;
+                }
+                else
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -960,7 +993,7 @@ namespace FASTER.core
             // Update commit to release pending iterators.
             var lci = new LinkedCommitInfo
             {
-                CommitInfo = new CommitInfo { BeginAddress = BeginAddress, FromAddress = BeginAddress, UntilAddress = FlushedUntilAddress },
+                CommitInfo = new CommitInfo { FromAddress = BeginAddress, UntilAddress = FlushedUntilAddress },
                 NextTask = commitTcs.Task
             };
             _commitTcs?.TrySetResult(lci);
@@ -1080,7 +1113,7 @@ namespace FASTER.core
 
             epoch.Resume();
 
-            logicalAddress = allocator.TryAllocate(allocatedLength);
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
@@ -1189,14 +1222,16 @@ namespace FASTER.core
                 // May need to commit begin address and/or iterators
                 epoch.Suspend();
                 var beginAddress = allocator.BeginAddress;
-                if (beginAddress > CommittedBeginAddress || PersistedIterators.Count > 0)
+                if (beginAddress > CommittedBeginAddress || IteratorsChanged())
+                {
+                    Interlocked.Increment(ref commitMetadataVersion);
                     CommitCallback(new CommitInfo
                     {
-                        BeginAddress = beginAddress,
                         FromAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
                         UntilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
                         ErrorCode = 0
                     });
+                }
             }
 
             return tailAddress;
@@ -1267,20 +1302,6 @@ namespace FASTER.core
                 *(int*)(dest + 8) = length;
                 *(ulong*)dest = Utility.XorBytes(dest + 8, length + 4);
             }
-        }
-
-        /// <summary>
-        /// Do we need to await a commit to make forward progress?
-        /// </summary>
-        /// <param name="committedUntilAddress"></param>
-        /// <param name="tailAddress"></param>
-        /// <returns></returns>
-        private bool NeedToWait(long committedUntilAddress, long tailAddress)
-        {
-            Thread.Yield();
-            return
-                allocator.GetPage(committedUntilAddress) <=
-                (allocator.GetPage(tailAddress) - allocator.BufferSize);
         }
     }
 }
