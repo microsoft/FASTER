@@ -14,6 +14,7 @@ an API that allows one to performs a mix of Reads, Blind Updates (Upserts), and 
 operations. It supports data larger than memory, and accepts an `IDevice` implementation for storing logs on
 storage. We have provided `IDevice` implementations for local file system and Azure Page Blobs, but one may create
 new devices as well. We also offer meta-devices that can group device instances into sharded and tiered configurations.
+
 FASTER  may be used as a high-performance replacement for traditional concurrent data structures such as the 
 .NET ConcurrentDictionary, and additionally supports larger-than-memory data. It also supports checkpointing of the 
 data structure - both incremental and non-incremental. Operations on FASTER can be issued synchronously or 
@@ -58,7 +59,7 @@ var store = new FasterKV<long, string>(1L << 20, new LogSettings { LogDevice = l
 
 1. Hash Table Size: This the number of buckets allocated to FASTER, where each bucket is 64 bytes (size of a cache line).
 2. Log Settings: These are settings related to the size of the log and devices used by the log.
-3. Checkpoint Settings: These are settings related to checkpoints, such as checkpoint type and folder. Covered in the 
+3. Checkpoint Settings: These are settings related to checkpoints, such as checkpoint type and folder. Covered in the
 section on checkpointing [below](#checkpointing-and-recovery).
 4. Serialization Settings: Used to provide custom serializers for key and value types. Serializers implement 
 `IObjectSerializer<Key>` for keys and `IObjectSerializer<Value>` for values. *These are only needed for 
@@ -67,8 +68,8 @@ non-blittable types such as C# class objects.*
 
 The total in-memory footprint of FASTER is controlled by the following parameters:
 1. Hash table size: This parameter (the first contructor argument) times 64 is the size of the in-memory hash table in bytes.
-2. Log size: The logSettings.MemorySizeBits denotes the size of the in-memory part of the hybrid log, in bits. In other 
-words, the size of the log is 2^B bytes, for a parameter setting of B. Note that if the log points to class key or value 
+2. Log size: The logSettings.MemorySizeBits denotes the size of the in-memory part of the hybrid log, in bits. In other
+words, the size of the log is 2^B bytes, for a parameter setting of B. Note that if the log points to class key or value
 objects, this size only includes the 8-byte reference to the object. The older part of the log is spilled to storage.
 
 Read more about managing memory in FASTER in the [tuning](/FASTER/docs/fasterkv-tuning) guide.
@@ -98,8 +99,8 @@ Apart from Key and Value, the IFunctions interface is defined on three additiona
 #### IAdvancedFunctions
 
 `IAdvancedFunctions` is a superset of `IFunctions` and provides the same methods with some additional parameters:
+- Callbacks for in-place updates receive the logical address of the record, which can be useful for applications such as indexing, and a reference to the `RecordInfo` header of the record, for use with the new locking calls.
 - ReadCompletionCallback receives the `RecordInfo` of the record that was read.
-- Other callbacks receive the logical address of the record, which can be useful for applications such as indexing.
 
 `IAdvancedFunctions` also contains a new method, ConcurrentDeleter, which may be used to implement user-defined post-deletion logic, such as calling object Dispose.
 
@@ -121,36 +122,80 @@ var session = store.For(new Functions()).NewSession<Functions>();
 
 As with the `IFunctions` and `IAdvancedFunctions` interfaces, there are separate, non-inheriting session classes that provide identical methods: `ClientSession` is returned by `NewSession` for a `Functions` class that implements `IFunctions`, and `AdvancedClientSession` is returned by `NewSession` for a `Functions` class that implements `IAdvancedFunctions`.
 
-You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports synchronous versions of all operations, as well as async versions of read and RMW (upserts do not go async by default). The basic forms of these operations are described below; additional overloads are available.
+You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports synchronous versions of all operations, as well as async versions. While all methods exist in an async form, only read and RMW are generally expected to go async; upserts and deletes will only go async when it is necessary to wait on flush operations when appending records to the log. The basic forms of these operations are described below; additional overloads are available.
 
 #### Read
 
 ```cs
+// Sync
 var status = session.Read(ref key, ref output);
 var status = session.Read(ref key, ref input, ref output, context, serialNo);
-await session.ReadAsync(key, input);
+
+// Async
+var (status, output) = (await session.ReadAsync(key, input)).Complete();
 ```
 
 #### Upsert
 
 ```cs
+// Sync
 var status = session.Upsert(ref key, ref value);
 var status = session.Upsert(ref key, ref value, context, serialNo);
+
+// Async with sync operation completion
+var status = (await s1.UpsertAsync(ref key, ref value)).Complete();
+
+// Fully async (completions may themselves need to go async)
+var r = await session.UpsertAsync(ref key, ref value);
+while (r.Status == Status.PENDING)
+   r = await r.CompleteAsync();
 ```
 
 #### RMW
 
 ```cs
+// Sync
 var status = session.RMW(ref key, ref input);
 var status = session.RMW(ref key, ref input, context, serialNo);
-await session.RMWAsync(key, input);
+
+// Async with sync operation completion (completion may rarely go async)
+var status = (await session.RMWAsync(ref key, ref input)).Complete();
+
+// Fully async (completion may rarely go async)
+var r = await session.RMWAsync(ref key, ref input);
+while (r.Status == Status.PENDING)
+   r = await r.CompleteAsync();
 ```
 
 #### Delete
 
 ```cs
+// Sync
 var status = session.Delete(ref key);
 var status = session.Delete(ref key, context, serialNo);
+
+// Async
+var status = (await s1.DeleteAsync(ref key)).Complete();
+
+// Fully async
+var r = await session.DeleteAsync(ref key);
+while (r.Status == Status.PENDING)
+   r = await r.CompleteAsync();
+```
+
+### Pending Operations
+The sync form of `Read`, `Upsert`, `RMW`, and `Delete` may go pending due to IO operations. When a `Status.PENDING` is returned, you can call `CompletePending()` to wait for the results to arrive. It is generally most performant to issue many of these operations and call `CompletePending()` periodically or upon completion of a batch. An optional `wait` parameter allows you to wait until all pending operations issued on the session until that point are completed before this call returns. A second optional parameter, `spinWaitForCommit` allows you to further wait until all operations until that point are committed by a parallel checkpointing thread.
+
+Pending operations call the appropriate completion callback on the functions object: any or all of `ReadCompletionCallback`, `UpsertCompletionCallback`, `RMWCompletionCallback`, and `DeleteCompletionCallback` may be called, depending on the completed operation(s).
+
+For ease of retrieving outputs from the calling code, there is also a `CompletePendingWithOutputs()` and a `CompletePendingWithOutputsAsync()` that return an iterator over the `Output`s that were completed.
+
+```cs
+session.CompletePending(wait: true);
+session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+
+await session.CompletePendingAsync();
+var completedOutputs = await session.CompletePendingWithOutputsAsync();
 ```
 
 ### Disposing
@@ -284,7 +329,7 @@ FASTER also support true "log compaction", where the log is scanned and live rec
 
 This call perform synchronous compaction on the provided session until the specific `compactUntil` address, scanning and copying the live records to the tail. It returns the actual log address that the call compacted until (next nearest record boundary). You can only compact until the log's `SafeReadOnlyAddress` as the rest of the log is still mutable in-place. If you wish, you can move the read-only address to the tail by calling `store.Log.ShiftReadOnlyToTail(store.Log.TailAddress, true)` or by simply taking a fold-over checkpoint (`await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver)`).
 
-Typically, you may compact around 20% (up to 100%) of the log, e.g., you could set `compactUntil` address to `store.Log.BeginAddress + 0.2 * (store.Log.SafeReadOnlyAddress - store.Log.BeginAddress)`. The parameter `shiftBeginAddress`, when true, causes log compation to also automatically shift the log's begin address when the compaction is complete. However, since live records are written to the tail, directly shifting the begin address may result in data loss if the store fails immediately after the call. If you do not want to lose data, you need to trigger compaction with `shiftBeginAddress` set to false, then complete a checkpoint (either fold-over or snaphot is fine), and then shift the begin address. Finally, you can take another checkpoint to save the new begin address. This is shown below:
+Typically, you may compact around 20% (up to 100%) of the log, e.g., you could set `compactUntil` address to `store.Log.BeginAddress + 0.2 * (store.Log.SafeReadOnlyAddress - store.Log.BeginAddress)`. The parameter `shiftBeginAddress`, when true, causes log compaction to also automatically shift the log's begin address when the compaction is complete. However, since live records are written to the tail, directly shifting the begin address may result in data loss if the store fails immediately after the call. If you do not want to lose data, you need to trigger compaction with `shiftBeginAddress` set to false, then complete a checkpoint (either fold-over or snaphot is fine), and then shift the begin address. Finally, you can take another checkpoint to save the new begin address. This is shown below:
 
 ```cs
   long compactUntil = store.Log.BeginAddress + 0.2 * (store.Log.SafeReadOnlyAddress - store.Log.BeginAddress);
