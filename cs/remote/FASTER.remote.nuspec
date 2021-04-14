@@ -61,24 +61,5 @@
     <file src="src\FASTER.client\bin\AnyCPU\Release\netstandard2.1\FASTER.client.dll" target="lib\netstandard2.1" />
 	<file src="src\FASTER.client\bin\AnyCPU\Release\netstandard2.1\FASTER.client.pdb" target="lib\netstandard2.1" />
 	<file src="src\FASTER.client\bin\AnyCPU\Release\netstandard2.1\FASTER.client.xml" target="lib\netstandard2.1" />
-
-	<file src="samples\VarLenServer\bin\AnyCPU\Release\netcoreapp3.1\VarLenServer.exe" target="lib\netcoreapp3.1" />
-	<file src="samples\VarLenServer\bin\AnyCPU\Release\netcoreapp3.1\VarLenServer.dll" target="lib\netcoreapp3.1" />
-	<file src="samples\VarLenServer\bin\AnyCPU\Release\netcoreapp3.1\VarLenServer.pdb" target="lib\netcoreapp3.1" />
-	<file src="samples\VarLenServer\bin\AnyCPU\Release\netcoreapp3.1\VarLenServer.deps.json" target="lib\netcoreapp3.1" />
-	<file src="samples\VarLenServer\bin\AnyCPU\Release\netcoreapp3.1\VarLenServer.runtimeconfig.json" target="lib\netcoreapp3.1" />
-	  
-	<file src="samples\FixedLenServer\bin\AnyCPU\Release\netcoreapp3.1\FixedLenServer.exe" target="lib\netcoreapp3.1" />
-	<file src="samples\FixedLenServer\bin\AnyCPU\Release\netcoreapp3.1\FixedLenServer.dll" target="lib\netcoreapp3.1" />
-	<file src="samples\FixedLenServer\bin\AnyCPU\Release\netcoreapp3.1\FixedLenServer.pdb" target="lib\netcoreapp3.1" />
-	<file src="samples\FixedLenServer\bin\AnyCPU\Release\netcoreapp3.1\FixedLenServer.deps.json" target="lib\netcoreapp3.1" />
-	<file src="samples\FixedLenServer\bin\AnyCPU\Release\netcoreapp3.1\FixedLenServer.runtimeconfig.json" target="lib\netcoreapp3.1" />
-
-	<file src="src\FASTER.common\bin\AnyCPU\Release\netstandard2.1\FASTER.common.dll" target="lib\netcoreapp3.1" />
-	<file src="src\FASTER.common\bin\AnyCPU\Release\netstandard2.1\FASTER.common.pdb" target="lib\netcoreapp3.1" />
-	<file src="src\FASTER.common\bin\AnyCPU\Release\netstandard2.1\FASTER.common.xml" target="lib\netcoreapp3.1" />
-	<file src="src\FASTER.server\bin\AnyCPU\Release\netstandard2.1\FASTER.server.dll" target="lib\netcoreapp3.1" />
-	<file src="src\FASTER.server\bin\AnyCPU\Release\netstandard2.1\FASTER.server.pdb" target="lib\netcoreapp3.1" />
-	<file src="src\FASTER.server\bin\AnyCPU\Release\netstandard2.1\FASTER.server.xml" target="lib\netcoreapp3.1" />
   </files>
 </package>
