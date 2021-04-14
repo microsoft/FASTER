@@ -45,9 +45,14 @@
 	<file src="samples\VarLenServer\bin\AnyCPU\Release\netcoreapp3.1\VarLenServer.exe" target="lib\netcoreapp3.1" />
 	<file src="samples\VarLenServer\bin\AnyCPU\Release\netcoreapp3.1\VarLenServer.dll" target="lib\netcoreapp3.1" />
 	<file src="samples\VarLenServer\bin\AnyCPU\Release\netcoreapp3.1\VarLenServer.pdb" target="lib\netcoreapp3.1" />
+	<file src="samples\VarLenServer\bin\AnyCPU\Release\netcoreapp3.1\VarLenServer.deps" target="lib\netcoreapp3.1" />
+	<file src="samples\VarLenServer\bin\AnyCPU\Release\netcoreapp3.1\VarLenServer.runtimeconfig" target="lib\netcoreapp3.1" />
+	  
 	<file src="samples\FixedLenServer\bin\AnyCPU\Release\netcoreapp3.1\FixedLenServer.exe" target="lib\netcoreapp3.1" />
 	<file src="samples\FixedLenServer\bin\AnyCPU\Release\netcoreapp3.1\FixedLenServer.dll" target="lib\netcoreapp3.1" />
 	<file src="samples\FixedLenServer\bin\AnyCPU\Release\netcoreapp3.1\FixedLenServer.pdb" target="lib\netcoreapp3.1" />
+	<file src="samples\FixedLenServer\bin\AnyCPU\Release\netcoreapp3.1\FixedLenServer.deps" target="lib\netcoreapp3.1" />
+	<file src="samples\FixedLenServer\bin\AnyCPU\Release\netcoreapp3.1\FixedLenServer.runtimeconfig" target="lib\netcoreapp3.1" />
 
 	<file src="src\FASTER.common\bin\AnyCPU\Release\netstandard2.1\FASTER.common.dll" target="lib\netcoreapp3.1" />
 	<file src="src\FASTER.common\bin\AnyCPU\Release\netstandard2.1\FASTER.common.pdb" target="lib\netcoreapp3.1" />
