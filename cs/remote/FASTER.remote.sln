@@ -6,6 +6,9 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{1065AE7E-DEA5-4E21-AE39-95B93C074B17}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{6B8D1038-C9D5-4111-B5CE-BF64E7D12AE1}"
+	ProjectSection(SolutionItems) = preProject
+		FASTER.remote.nuspec = FASTER.remote.nuspec
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "benchmark", "benchmark", "{49D31F4D-6C21-4E1A-8079-FC5259E1C12F}"
 EndProject
