@@ -3,7 +3,6 @@
 
 using System;
 using FASTER.client;
-using FASTER.common;
 
 namespace FixedLenClient
 {

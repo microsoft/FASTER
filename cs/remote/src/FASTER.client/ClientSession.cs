@@ -245,14 +245,14 @@ namespace FASTER.client
                     {
                         case MessageType.Upsert:
                             {
-                                var status = hrw.ReadStatus(ref src);
+                                var status = ReadStatus(ref src);
                                 (Key, Value, Context) result = upsertQueue.Dequeue();
                                 functions.UpsertCompletionCallback(ref result.Item1, ref result.Item2, result.Item3);
                                 break;
                             }
                         case MessageType.UpsertAsync:
                             {
-                                var status = hrw.ReadStatus(ref src);
+                                var status = ReadStatus(ref src);
                                 (Key, Value, Context) result = upsertQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
                                 tcs.SetResult((status, default));
@@ -260,7 +260,7 @@ namespace FASTER.client
                             }
                         case MessageType.Read:
                             {
-                                var status = hrw.ReadStatus(ref src);
+                                var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 if (status == Status.OK)
                                 {
@@ -279,7 +279,7 @@ namespace FASTER.client
                             }
                         case MessageType.ReadAsync:
                             {
-                                var status = hrw.ReadStatus(ref src);
+                                var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
                                 if (status == Status.OK)
@@ -295,7 +295,7 @@ namespace FASTER.client
                             }
                         case MessageType.RMW:
                             {
-                                var status = hrw.ReadStatus(ref src);
+                                var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 if (status == Status.PENDING)
                                 {
@@ -308,7 +308,7 @@ namespace FASTER.client
                             }
                         case MessageType.RMWAsync:
                             {
-                                var status = hrw.ReadStatus(ref src);
+                                var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
                                 if (status == Status.PENDING)
@@ -322,14 +322,14 @@ namespace FASTER.client
                             }
                         case MessageType.Delete:
                             {
-                                var status = hrw.ReadStatus(ref src);
+                                var status = ReadStatus(ref src);
                                 (Key, Value, Context) result = upsertQueue.Dequeue();
                                 functions.DeleteCompletionCallback(ref result.Item1, result.Item3);
                                 break;
                             }
                         case MessageType.DeleteAsync:
                             {
-                                var status = hrw.ReadStatus(ref src);
+                                var status = ReadStatus(ref src);
                                 (Key, Value, Context) result = upsertQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
                                 tcs.SetResult((status, default));
@@ -348,6 +348,9 @@ namespace FASTER.client
             Interlocked.Decrement(ref numPendingBatches);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private Status ReadStatus(ref byte* dst) => (Status)(*dst++);
+
         private void HandlePending(ref byte* src)
         {
             Output defaultOutput = default;
@@ -357,7 +360,7 @@ namespace FASTER.client
             {
                 case MessageType.Read:
                     {
-                        var status = hrw.ReadStatus(ref src);
+                        var status = ReadStatus(ref src);
 #if NETSTANDARD2_1
                         readRmwPendingContext.Remove(p, out var result);
 #else
@@ -375,7 +378,7 @@ namespace FASTER.client
                     }
                 case MessageType.ReadAsync:
                     {
-                        var status = hrw.ReadStatus(ref src);
+                        var status = ReadStatus(ref src);
 #if NETSTANDARD2_1
                         readRmwPendingTcs.Remove(p, out var result);
 #else
@@ -391,7 +394,7 @@ namespace FASTER.client
                     }
                 case MessageType.RMW:
                     {
-                        var status = hrw.ReadStatus(ref src);
+                        var status = ReadStatus(ref src);
 #if NETSTANDARD2_1
                         readRmwPendingContext.Remove(p, out var result);
 #else
@@ -403,7 +406,7 @@ namespace FASTER.client
                     }
                 case MessageType.RMWAsync:
                     {
-                        var status = hrw.ReadStatus(ref src);
+                        var status = ReadStatus(ref src);
 #if NETSTANDARD2_1
                         readRmwPendingTcs.Remove(p, out var result);
 #else

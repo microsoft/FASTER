@@ -3,11 +3,10 @@
 
 using System;
 using System.Threading;
-using FASTER.core;
-using FASTER.server;
-using FASTER.common;
 using ServerOptions;
 using CommandLine;
+using FASTER.core;
+using FASTER.server;
 
 namespace FixedLenServer
 {
@@ -36,7 +35,7 @@ namespace FixedLenServer
             var store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
-            var server = new FasterKVServer<Key, Value, Input, Output, Functions, BlittableParameterSerializer<Key, Value, Input, Output>>
+            var server = new FasterKVServer<Key, Value, Input, Output, Functions, FixedLenSerializer<Key, Value, Input, Output>>
                 (store, e => new Functions(), opts.Address, opts.Port);
             server.Start();
             Thread.Sleep(Timeout.Infinite);

@@ -3,9 +3,8 @@
 
 using System.Buffers;
 using FASTER.core;
-using FASTER.server;
 
-namespace FASTER.common
+namespace FASTER.server
 {
     /// <summary>
     /// Callback functions using SpanByteAndMemory output, for SpanByte key, value, input

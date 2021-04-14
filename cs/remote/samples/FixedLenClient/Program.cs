@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using FASTER.client;
-using FASTER.common;
 
 namespace FixedLenClient
 {
@@ -32,7 +31,7 @@ namespace FixedLenClient
             using var session = client.NewSession(new Functions());
 
             // Explicit version of NewSession call, where you provide all types, callback functions, and serializer
-            // using var session = client.NewSession<long, long, long, Functions, BlittableParameterSerializer<long, long, long, long>>(new Functions(), new BlittableParameterSerializer<long, long, long, long>());
+            // using var session = client.NewSession<long, long, byte, Functions, FixedLenSerializer<long, long, long, long>>(new Functions(), new FixedLenSerializer<long, long, long, long>());
 
             // Samples using sync client API
             SyncSamples(session);
@@ -43,7 +42,7 @@ namespace FixedLenClient
             Console.WriteLine("Success!");
         }
 
-        static void SyncSamples(ClientSession<long, long, long, long, byte, Functions, BlittableParameterSerializer<long, long, long, long>> session)
+        static void SyncSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session)
         {
             for (int i = 0; i < 1000; i++)
                 session.Upsert(i, i + 10000);
@@ -88,7 +87,7 @@ namespace FixedLenClient
             session.CompletePending(true);
         }
 
-        static async Task AsyncSamples(ClientSession<long, long, long, long, byte, Functions, BlittableParameterSerializer<long, long, long, long>> session)
+        static async Task AsyncSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session)
         {
             for (int i = 0; i < 1000; i++)
                 session.Upsert(i, i + 10000);

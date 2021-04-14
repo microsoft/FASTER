@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using CommandLine;
-using FASTER.core;
 using System;
+using FASTER.core;
 
 namespace ServerOptions
 {

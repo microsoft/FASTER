@@ -3,7 +3,6 @@
 
 using System.Runtime.InteropServices;
 using FASTER.client;
-using FASTER.common;
 
 namespace FASTER.benchmark
 {

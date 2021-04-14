@@ -6,49 +6,21 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using FASTER.common;
 
-namespace FASTER.common
+namespace FASTER.client
 {
     /// <summary>
-    /// Serializer for blittable types
+    /// Client-side serializer for blittable types
     /// </summary>
     /// <typeparam name="Key">Key</typeparam>
     /// <typeparam name="Value">Value</typeparam>
     /// <typeparam name="Input">Input</typeparam>
     /// <typeparam name="Output">Output</typeparam>
-    public unsafe struct BlittableParameterSerializer<Key, Value, Input, Output> 
-        : IServerSerializer<Key, Value, Input, Output>, IClientSerializer<Key, Value, Input, Output>
+    public unsafe struct FixedLenSerializer<Key, Value, Input, Output>  : IClientSerializer<Key, Value, Input, Output>
     {
-        static BlittableParameterSerializer()
+        static FixedLenSerializer()
         {
             if (!IsBlittable<Key>() || !IsBlittable<Value>() || !IsBlittable<Input>() || !IsBlittable<Output>())
                 throw new Exception("Cannot use BlittableParameterSerializer with non-blittable types - specify serializer explicitly");
-        }
-
-        /// <inheritdoc />
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref Key ReadKeyByRef(ref byte* src)
-        {
-            var _src = (void*)src;
-            src += Unsafe.SizeOf<Key>();
-            return ref Unsafe.AsRef<Key>(_src);
-        }
-
-        /// <inheritdoc />
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref Value ReadValueByRef(ref byte* src)
-        {
-            var _src = (void*)src;
-            src += Unsafe.SizeOf<Value>();
-            return ref Unsafe.AsRef<Value>(_src);
-        }
-
-        /// <inheritdoc />
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref Input ReadInputByRef(ref byte* src)
-        {
-            var _src = (void*)src;
-            src += Unsafe.SizeOf<Input>();
-            return ref Unsafe.AsRef<Input>(_src);
         }
 
         /// <inheritdoc />
@@ -79,12 +51,11 @@ namespace FASTER.common
         }
 
         /// <inheritdoc />
-        public bool Write(ref Output o, ref byte* dst, int length)
+        public Output ReadOutput(ref byte* src)
         {
-            if (length < Unsafe.SizeOf<Output>()) return false;
-            Unsafe.AsRef<Output>(dst) = o;
-            dst += Unsafe.SizeOf<Output>();
-            return true;
+            var _src = src;
+            src += Unsafe.SizeOf<Output>();
+            return Unsafe.AsRef<Output>(_src);
         }
 
         /// <summary>
@@ -109,28 +80,5 @@ namespace FASTER.common
             }
             return true;
         }
-
-        /// <inheritdoc />
-        public Output ReadOutput(ref byte* src)
-        {
-            var _src = src;
-            src += Unsafe.SizeOf<Output>();
-            return Unsafe.AsRef<Output>(_src);
-        }
-
-        /// <inheritdoc />
-        public ref Output AsRefOutput(byte* src, int length)
-        {
-            return ref Unsafe.AsRef<Output>(src);
-        }
-
-        /// <inheritdoc />
-        public void SkipOutput(ref byte* src)
-        {
-            src += Unsafe.SizeOf<Output>();
-        }
-
-        /// <inheritdoc />
-        public int GetLength(ref Output o) => Unsafe.SizeOf<Output>();
     }
 }

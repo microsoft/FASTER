@@ -4,14 +4,15 @@
 using System;
 using System.Runtime.CompilerServices;
 using FASTER.core;
+using FASTER.common;
 
-namespace FASTER.common
+namespace FASTER.server
 {
     /// <summary>
     /// Serializer for SpanByte
+    /// Used only on server-side, but we add client-side serializer API for completeness
     /// </summary>
-    public unsafe sealed class SpanByteParameterSerializer 
-        : IServerSerializer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory>, IClientSerializer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory>
+    public unsafe sealed class SpanByteSerializer : IServerSerializer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory>, IClientSerializer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory>
     {
         readonly SpanByteVarLenStruct settings;
         readonly int keyLength;
@@ -25,7 +26,7 @@ namespace FASTER.common
         /// </summary>
         /// <param name="maxKeyLength">Max key length</param>
         /// <param name="maxValueLength">Max value length</param>
-        public SpanByteParameterSerializer(int maxKeyLength = 512, int maxValueLength = 512)
+        public SpanByteSerializer(int maxKeyLength = 512, int maxValueLength = 512)
         {
             settings = new SpanByteVarLenStruct();
             keyLength = maxKeyLength;

@@ -81,12 +81,12 @@ namespace FASTER.client
         /// <typeparam name="Key">Key</typeparam>
         /// <typeparam name="Value">Value</typeparam>
         /// <returns></returns>
-        public static ClientSession<Key, Value, Value, Value, byte, CallbackFunctionsBase<Key, Value, Value, Value, byte>, BlittableParameterSerializer<Key, Value, Value, Value>> NewSession<Key, Value>(this FasterKVClient<Key, Value> store, MaxSizeSettings maxSizeSettings = default)
+        public static ClientSession<Key, Value, Value, Value, byte, CallbackFunctionsBase<Key, Value, Value, Value, byte>, FixedLenSerializer<Key, Value, Value, Value>> NewSession<Key, Value>(this FasterKVClient<Key, Value> store, MaxSizeSettings maxSizeSettings = default)
             where Key : unmanaged
             where Value : unmanaged
         {
-            return new ClientSession<Key, Value, Value, Value, byte, CallbackFunctionsBase<Key, Value, Value, Value, byte>, BlittableParameterSerializer<Key, Value, Value, Value>>
-                (store.address, store.port, new CallbackFunctionsBase<Key, Value, Value, Value, byte>(), new BlittableParameterSerializer<Key, Value, Value, Value>(), maxSizeSettings);
+            return new ClientSession<Key, Value, Value, Value, byte, CallbackFunctionsBase<Key, Value, Value, Value, byte>, FixedLenSerializer<Key, Value, Value, Value>>
+                (store.address, store.port, new CallbackFunctionsBase<Key, Value, Value, Value, byte>(), new FixedLenSerializer<Key, Value, Value, Value>(), maxSizeSettings);
         }
 
         /// <summary>
@@ -114,13 +114,13 @@ namespace FASTER.client
         /// <typeparam name="Value"></typeparam>
         /// <typeparam name="Functions"></typeparam>
         /// <returns></returns>
-        public static ClientSession<Key, Value, Value, Value, byte, Functions, BlittableParameterSerializer<Key, Value, Value, Value>> NewSession<Key, Value, Functions>(this FasterKVClient<Key, Value> store, Functions functions, MaxSizeSettings maxSizeSettings = default)
+        public static ClientSession<Key, Value, Value, Value, byte, Functions, FixedLenSerializer<Key, Value, Value, Value>> NewSession<Key, Value, Functions>(this FasterKVClient<Key, Value> store, Functions functions, MaxSizeSettings maxSizeSettings = default)
             where Key : unmanaged
             where Value : unmanaged
             where Functions : CallbackFunctionsBase<Key, Value, Value, Value, byte>
         {
-            return new ClientSession<Key, Value, Value, Value, byte, Functions, BlittableParameterSerializer<Key, Value, Value, Value>>
-                (store.address, store.port, functions, new BlittableParameterSerializer<Key, Value, Value, Value>(), maxSizeSettings);
+            return new ClientSession<Key, Value, Value, Value, byte, Functions, FixedLenSerializer<Key, Value, Value, Value>>
+                (store.address, store.port, functions, new FixedLenSerializer<Key, Value, Value, Value>(), maxSizeSettings);
         }
 
         /// <summary>
@@ -132,15 +132,15 @@ namespace FASTER.client
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Functions"></typeparam>
         /// <returns></returns>
-        public static ClientSession<Key, Value, Input, Output, byte, Functions, BlittableParameterSerializer<Key, Value, Input, Output>> NewSession<Key, Value, Input, Output, Functions>(this FasterKVClient<Key, Value> store, Functions functions, MaxSizeSettings maxSizeSettings = default)
+        public static ClientSession<Key, Value, Input, Output, byte, Functions, FixedLenSerializer<Key, Value, Input, Output>> NewSession<Key, Value, Input, Output, Functions>(this FasterKVClient<Key, Value> store, Functions functions, MaxSizeSettings maxSizeSettings = default)
             where Key : unmanaged
             where Value : unmanaged
             where Input : unmanaged
             where Output : unmanaged
             where Functions : CallbackFunctionsBase<Key, Value, Input, Output, byte>
         {
-            return new ClientSession<Key, Value, Input, Output, byte, Functions, BlittableParameterSerializer<Key, Value, Input, Output>>
-                (store.address, store.port, functions, new BlittableParameterSerializer<Key, Value, Input, Output>(), maxSizeSettings);
+            return new ClientSession<Key, Value, Input, Output, byte, Functions, FixedLenSerializer<Key, Value, Input, Output>>
+                (store.address, store.port, functions, new FixedLenSerializer<Key, Value, Input, Output>(), maxSizeSettings);
         }
     }
 }

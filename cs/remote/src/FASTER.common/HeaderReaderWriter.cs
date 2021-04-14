@@ -11,32 +11,6 @@ namespace FASTER.common
     public struct HeaderReaderWriter
     {
         /// <summary>
-        /// Write status
-        /// </summary>
-        /// <param name="s">Status</param>
-        /// <param name="dst">Destination memory</param>
-        /// <param name="length">Length of destination</param>
-        /// <returns>Whether write succeeded</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool Write(Status s, ref byte* dst, int length)
-        {
-            if (length < 1) return false;
-            *dst++ = (byte)s;
-            return true;
-        }
-
-        /// <summary>
-        /// Read status
-        /// </summary>
-        /// <param name="dst">Source memory</param>
-        /// <returns>Status</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe Status ReadStatus(ref byte* dst)
-        {
-            return (Status)(*dst++);
-        }
-
-        /// <summary>
         /// Read pending sequence number
         /// </summary>
         /// <param name="dst">Source memory</param>

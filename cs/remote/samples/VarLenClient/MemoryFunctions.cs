@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using FASTER.client;
-using FASTER.common;
 
 namespace VarLenClient
 {

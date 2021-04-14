@@ -3,11 +3,10 @@
 
 using System;
 using System.Threading;
-using FASTER.core;
-using FASTER.server;
-using FASTER.common;
 using CommandLine;
 using ServerOptions;
+using FASTER.core;
+using FASTER.server;
 
 namespace VarLenServer
 {
@@ -35,8 +34,8 @@ namespace VarLenServer
             var store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
-            var server = new FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteParameterSerializer>
-                (store, wp => new SpanByteFunctionsForServer<long>(wp), opts.Address, opts.Port, new SpanByteParameterSerializer(), default);
+            var server = new FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>
+                (store, wp => new SpanByteFunctionsForServer<long>(wp), opts.Address, opts.Port, new SpanByteSerializer(), default);
             server.Start();
             Console.WriteLine("Started server");
             Thread.Sleep(Timeout.Infinite);

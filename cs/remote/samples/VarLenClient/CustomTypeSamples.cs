@@ -4,7 +4,6 @@
 using System;
 using System.Threading.Tasks;
 using FASTER.client;
-using FASTER.common;
 
 namespace VarLenClient
 {
@@ -34,7 +33,7 @@ namespace VarLenClient
             AsyncVarLenSamples(session).Wait();
         }
 
-        void SyncVarLenSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, BlittableParameterSerializer<CustomType, CustomType, CustomType, CustomType>> session)
+        void SyncVarLenSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session)
         {
             for (int i = 0; i < 100; i++)
                 session.Upsert(new CustomType(i), new CustomType(i + 10000));
@@ -53,7 +52,7 @@ namespace VarLenClient
             session.CompletePending(true);
         }
 
-        async Task AsyncVarLenSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, BlittableParameterSerializer<CustomType, CustomType, CustomType, CustomType>> session)
+        async Task AsyncVarLenSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session)
         {
             // By default, we flush async operations as soon as they are issued
             // To instead flush manually, set forceFlush = false in calls below
