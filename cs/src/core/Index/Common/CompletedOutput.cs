@@ -25,13 +25,13 @@ namespace FASTER.core
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void Add(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext)
+        internal void Add(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
         {
             // Note: vector is never null
             if (this.maxIndex >= vector.Length - 1)
                 Array.Resize(ref this.vector, this.vector.Length * kReallocMultuple);
             ++maxIndex;
-            this.vector[maxIndex].Set(ref pendingContext);
+            this.vector[maxIndex].Set(ref pendingContext, status);
         }
 
         /// <summary>
@@ -113,7 +113,12 @@ namespace FASTER.core
         /// </summary>
         public long Address;
 
-        internal void Set(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext)
+        /// <summary>
+        /// The status of the operation: OK or NOTFOUND
+        /// </summary>
+        public Status Status;
+
+        internal void Set(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
         {
             this.keyContainer = pendingContext.key;
             this.inputContainer = pendingContext.input;
@@ -121,6 +126,7 @@ namespace FASTER.core
             this.Context = pendingContext.userContext;
             this.RecordInfo = pendingContext.recordInfo;
             this.Address = pendingContext.logicalAddress;
+            this.Status = status;
         }
 
         internal void Dispose()

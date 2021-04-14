@@ -105,6 +105,15 @@ namespace FASTER.test
                 Assert.AreEqual(0, this.deferredPendingMax);  // This implicitly does a null check as well as ensures processing actually happened
                 Assert.AreEqual(0, this.deferredPending);
             }
+
+            internal void VerifyOneNotFound(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, ref KeyStruct keyStruct)
+            {
+                Assert.IsTrue(completedOutputs.Next());
+                Assert.AreEqual(Status.NOTFOUND, completedOutputs.Current.Status);
+                Assert.AreEqual(keyStruct, completedOutputs.Current.Key);
+                Assert.IsFalse(completedOutputs.Next());
+            }
+
         }
 
         [Test]
@@ -134,18 +143,32 @@ namespace FASTER.test
                 var contextStruct = NewContextStruct(key);
                 OutputStruct outputStruct = default;
 
+                CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
+                if ((key % (numRecords / 10)) == 0)
+                {
+                    var ksUnfound = keyStruct;
+                    ksUnfound.kfield1 += numRecords * 10;
+                    if (session.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct) == Status.PENDING)
+                    {
+                        if (isAsync)
+                            completedOutputs = await session.CompletePendingWithOutputsAsync();
+                        else
+                            session.CompletePendingWithOutputs(out completedOutputs, wait: true);
+                        processPending.VerifyOneNotFound(completedOutputs, ref ksUnfound);
+                    }
+                }
+
                 // We don't use input or context, but we test that they were carried through correctly.
                 var status = session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
                 if (status == Status.PENDING)
                 {
                     if (processPending.IsFirst())
                     {
-                        session.CompletePending(wait: true);    // Test that this does not instantiate CompletedOutputIterator
+                        session.CompletePending(wait: true);        // Test that this does not instantiate CompletedOutputIterator
                         Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
                         continue;
                     }
 
-                    CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
                     if (!processPending.DeferPending())
                     {
                         if (isAsync)
@@ -188,20 +211,34 @@ namespace FASTER.test
                 var contextStruct = NewContextStruct(key);
                 OutputStruct outputStruct = default;
 
+                CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
+                if ((key % (numRecords / 10)) == 0)
+                {
+                    var ksUnfound = keyStruct;
+                    ksUnfound.kfield1 += numRecords * 10;
+                    if (session.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct) == Status.PENDING)
+                    {
+                        if (isAsync)
+                            completedOutputs = await session.CompletePendingWithOutputsAsync();
+                        else
+                            session.CompletePendingWithOutputs(out completedOutputs, wait: true);
+                        processPending.VerifyOneNotFound(completedOutputs, ref ksUnfound);
+                    }
+                }
+
                 // We don't use input or context, but we test that they were carried through correctly.
                 var status = session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
                 if (status == Status.PENDING)
                 {
                     if (processPending.IsFirst())
                     {
-                        session.CompletePending(wait: true);    // Test that this does not instantiate CompletedOutputIterator
+                        session.CompletePending(wait: true);        // Test that this does not instantiate CompletedOutputIterator
                         Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
                         continue;
                     }
 
                     if (!processPending.DeferPending())
                     {
-                        CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
                         if (isAsync)
                             completedOutputs = await session.CompletePendingWithOutputsAsync();
                         else
