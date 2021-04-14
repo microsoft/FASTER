@@ -7,7 +7,19 @@
 	  <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
 
-  <ItemGroup>
+	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+		<DefineConstants>TRACE;DEBUG</DefineConstants>
+		<DebugType>full</DebugType>
+		<OutputPath>bin\$(Platform)\Debug\</OutputPath>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<DefineConstants>TRACE</DefineConstants>
+		<Optimize>true</Optimize>
+		<OutputPath>bin\$(Platform)\Release\</OutputPath>
+	</PropertyGroup>
+
+	<ItemGroup>
     <Compile Include="..\VarLenServer\Options.cs" Link="Options.cs" />
   </ItemGroup>
 

@@ -3,12 +3,24 @@
   <PropertyGroup>
     <TargetFrameworks>netstandard2.1;netstandard2.0;net461</TargetFrameworks>
 	<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-	<Platforms>AnyCPU;x64</Platforms>
+	<Platforms>AnyCPU</Platforms>
 	<SignAssembly>true</SignAssembly>
 	<AssemblyOriginatorKeyFile>../../../FASTER.snk</AssemblyOriginatorKeyFile>
 	<DelaySign>false</DelaySign>
 	<DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+		<DefineConstants>TRACE;DEBUG</DefineConstants>
+		<DebugType>full</DebugType>
+		<OutputPath>bin\$(Platform)\Debug\</OutputPath>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<DefineConstants>TRACE</DefineConstants>
+		<Optimize>true</Optimize>
+		<OutputPath>bin\$(Platform)\Release\</OutputPath>
+	</PropertyGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net461'">
 		<PackageReference Include="System.ValueTuple" Version="4.5.0" />
