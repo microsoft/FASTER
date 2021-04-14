@@ -25,8 +25,9 @@ namespace FASTER.libdpr
         /// <summary>
         /// Begins a checkpoint to advance to the targetVersion. Invocation of the call only guarantees that object
         /// version eventually reaches targetVersion, and the function may return without performing the checkpoint
-        /// (e.g., if targetVersion is smaller than current version). libDPR expects to receive checkpoint-related
-        /// information, such as token, through registered callback instead of this function.
+        /// (e.g., if targetVersion is smaller than current version, or if another concurrent checkpoint is underway).
+        /// libDPR expects to receive checkpoint-related information, such as token, through registered callback
+        /// instead of this function.
         /// </summary>
         /// <param name="targetVersion">The version to jump to, or -1 if jumping to next version</param>
         void BeginCheckpoint(long targetVersion = -1);

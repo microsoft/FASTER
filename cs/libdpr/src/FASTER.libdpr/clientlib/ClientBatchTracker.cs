@@ -5,7 +5,8 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    internal struct BatchInfo
+    // Client-local information that keeps tracks of every outstanding (not yet completed) request batch. 
+    internal class BatchInfo
     {
         private const int MaxHeaderSize = 4096;
         internal int batchId;
@@ -25,6 +26,8 @@ namespace FASTER.libdpr
         }
     }
 
+    // Class that tracks outstanding batches per client session. For performance, this class statically allocates 
+    // a number of frames that hold batch information as specified in the constructor. 
     internal class ClientBatchTracker : IEnumerable<BatchInfo>
     {
         private BatchInfo[] buffers;
@@ -45,7 +48,7 @@ namespace FASTER.libdpr
                 while (!tracker.buffers[i].allocated)
                 {
                     i++;
-                    if (i > tracker.buffers.Length) return false;
+                    if (i >= tracker.buffers.Length) return false;
                 }
 
                 return true;
@@ -76,6 +79,8 @@ namespace FASTER.libdpr
             }
         }
 
+        // Requests a new batch info object to write information into. Returns false if there are too many batches
+        // being tracked and the tracker has no space left
         internal bool TryGetBatchInfo(out BatchInfo info)
         {
             info = default;
@@ -98,14 +103,13 @@ namespace FASTER.libdpr
             freeBuffers.Enqueue(info.batchId);
         }
 
+        // Go through all outstanding batches and decide whether they are resolved, and update the given CommitPoint
+        // object accordingly for a rollback to mark lost operations 
         internal void HandleRollback(ref CommitPoint limit)
         {
-            // TODO(Tianyu): Eventually need to account for discrepancies between checkpoint and local checkpoint
-            // membership information
             for (var i = 0; i < buffers.Length; i++)
             {
                 if (!buffers[i].allocated) continue;
-                // TODO(Tianyu): Perhaps be more efficient here in fixing UntilSerialNo
                 for (var j = buffers[i].startSeqNum; j < buffers[i].endSeqNum; j++)
                     limit.ExcludedSerialNos.Add(j);
                 FinishBatch(i);

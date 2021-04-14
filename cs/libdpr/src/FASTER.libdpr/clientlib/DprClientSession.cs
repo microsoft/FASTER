@@ -28,6 +28,7 @@ namespace FASTER.libdpr
             this.dprClient = dprClient;
             versionTracker = new ClientVersionTracker();
             currentCommitPoint = new CommitPoint();
+            currentCommitPoint.ExcludedSerialNos = new List<long>();
             deps = new LightDependencySet();
             batchTracker = new ClientBatchTracker();
             this.trackCommits = trackCommits;
@@ -37,7 +38,7 @@ namespace FASTER.libdpr
         private void CheckWorldlineChange()
         {
             // Nothing to check if no dpr update
-            if (!Utility.MonotonicUpdate(ref seenDprViewNum, dprClient.GetDprViewNumber(), out _)) return;
+            if (seenDprViewNum == dprClient.GetDprViewNumber()) return;
             // No failure
             if (clientWorldLine == dprClient.GetDprFinder().SystemWorldLine()) return;
             clientWorldLine = dprClient.GetDprFinder().SystemWorldLine();
@@ -51,7 +52,6 @@ namespace FASTER.libdpr
         public CommitPoint GetCommitPoint()
         {
             if (!trackCommits) throw new NotSupportedException();
-            CheckWorldlineChange();
             if (Utility.MonotonicUpdate(ref seenDprViewNum, dprClient.GetDprViewNumber(), out _))
                 ComputeCurrentCommitPoint();
             return currentCommitPoint;
@@ -112,6 +112,7 @@ namespace FASTER.libdpr
                     header = new Span<byte>(info.header, 0, dprHeader.Size());
                 }
             }
+
             return info.startSeqNum;
         }
 
@@ -145,6 +146,7 @@ namespace FASTER.libdpr
                 // Update versioning information
                 long maxVersion = 0;
 
+                // TODO(Tianyu): Reason harder about concurrency behavior here and document accordingly
                 lock (versionTracker)
                 {
                     fixed (byte* v = reply.versions)
@@ -211,13 +213,17 @@ namespace FASTER.libdpr
         {
             // Reset commit point 
             currentCommitPoint.ExcludedSerialNos.Clear();
-            currentCommitPoint.UntilSerialNo = versionTracker.LargestSeqNum();
-            
-            // Add exceptions to all uncommitted, but finished ops
-            var dprTable = dprClient.GetDprFinder().ReadSnapshot();
-            versionTracker.ResolveOperations(dprTable);
-            foreach (var (s, _) in versionTracker)
-                currentCommitPoint.ExcludedSerialNos.Add(s);
+            // TODO(Tianyu): This calculation is inefficient --- can just start from the largest seq num of committed versions
+            currentCommitPoint.UntilSerialNo = versionTracker.LargestSeqNum() + 1;
+
+            lock (versionTracker)
+            {
+                // Add exceptions to all uncommitted, but finished ops
+                var dprTable = dprClient.GetDprFinder().ReadSnapshot();
+                versionTracker.ResolveOperations(dprTable);
+                foreach (var (s, _) in versionTracker)
+                    currentCommitPoint.ExcludedSerialNos.Add(s);
+            }
 
             // Add any exceptions that have not finished (earlier committed operations may have completed out of order)
             foreach (var batch in batchTracker)

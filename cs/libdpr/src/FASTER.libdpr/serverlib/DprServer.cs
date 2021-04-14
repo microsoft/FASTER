@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
+using FASTER.core;
 
 namespace FASTER.libdpr
 {
@@ -32,7 +34,7 @@ namespace FASTER.libdpr
     /// <typeparam name="TToken">Type of token checkpoints generate</typeparam>
     internal class DprWorkerState<TToken>
     {
-        public DprWorkerState(IDprFinder dprFinder, Worker me)
+        internal DprWorkerState(IDprFinder dprFinder, Worker me)
         {
             this.dprFinder = dprFinder;
             this.me = me;
@@ -40,12 +42,15 @@ namespace FASTER.libdpr
             versions = new ConcurrentDictionary<long, VersionHandle<TToken>>();
         }
         
-        public readonly IDprFinder dprFinder;
+        internal readonly IDprFinder dprFinder;
 
-        public readonly SimpleVersionScheme worldlineTracker;
-        public ManualResetEventSlim rollbackProgress;
-        public readonly ConcurrentDictionary<long, VersionHandle<TToken>> versions;
-        public readonly Worker me;
+        internal readonly SimpleVersionScheme worldlineTracker;
+        internal ManualResetEventSlim rollbackProgress;
+        internal readonly ConcurrentDictionary<long, VersionHandle<TToken>> versions;
+        internal readonly Worker me;
+        
+        internal Stopwatch sw = Stopwatch.StartNew();
+        internal long lastCheckpointMilli = 0, lastRefreshMilli = 0;
     }
     
     /// <summary>
@@ -60,52 +65,35 @@ namespace FASTER.libdpr
         private readonly DprWorkerState<TToken> state;
         private readonly TStateObject stateObject;
         private SimpleObjectPool<DprBatchVersionTracker> trackers;
-            
-        private Thread refreshThread;
-        private readonly long checkpointPeriodMilli;
-        private ManualResetEventSlim termination;
-
-        public DprServer(IDprFinder dprFinder, Worker me, TStateObject stateObject, long checkpointPeriodMilli)
+        
+        public DprServer(IDprFinder dprFinder, Worker me, TStateObject stateObject)
         {
          
             state = new DprWorkerState<TToken>(dprFinder, me);
             this.stateObject = stateObject;
             trackers = new SimpleObjectPool<DprBatchVersionTracker>(() => new DprBatchVersionTracker());
             stateObject.Register(new DprWorkerCallbacks<TToken>(state));
-            this.checkpointPeriodMilli = checkpointPeriodMilli;
         }
 
         public TStateObject StateObject() => stateObject;
-        
-        public void Start()
-        {
-            if (checkpointPeriodMilli == -1) return;
 
-            termination = new ManualResetEventSlim();
-            refreshThread = new Thread(() =>
+        public void TryRefreshAndCheckpoint(long checkpointPeriodMilli, long refreshPeriodMilli)
+        {
+            var currentTime = state.sw.ElapsedMilliseconds;
+            
+            if (state.lastRefreshMilli + refreshPeriodMilli < currentTime)
             {
-                var sw = Stopwatch.StartNew();
-                while (!termination.IsSet)
-                {
-                    var expectedVersion = sw.ElapsedMilliseconds / checkpointPeriodMilli + 1;
-                    if (stateObject.Version() < expectedVersion)
-                        stateObject.BeginCheckpoint(expectedVersion);
-                    // TODO(Tianyu): Need to add async or otherwise frequency-limit this invocation?
-                    state.dprFinder.Refresh();
-                }
-            });
-            refreshThread.Start();
+                state.dprFinder.Refresh();
+                Utility.MonotonicUpdate(ref state.lastRefreshMilli, currentTime, out _);
+            }
+            
+            if (state.lastCheckpointMilli + checkpointPeriodMilli <= currentTime)
+            {
+                stateObject.BeginCheckpoint(Math.Max(stateObject.Version() + 1, state.dprFinder.GlobalMaxVersion()));
+                Utility.MonotonicUpdate(ref state.lastCheckpointMilli, currentTime, out _);
+            }
         }
-
-        public void End()
-        {
-            if (checkpointPeriodMilli == -1) return;
-
-            // TODO(Tianyu): Implement leaving a DPR cluster
-            termination.Set();
-            refreshThread.Join();
-        }
-
+     
         private void TryAdvanceWorldLineTo(long targetWorldline)
         {
             while (state.worldlineTracker.Version() != targetWorldline)
@@ -137,7 +125,10 @@ namespace FASTER.libdpr
             // Wait for worker version to catch up to largest in batch (minimum version where all operations
             // can be safely executed), taking checkpoints if necessary.
             while (dprRequest.versionLowerBound > stateObject.Version())
+            {
                 stateObject.BeginCheckpoint(dprRequest.versionLowerBound);
+                Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
+            }
 
             // Enter protected region for world-lines. Because we validate requests batch-at-a-time, the world-line
             // must not shift while a batch is being processed, otherwise a message from an older world-line may be
@@ -232,6 +223,7 @@ namespace FASTER.libdpr
         public void ForceCheckpoint(long targetVersion = -1)
         {
             stateObject.BeginCheckpoint(targetVersion);
+            Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
         }
     }
 }

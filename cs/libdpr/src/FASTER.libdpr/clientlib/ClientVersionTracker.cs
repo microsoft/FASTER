@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using FASTER.core;
@@ -22,6 +23,7 @@ namespace FASTER.libdpr
             if (!versionEnumerator.MoveNext()) return false;
             opEnumerator?.Dispose();
             opEnumerator = versionEnumerator.Current.Value.GetEnumerator();
+            opEnumerator.MoveNext();
             return true;
         }
 
@@ -40,13 +42,13 @@ namespace FASTER.libdpr
             versionEnumerator.Dispose();
         }
     }
-    
-    // TODO(Tianyu): Documentation
+
+    // Tracks completed but uncommitted operations and their versions for each client session. Not thread-safe.
     internal class ClientVersionTracker : IEnumerable<(long, WorkerVersion)>
     {
-        private ThreadLocalObjectPool<List<long>> listPool = new ThreadLocalObjectPool<List<long>>(() => new List<long>());
-        // TODO(Tianyu): Use a more compact representation for encoding completed operation versions
+        private SimpleObjectPool<List<long>> listPool = new SimpleObjectPool<List<long>>(() => new List<long>());
         private Dictionary<WorkerVersion, List<long>> versionMappings = new Dictionary<WorkerVersion, List<long>>();
+
         // WTF C# cannot remove things from dictionary while iterating?
         private List<WorkerVersion> toRemove = new List<WorkerVersion>();
         private long largestSeqNum = 0;
@@ -56,7 +58,8 @@ namespace FASTER.libdpr
 
         internal void Add(long serialNum, WorkerVersion executedAt)
         {
-            largestSeqNum = Math.Max(largestSeqNum, serialNum);
+            Utility.MonotonicUpdate(ref largestSeqNum, serialNum, out _);
+
             if (!versionMappings.TryGetValue(executedAt, out var list))
             {
                 list = listPool.Checkout();
@@ -66,6 +69,7 @@ namespace FASTER.libdpr
             list.Add(serialNum);
         }
         
+        // Given the state of the current DPR cluster, remove operations that have been committed to free up space
         internal void ResolveOperations(IDprStateSnapshot dprState)
         {
             foreach (var entry in versionMappings)
@@ -84,6 +88,8 @@ namespace FASTER.libdpr
             toRemove.Clear();
         }
 
+        // Given the current DPR state, rollback any uncommitted operations that are now lost and write changes
+        // to the given CommitPoint to account for any lost operations
         internal void HandleRollback(IDprStateSnapshot dprState, ref CommitPoint limit)
         {
             foreach (var entry in versionMappings)

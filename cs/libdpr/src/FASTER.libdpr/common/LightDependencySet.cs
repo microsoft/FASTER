@@ -8,7 +8,11 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    // TODO(Tianyu): Document
+    /// <summary>
+    /// Class used to inexpensively track worker version dependency for a workers and client sessions.
+    ///
+    /// Can only correctly track dependencies within a cluster up to size MaxClusterSize
+    /// </summary>
     public class LightDependencySet : IEnumerable<WorkerVersion>
     {
         private const int MaxSizeBits = 8;
@@ -31,7 +35,7 @@ namespace FASTER.libdpr
             
             public bool MoveNext()
             {
-                while (index++ < MaxClusterSize)
+                while (++index < MaxClusterSize)
                     if (dependencySet.dependentVersions[index] != NoDependency) return true;
                 return false;
             }
@@ -50,6 +54,9 @@ namespace FASTER.libdpr
             }
         }
 
+        /// <summary>
+        /// Constructs a new light dependency set
+        /// </summary>
         public LightDependencySet()
         {
             dependentVersions = new long[1 << MaxSizeBits];
@@ -57,6 +64,11 @@ namespace FASTER.libdpr
                 dependentVersions[i] = NoDependency;
         }
         
+        /// <summary>
+        /// Add dependency of (worker, version)
+        /// </summary>
+        /// <param name="worker">worker</param>
+        /// <param name="version">version</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Update(Worker worker, long version)
         {
@@ -64,6 +76,12 @@ namespace FASTER.libdpr
             Utility.MonotonicUpdate(ref originalVersion, version, out _);
         }
         
+        /// <summary>
+        /// Removes the dependency of (worker, version) and all previous versions of the worker if present
+        /// </summary>
+        /// <param name="worker"> worker </param>
+        /// <param name="version"> version </param>
+        /// <returns>whether the dependency was removed</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryRemove(Worker worker, long version)
         {
@@ -71,6 +89,7 @@ namespace FASTER.libdpr
             return Interlocked.CompareExchange(ref originalVersion, NoDependency, version) == version;
         }
 
+        /// <inheritdoc/>>
         public IEnumerator<WorkerVersion> GetEnumerator()
         {
             return new LightDependencySetEnumerator(this);

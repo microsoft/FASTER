@@ -3,14 +3,20 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    // TODO(Tianyu): Document
+    /// <summary>
+    /// DprRollbackException is thrown when there is a failure in the cluster that results in some loss of uncommitted
+    /// operations. 
+    /// </summary>
     public class DprRollbackException : Exception
     {
-        public CommitPoint rollbackPoint;
+        /// <summary>
+        /// The exact cutoff for the operations that survived the rollback
+        /// </summary>
+        public CommitPoint RollbackPoint { get; }
 
-        public DprRollbackException(CommitPoint rollbackPoint)
+        internal DprRollbackException(CommitPoint rollbackPoint)
         {
-            this.rollbackPoint = rollbackPoint;
+            this.RollbackPoint = rollbackPoint;
         }
     }
 }

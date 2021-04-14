@@ -3,10 +3,9 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.libdpr
 {
-    // TODO(Tianyu): Document
     /// <summary>
     /// DPR metadata associated with each batch. Laid out continuously as:
-    /// header | deps (WorkerVersion[]) | message metadata (DprMessageHeader[])
+    /// header | deps (WorkerVersion[])
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 44)]
     public unsafe struct DprBatchRequestHeader
@@ -34,6 +33,10 @@ namespace FASTER.libdpr
         public int Size() => HeaderSize + numDeps * sizeof(WorkerVersion);
     }
 
+    /// <summary>
+    /// DPR metadata associated with each batch. Laid out continuously as:
+    /// header | size (long) | version vector (long[])
+    /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 32)]
     public unsafe struct DprBatchResponseHeader
     {

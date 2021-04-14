@@ -20,11 +20,11 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="version">Version number of the finished version</param>
         /// <param name="token">unique token that identifies the checkpoint associated with the version</param>
-        public void OnVersionEnd(long version, TToken token)
+        public void OnVersionEnd(long oldVersion, TToken token)
         {
             // Get or Add as some operations may have executed early in the next version, which would lead to a created
             // entry for the version without a token.
-            var versionHandle = state.versions.GetOrAdd(version, v => new VersionHandle<TToken>());
+            var versionHandle = state.versions.GetOrAdd(oldVersion, v => new VersionHandle<TToken>());
             versionHandle.token = token;
         }
 

@@ -52,24 +52,43 @@ namespace FASTER.libdpr
         }
     }
 
-    // TODO(Tianyu): Document
+    /// <summary>
+    /// An object pool that optimizes for use cases where objects are reused on the same thread. Thread-safe.
+    ///
+    /// There will be memory utilization problems if checkout and return pairs are not called on the same thread.
+    ///  
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
     public class ThreadLocalObjectPool<T> where T : class
     {
         private Func<T> factory;
         private ThreadLocal<LightConcurrentStack<T>> objects;
 
+        /// <summary>
+        /// Constructs a new object pool
+        /// </summary>
+        /// <param name="factory">method used to create new objects</param>
+        /// <param name="maxObjectPerThread"> maximum of reused objects per thread</param>
         public ThreadLocalObjectPool(Func<T> factory, int maxObjectPerThread = 128)
         {
             this.factory = factory;
             objects = new ThreadLocal<LightConcurrentStack<T>>(() => new LightConcurrentStack<T>(maxObjectPerThread));
         }
         
+        /// <summary>
+        /// Gets a new (reused) object
+        /// </summary>
+        /// <returns>object of type T</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public T Checkout()
         {
             return !objects.Value.TryPop(out var obj) ? factory() : obj;
         }
 
+        /// <summary>
+        /// Returns a used object for future use
+        /// </summary>
+        /// <param name="obj">object to return</param>
         public void Return(T obj)
         {
             objects.Value.TryPush(obj);

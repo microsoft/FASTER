@@ -23,7 +23,7 @@ namespace FASTER.libdpr
         private class DprBatchVersionVectorEnumerator : IEnumerator<long>
         {
             private readonly long* start;
-            private long index;
+            private long index = -1;
 
             public DprBatchVersionVectorEnumerator(byte* start)
             {
@@ -32,9 +32,7 @@ namespace FASTER.libdpr
 
             public bool MoveNext()
             {
-                if (index + 1 >= start[0]) return false;
-                index++;
-                return true;
+                return ++index < start[0];
             }
 
             public void Reset()

@@ -1,132 +1,57 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using NUnit.Framework.Internal.Commands;
+using static System.Int64;
 
 namespace FASTER.libdpr
 {
-    // Simple single-threaded server
-    public class SimpleTestDprFinderServer
+    public class SimpleTestDprFinderBackend
     {
-        private readonly Dictionary<long, (long, long)> entries = new Dictionary<long, (long, long)>();
-        private Socket socket;
-        private Thread serverThread;
-        private long lastCut;
-        private long maxWorldline;
+        private ConcurrentDictionary<Worker, long> versions = new ConcurrentDictionary<Worker, long>();
 
-        public void StartServer(string ip, int port)
+        public SimpleTestDprFinderBackend(int clusterSize)
         {
-            var ipAddr = IPAddress.Parse(ip);
-            var endPoint = new IPEndPoint(ipAddr, port);
-            socket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            socket.Bind(endPoint);
-            socket.Listen(512);
-
-            serverThread = new Thread(() =>
-            {
-                // TODO(Tianyu): Magic number
-                var buf = new byte[4096];
-
-                try
-                {
-                    while (true)
-                    {
-                        var clientSocket = socket.Accept();
-                        clientSocket.NoDelay = true;
-                        var received = clientSocket.Receive(buf);
-                        // 8 bytes worker id + 8 bytes world-line + 8 bytes version
-                        Debug.Assert(received == 24);
-                        var workerId = BitConverter.ToInt64(buf, 0);
-                        var worldLine = BitConverter.ToInt64(buf, 8);
-                        var version = BitConverter.ToInt64(buf, 16);
-                        entries.TryAdd(workerId,
-                            ValueTuple.Create(worldLine, version));
-
-                        var inRecovery = false;
-                        long minVersion = long.MaxValue, maxVersion = long.MinValue;
-                        foreach (var (entryWorldline, entryVersion) in entries.Values)
-                        {
-                            maxWorldline = Math.Max(maxWorldline, entryWorldline);
-                            if (maxWorldline != entryWorldline) inRecovery = true;
-                            minVersion = Math.Min(entryVersion, minVersion);
-                            maxVersion = Math.Max(entryVersion, maxVersion);
-                        }
-
-                        if (!inRecovery) lastCut = minVersion;
-                        BitConverter.TryWriteBytes(new Span<byte>(buf, 0, 8), maxWorldline);
-                        BitConverter.TryWriteBytes(new Span<byte>(buf, 8, 8), lastCut);
-                        BitConverter.TryWriteBytes(new Span<byte>(buf, 16, 8), maxVersion);
-
-                        clientSocket.Send(new Span<byte>(buf, 0, 24));
-                        clientSocket.Dispose();
-                    }
-                }
-                catch (SocketException)
-                {
-                    // Fine to exit normally
-                }
-            });
-
-            serverThread.Start();
+            for (var i = 0; i < clusterSize; i++)
+                versions[new Worker(i)] = 0;
         }
+        
+        public void Update(Worker worker, long version) => versions[worker] = version;
 
-        public void EndServer()
+        public (long, long) ComputeCut()
         {
-            socket.Dispose();
-            serverThread.Join();
+            long max = MinValue, min = MaxValue;
+            foreach (var version in versions)
+            {
+                max = Math.Max(max, version.Value);
+                min = Math.Min(min, version.Value);
+            }
+
+            return ValueTuple.Create(min, max);
         }
     }
-
+    // Simple single-threaded server
     public class SimpleTestDprFinder : IDprFinder
     {
         // cached local value
         private readonly Worker me;
-        private long globalSafeVersionNum = 0, globalMaxVersionNum = 1, systemWorldLine = 0;
-        private readonly string ip;
-        private readonly int port;
-        // TODO(Tianyu): Magic number
-        private readonly byte[] buf = new byte[4096];
-        private long workerWorldLine = 0, workerVersion = 0;
+        private long globalSafeVersionNum = 0, globalMaxVersionNum = 1;
+        private long workerVersion = 0;
+        private SimpleTestDprFinderBackend backend;
 
-        public SimpleTestDprFinder(string ip, int port, Worker me)
+        public SimpleTestDprFinder(Worker me, SimpleTestDprFinderBackend backend)
         {
-            this.ip = ip;
-            this.port = port;
             this.me = me;
-        }
-
-        private Socket GetNewConnection()
-        {
-            var dprFinderBackend = new IPEndPoint(IPAddress.Parse(ip), port);
-            var socket = new Socket(dprFinderBackend.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            socket.Connect(dprFinderBackend);
-            socket.NoDelay = true;
-            return socket;
-        }
-
-        private void Sync()
-        {
-            var conn = GetNewConnection();
-            BitConverter.TryWriteBytes(new Span<byte>(buf, 0, 8), me.guid);
-            BitConverter.TryWriteBytes(new Span<byte>(buf, 8, 8), workerWorldLine);
-            BitConverter.TryWriteBytes(new Span<byte>(buf, 16, 8), workerVersion);
-
-            conn.Send(new Span<byte>(buf, 0, 24));
-            conn.Receive(buf);
-
-            systemWorldLine = BitConverter.ToInt64(buf, 0);
-            globalSafeVersionNum = BitConverter.ToInt64(buf, 8);
-            globalMaxVersionNum = BitConverter.ToInt64(buf, 16);
-            conn.Dispose();
+            this.backend = backend;
         }
 
         public void ReportRecovery(long worldLine, WorkerVersion latestRecoveredVersion)
         {
-            workerVersion = worldLine;
-            workerVersion = latestRecoveredVersion.Version;
-            Sync();
+            throw new NotImplementedException();
         }
 
 
@@ -142,7 +67,7 @@ namespace FASTER.libdpr
 
         public long SystemWorldLine()
         {
-            return systemWorldLine;
+            return 0;
         }
 
         public IDprStateSnapshot ReadSnapshot()
@@ -153,12 +78,14 @@ namespace FASTER.libdpr
         public void ReportNewPersistentVersion(WorkerVersion persisted, IEnumerable<WorkerVersion> deps)
         {
             workerVersion = persisted.Version;
-            Sync();
+            backend.Update(me, persisted.Version);
         }
 
         public void Refresh()
         {
-            Sync();
+            var (newMin, newMax) = backend.ComputeCut();
+            globalMaxVersionNum = newMax;
+            globalSafeVersionNum = newMin;
         }
     }
 }

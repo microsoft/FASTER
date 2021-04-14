@@ -1,6 +1,5 @@
 namespace FASTER.libdpr
 {
-    // TODO(Tianyu): Documentation
     public class GlobalMinDprStateSnapshot: IDprStateSnapshot
     {
         private readonly long globalSafeVersion;
