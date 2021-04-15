@@ -81,11 +81,11 @@ namespace FASTER.test.async
                 r.Complete(); // test sync version of Upsert completion
             }
 
-            for (long key = 0; key < numOps; key++)
-            {
-                var (status, output) = (await s1.ReadAsync(ref key, Empty.Default, 99, cancellationToken)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
-            }
+            //for (long key = 0; key < numOps; key++)
+            //{
+            //    var (status, output) = (await s1.ReadAsync(ref key, Empty.Default, 99, cancellationToken)).Complete();
+            //    Assert.IsTrue(status == Status.OK && output == key);
+            //}
         }
 
         // Test that does .ReadAsync no ref key (key)
