@@ -32,9 +32,12 @@ namespace FixedLenServer
 
             opts.GetSettings(out var logSettings, out var checkpointSettings, out var indexSize);
 
+            // We use blittable structs Key and Value to construct a costomized server for fixed-length types
             var store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
+            // We specify FixedLenSerializer as our in-built serializer for blittable (fixed length) types
+            // This server can be used with compatible clients such as FixedLenClient and FASTER.benchmark
             var server = new FasterKVServer<Key, Value, Input, Output, Functions, FixedLenSerializer<Key, Value, Input, Output>>
                 (store, e => new Functions(), opts.Address, opts.Port);
             server.Start();

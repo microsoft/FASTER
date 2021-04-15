@@ -16,6 +16,10 @@ namespace FASTER.server
     /// <typeparam name="Input">Input</typeparam>
     /// <typeparam name="Output">Output</typeparam>
     public unsafe struct FixedLenSerializer<Key, Value, Input, Output> : IServerSerializer<Key, Value, Input, Output>
+        where Key : unmanaged
+        where Value : unmanaged
+        where Input : unmanaged
+        where Output : unmanaged
     {
         static FixedLenSerializer()
         {

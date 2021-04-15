@@ -31,9 +31,13 @@ namespace VarLenServer
 
             opts.GetSettings(out var logSettings, out var checkpointSettings, out var indexSize);
 
+            // Create a new instance of the FasterKV, customized for variable-length blittable data (represented by SpanByte)
+            // With SpanByte, keys and values are stored inline in the FASTER log as [ 4 byte length | payload ]
             var store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
+            // Create a new server based on above store. You specify additional details such as the serializer (to read and write
+            // from and to the wire) and functions (to communicate with FASTER via IFunctions)
             var server = new FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>
                 (store, wp => new SpanByteFunctionsForServer<long>(wp), opts.Address, opts.Port, new SpanByteSerializer(), default);
             server.Start();

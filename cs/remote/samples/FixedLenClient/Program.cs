@@ -24,10 +24,13 @@ namespace FixedLenClient
             if (args.Length > 1 && args[1] != "-")
                 port = int.Parse(args[1]);
 
+            // Create a new client, use only blittable struct types here. Client can only communicate
+            // with a server that uses the same (or bytewise compatible) blittable struct types. For
+            // (long key, long value) is compatible with the FixedLenServer project.
             using var client = new FasterKVClient<long, long>(ip, port);
 
-            // Create a session to FasterKV server
-            // Sessions are mono-threaded, similar to normal FasterKV sessions
+            // Create a client session to the FasterKV server.
+            // Sessions are mono-threaded, similar to normal FasterKV sessions.
             using var session = client.NewSession(new Functions());
 
             // Explicit version of NewSession call, where you provide all types, callback functions, and serializer
