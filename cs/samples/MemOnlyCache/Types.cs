@@ -55,19 +55,23 @@ namespace MemOnlyCache
         public override bool ConcurrentWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst, ref RecordInfo recordInfo, long address)
         {
             var old = Interlocked.Exchange(ref dst, src);
-            sizeTracker.AddSize(dst.GetSize - old.GetSize);
+            sizeTracker.AddTrackedSize(dst.GetSize - old.GetSize);
             return true;
         }
 
         public override void SingleWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst)
         {
             dst = src;
-            sizeTracker.AddSize(key.GetSize + src.GetSize);
+            sizeTracker.AddTrackedSize(key.GetSize + src.GetSize);
         }
 
         public override void ConcurrentDeleter(ref CacheKey key, ref CacheValue value, ref RecordInfo recordInfo, long address)
         {
-            sizeTracker.AddSize(-value.GetSize);
+            sizeTracker.AddTrackedSize(-value.GetSize);
+
+            // Record is marked invalid (failed to insert), dispose key as well
+            if (recordInfo.Invalid)
+                sizeTracker.AddTrackedSize(-key.GetSize);
         }
     }
 }
