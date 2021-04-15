@@ -411,7 +411,7 @@ namespace FASTER.core
         /// <param name="prevEndAddress"></param>
         /// <param name="version"></param>
         /// <param name="deltaLog"></param>
-        internal virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
+        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
         {
             long startPage = GetPage(startAddress);
             long endPage = GetPage(endAddress);
@@ -471,7 +471,7 @@ namespace FASTER.core
                 deltaLog.Seal(destOffset);
         }
 
-        internal void ApplyDelta(DeltaLog log, long startPage, long endPage)
+        internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage)
         {
             if (log == null) return;
 
