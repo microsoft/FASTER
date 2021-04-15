@@ -70,7 +70,26 @@ namespace FASTER.test.async
         // Test that does .ReadAsync with minimum parameters but no default (ref key, userContext, serialNo, token)
         [Test]
         [Category("FasterKV")]
-        public async Task ReadAsyncMinParamTestNoDefaultTest()
+        public async Task ReadAsyncMinParamTestNoDefaultTest0()
+        {
+            using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
+            for (long key = 0; key < numOps; key++)
+            {
+                var r = await s1.UpsertAsync(ref key, ref key);
+                while (r.Status == Status.PENDING)
+                    r = await r.CompleteAsync(); // test async version of Upsert completion
+            }
+
+            for (long key = 0; key < numOps; key++)
+            {
+                var (status, output) = (await s1.ReadAsync(ref key, Empty.Default, 99)).Complete();
+                Assert.IsTrue(status == Status.OK && output == key);
+            }
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        public async Task ReadAsyncMinParamTestNoDefaultTest1()
         {
             CancellationToken cancellationToken;
 
