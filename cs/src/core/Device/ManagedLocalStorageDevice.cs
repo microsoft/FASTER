@@ -18,6 +18,7 @@ namespace FASTER.core
     {
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
+        private readonly bool osReadBuffering;
         private readonly SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)> logHandles;
         private readonly SectorAlignedBufferPool pool;
 
@@ -36,7 +37,8 @@ namespace FASTER.core
         /// <param name="deleteOnClose"></param>
         /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit</param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
-        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false)
+        /// <param name="osReadBuffering">Enable OS read buffering</param>
+        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false)
             : base(filename, GetSectorSize(filename), capacity)
         {
             pool = new SectorAlignedBufferPool(1, 1);
@@ -49,6 +51,7 @@ namespace FASTER.core
             this._disposed = false;
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
+            this.osReadBuffering = osReadBuffering;
             logHandles = new SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)>();
             if (recoverDevice)
                 RecoverFiles();
@@ -395,7 +398,7 @@ namespace FASTER.core
                     memory?.Return();
 #endif
                     // Sequentialize all writes to same handle
-                    ((FileStream)logWriteHandle).Flush(true);
+                    await ((FileStream)logWriteHandle).FlushAsync();
                     streampool?.Return(logWriteHandle);
 
                     // Issue user callback
@@ -492,10 +495,11 @@ namespace FASTER.core
         {
             const int FILE_FLAG_NO_BUFFERING = 0x20000000;
             FileOptions fo =
-                (FileOptions)FILE_FLAG_NO_BUFFERING |
                 FileOptions.WriteThrough |
                 FileOptions.Asynchronous |
                 FileOptions.None;
+            if (!osReadBuffering)
+                fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
             var logReadHandle = new FileStream(
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,

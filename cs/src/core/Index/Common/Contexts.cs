@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -30,7 +31,8 @@ namespace FASTER.core
         RECORD_ON_DISK,
         SUCCESS_UNMARK,
         CPR_SHIFT_DETECTED,
-        CPR_PENDING_DETECTED
+        CPR_PENDING_DETECTED,
+        ALLOCATE_FAILED
     }
 
     internal class SerializedFasterExecutionContext
@@ -89,7 +91,25 @@ namespace FASTER.core
             internal const byte kSkipReadCache = 0x01;
             internal const byte kNoKey = 0x02;
             internal const byte kSkipCopyReadsToTail = 0x04;
+            internal const byte kIsAsync = 0x08;
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal IHeapContainer<Key> DetachKey()
+            {
+                var tempKeyContainer = this.key;
+                this.key = default; // transfer ownership
+                return tempKeyContainer;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal IHeapContainer<Input> DetachInput()
+            {
+                var tempInputContainer = this.input;
+                this.input = default; // transfer ownership
+                return tempInputContainer;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static byte GetOperationFlags(ReadFlags readFlags, bool noKey = false)
             {
                 Debug.Assert((byte)ReadFlags.SkipReadCache == kSkipReadCache);
@@ -117,6 +137,12 @@ namespace FASTER.core
             {
                 get => (operationFlags & kSkipCopyReadsToTail) != 0;
                 set => operationFlags = value ? (byte)(operationFlags | kSkipCopyReadsToTail) : (byte)(operationFlags & ~kSkipCopyReadsToTail);
+            }
+
+            internal bool IsAsync
+            {
+                get => (operationFlags & kIsAsync) != 0;
+                set => operationFlags = value ? (byte)(operationFlags | kIsAsync) : (byte)(operationFlags & ~kIsAsync);
             }
 
             public void Dispose()
@@ -149,6 +175,28 @@ namespace FASTER.core
                 {
                     return SyncIoPendingCount == 0 && retryRequests.Count == 0;
                 }
+            }
+
+            public void WaitPending(LightEpoch epoch)
+            {
+                if (SyncIoPendingCount > 0)
+                {
+                    try
+                    {
+                        epoch.Suspend();
+                        readyResponses.WaitForEntry();
+                    }
+                    finally
+                    {
+                        epoch.Resume();
+                    }
+                }
+            }
+
+            public async ValueTask WaitPendingAsync(CancellationToken token = default)
+            {
+                if (SyncIoPendingCount > 0)
+                    await readyResponses.WaitForEntryAsync(token);
             }
 
             public FasterExecutionContext<Input, Output, Context> prevCtx;
