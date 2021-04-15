@@ -72,9 +72,14 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Circular buffer size
+        /// Circular buffer size (in number of pages)
         /// </summary>
-        public int BufferSize => allocator.BufferSize;
+        public int BufferSizePages => allocator.BufferSize;
+
+        /// <summary>
+        /// Memory used by log (not including reference heap object sizes)
+        /// </summary>
+        public long MemorySizeBytes => ((long)allocator.BufferSize) << allocator.LogPageSizeBits;
 
         /// <summary>
         /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.

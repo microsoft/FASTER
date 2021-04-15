@@ -59,6 +59,42 @@ is useful when reads are infrequent, but will be followed by an update, or subse
 frequent, we recommend the read cache instead of `CopyReadsToTail`, as the latter can inflate
 log growth unnecessarily.
 
+## Computing Total FASTER Memory
+
+The total memory footprint of FASTER can be computed as:
+
+```
+store.IndexSize * 64 + store.OverflowBucketCount * 64 + store.Log.MemorySizeBytes
+```
+
+If the read cache is enabled, add `store.ReadCache.MemorySizeBytes`.
+
+
+## Managing Log Size with C# objects
+
+The FASTER in-memory portion consists of `store.Log.BufferSize` pages in a circular buffer. The
+buffer size is equal to 2^X^, where X = `MemorySizeBits` - `PageSizeBits`.
+
+When FASTER stores C# class key or value objects, the `GenericAllocator` is used for the 
+log (and read cache), and these buffer pages contain pointers to reference data which may take different 
+sizes, making the control of total memory footprint of FASTER difficult in this scenario. 
+This is because the total number of pointers in memory remains fixed, based on total 
+memory size.
+
+For example, when `PageSizeBits` is 14 (i.e., each page is 2^14^ = 16KB) and 
+`MemorySizeBits` is 25 (i.e., 2^25^ = 32MB total memory), we have a `BufferSize` of
+2048 (i.e., 2^25-14^) pages in memory. With a total memory size of 32MB, with C# objects 
+as keys and values, since each record takes up 24 bytes (8 byte record header + 8 byte key 
+pointer + 8 byte value pointer), the buffer stores a fixed number of 32M / 24 = ~1.39M key-value 
+pairs. These could take up an arbitrary amount of total memory, depending on sizes of the 
+stored objects.
+
+FASTER has two capabilities to help manage state:
+
+1. One can accurately track the total memory used by FASTER, using a cache size [tracker](https://github.com/microsoft/FASTER/blob/master/cs/samples/MemOnlyCache/CacheSizeTracker.cs) that lets `IFunctions` notify it of record additions and deletions, and by subscribing to evictions from the head of the in-memory log. Details are in the  [MemOnlySample](https://github.com/microsoft/FASTER/tree/master/cs/samples/MemOnlyCache) sample, where we show how to track FASTER's total memory usage (including the heap objects, log, hash table, and overflow buckets) very accurately.
+2. In order to control the number of key-value pairs in memory dynamically, FASTER exposes a knob, called `store.Log.EmptyPageCount`, that indicates how many pages are kept empty in memory in the circular buffer. By adjusting this knob (default 0), we can reduce the effective number of pages that hold objects in memory (and therefore the overall memory utilization) below `BufferSize`. This knob can vary between 0 (full buffer is used) and `BufferSize-1` (only tail page is used). In the [MemOnlySample](https://github.com/microsoft/FASTER/tree/master/cs/samples/MemOnlyCache) sample,  we allow the application to dynamically adjust the total memory utilization of FASTER, by exploiting this `EmptyPageCount` knob in the cache size [tracker](https://github.com/microsoft/FASTER/blob/master/cs/samples/MemOnlyCache/CacheSizeTracker.cs) module. This knob is only useful when C# class key or value types are used (`GenericAllocator`).
+
+
 ## Configuring the Read Cache
 
 FASTER supports an immutable read cache that sits between the index and the main log. The read cache itself is organized

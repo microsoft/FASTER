@@ -68,6 +68,10 @@ namespace MemOnlyCache
         public override void ConcurrentDeleter(ref CacheKey key, ref CacheValue value, ref RecordInfo recordInfo, long address)
         {
             sizeTracker.AddTrackedSize(-value.GetSize);
+
+            // Record is marked invalid (failed to insert), dispose key as well
+            if (recordInfo.Invalid)
+                sizeTracker.AddTrackedSize(-key.GetSize);
         }
     }
 }

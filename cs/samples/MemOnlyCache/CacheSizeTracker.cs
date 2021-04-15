@@ -40,11 +40,17 @@ namespace MemOnlyCache
                 this.TargetSizeBytes = targetMemoryBytes;
             }
 
-            storeSize = store.IndexSize * 64;
-            storeSize += 1L << memorySizeBits;
+            storeSize = store.IndexSize * 64 + store.Log.MemorySizeBytes;
 
             // Register subscriber to receive notifications of log evictions from memory
             store.Log.SubscribeEvictions(this);
+
+            // Include the separate read cache, if enabled
+            if (store.ReadCache != null)
+            {
+                storeSize += store.ReadCache.MemorySizeBytes;
+                store.ReadCache.SubscribeEvictions(this);
+            }
         }
 
         /// <summary>
@@ -78,7 +84,7 @@ namespace MemOnlyCache
             while (iter.GetNext(out RecordInfo info, out CacheKey key, out CacheValue value))
             {
                 size += key.GetSize;
-                if (!info.Tombstone) // ignore deleted records being evicted
+                if (!info.Tombstone) // ignore deleted values being evicted (they are accounted for by ConcurrentDeleter)
                     size += value.GetSize;
             }
             AddTrackedSize(-size);
