@@ -73,7 +73,7 @@ If the read cache is enabled, add `store.ReadCache.MemorySizeBytes`.
 ## Managing Log Size with C# objects
 
 The FASTER in-memory portion consists of `store.Log.BufferSize` pages in a circular buffer. The
-buffer size is equal to 2^X^, where X = `MemorySizeBits` - `PageSizeBits`.
+buffer size is equal to 2<sup>X</sup>, where X = `MemorySizeBits` - `PageSizeBits`.
 
 When FASTER stores C# class key or value objects, the `GenericAllocator` is used for the 
 log (and read cache), and these buffer pages contain pointers to reference data which may take different 
@@ -81,9 +81,9 @@ sizes, making the control of total memory footprint of FASTER difficult in this 
 This is because the total number of pointers in memory remains fixed, based on total 
 memory size.
 
-For example, when `PageSizeBits` is 14 (i.e., each page is 2^14^ = 16KB) and 
-`MemorySizeBits` is 25 (i.e., 2^25^ = 32MB total memory), we have a `BufferSize` of
-2048 (i.e., 2^25-14^) pages in memory. With a total memory size of 32MB, with C# objects 
+For example, when `PageSizeBits` is 14 (i.e., each page is 2<sup>14</sup> = 16KB) and 
+`MemorySizeBits` is 25 (i.e., 2<sup>25</sup> = 32MB total memory), we have a `BufferSize` of
+2048 (i.e., 2<sup>25-14</sup>) pages in memory. With a total memory size of 32MB, with C# objects 
 as keys and values, since each record takes up 24 bytes (8 byte record header + 8 byte key 
 pointer + 8 byte value pointer), the buffer stores a fixed number of 32M / 24 = ~1.39M key-value 
 pairs. These could take up an arbitrary amount of total memory, depending on sizes of the 
