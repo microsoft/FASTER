@@ -548,8 +548,18 @@ namespace FASTER.core
                 return OperationStatus.SUCCESS;
             }
 
-            // CAS failed
-            hlog.GetInfo(newPhysicalAddress).Invalid = true;
+            // CAS failed - let user dispose similar to a deleted record
+            ref RecordInfo insertedRecordInfo = ref hlog.GetInfo(newPhysicalAddress);
+            ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
+            ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
+            // First set Invalid to true so that ConcurrentDeleter knows to dispose key as well
+            insertedRecordInfo.Invalid = true;
+            fasterSession.ConcurrentDeleter(ref insertedKey, ref insertedValue, ref insertedRecordInfo, newLogicalAddress);
+            if (WriteDefaultOnDelete)
+            {
+                insertedKey = default;
+                insertedValue = default;
+            }
             return OperationStatus.RETRY_NOW;
         }
 

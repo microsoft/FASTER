@@ -63,6 +63,25 @@ namespace FASTER.core
         public int FixedRecordSize => allocator.GetFixedRecordSize();
 
         /// <summary>
+        /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
+        /// </summary>
+        public int EmptyPageCount
+        {
+            get => allocator.EmptyPageCount;
+            set { allocator.EmptyPageCount = value; }
+        }
+
+        /// <summary>
+        /// Circular buffer size (in number of pages)
+        /// </summary>
+        public int BufferSizePages => allocator.BufferSize;
+
+        /// <summary>
+        /// Memory used by log (not including reference heap object sizes)
+        /// </summary>
+        public long MemorySizeBytes => ((long)allocator.BufferSize) << allocator.LogPageSizeBits;
+
+        /// <summary>
         /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.
         /// </summary>
         /// <param name="untilAddress">Address to shift begin address until</param>
