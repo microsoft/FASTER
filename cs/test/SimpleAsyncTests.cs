@@ -48,7 +48,7 @@ namespace FASTER.test.async
         }
 
         // Test that does .ReadAsync with minimum parameters (ref key)
-        [Test]
+        [Test, Timeout(60000)]
         [Category("FasterKV")]
         public async Task ReadAsyncMinParamTest()
         {
@@ -68,7 +68,7 @@ namespace FASTER.test.async
         }
 
         // Test that does .ReadAsync with minimum parameters but no default (ref key, userContext, serialNo, token)
-        [Test]
+        [Test, Timeout(60000)]
         [Category("FasterKV")]
         public async Task ReadAsyncMinParamTestNoDefaultTest()
         {
@@ -89,7 +89,7 @@ namespace FASTER.test.async
         }
 
         // Test that does .ReadAsync no ref key (key)
-        [Test]
+        [Test, Timeout(60000)]
         [Category("FasterKV")]
         public async Task ReadAsyncNoRefKeyTest()
         {
@@ -108,7 +108,7 @@ namespace FASTER.test.async
         }
 
         // Test that does .ReadAsync ref key and ref input (ref key, ref input)
-        [Test]
+        [Test, Timeout(60000)]
         [Category("FasterKV")]
         public async Task ReadAsyncRefKeyRefInputTest()
         {
