@@ -72,7 +72,7 @@ namespace FASTER.test.async
         [Category("FasterKV")]
         public async Task ReadAsyncMinParamTestNoDefaultTest()
         {
-            CancellationToken cancellationToken;
+            CancellationToken cancellationToken = default;
 
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
             for (long key = 0; key < numOps; key++)
