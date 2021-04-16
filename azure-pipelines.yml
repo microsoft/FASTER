@@ -90,6 +90,7 @@ jobs:
     inputs:
       testRunner: VSTest
       testResultsFiles: '**/*.trx'
+      searchFolder: '$(Agent.TempDirectory)'
 
 - job: 'cppWindows'
   pool:
@@ -158,6 +159,7 @@ jobs:
   #  displayName: 'Run Tests (Release)'
 
 - job: 'csharpLinux'
+  timeoutInMinutes: 10
   pool:
     vmImage: ubuntu-16.04
   displayName: 'C# (Linux)'
@@ -187,9 +189,15 @@ jobs:
     inputs:
       command: test
       projects: '**/test/*.csproj'
-      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1'
-      publishTestResults: true
-   
+      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1 --no-restore --no-build --logger trx --results-directory "$(Agent.TempDirectory)"'
+      
+  - task: PublishTestResults@2
+    displayName: 'Publish Test Results'
+    inputs:
+      testResultsFormat: 'VSTest'
+      testResultsFiles: '*.trx'
+      searchFolder: '$(Agent.TempDirectory)'
+
 # - job: 'cppBlobsWindows'
 #   pool:
 #     vmImage: vs2017-win2016
