@@ -278,6 +278,11 @@ namespace FASTER.core
                             (uint)pageSize, callback, asyncResult,
                             device, objectLogDevice, flushPage, localSegmentOffsets);
                 }
+                else
+                {
+                    // Requested page is already flushed to main log, ignore
+                    callback(0, 0, asyncResult);
+                }
             }
             finally
             {
