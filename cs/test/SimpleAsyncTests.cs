@@ -48,7 +48,7 @@ namespace FASTER.test.async
         }
 
         // Test that does .ReadAsync with minimum parameters (ref key)
-        [Test, Timeout(60000)]
+        [Test]
         [Category("FasterKV")]
         public async Task ReadAsyncMinParamTest()
         {
@@ -68,7 +68,7 @@ namespace FASTER.test.async
         }
 
         // Test that does .ReadAsync with minimum parameters but no default (ref key, userContext, serialNo, token)
-        [Test, Timeout(60000)]
+        [Test]
         [Category("FasterKV")]
         public async Task ReadAsyncMinParamTestNoDefaultTest()
         {
@@ -89,7 +89,7 @@ namespace FASTER.test.async
         }
 
         // Test that does .ReadAsync no ref key (key)
-        [Test, Timeout(60000)]
+        [Test]
         [Category("FasterKV")]
         public async Task ReadAsyncNoRefKeyTest()
         {
@@ -108,7 +108,7 @@ namespace FASTER.test.async
         }
 
         // Test that does .ReadAsync ref key and ref input (ref key, ref input)
-        [Test, Timeout(60000)]
+        [Test]
         [Category("FasterKV")]
         public async Task ReadAsyncRefKeyRefInputTest()
         {
@@ -141,7 +141,7 @@ namespace FASTER.test.async
 
 
         // Test that does .ReadAsync no ref key and no ref input (key, input)
-        [Test, Timeout(60000)]
+        [Test]
         [Category("FasterKV")]
         public async Task ReadAsyncNoRefKeyNoRefInputTest()
         {
@@ -173,7 +173,7 @@ namespace FASTER.test.async
         }
 
         // Test that does .UpsertAsync, .ReadAsync, .DeleteAsync, .ReadAsync with minimum parameters passed by reference (ref key)
-        [Test, Timeout(60000)]
+        [Test]
         [Category("FasterKV")]
         public async Task UpsertReadDeleteReadAsyncMinParamByRefTest()
         {
@@ -205,7 +205,7 @@ namespace FASTER.test.async
         }
 
         // Test that does .UpsertAsync, .ReadAsync, .DeleteAsync, .ReadAsync with minimum parameters passed by value (key)
-        [Test, Timeout(60000)]
+        [Test]
         [Category("FasterKV")]
         public async Task UpsertReadDeleteReadAsyncMinParamByValueTest()
         {
@@ -273,7 +273,7 @@ namespace FASTER.test.async
         */
 
         // Test of RMWAsync where No ref used
-        [Test, Timeout(60000)]
+        [Test]
         [Category("FasterKV")]
         public async Task ReadAsyncRMWAsyncNoRefTest()
         {
@@ -307,7 +307,7 @@ namespace FASTER.test.async
 
         // Test of ReadyToCompletePendingAsync
         // Note: This should be looked into more to make it more of a "test" with proper verfication vs calling it to make sure just pop exception
-        [Test, Timeout(60000)]
+        [Test]
         [Category("FasterKV")]
         public async Task ReadyToCompletePendingAsyncTest()
         {
