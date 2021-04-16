@@ -2,7 +2,7 @@ variables:
   solution: 'cs/FASTER.sln'
   RunAzureTests: 'yes'
 
-# jobs:
+jobs:
 # - job: 'csharpWindows'
 #   pool:
 #     vmImage: windows-latest
