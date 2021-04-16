@@ -189,7 +189,7 @@ jobs:
     inputs:
       command: test
       projects: '**/test/*.csproj'
-      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1 --no-restore --no-build --logger trx --results-directory "$(Agent.TempDirectory)"'
+      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1'
       
   - task: PublishTestResults@2
     displayName: 'Publish Test Results'
