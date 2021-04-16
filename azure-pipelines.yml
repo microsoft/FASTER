@@ -2,164 +2,158 @@ variables:
   solution: 'cs/FASTER.sln'
   RunAzureTests: 'yes'
 
-jobs:
-- job: 'csharpWindows'
-  pool:
-    vmImage: windows-latest
-  displayName: 'C# (Windows)'
-  timeoutInMinutes: 75 
+# jobs:
+# - job: 'csharpWindows'
+#   pool:
+#     vmImage: windows-latest
+#   displayName: 'C# (Windows)'
+#   timeoutInMinutes: 75 
 
-  strategy:
-    maxParallel: 2
-    matrix:
-      AnyCPU-Debug:
-        buildPlatform: 'Any CPU'
-        buildConfiguration: 'Debug'
-      AnyCPU-Release:
-        buildPlatform: 'Any CPU'
-        buildConfiguration: 'Release'
-      x64-Debug:
-        buildPlatform: 'x64'
-        buildConfiguration: 'Debug'
-      x64-Release:
-        buildPlatform: 'x64'
-        buildConfiguration: 'Release'
+#   strategy:
+#     maxParallel: 2
+#     matrix:
+#       AnyCPU-Debug:
+#         buildPlatform: 'Any CPU'
+#         buildConfiguration: 'Debug'
+#       AnyCPU-Release:
+#         buildPlatform: 'Any CPU'
+#         buildConfiguration: 'Release'
+#       x64-Debug:
+#         buildPlatform: 'x64'
+#         buildConfiguration: 'Debug'
+#       x64-Release:
+#         buildPlatform: 'x64'
+#         buildConfiguration: 'Release'
 
-  steps:
-  - task: NuGetToolInstaller@1
+#   steps:
+#   - task: NuGetToolInstaller@1
 
-  - task: NuGetCommand@2
-    inputs:
-      restoreSolution: '$(solution)'
+#   - task: NuGetCommand@2
+#     inputs:
+#       restoreSolution: '$(solution)'
 
-  - task: VSBuild@1
-    inputs:
-      solution: '$(solution)'
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
+#   - task: VSBuild@1
+#     inputs:
+#       solution: '$(solution)'
+#       platform: '$(buildPlatform)'
+#       configuration: '$(buildConfiguration)'
 
-  - powershell: 'Invoke-WebRequest -OutFile azure-storage-emulator.msi -Uri "https://go.microsoft.com/fwlink/?LinkId=717179&clcid=0x409"'
-    displayName: 'Download Azure Storage Emulator'
+#   - powershell: 'Invoke-WebRequest -OutFile azure-storage-emulator.msi -Uri "https://go.microsoft.com/fwlink/?LinkId=717179&clcid=0x409"'
+#     displayName: 'Download Azure Storage Emulator'
 
-  - powershell:  'msiexec /passive /lvx installation.log /a azure-storage-emulator.msi TARGETDIR="C:\storage-emulator"'
-    displayName: 'Install Azure Storage Emulator'
+#   - powershell:  'msiexec /passive /lvx installation.log /a azure-storage-emulator.msi TARGETDIR="C:\storage-emulator"'
+#     displayName: 'Install Azure Storage Emulator'
 
-  - script: '"C:\Program Files\Microsoft SQL Server\130\Tools\Binn\SqlLocalDB.exe" create "v13.0" 13.0 -s'
-    displayName: 'Init Test Db'
+#   - script: '"C:\Program Files\Microsoft SQL Server\130\Tools\Binn\SqlLocalDB.exe" create "v13.0" 13.0 -s'
+#     displayName: 'Init Test Db'
 
-  - script: '"C:\storage-emulator\root\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
-    displayName: 'Start Storage Emulator'
+#   - script: '"C:\storage-emulator\root\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
+#     displayName: 'Start Storage Emulator'
 
-  - task: VSTest@2
-    inputs:
-      testAssemblyVer2: |
-       **\$(BuildConfiguration)\net46*\*test.dll
-       **\$(BuildConfiguration)\**\net46*\*test.dll
-       !**\*Microsoft.VisualStudio.TestPlatform*
-       !**\obj\**
-       !**\*TestAdapter.dll
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0'
+#   - task: VSTest@2
+#     inputs:
+#       testAssemblyVer2: |
+#        **\$(BuildConfiguration)\net46*\*test.dll
+#        **\$(BuildConfiguration)\**\net46*\*test.dll
+#        !**\*Microsoft.VisualStudio.TestPlatform*
+#        !**\obj\**
+#        !**\*TestAdapter.dll
+#       platform: '$(buildPlatform)'
+#       configuration: '$(buildConfiguration)'
+#       otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0'
 
-  - task: VSTest@2
-    inputs:
-      testAssemblyVer2: |
-       **\$(BuildConfiguration)\netcoreapp2*\*test.dll
-       **\$(BuildConfiguration)\**\netcoreapp2*\*test.dll
-       !**\*Microsoft.VisualStudio.TestPlatform*
-       !**\obj\**
-       !**\*TestAdapter.dll
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.2'
+#   - task: VSTest@2
+#     inputs:
+#       testAssemblyVer2: |
+#        **\$(BuildConfiguration)\netcoreapp2*\*test.dll
+#        **\$(BuildConfiguration)\**\netcoreapp2*\*test.dll
+#        !**\*Microsoft.VisualStudio.TestPlatform*
+#        !**\obj\**
+#        !**\*TestAdapter.dll
+#       platform: '$(buildPlatform)'
+#       configuration: '$(buildConfiguration)'
+#       otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.2'
 
-  - task: VSTest@2
-    inputs:
-      testAssemblyVer2: |
-       **\$(BuildConfiguration)\netcoreapp3*\*test.dll
-       **\$(BuildConfiguration)\**\netcoreapp3*\*test.dll
-       !**\*Microsoft.VisualStudio.TestPlatform*
-       !**\obj\**
-       !**\*TestAdapter.dll
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v3.1'
+#   - task: VSTest@2
+#     inputs:
+#       testAssemblyVer2: |
+#        **\$(BuildConfiguration)\netcoreapp3*\*test.dll
+#        **\$(BuildConfiguration)\**\netcoreapp3*\*test.dll
+#        !**\*Microsoft.VisualStudio.TestPlatform*
+#        !**\obj\**
+#        !**\*TestAdapter.dll
+#       platform: '$(buildPlatform)'
+#       configuration: '$(buildConfiguration)'
+#       otherConsoleOptions: '/Framework:.NETCoreApp,Version=v3.1'
 
-  - task: PublishTestResults@2
-    inputs:
-      testRunner: VSTest
-      testResultsFiles: '**/*.trx'
-      searchFolder: '$(Agent.TempDirectory)'
+#   - task: PublishTestResults@2
+#     inputs:
+#       testRunner: VSTest
+#       testResultsFiles: '**/*.trx'
+#       searchFolder: '$(Agent.TempDirectory)'
 
-- job: 'cppWindows'
-  pool:
-    vmImage: vs2017-win2016
-  displayName: 'C++ (Windows)'
+# - job: 'cppWindows'
+#   pool:
+#     vmImage: vs2017-win2016
+#   displayName: 'C++ (Windows)'
 
-  strategy:
-    maxParallel: 2
-    matrix:
-      x64-Debug:
-        buildPlatform: 'x64'
-        buildConfiguration: 'Debug'
-      x64-Release:
-        buildPlatform: 'x64'
-        buildConfiguration: 'Release'
+#   strategy:
+#     maxParallel: 2
+#     matrix:
+#       x64-Debug:
+#         buildPlatform: 'x64'
+#         buildConfiguration: 'Debug'
+#       x64-Release:
+#         buildPlatform: 'x64'
+#         buildConfiguration: 'Release'
 
-  steps:
-  - task: CMake@1
-    displayName: 'CMake .. -G"Visual Studio 15 2017 Win64"'
-    inputs:
-      workingDirectory: 'cc/build'
-      cmakeArgs: '.. -G"Visual Studio 15 2017 Win64"'
+#   steps:
+#   - task: CMake@1
+#     displayName: 'CMake .. -G"Visual Studio 15 2017 Win64"'
+#     inputs:
+#       workingDirectory: 'cc/build'
+#       cmakeArgs: '.. -G"Visual Studio 15 2017 Win64"'
 
-  - task: MSBuild@1
-    displayName: 'Build solution cc/build/FASTER.sln'
-    inputs:
-      solution: 'cc/build/FASTER.sln'
-      msbuildArguments: '/m /p:Configuration=$(buildConfiguration) /p:Platform=$(buildPlatform)'
+#   - task: MSBuild@1
+#     displayName: 'Build solution cc/build/FASTER.sln'
+#     inputs:
+#       solution: 'cc/build/FASTER.sln'
+#       msbuildArguments: '/m /p:Configuration=$(buildConfiguration) /p:Platform=$(buildPlatform)'
 
-  - script: 'ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "in_memory"'
-    workingDirectory: 'cc/build'
-    displayName: 'Run Ctest'
+#   - script: 'ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "in_memory"'
+#     workingDirectory: 'cc/build'
+#     displayName: 'Run Ctest'
 
-- job: 'cppLinux'
-  pool:
-    vmImage: ubuntu-16.04
-  displayName: 'C++ (Linux)'
+# - job: 'cppLinux'
+#   pool:
+#     vmImage: ubuntu-16.04
+#   displayName: 'C++ (Linux)'
 
-  steps:
-  - script: |
-      sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-      sudo apt update
-      sudo apt install -y g++-7 libaio-dev uuid-dev libtbb-dev
-    displayName: 'Install depdendencies'
+#   steps:
+#   - script: |
+#       sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+#       sudo apt update
+#       sudo apt install -y g++-7 libaio-dev uuid-dev libtbb-dev
+#     displayName: 'Install depdendencies'
 
-  - script: |
-      export CXX='g++-7'
-      cd cc
-      mkdir -p build/Debug build/Release
-      cd build/Debug
-      cmake -DCMAKE_BUILD_TYPE=Debug ../..
-      make -j
-      cd ../../build/Release
-      cmake -DCMAKE_BUILD_TYPE=Release ../..
-      make -j
-    displayName: 'Compile'
+#   - script: |
+#       export CXX='g++-7'
+#       cd cc
+#       mkdir -p build/Debug build/Release
+#       cd build/Debug
+#       cmake -DCMAKE_BUILD_TYPE=Debug ../..
+#       make -j
+#       cd ../../build/Release
+#       cmake -DCMAKE_BUILD_TYPE=Release ../..
+#       make -j
+#     displayName: 'Compile'
 
-  - script: |
-      CTEST_OUTPUT_ON_FAILURE=1 make test
-    workingDirectory: 'cc/build/Debug'
-    displayName: 'Run Tests (Debug)'
-
-  #- script: |
-  #    CTEST_OUTPUT_ON_FAILURE=1 make test
-  #  workingDirectory: 'cc/build/Release'
-  #  displayName: 'Run Tests (Release)'
+#   - script: |
+#       CTEST_OUTPUT_ON_FAILURE=1 make test
+#     workingDirectory: 'cc/build/Debug'
+#     displayName: 'Run Tests (Debug)'
 
 - job: 'csharpLinux'
-  timeoutInMinutes: 10
   pool:
     vmImage: ubuntu-16.04
   displayName: 'C# (Linux)'
