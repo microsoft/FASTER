@@ -30,7 +30,7 @@ namespace AsyncStress
             Console.WriteLine($"    -r <mode>:      Read threading mode (listed below); default is {ThreadingMode.ParallelAsync}");
             Console.WriteLine($"    -t #:           Number of tasks for {ThreadingMode.ParallelSync} and {ThreadingMode.Chunks}; default is {numTasks}");
             Console.WriteLine($"    -n #:           Number of operations; default is {numOperations}");
-            Console.WriteLine($"    -b #:           Use OS buffering for reads; default is {FasterWrapper<int, int>.useOsReadBuffering}");
+            Console.WriteLine($"    -b #:           Use OS buffering for reads; default is false");
             Console.WriteLine($"    -?, /?, --help: Show this screen");
             Console.WriteLine();
             Console.WriteLine($"Threading Modes:");
@@ -43,6 +43,8 @@ namespace AsyncStress
 
         public static async Task Main(string[] args)
         {
+            bool useOsReadBuffering = false;
+
             if (args.Length > 0)
             {
                 for (var ii = 0; ii < args.Length; ++ii)
@@ -65,7 +67,7 @@ namespace AsyncStress
                     else if (arg == "-n")
                         numOperations = int.Parse(nextArg());
                     else if (arg == "-b")
-                        FasterWrapper<int, int>.useOsReadBuffering = true;
+                        useOsReadBuffering = true;
                     else if (arg == "-?" || arg == "/?" || arg == "--help")
                     {
                         Usage();
@@ -75,10 +77,11 @@ namespace AsyncStress
                         throw new ApplicationException($"Unknown switch: {arg}");
                 }
             }
-            await ProfileStore(new FasterWrapper<int, int>());
+            await ProfileStore(new FasterWrapper<int, int>(useOsReadBuffering));
         }
 
-        private static async Task ProfileStore(FasterWrapper<int, int> store)
+        private static async Task ProfileStore<TStore>(TStore store)
+            where TStore : IFasterWrapper<int, int>
         {
             static string threadingModeString(ThreadingMode threadingMode)
                 => threadingMode switch
@@ -145,7 +148,7 @@ namespace AsyncStress
             }
             else
             {
-                Console.WriteLine($"    Reading {numOperations} records with {threadingModeString(readThreadingMode)} (OS buffering: {FasterWrapper<int, int>.useOsReadBuffering}) ...");
+                Console.WriteLine($"    Reading {numOperations} records with {threadingModeString(readThreadingMode)} (OS buffering: {store.UseOsReadBuffering}) ...");
                 var readTasks = new ValueTask<(Status, int)>[numOperations];
                 var readPendingString = string.Empty;
 

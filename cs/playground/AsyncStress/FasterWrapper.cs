@@ -7,17 +7,26 @@ using System.Threading.Tasks;
 
 namespace AsyncStress
 {
-    public class FasterWrapper<Key, Value>
+    public class FasterWrapper<Key, Value> : IFasterWrapper<Key, Value>
     {
         readonly FasterKV<Key, Value> _store;
         readonly AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>>> _sessionPool;
-        
-        // OS Buffering is safe to use in this app because Reads are done after all updates
-        internal static bool useOsReadBuffering = false;
+        readonly bool useOsReadBuffering;
+        int upsertPendingCount = 0;
+        int readPendingCount = 0;
 
-        public FasterWrapper()
+        // This can be used to verify the same amount data is loaded.
+        public long TailAddress => _store.Log.TailAddress;
+
+        // Indicates how many operations went pending
+        public int UpsertPendingCount { get => upsertPendingCount; set => upsertPendingCount = value; }
+        public int ReadPendingCount { get => readPendingCount; set => readPendingCount = value; }
+        // Whether OS Read buffering is enabled
+        public bool UseOsReadBuffering => useOsReadBuffering;
+
+        public FasterWrapper(bool useOsReadBuffering = false)
         {
-            var logDirectory ="d:/FasterLogs";
+            var logDirectory = "d:/FasterLogs";
             var logFileName = Guid.NewGuid().ToString();
             var logSettings = new LogSettings
             {
@@ -29,18 +38,12 @@ namespace AsyncStress
 
             Console.WriteLine($"    Using {logSettings.LogDevice.GetType()}");
 
+            this.useOsReadBuffering = useOsReadBuffering;
             _store = new FasterKV<Key, Value>(1L << 20, logSettings);
             _sessionPool = new AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>>>(
                     logSettings.LogDevice.ThrottleLimit,
                     () => _store.For(new SimpleFunctions<Key, Value, Empty>()).NewSession<SimpleFunctions<Key, Value, Empty>>());
         }
-
-        // This can be used to verify the same amount data is loaded.
-        public long TailAddress => _store.Log.TailAddress;
-
-        // Indicates how many operations went pending
-        public int UpsertPendingCount = 0;
-        public int ReadPendingCount = 0;
 
         public async ValueTask UpsertAsync(Key key, Value value)
         {
@@ -49,7 +52,7 @@ namespace AsyncStress
             var r = await session.UpsertAsync(key, value);
             while (r.Status == Status.PENDING)
             {
-                Interlocked.Increment(ref UpsertPendingCount);
+                Interlocked.Increment(ref upsertPendingCount);
                 r = await r.CompleteAsync();
             }
             _sessionPool.Return(session);
@@ -63,7 +66,7 @@ namespace AsyncStress
             if (status == Status.PENDING)
             {
                 // This should not happen for sync Upsert().
-                Interlocked.Increment(ref UpsertPendingCount);
+                Interlocked.Increment(ref upsertPendingCount);
                 session.CompletePending();
             }
             _sessionPool.Return(session);
@@ -79,7 +82,7 @@ namespace AsyncStress
                 var r = await session.UpsertAsync(chunk[ii].Item1, chunk[ii].Item2);
                 while (r.Status == Status.PENDING)
                 {
-                    Interlocked.Increment(ref UpsertPendingCount);
+                    Interlocked.Increment(ref upsertPendingCount);
                     r = await r.CompleteAsync();
                 }
             }
@@ -102,7 +105,7 @@ namespace AsyncStress
             var result = session.Read(key);
             if (result.status == Status.PENDING)
             {
-                Interlocked.Increment(ref ReadPendingCount);
+                Interlocked.Increment(ref readPendingCount);
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 int count = 0;
                 for (; completedOutputs.Next(); ++count)
