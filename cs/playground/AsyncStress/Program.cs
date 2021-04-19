@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using Xunit;
 using FASTER.core;
-using System.Linq;
 
 namespace AsyncStress
 {
@@ -75,7 +74,15 @@ namespace AsyncStress
                         throw new ApplicationException($"Unknown switch: {arg}");
                 }
             }
+
+            // Store with value types, no object log
             await ProfileStore(new FasterWrapper<long, long>(useOsReadBuffering), e => (long)e, e => (long)e);
+
+            // Store with reference types, using object log
+            // await ProfileStore(new FasterWrapper<string, string>(useOsReadBuffering), e => $"key {e}", e => $"value {e}");
+
+            // Store with reference or value types, no object log (store serialized bytes)
+            // await ProfileStore(new SerializedFasterWrapper<string, string>(useOsReadBuffering), e => $"key {e}", e => $"value {e}");
         }
 
         private static async Task ProfileStore<TStore, TKey, TValue>(TStore store, Func<int, TKey> keyGen, Func<int, TValue> valueGen)
@@ -158,7 +165,6 @@ namespace AsyncStress
                     for (int i = 0; i < numOperations; i++)
                     {
                         var result = await store.ReadAsync(database[i].Item1);
-                        Debug.Assert(result.Item1 == Status.OK);
                         results[i] = result;
                     }
                 }

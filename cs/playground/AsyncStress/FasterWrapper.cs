@@ -1,9 +1,9 @@
-﻿using FASTER.core;
-using Xunit;
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Xunit;
+using FASTER.core;
 
 namespace AsyncStress
 {
@@ -29,7 +29,7 @@ namespace AsyncStress
             var logSettings = new LogSettings
             {
                 LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
-                ObjectLogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
+                ObjectLogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.obj.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
                 PageSizeBits = 12,
                 MemorySizeBits = 13
             };

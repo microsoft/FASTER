@@ -32,7 +32,6 @@ namespace AsyncStress
             var logSettings = new LogSettings
             {
                 LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
-                ObjectLogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
                 PageSizeBits = 12,
                 MemorySizeBits = 13
             };
