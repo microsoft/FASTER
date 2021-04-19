@@ -17,8 +17,8 @@ namespace AsyncStress
             ParallelFor,
             Chunks
         }
-        static ThreadingMode upsertThreadingMode = ThreadingMode.Chunks;
-        static ThreadingMode readThreadingMode = ThreadingMode.Chunks;
+        static ThreadingMode upsertThreadingMode = ThreadingMode.ParallelFor;
+        static ThreadingMode readThreadingMode = ThreadingMode.ParallelFor;
         static int numChunks = 10;
         static int numOperations = 1_000_000;
 

@@ -98,12 +98,7 @@ namespace AsyncStress
                 }
             }
 
-            if (status == Status.PENDING)
-            {
-                // This should not happen for sync Upsert().
-                Interlocked.Increment(ref upsertPendingCount);
-                session.CompletePending();
-            }
+            Assert.True(status != Status.PENDING);
             _sessionPool.Return(session);
         }
 
