@@ -16,14 +16,12 @@ namespace AsyncStress
         readonly AsyncPool<ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions>> _sessionPool;
         readonly bool useOsReadBuffering;
         int upsertPendingCount = 0;
-        int readPendingCount = 0;
 
         // This can be used to verify the same amount data is loaded.
         public long TailAddress => _store.Log.TailAddress;
 
         // Indicates how many operations went pending
         public int UpsertPendingCount { get => upsertPendingCount; set => upsertPendingCount = value; }
-        public int ReadPendingCount { get => readPendingCount; set => readPendingCount = value; }
         // Whether OS Read buffering is enabled
         public bool UseOsReadBuffering => useOsReadBuffering;
 
@@ -109,15 +107,15 @@ namespace AsyncStress
             _sessionPool.Return(session);
         }
 
-        public async ValueTask UpsertChunkAsync((Key, Value)[] chunk)
+        public async ValueTask UpsertChunkAsync((Key, Value)[] chunk, int offset, int count)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
 
-            for (var ii = 0; ii < chunk.Length; ++ii)
+            for (var i = 0; i < count; ++i)
             {
-                byte[] keyBytes = MessagePackSerializer.Serialize(chunk[ii].Item1);
-                byte[] valueBytes = MessagePackSerializer.Serialize(chunk[ii].Item2);
+                byte[] keyBytes = MessagePackSerializer.Serialize(chunk[offset + i].Item1);
+                byte[] valueBytes = MessagePackSerializer.Serialize(chunk[offset + i].Item2);
                 ValueTask<FasterKV<SpanByte, SpanByte>.UpsertAsyncResult<SpanByte, SpanByteAndMemory, Empty>> task;
 
                 unsafe
@@ -160,12 +158,12 @@ namespace AsyncStress
                 }
             }
 
-            var result = (await task.ConfigureAwait(false)).Complete();
+            var (status, output) = (await task.ConfigureAwait(false)).Complete();
             _sessionPool.Return(session);
 
-            using IMemoryOwner<byte> memoryOwner = result.output.Memory;
+            using IMemoryOwner<byte> memoryOwner = output.Memory;
 
-            return (result.status, result.status != Status.OK ? default : MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory));
+            return (status, status != Status.OK ? default : MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory));
         }
 
         public ValueTask<(Status, Value)> Read(Key key)
@@ -188,7 +186,6 @@ namespace AsyncStress
 
             if (result.Item1 == Status.PENDING)
             {
-                Interlocked.Increment(ref readPendingCount);
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 int count = 0;
                 for (; completedOutputs.Next(); ++count)
@@ -208,27 +205,15 @@ namespace AsyncStress
             return new ValueTask<(Status, Value)>(userResult);
         }
 
-        public ValueTask ReadChunkAsync(Key[] chunk, ValueTask<(Status, Value)>[] results, int offset)
+        public async ValueTask<(Status, Value)[]> ReadChunkAsync(Key[] chunk, int offset, int count)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
 
             // Reads in chunk are performed serially
-            for (var ii = 0; ii < chunk.Length; ++ii)
-                results[offset + ii] = ReadAsync(chunk[ii]);
-            _sessionPool.Return(session);
-            return new ValueTask();
-        }
-
-        public async ValueTask<(Status, Value)[]> ReadChunkAsync(Key[] chunk)
-        {
-            if (!_sessionPool.TryGet(out var session))
-                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
-
-            // Reads in chunk are performed serially
-            (Status, Value)[] result = new (Status, Value)[chunk.Length];
-            for (var ii = 0; ii < chunk.Length; ++ii)
-                result[ii] = (await ReadAsync(chunk[ii]).ConfigureAwait(false));
+            (Status, Value)[] result = new (Status, Value)[count];
+            for (var i = 0; i < count; ++i)
+                result[i] = await ReadAsync(chunk[offset + i]).ConfigureAwait(false);
 
             _sessionPool.Return(session);
             return result;

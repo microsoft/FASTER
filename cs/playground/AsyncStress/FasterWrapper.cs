@@ -13,20 +13,18 @@ namespace AsyncStress
         readonly AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>>> _sessionPool;
         readonly bool useOsReadBuffering;
         int upsertPendingCount = 0;
-        int readPendingCount = 0;
 
         // This can be used to verify the same amount data is loaded.
         public long TailAddress => _store.Log.TailAddress;
 
-        // Indicates how many operations went pending
+        // Indicates how many upsert operations went pending
         public int UpsertPendingCount { get => upsertPendingCount; set => upsertPendingCount = value; }
-        public int ReadPendingCount { get => readPendingCount; set => readPendingCount = value; }
         // Whether OS Read buffering is enabled
         public bool UseOsReadBuffering => useOsReadBuffering;
 
         public FasterWrapper(bool useOsReadBuffering = false)
         {
-            var logDirectory = "d:/FasterLogs";
+            var logDirectory = "d:/AsyncStress";
             var logFileName = Guid.NewGuid().ToString();
             var logSettings = new LogSettings
             {
@@ -63,23 +61,18 @@ namespace AsyncStress
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
             var status = session.Upsert(key, value);
-            if (status == Status.PENDING)
-            {
-                // This should not happen for sync Upsert().
-                Interlocked.Increment(ref upsertPendingCount);
-                session.CompletePending();
-            }
+            Assert.True(status != Status.PENDING);
             _sessionPool.Return(session);
         }
 
-        public async ValueTask UpsertChunkAsync((Key, Value)[] chunk)
+        public async ValueTask UpsertChunkAsync((Key, Value)[] chunk, int offset, int count)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
 
-            for (var ii = 0; ii < chunk.Length; ++ii)
+            for (var i = 0; i < count; ++i)
             {
-                var r = await session.UpsertAsync(chunk[ii].Item1, chunk[ii].Item2);
+                var r = await session.UpsertAsync(chunk[offset + i].Item1, chunk[offset + i].Item2);
                 while (r.Status == Status.PENDING)
                 {
                     Interlocked.Increment(ref upsertPendingCount);
@@ -105,7 +98,6 @@ namespace AsyncStress
             var result = session.Read(key);
             if (result.status == Status.PENDING)
             {
-                Interlocked.Increment(ref readPendingCount);
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 int count = 0;
                 for (; completedOutputs.Next(); ++count)
@@ -120,26 +112,16 @@ namespace AsyncStress
             return new ValueTask<(Status, Value)>(result);
         }
 
-        public async ValueTask ReadChunkAsync(Key[] chunk, ValueTask<(Status, Value)>[] results, int offset)
+        public async ValueTask<(Status, Value)[]> ReadChunkAsync(Key[] chunk, int offset, int count)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
 
             // Reads in chunk are performed serially
-            for (var ii = 0; ii < chunk.Length; ++ii)
-                results[offset + ii] = new ValueTask<(Status, Value)>((await session.ReadAsync(chunk[ii])).Complete());
-            _sessionPool.Return(session);
-        }
+            (Status, Value)[] result = new (Status, Value)[count];
+            for (var i = 0; i < count; ++i)
+                result[i] = (await session.ReadAsync(chunk[offset + i]).ConfigureAwait(false)).Complete();
 
-        public async ValueTask<(Status, Value)[]> ReadChunkAsync(Key[] chunk)
-        {
-            if (!_sessionPool.TryGet(out var session))
-                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
-
-            // Reads in chunk are performed serially
-            (Status, Value)[] result = new (Status, Value)[chunk.Length];
-            for (var ii = 0; ii < chunk.Length; ++ii)
-                result[ii] = (await session.ReadAsync(chunk[ii]).ConfigureAwait(false)).Complete();
             _sessionPool.Return(session);
             return result;
         }
