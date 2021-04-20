@@ -76,13 +76,13 @@ namespace AsyncStress
             }
 
             // Store with value types, no object log
-            await ProfileStore(new FasterWrapper<long, long>(useOsReadBuffering), e => (long)e, e => (long)e);
+            // await ProfileStore(new FasterWrapper<long, long>(useOsReadBuffering), e => (long)e, e => (long)e);
 
             // Store with reference types, using object log
             // await ProfileStore(new FasterWrapper<string, string>(useOsReadBuffering), e => $"key {e}", e => $"value {e}");
 
             // Store with reference or value types, no object log (store serialized bytes)
-            // await ProfileStore(new SerializedFasterWrapper<string, string>(useOsReadBuffering), e => $"key {e}", e => $"value {e}");
+            await ProfileStore(new SerializedFasterWrapper<string, string>(useOsReadBuffering), e => $"key {e}", e => $"value {e}");
         }
 
         private static async Task ProfileStore<TStore, TKey, TValue>(TStore store, Func<int, TKey> keyGen, Func<int, TValue> valueGen)

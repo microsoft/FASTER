@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+// #define CHECK_FOR_LEAKS // disabled by default due to overhead
+
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -129,6 +131,9 @@ namespace FASTER.core
         private readonly int recordSize;
         private readonly int sectorSize;
         private readonly ConcurrentQueue<SectorAlignedMemory>[] queue;
+#if CHECK_FOR_LEAKS
+        static int totalGets, totalReturns;
+#endif
 
         /// <summary>
         /// Constructor
@@ -149,6 +154,10 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Return(SectorAlignedMemory page)
         {
+#if CHECK_FOR_LEAKS
+            Interlocked.Increment(ref totalReturns);
+#endif
+
             Debug.Assert(queue[page.level] != null);
             page.available_bytes = 0;
             page.required_bytes = 0;
@@ -187,6 +196,10 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe SectorAlignedMemory Get(int numRecords)
         {
+#if CHECK_FOR_LEAKS
+            Interlocked.Increment(ref totalGets);
+#endif
+
             int requiredSize = sectorSize + (((numRecords) * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
             int index = Position(requiredSize / sectorSize);
             if (queue[index] == null)
@@ -218,6 +231,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Free()
         {
+#if CHECK_FOR_LEAKS
+            Debug.Assert(totalGets == totalReturns);
+#endif
             for (int i = 0; i < levels; i++)
             {
                 if (queue[i] == null) continue;
