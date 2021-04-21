@@ -15,6 +15,7 @@ namespace FASTER.core
         public uint bytes;
         public DeviceIOCompletionCallback callback;
         public object context;
+        public long startTime;
     }
 
     /// <summary>
@@ -30,6 +31,7 @@ namespace FASTER.core
         private readonly Thread[] ioProcessors;
         private readonly int parallelism;
         private readonly long sz_segment;
+        private readonly int latencyMs;
         private bool terminated;
 
         /// <summary>
@@ -38,15 +40,17 @@ namespace FASTER.core
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="sz_segment">The size of each segment</param>
         /// <param name="parallelism">Number of IO processing threads</param>
+        /// <param name="latencyMs">Induced callback latency in ms (for testing purposes)</param>
         /// <param name="sector_size">Sector size for device (default 64)</param>
-        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, uint sector_size = 64)
+        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyMs = 0, uint sector_size = 64)
             :base("/userspace/ram/storage", sector_size, capacity)
         {
             if (capacity == Devices.CAPACITY_UNSPECIFIED) throw new Exception("Local memory device must have a capacity!");
             Console.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
             num_segments = (int) (capacity / sz_segment);
             this.sz_segment = sz_segment;
-            
+            this.latencyMs = latencyMs;
+
             ram_segments = new byte*[num_segments];
             ram_segment_handles = new GCHandle[num_segments];
 
@@ -77,6 +81,11 @@ namespace FASTER.core
             while (terminated == false) {
                 while (q.TryDequeue(out IORequestLocalMemory req))
                 {
+                    if (latencyMs > 0)
+                    {
+                        int timeLeft = latencyMs - (int)((DateTime.Now.Ticks - req.startTime) / TimeSpan.TicksPerMillisecond);
+                        if (timeLeft > 0) Thread.Sleep(timeLeft);
+                    }
                     Buffer.MemoryCopy(req.srcAddress, req.dstAddress, req.bytes, req.bytes);
                     req.callback(0, req.bytes, req.context);
                 }
@@ -108,6 +117,7 @@ namespace FASTER.core
                 callback = callback,
                 context = context
             };
+            if (latencyMs > 0) req.startTime = DateTime.Now.Ticks;
             q.Enqueue(req);
         }
 
@@ -142,6 +152,7 @@ namespace FASTER.core
                 callback = callback,
                 context = context
             };
+            if (latencyMs > 0) req.startTime = DateTime.Now.Ticks;
             q.Enqueue(req);
         }
 
