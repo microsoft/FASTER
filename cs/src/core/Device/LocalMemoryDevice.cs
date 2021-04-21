@@ -31,7 +31,7 @@ namespace FASTER.core
         private readonly Thread[] ioProcessors;
         private readonly int parallelism;
         private readonly long sz_segment;
-        private readonly int latencyMs;
+        private readonly long latencyTicks;
         private bool terminated;
 
         /// <summary>
@@ -49,7 +49,7 @@ namespace FASTER.core
             Console.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
             num_segments = (int) (capacity / sz_segment);
             this.sz_segment = sz_segment;
-            this.latencyMs = latencyMs;
+            this.latencyTicks = latencyMs * TimeSpan.TicksPerMillisecond;
 
             ram_segments = new byte*[num_segments];
             ram_segment_handles = new GCHandle[num_segments];
@@ -81,10 +81,10 @@ namespace FASTER.core
             while (terminated == false) {
                 while (q.TryDequeue(out IORequestLocalMemory req))
                 {
-                    if (latencyMs > 0)
+                    if (latencyTicks > 0)
                     {
-                        int timeLeft = latencyMs - (int)((DateTime.Now.Ticks - req.startTime) / TimeSpan.TicksPerMillisecond);
-                        if (timeLeft > 0) Thread.Sleep(timeLeft);
+                        long timeLeft = latencyTicks - (DateTime.UtcNow.Ticks - req.startTime);
+                        if (timeLeft > 0) Thread.Sleep((int)(timeLeft / TimeSpan.TicksPerMillisecond));
                     }
                     Buffer.MemoryCopy(req.srcAddress, req.dstAddress, req.bytes, req.bytes);
                     req.callback(0, req.bytes, req.context);
@@ -117,7 +117,7 @@ namespace FASTER.core
                 callback = callback,
                 context = context
             };
-            if (latencyMs > 0) req.startTime = DateTime.Now.Ticks;
+            if (latencyTicks > 0) req.startTime = DateTime.UtcNow.Ticks;
             q.Enqueue(req);
         }
 
@@ -152,7 +152,7 @@ namespace FASTER.core
                 callback = callback,
                 context = context
             };
-            if (latencyMs > 0) req.startTime = DateTime.Now.Ticks;
+            if (latencyTicks > 0) req.startTime = DateTime.UtcNow.Ticks;
             q.Enqueue(req);
         }
 
