@@ -80,8 +80,14 @@ server.Start();
 Thread.Sleep(Timeout.Infinite);
 ```
 
-Note that `VarLenServer` accepts several command-line arguments to easily control the server memory utilization and 
-other parameters.
+`FixedLenServer` accepts several command-line arguments such as IP address, port, 
+memory size used by the hash table and log, checkpoint folders, etc. For example, you can 
+run the server from the command line to listen on IP address 127.0.0.1 and port 3278 as 
+follows:
+
+```
+FixedLenServer.exe --bind 127.0.0.1 --port 3278
+```
 
 
 ### Client Code
@@ -189,4 +195,10 @@ binary compatible with the server. The examples are available at:
 * Client: [cs/remote/samples/VarLenClient](https://github.com/microsoft/FASTER/tree/master/cs/remote/samples/VarLenClient)
 
 Note that `VarLenServer` accepts several command-line arguments to easily control the server memory utilization and 
-other parameters.
+other parameters. For example, you can run the server from the command line to listen on IP 
+address 127.0.0.1 and port 3278 as follows:
+
+```
+VarLenServer.exe --bind 127.0.0.1 --port 3278
+```
+
