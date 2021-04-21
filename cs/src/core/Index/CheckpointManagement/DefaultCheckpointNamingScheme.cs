@@ -27,6 +27,9 @@ namespace FASTER.core
         public string BaseName() => baseName;
 
         /// <inheritdoc />
+        public FileDescriptor LogCheckpointBase(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", null);
+
+        /// <inheritdoc />
         public FileDescriptor LogCheckpointMetadata(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "info.dat");
 
         /// <inheritdoc />
@@ -36,6 +39,9 @@ namespace FASTER.core
         /// <inheritdoc />
         public FileDescriptor DeltaLog(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "delta.dat");
 
+
+        /// <inheritdoc />
+        public FileDescriptor IndexCheckpointBase(Guid token) => new FileDescriptor($"{IndexCheckpointBasePath()}/{token}", null);
 
         /// <inheritdoc />
         public FileDescriptor IndexCheckpointMetadata(Guid token) => new FileDescriptor($"{IndexCheckpointBasePath()}/{token}", "info.dat");

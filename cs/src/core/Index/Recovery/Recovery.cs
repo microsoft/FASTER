@@ -275,6 +275,8 @@ namespace FASTER.core
 
             recoveredHLCInfo.deltaLog?.Dispose();
             recoveredHLCInfo.deltaFileDevice?.Dispose();
+
+            checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
         }
 
         private async ValueTask InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, CancellationToken cancellationToken)

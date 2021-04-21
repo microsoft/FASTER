@@ -278,5 +278,9 @@ namespace FASTER.core
             deltaLog.Seal(commitMetadata.Length, type: 1);
             deltaLog.FlushAsync().Wait();
         }
+
+        public void OnRecovery(Guid indexToken, Guid logToken)
+        {
+        }
     }
 }

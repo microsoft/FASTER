@@ -135,7 +135,7 @@ namespace FASTER.core
                     new DeviceLogCommitCheckpointManager
                     (new LocalStorageNamedDeviceFactory(),
                         new DefaultCheckpointNamingScheme(
-                          new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName));
+                          new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName), removeOutdated: checkpointSettings.RemoveOutdated);
             }
 
             if (checkpointSettings.CheckpointManager == null)

@@ -127,5 +127,12 @@ namespace FASTER.core
         /// Cleanup all data (subfolder) related to checkpoints by this manager
         /// </summary>
         public void PurgeAll();
+
+        /// <summary>
+        /// Initiatize manager on recovery (e.g., deleting other checkpoints)
+        /// </summary>
+        /// <param name="indexToken"></param>
+        /// <param name="logToken"></param>
+        public void OnRecovery(Guid indexToken, Guid logToken);
     }
 }
