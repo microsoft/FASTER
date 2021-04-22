@@ -43,7 +43,7 @@ namespace FASTER.test.async
 
         [Test]
         [Category("FasterKV")]
-        [Ignore]
+        [Ignore("Concurrency after await being addressed")]
         public async Task ConcurrentUpsertReadAsyncTest()
         {
             await Task.Yield();
@@ -88,7 +88,7 @@ namespace FASTER.test.async
 
         [Test]
         [Category("FasterKV")]
-        [Ignore]
+        [Ignore("Concurrency after await being addressed")]
         public async Task ConcurrentUpsertRMWReadAsyncTest()
         {
             await Task.Yield();
