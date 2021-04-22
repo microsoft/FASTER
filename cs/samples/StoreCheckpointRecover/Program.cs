@@ -57,7 +57,7 @@ namespace StoreCheckpointRecover
                     Console.WriteLine("Error!");
             }
 
-            // Take fold-over checkpoint of FASTER, wait to complete
+            // Take index + fold-over checkpoint of FASTER, wait to complete
             store.TakeFullCheckpointAsync(CheckpointType.FoldOver)
                 .GetAwaiter().GetResult();
 
