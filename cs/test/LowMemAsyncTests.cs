@@ -43,6 +43,7 @@ namespace FASTER.test.async
 
         [Test]
         [Category("FasterKV")]
+        [Ignore]
         public async Task ConcurrentUpsertReadAsyncTest()
         {
             await Task.Yield();
@@ -87,6 +88,7 @@ namespace FASTER.test.async
 
         [Test]
         [Category("FasterKV")]
+        [Ignore]
         public async Task ConcurrentUpsertRMWReadAsyncTest()
         {
             await Task.Yield();
