@@ -315,7 +315,7 @@ namespace FASTER.core
         {
             TAsyncResult CreateResult(OperationStatus internalStatus);
 
-            OperationStatus DoFastOperation(FasterKV<Key, Value> fasterKV, PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            OperationStatus DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx);
             ValueTask<TAsyncResult> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
@@ -333,7 +333,7 @@ namespace FASTER.core
         {
             public UpsertAsyncResult<Input, Output, Context> CreateResult(OperationStatus internalStatus) => new UpsertAsyncResult<Input, Output, Context>(internalStatus);
 
-            public OperationStatus DoFastOperation(FasterKV<Key, Value> fasterKV, PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            public OperationStatus DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx) 
                 => fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.value.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
 
@@ -346,7 +346,7 @@ namespace FASTER.core
         {
             public DeleteAsyncResult<Input, Output, Context> CreateResult(OperationStatus internalStatus) => new DeleteAsyncResult<Input, Output, Context>(internalStatus);
 
-            public OperationStatus DoFastOperation(FasterKV<Key, Value> fasterKV, PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            public OperationStatus DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx)
                 => fasterKV.InternalDelete(ref pendingContext.key.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
 
@@ -404,11 +404,14 @@ namespace FASTER.core
                                 do
                                 {
                                     _flushTask = _fasterKV.hlog.FlushTask;
-                                    internalStatus = asyncOperation.DoFastOperation(_fasterKV, _pendingContext, _fasterSession, _currentCtx);
+                                    internalStatus = asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx);
                                 } while (internalStatus == OperationStatus.RETRY_NOW);
-                                _pendingContext.Dispose();
+
                                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+                                {
+                                    _pendingContext.Dispose();
                                     return asyncOperation.CreateResult(internalStatus);
+                                }
                                 Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
                             }
                             finally
@@ -700,16 +703,20 @@ namespace FASTER.core
                             if (_flushTask is { })
                             {
                                 await _flushTask.WithCancellationAsync(token);
-                                return await _fasterKV.RmwAsync(_fasterSession, _currentCtx, ref _pendingContext.key.Get(), ref _pendingContext.input.Get(), _pendingContext.userContext, _pendingContext.serialNum, token);
+                                var task = _fasterKV.RmwAsync(_fasterSession, _currentCtx, ref _pendingContext.key.Get(), ref _pendingContext.input.Get(), _pendingContext.userContext, _pendingContext.serialNum, token);
+                                _pendingContext.Dispose();
+                                return await task;
                             }
 
                             _fasterSession.UnsafeResumeThread();
                             try
                             {
                                 var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out newDiskRequest);
-                                _pendingContext.Dispose();
                                 if (status != Status.PENDING)
+                                {
+                                    _pendingContext.Dispose();
                                     return new RmwAsyncResult<Input, Output, Context>(status, default);
+                                }
                             }
                             finally
                             {
