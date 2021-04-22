@@ -166,7 +166,7 @@ namespace FASTER.test
 
             bool datacheckrun = false;
 
-            CancellationToken cancellationToken;
+            CancellationToken cancellationToken = default;
             ReadOnlyMemory<byte> readOnlyMemoryEntry = entry;
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(5);
 

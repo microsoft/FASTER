@@ -883,12 +883,15 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
                 => !this.SupportsLocking
-                    ? ConcurrentWriterNoLock(ref key, ref src, ref dst, address)
+                    ? ConcurrentWriterNoLock(ref key, ref src, ref dst, ref recordInfo, address)
                     : ConcurrentWriterLock(ref key, ref src, ref dst, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterNoLock(ref Key key, ref Value src, ref Value dst, long address)
-                => _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst);
+            private bool ConcurrentWriterNoLock(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            {
+                recordInfo.Version = _clientSession.ctx.version;
+                return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool ConcurrentWriterLock(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
@@ -897,7 +900,7 @@ namespace FASTER.core
                 this.Lock(ref recordInfo, ref key, ref dst, LockType.Exclusive, ref context);
                 try
                 {
-                    return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref src, ref dst, address);
+                    return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref src, ref dst, ref recordInfo, address);
                 }
                 finally
                 {
@@ -918,6 +921,7 @@ namespace FASTER.core
             private void ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 // Non-Advanced IFunctions has no ConcurrentDeleter
+                recordInfo.Version = _clientSession.ctx.version;
                 recordInfo.Tombstone = true;
             }
 
@@ -966,12 +970,15 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
                 => !this.SupportsLocking
-                    ? InPlaceUpdaterNoLock(ref key, ref input, ref value, address)
+                    ? InPlaceUpdaterNoLock(ref key, ref input, ref value, ref recordInfo, address)
                     : InPlaceUpdaterLock(ref key, ref input, ref value, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Value value, long address)
-                => _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value);
+            private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
+            {
+                recordInfo.Version = _clientSession.ctx.version;
+                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value);
+            }
 
             private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
             {
@@ -979,7 +986,7 @@ namespace FASTER.core
                 this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref context);
                 try
                 {
-                    return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref value, address);
+                    return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref value, ref recordInfo, address);
                 }
                 finally
                 {

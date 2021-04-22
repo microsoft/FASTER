@@ -363,7 +363,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values]LogChecksumType logChecksum)
         {
-            CancellationToken cancellationToken;
+            CancellationToken cancellationToken = default;
 
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numSpanEntries);
 

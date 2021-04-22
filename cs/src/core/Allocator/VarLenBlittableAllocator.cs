@@ -250,7 +250,7 @@ namespace FASTER.core
             return *(nativePointers + pageIndex) + offset;
         }
 
-        protected override bool IsAllocated(int pageIndex)
+        internal override bool IsAllocated(int pageIndex)
         {
             return values[pageIndex] != null;
         }
@@ -300,7 +300,7 @@ namespace FASTER.core
             return page << LogPageSizeBits;
         }
 
-        protected override void ClearPage(long page, int offset)
+        internal override void ClearPage(long page, int offset)
         {
             if (offset == 0)
                 Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
@@ -326,29 +326,6 @@ namespace FASTER.core
             handles = null;
             pointers = null;
             values = null;
-        }
-
-
-        private void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
-                        DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
-                        IDevice device)
-        {
-            if (asyncResult.partial)
-            {
-                // Write only required bytes within the page
-                int aligned_start = (int)((asyncResult.fromAddress - (asyncResult.page << LogPageSizeBits)));
-                aligned_start = (aligned_start / sectorSize) * sectorSize;
-
-                int aligned_end = (int)((asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits)));
-                aligned_end = ((aligned_end + (sectorSize - 1)) & ~(sectorSize - 1));
-
-                numBytesToWrite = (uint)(aligned_end - aligned_start);
-                device.WriteAsync(alignedSourceAddress + aligned_start, alignedDestinationAddress + (ulong)aligned_start, numBytesToWrite, callback, asyncResult);
-            }
-            else
-            {
-                device.WriteAsync(alignedSourceAddress, alignedDestinationAddress, numBytesToWrite, callback, asyncResult);
-            }
         }
 
         protected override void ReadAsync<TContext>(

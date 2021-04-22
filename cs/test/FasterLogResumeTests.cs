@@ -42,7 +42,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         public async Task FasterLogResumePersistedReaderSpec([Values] LogChecksumType logChecksum)
         {
-            CancellationToken cancellationToken;
+            CancellationToken cancellationToken = default;
 
             var input1 = new byte[] { 0, 1, 2, 3 };
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
