@@ -19,6 +19,16 @@ namespace MemOnlyCache
         const int DbSize = 10_000_000;
 
         /// <summary>
+        /// Max key size; we choose actual size randomly
+        /// </summary>
+        const int MaxKeySize = 100;
+
+        /// <summary>
+        /// Max value size; we choose actual size randomly
+        /// </summary>
+        const int MaxValueSize = 1000;
+
+        /// <summary>
         /// Number of threads accessing FASTER instances
         /// </summary>
         const int kNumThreads = 1;
@@ -39,12 +49,18 @@ namespace MemOnlyCache
         const double Theta = 0.99;
 
         /// <summary>
-        /// Whether to upsert the data automatically on a cache miss
+        /// Whether to upsert the key on a cache miss
         /// </summary>
         const bool UpsertOnCacheMiss = true;
 
         static FasterKV<CacheKey, CacheValue> h;
+        static CacheSizeTracker sizeTracker;
         static long totalReads = 0;
+        static long targetSize = 1L << 30; // target size for FASTER, we vary this during the run
+
+        // Cache hit stats
+        static long statusNotFound = 0;
+        static long statusFound = 0;
 
         static void Main()
         {
@@ -66,15 +82,16 @@ namespace MemOnlyCache
             // (8-byte key + 8-byte value + 8-byte header = 24 bytes per record)
             int numRecords = (int)(Math.Pow(2, logSettings.MemorySizeBits) / 24);
 
-            // Targeting 1 record per bucket
+            // Set hash table size targeting 1 record per bucket
             var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)); 
 
             h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, comparer: new CacheKey());
-            
-            // Register subscriber to receive notifications of log evictions from memory
-            h.Log.SubscribeEvictions(new LogObserver());
-            
+            sizeTracker = new CacheSizeTracker(h, logSettings.MemorySizeBits, targetSize);
+
+            // Initially populate store
             PopulateStore(numRecords);
+
+            // Run continuous read/upsert workload
             ContinuousRandomWorkload();
             
             h.Dispose();
@@ -85,7 +102,7 @@ namespace MemOnlyCache
 
         private static void PopulateStore(int count)
         {
-            using var s = h.For(new CacheFunctions()).NewSession<CacheFunctions>();
+            using var s = h.For(new CacheFunctions(sizeTracker)).NewSession<CacheFunctions>();
 
             Random r = new Random(0);
             Console.WriteLine("Writing random keys to fill cache");
@@ -93,8 +110,8 @@ namespace MemOnlyCache
             for (int i = 0; i < count; i++)
             {
                 int k = r.Next(DbSize);
-                var key = new CacheKey(k);
-                var value = new CacheValue(k);
+                var key = new CacheKey(k, 1 + r.Next(MaxKeySize - 1));
+                var value = new CacheValue(1 + r.Next(MaxValueSize - 1), (byte)key.key);
                 s.Upsert(ref key, ref value);
             }
         }
@@ -114,13 +131,39 @@ namespace MemOnlyCache
             sw.Start();
             var _lastReads = totalReads;
             var _lastTime = sw.ElapsedMilliseconds;
+            int count = 0;
             while (true)
             {
-                Thread.Sleep(1000);
+                Thread.Sleep(1500);
                 var tmp = totalReads;
                 var tmp2 = sw.ElapsedMilliseconds;
 
-                Console.WriteLine("Throughput: {0:0.00}K ops/sec", (_lastReads - tmp) / (double)(_lastTime - tmp2));
+                Console.WriteLine("Throughput: {0,8:0.00}K ops/sec; Hit rate: {1:N2}; Memory footprint: {2,11:N2}KB", (_lastReads - tmp) / (double)(_lastTime - tmp2), statusFound / (double)(statusFound + statusNotFound), sizeTracker.TotalSizeBytes / 1024.0);
+
+                Interlocked.Exchange(ref statusFound, 0);
+                Interlocked.Exchange(ref statusNotFound, 0);
+
+                // Optional: perform GC collection to verify accurate memory reporting in task manager
+                // GC.Collect();
+                // GC.WaitForFullGCComplete();
+
+                // As demo, reduce target size by 100MB each time we report memory footprint
+                count++;
+                if (count % 4 == 0)
+                {
+                    if (targetSize > 1L << 28)
+                    {
+                        targetSize -= 1L << 27;
+                        sizeTracker.SetTargetSizeBytes(targetSize);
+                    }
+                    else
+                    {
+                        targetSize = 1L << 30;
+                        sizeTracker.SetTargetSizeBytes(targetSize);
+                    }
+                    Console.WriteLine("**** Setting target memory: {0,11:N2}KB", targetSize / 1024.0);
+                }
+
                 _lastReads = tmp;
                 _lastTime = tmp2;
             }
@@ -130,32 +173,32 @@ namespace MemOnlyCache
         {
             Console.WriteLine("Issuing {0} random read workload of {1} reads from thread {2}", UseUniform ? "uniform" : "zipf", DbSize, threadid);
 
-            using var session = h.For(new CacheFunctions()).NewSession<CacheFunctions>();
+            using var session = h.For(new CacheFunctions(sizeTracker)).NewSession<CacheFunctions>();
 
             var rnd = new Random(threadid);
             var zipf = new ZipfGenerator(rnd, DbSize, Theta);
 
-            int statusNotFound = 0;
-            int statusFound = 0;
             CacheValue output = default;
+            int localStatusFound = 0, localStatusNotFound = 0;
 
             int i = 0;
             while (true)
             {
                 if ((i % 256 == 0) && (i > 0))
                 {
+                    Interlocked.Add(ref statusFound, localStatusFound);
+                    Interlocked.Add(ref statusNotFound, localStatusNotFound);
                     Interlocked.Add(ref totalReads, 256);
-                    if (i % (1024 * 1024 * 16) == 0) // report after every 16M ops
-                        Console.WriteLine("Hit rate: {0:N2}; Evict count: {1}", statusFound / (double)(statusFound + statusNotFound), LogObserver.EvictCount);
+                    localStatusFound = localStatusNotFound = 0;
                 }
                 int op = WritePercent == 0 ? 0 : rnd.Next(100);
                 long k = UseUniform ? rnd.Next(DbSize) : zipf.Next();
 
-                var key = new CacheKey(k);
+                var key = new CacheKey(k, 1 + rnd.Next(MaxKeySize - 1));
 
                 if (op < WritePercent)
                 {
-                    var value = new CacheValue(k);
+                    var value = new CacheValue(1 + rnd.Next(MaxValueSize - 1), (byte)key.key);
                     session.Upsert(ref key, ref value);
                 }
                 else
@@ -165,16 +208,16 @@ namespace MemOnlyCache
                     switch (status)
                     {
                         case Status.NOTFOUND:
-                            statusNotFound++;
+                            localStatusNotFound++;
                             if (UpsertOnCacheMiss)
                             {
-                                var value = new CacheValue(k);
+                                var value = new CacheValue(1 + rnd.Next(MaxValueSize - 1), (byte)key.key);
                                 session.Upsert(ref key, ref value);
                             }
                             break;
                         case Status.OK:
-                            statusFound++;
-                            if (output.value != key.key)
+                            localStatusFound++;
+                            if (output.value[0] != (byte)key.key)
                                 throw new Exception("Read error!");
                             break;
                         default:
@@ -183,26 +226,6 @@ namespace MemOnlyCache
                 }
                 i++;
             }
-        }
-    }
-
-    class LogObserver : IObserver<IFasterScanIterator<CacheKey, CacheValue>>
-    {
-        public static int EvictCount = 0;
-
-        public void OnCompleted() { }
-
-        public void OnError(Exception error) { }
-
-        public void OnNext(IFasterScanIterator<CacheKey, CacheValue> iter)
-        {
-            int cnt = 0;
-            while (iter.GetNext(out RecordInfo info, out CacheKey _, out CacheValue _))
-            {
-                if (!info.Tombstone) // ignore deleted records being evicted
-                    cnt++;
-            }
-            Interlocked.Add(ref EvictCount, cnt);
         }
     }
 }

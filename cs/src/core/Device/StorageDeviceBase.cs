@@ -294,5 +294,12 @@ namespace FASTER.core
         {
             return true;
         }
+
+        /// <inheritdoc/>
+        public virtual long GetFileSize(int segment)
+        {
+            if (segmentSize > 0) return segmentSize;
+            return long.MaxValue;
+        }
     }
 }

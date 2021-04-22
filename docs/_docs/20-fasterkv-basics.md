@@ -14,6 +14,7 @@ an API that allows one to performs a mix of Reads, Blind Updates (Upserts), and 
 operations. It supports data larger than memory, and accepts an `IDevice` implementation for storing logs on
 storage. We have provided `IDevice` implementations for local file system and Azure Page Blobs, but one may create
 new devices as well. We also offer meta-devices that can group device instances into sharded and tiered configurations.
+
 FASTER  may be used as a high-performance replacement for traditional concurrent data structures such as the 
 .NET ConcurrentDictionary, and additionally supports larger-than-memory data. It also supports checkpointing of the 
 data structure - both incremental and non-incremental. Operations on FASTER can be issued synchronously or 
@@ -58,7 +59,7 @@ var store = new FasterKV<long, string>(1L << 20, new LogSettings { LogDevice = l
 
 1. Hash Table Size: This the number of buckets allocated to FASTER, where each bucket is 64 bytes (size of a cache line).
 2. Log Settings: These are settings related to the size of the log and devices used by the log.
-3. Checkpoint Settings: These are settings related to checkpoints, such as checkpoint type and folder. Covered in the 
+3. Checkpoint Settings: These are settings related to checkpoints, such as checkpoint type and folder. Covered in the
 section on checkpointing [below](#checkpointing-and-recovery).
 4. Serialization Settings: Used to provide custom serializers for key and value types. Serializers implement 
 `IObjectSerializer<Key>` for keys and `IObjectSerializer<Value>` for values. *These are only needed for 
@@ -67,8 +68,8 @@ non-blittable types such as C# class objects.*
 
 The total in-memory footprint of FASTER is controlled by the following parameters:
 1. Hash table size: This parameter (the first contructor argument) times 64 is the size of the in-memory hash table in bytes.
-2. Log size: The logSettings.MemorySizeBits denotes the size of the in-memory part of the hybrid log, in bits. In other 
-words, the size of the log is 2^B bytes, for a parameter setting of B. Note that if the log points to class key or value 
+2. Log size: The logSettings.MemorySizeBits denotes the size of the in-memory part of the hybrid log, in bits. In other
+words, the size of the log is 2^B bytes, for a parameter setting of B. Note that if the log points to class key or value
 objects, this size only includes the 8-byte reference to the object. The older part of the log is spilled to storage.
 
 Read more about managing memory in FASTER in the [tuning](/FASTER/docs/fasterkv-tuning) guide.
@@ -98,8 +99,8 @@ Apart from Key and Value, the IFunctions interface is defined on three additiona
 #### IAdvancedFunctions
 
 `IAdvancedFunctions` is a superset of `IFunctions` and provides the same methods with some additional parameters:
+- Callbacks for in-place updates receive the logical address of the record, which can be useful for applications such as indexing, and a reference to the `RecordInfo` header of the record, for use with the new locking calls.
 - ReadCompletionCallback receives the `RecordInfo` of the record that was read.
-- Other callbacks receive the logical address of the record, which can be useful for applications such as indexing.
 
 `IAdvancedFunctions` also contains a new method, ConcurrentDeleter, which may be used to implement user-defined post-deletion logic, such as calling object Dispose.
 
@@ -121,36 +122,80 @@ var session = store.For(new Functions()).NewSession<Functions>();
 
 As with the `IFunctions` and `IAdvancedFunctions` interfaces, there are separate, non-inheriting session classes that provide identical methods: `ClientSession` is returned by `NewSession` for a `Functions` class that implements `IFunctions`, and `AdvancedClientSession` is returned by `NewSession` for a `Functions` class that implements `IAdvancedFunctions`.
 
-You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports synchronous versions of all operations, as well as async versions of read and RMW (upserts do not go async by default). The basic forms of these operations are described below; additional overloads are available.
+You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports synchronous versions of all operations, as well as async versions. While all methods exist in an async form, only read and RMW are generally expected to go async; upserts and deletes will only go async when it is necessary to wait on flush operations when appending records to the log. The basic forms of these operations are described below; additional overloads are available.
 
 #### Read
 
 ```cs
+// Sync
 var status = session.Read(ref key, ref output);
 var status = session.Read(ref key, ref input, ref output, context, serialNo);
-await session.ReadAsync(key, input);
+
+// Async
+var (status, output) = (await session.ReadAsync(key, input)).Complete();
 ```
 
 #### Upsert
 
 ```cs
+// Sync
 var status = session.Upsert(ref key, ref value);
 var status = session.Upsert(ref key, ref value, context, serialNo);
+
+// Async with sync operation completion
+var status = (await s1.UpsertAsync(ref key, ref value)).Complete();
+
+// Fully async (completions may themselves need to go async)
+var r = await session.UpsertAsync(ref key, ref value);
+while (r.Status == Status.PENDING)
+   r = await r.CompleteAsync();
 ```
 
 #### RMW
 
 ```cs
+// Sync
 var status = session.RMW(ref key, ref input);
 var status = session.RMW(ref key, ref input, context, serialNo);
-await session.RMWAsync(key, input);
+
+// Async with sync operation completion (completion may rarely go async)
+var status = (await session.RMWAsync(ref key, ref input)).Complete();
+
+// Fully async (completion may rarely go async)
+var r = await session.RMWAsync(ref key, ref input);
+while (r.Status == Status.PENDING)
+   r = await r.CompleteAsync();
 ```
 
 #### Delete
 
 ```cs
+// Sync
 var status = session.Delete(ref key);
 var status = session.Delete(ref key, context, serialNo);
+
+// Async
+var status = (await s1.DeleteAsync(ref key)).Complete();
+
+// Fully async
+var r = await session.DeleteAsync(ref key);
+while (r.Status == Status.PENDING)
+   r = await r.CompleteAsync();
+```
+
+### Pending Operations
+The sync form of `Read`, `Upsert`, `RMW`, and `Delete` may go pending due to IO operations. When a `Status.PENDING` is returned, you can call `CompletePending()` to wait for the results to arrive. It is generally most performant to issue many of these operations and call `CompletePending()` periodically or upon completion of a batch. An optional `wait` parameter allows you to wait until all pending operations issued on the session until that point are completed before this call returns. A second optional parameter, `spinWaitForCommit` allows you to further wait until all operations until that point are committed by a parallel checkpointing thread.
+
+Pending operations call the appropriate completion callback on the functions object: any or all of `ReadCompletionCallback`, `UpsertCompletionCallback`, `RMWCompletionCallback`, and `DeleteCompletionCallback` may be called, depending on the completed operation(s).
+
+For ease of retrieving outputs from the calling code, there is also a `CompletePendingWithOutputs()` and a `CompletePendingWithOutputsAsync()` that return an iterator over the `Output`s that were completed.
+
+```cs
+session.CompletePending(wait: true);
+session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+
+await session.CompletePendingAsync();
+var completedOutputs = await session.CompletePendingWithOutputsAsync();
 ```
 
 ### Disposing
@@ -284,7 +329,7 @@ FASTER also support true "log compaction", where the log is scanned and live rec
 
 This call perform synchronous compaction on the provided session until the specific `compactUntil` address, scanning and copying the live records to the tail. It returns the actual log address that the call compacted until (next nearest record boundary). You can only compact until the log's `SafeReadOnlyAddress` as the rest of the log is still mutable in-place. If you wish, you can move the read-only address to the tail by calling `store.Log.ShiftReadOnlyToTail(store.Log.TailAddress, true)` or by simply taking a fold-over checkpoint (`await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver)`).
 
-Typically, you may compact around 20% (up to 100%) of the log, e.g., you could set `compactUntil` address to `store.Log.BeginAddress + 0.2 * (store.Log.SafeReadOnlyAddress - store.Log.BeginAddress)`. The parameter `shiftBeginAddress`, when true, causes log compation to also automatically shift the log's begin address when the compaction is complete. However, since live records are written to the tail, directly shifting the begin address may result in data loss if the store fails immediately after the call. If you do not want to lose data, you need to trigger compaction with `shiftBeginAddress` set to false, then complete a checkpoint (either fold-over or snaphot is fine), and then shift the begin address. Finally, you can take another checkpoint to save the new begin address. This is shown below:
+Typically, you may compact around 20% (up to 100%) of the log, e.g., you could set `compactUntil` address to `store.Log.BeginAddress + 0.2 * (store.Log.SafeReadOnlyAddress - store.Log.BeginAddress)`. The parameter `shiftBeginAddress`, when true, causes log compaction to also automatically shift the log's begin address when the compaction is complete. However, since live records are written to the tail, directly shifting the begin address may result in data loss if the store fails immediately after the call. If you do not want to lose data, you need to trigger compaction with `shiftBeginAddress` set to false, then complete a checkpoint (either fold-over or snaphot is fine), and then shift the begin address. Finally, you can take another checkpoint to save the new begin address. This is shown below:
 
 ```cs
   long compactUntil = store.Log.BeginAddress + 0.2 * (store.Log.SafeReadOnlyAddress - store.Log.BeginAddress);
@@ -296,6 +341,8 @@ Typically, you may compact around 20% (up to 100%) of the log, e.g., you could s
 
 
 ## Checkpointing and Recovery
+
+### Overall Summary
 
 FASTER supports asynchronous non-blocking **checkpoint-based recovery**. Every new checkpoint persists (or makes durable) additional user-operations
 (Read, Upsert or RMW). FASTER allows clients to keep track of operations that have persisted and those that have not using 
@@ -310,7 +357,7 @@ incremental checkpointing instead of a WAL to implement group commit in a scalab
 
 Recall that each FASTER client starts a session, associated with a unique session ID (or name). All FASTER session operations
 (Read, Upsert, RMW) carry a monotonic sequence number (sequence numbers are implicit in case of async calls). At any point in 
-time, one may call `Checkpoint` to initiate an asynchronous checkpoint of FASTER. After calling `Checkpoint`, each FASTER 
+time, one may call the checkpointing API to initiate an asynchronous checkpoint of FASTER. After invoking the checkpoint, each FASTER 
 session is (eventually) notified of a commit point. A commit point consists of (1) a sequence number, such that all operations
 until, and no operations after, that sequence number, are guaranteed to be persisted as part of that checkpoint; (2) an optional
 exception list of operations that were not part of the commit because they went pending and could not complete before the 
@@ -325,7 +372,83 @@ With async session operations on FASTER, operations return as soon as they compl
 you simply issue an `await session.WaitForCommitAsync()` call. The call completes only after the operation is made persistent by
 an asynchronous commit (checkpoint). The user is responsible for initiating the checkpoint asynchronously.
 
-Below, we show a simple recovery example with asynchronous checkpointing.
+### Taking Checkpoints
+
+A FASTER checkpoint consists of an optional index checkpoint, coupled with a later log 
+checkpoint. FASTER first recovers the index and then replays the relevant part of the log
+to get back to a consistent recovered state. If an index checkpoint is unavailable, FASTER
+replays the entire log to reconstruct the index. An index checkpoint is taken as follows:
+
+```cs
+await store.TakeIndexCheckpointAsync();
+```
+
+FASTER supports two notions of log checkpointing: Snapshot and Fold-Over.
+
+### Snapshot Checkpoint
+
+This checkpoint is a full snapshot of in-memory portion of the hybrid log into a separate
+snapshot file in the checkpoint folder. We recover using the main log followed by reading the
+snapshot back into main memory to complete recovery. FASTER also supports incremental
+snapshots, where the changes since the last full (or incremental) snapshot are captured into
+a delta log file in the same folder as the base snapshot. This is specified using the 
+`tryIncremental` parameter to the checkpoint operation.
+
+```cs
+await store.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot, tryIncremental: false);
+```
+
+### Fold-Over Checkpoint
+
+A fold-over checkpoint simply flushes the main data log to disk, making it read-only, and
+writes a small metadata file (`info.dat`) to the checkpoint folder. This is an incremental 
+checkpoint by definition, as the mutable log consists of all changes since the previous 
+fold-over checkpoint. FoldOver effectively moves the read-only marker of the hybrid log to 
+the tail, and thus all the data is persisted as part of the same hybrid log (there is no 
+separate snapshot file). 
+
+All subsequent updates are written to new hybrid log tail locations, which gives Fold-Over 
+its incremental nature. FoldOver is a very fast checkpointing scheme, but creates multiple 
+versions of the data on the main log, which can increase the cost of garbage collection 
+and take up main memory.
+
+```cs
+await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
+```
+
+### Full Checkpoint
+
+You can take an index and log checkpoint together as follows:
+
+```cs
+await store.TakeFullCheckpointAsync(CheckpointType.FoldOver);
+```
+
+This is usually more expensive than log-only checkpoints as it needs to write the entire
+hash table to disk. A preferred approach is to take frequent log-only checkpoints and
+take an index checkpoint at coarse grained intervals in order to reduce recovery time.
+
+### Checkpoint Management
+
+By default, FASTER creates checkpoints in the folder specified using 
+`CheckpointSettings.CheckpointDir`, with one folder per index or log checkpoint (each
+as a unique Guid token). You can auto-purge old checkpoint as new ones are generated, by 
+setting `CheckpointSettings.RemoveOutdated` to `true`. The last two index checkpoints 
+and the last log checkpoint are kept. We keep the last two index checkpoints because the 
+last index checkpoint may not be usable in case there is no subsequent log checkpoint
+available. Make sure every index checkpoint is followed by at least one log checkpoint, for
+the index checkpoint to be usable for recovery.
+
+### Examples
+
+You can find several checkpointing examples here:
+* [StoreCheckpointRecover](https://github.com/microsoft/FASTER/tree/master/cs/samples/StoreCheckpointRecover)
+* [ClassRecoveryDurablity](https://github.com/microsoft/FASTER/tree/master/cs/playground/ClassRecoveryDurability)
+* [SumStore](https://github.com/microsoft/FASTER/tree/master/cs/playground/SumStore)
+* [SimpleRecoveryTest](https://github.com/microsoft/FASTER/blob/master/cs/test/SimpleRecoveryTest.cs)
+* [RecoveryChecks](https://github.com/microsoft/FASTER/blob/master/cs/test/RecoveryChecks.cs)
+
+Below, we show a simple recovery example with asynchronous fold-over checkpointing.
 
 ```cs
 public class PersistenceExample
@@ -393,13 +516,3 @@ public class PersistenceExample
     }
 }
 ```
-
-FASTER supports two notions of checkpointing: Snapshot and Fold-Over. The former is a full snapshot of in-memory into a separate
-snapshot file, whereas the latter is an _incremental_ checkpoint of the changes since the last checkpoint. Fold-Over effectively 
-moves the read-only marker of the hybrid log to the tail, and thus all the data is persisted as part of the same hybrid log (there
-is no separate snapshot file). All subsequent updates are written to new hybrid log tail locations, which gives Fold-Over its 
-incremental nature. You can find a few basic checkpointing examples 
-[here](https://github.com/Microsoft/FASTER/blob/master/cs/test/SimpleRecoveryTest.cs) and 
-[here](https://github.com/Microsoft/FASTER/tree/master/cs/playground/SumStore). We plan to add more examples and details going
-forward.
-

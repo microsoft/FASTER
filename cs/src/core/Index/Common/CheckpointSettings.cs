@@ -40,5 +40,10 @@ namespace FASTER.core
         /// using local storage device.
         /// </summary>
         public string CheckpointDir = null;
+
+        /// <summary>
+        /// Whether FASTER should remove outdated checkpoints automatically
+        /// </summary>
+        public bool RemoveOutdated = false;
     }
 }

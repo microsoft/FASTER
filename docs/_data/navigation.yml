@@ -38,6 +38,11 @@ docs:
       - title: "Samples"
         url: /docs/fasterlog-samples/
 
+  - title: Remote FASTER
+    children:
+      - title: "Basics"
+        url: /docs/remote-basics/
+
   - title: Developer Guide
     children:
       - title: "Build and Test"

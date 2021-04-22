@@ -159,8 +159,8 @@ namespace ReadAddress
                 var status = session.Read(ref key, ref input, ref output, ref recordInfo, userContext: context, serialNo: maxLap + 1);
                 if (status == Status.PENDING)
                 {
-                    // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                    session.CompletePending(spinWait: true);
+                    // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
+                    session.CompletePending(wait: true);
                     recordInfo = context.recordInfo;
                     status = context.status;
                 }

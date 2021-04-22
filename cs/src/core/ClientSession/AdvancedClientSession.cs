@@ -35,6 +35,8 @@ namespace FASTER.core
         internal readonly IVariableLengthStruct<Value, Input> variableLengthStruct;
         internal readonly IVariableLengthStruct<Input> inputVariableLengthStruct;
 
+        internal CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs;
+
         internal readonly InternalFasterSession FasterSession;
 
         internal const string NotAsyncSessionErr = ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int>>.NotAsyncSessionErr;
@@ -143,6 +145,7 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+            this.completedOutputs?.Dispose();
             CompletePending(true);
             fht.DisposeClientSession(ID);
 
@@ -229,7 +232,7 @@ namespace FASTER.core
         /// <param name="serialNo"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (Status, Output) Read(Key key, Context userContext = default, long serialNo = 0)
+        public (Status status, Output output) Read(Key key, Context userContext = default, long serialNo = 0)
         {
             Input input = default;
             Output output = default;
@@ -445,6 +448,37 @@ namespace FASTER.core
             => Upsert(ref key, ref desiredValue, userContext, serialNo);
 
         /// <summary>
+        /// Async Upsert operation
+        /// Await operation in session before issuing next one
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <param name="token"></param>
+        /// <returns>ValueTask for Upsert result, user needs to await and then call Complete() on the result</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+        {
+            Debug.Assert(SupportAsync, NotAsyncSessionErr);
+            return fht.UpsertAsync(this.FasterSession, this.ctx, ref key, ref desiredValue, userContext, serialNo, token);
+        }
+
+        /// <summary>
+        /// Async Upsert operation
+        /// Await operation in session before issuing next one
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <param name="token"></param>
+        /// <returns>ValueTask for Upsert result, user needs to await and then call Complete() on the result</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+            => UpsertAsync(ref key, ref desiredValue, userContext, serialNo, token);
+
+        /// <summary>
         /// RMW operation
         /// </summary>
         /// <param name="key"></param>
@@ -542,6 +576,35 @@ namespace FASTER.core
             => Delete(ref key, userContext, serialNo);
 
         /// <summary>
+        /// Async Delete operation
+        /// Await operation in session before issuing next one
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <param name="token"></param>
+        /// <returns>ValueTask for Delete result, user needs to await and then call Complete() on the result</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+        {
+            Debug.Assert(SupportAsync, NotAsyncSessionErr);
+            return fht.DeleteAsync(this.FasterSession, this.ctx, ref key, userContext, serialNo, token);
+        }
+
+        /// <summary>
+        /// Async Delete operation
+        /// Await operation in session before issuing next one
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <param name="token"></param>
+        /// <returns>ValueTask for Delete result, user needs to await and then call Complete() on the result</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+            => DeleteAsync(ref key, userContext, serialNo, token);
+
+        /// <summary>
         /// Experimental feature
         /// Checks whether specified record is present in memory
         /// (between HeadAddress and tail, or between fromAddress
@@ -595,33 +658,61 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Sync complete all outstanding pending operations
-        /// Async operations (ReadAsync) must be completed individually
+        /// Synchronously complete outstanding pending synchronous operations.
+        /// Async operations must be completed individually.
         /// </summary>
-        /// <param name="spinWait">Spin-wait for all pending operations on session to complete</param>
-        /// <param name="spinWaitForCommit">Extend spin-wait until ongoing commit/checkpoint, if any, completes</param>
-        /// <returns></returns>
-        public bool CompletePending(bool spinWait = false, bool spinWaitForCommit = false)
+        /// <param name="wait">Wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
+            => CompletePending(false, wait, spinWaitForCommit);
+
+        /// <summary>
+        /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
+        /// Async operations must be completed individually.
+        /// </summary>
+        /// <param name="completedOutputs">Outputs completed by this operation</param>
+        /// <param name="wait">Wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+        {
+            InitializeCompletedOutputs();
+            var result = CompletePending(true, wait, spinWaitForCommit);
+            completedOutputs = this.completedOutputs;
+            return result;
+        }
+
+        void InitializeCompletedOutputs()
+        {
+            if (this.completedOutputs is null)
+                this.completedOutputs = new CompletedOutputIterator<Key, Value, Input, Output, Context>();
+            else
+                this.completedOutputs.Dispose();
+        }
+
+        private bool CompletePending(bool getOutputs, bool wait, bool spinWaitForCommit)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                var result = fht.InternalCompletePending(ctx, FasterSession, spinWait);
+                var requestedOutputs = getOutputs ? this.completedOutputs : default;
+                var result = fht.InternalCompletePending(ctx, FasterSession, wait, requestedOutputs);
                 if (spinWaitForCommit)
                 {
-                    if (spinWait != true)
+                    if (wait != true)
                     {
-                        throw new FasterException("Can spin-wait for checkpoint completion only if spinWait is true");
+                        throw new FasterException("Can spin-wait for commit (checkpoint completion) only if wait is true");
                     }
                     do
                     {
-                        fht.InternalCompletePending(ctx, FasterSession, spinWait);
+                        fht.InternalCompletePending(ctx, FasterSession, wait, requestedOutputs);
                         if (fht.InRestPhase())
                         {
-                            fht.InternalCompletePending(ctx, FasterSession, spinWait);
+                            fht.InternalCompletePending(ctx, FasterSession, wait, requestedOutputs);
                             return true;
                         }
-                    } while (spinWait);
+                    } while (wait);
                 }
                 return result;
             }
@@ -632,11 +723,26 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Complete all outstanding pending operations asynchronously
-        /// Async operations (ReadAsync) must be completed individually
+        /// Complete all pending synchronous FASTER operations.
+        /// Async operations must be completed individually.
         /// </summary>
         /// <returns></returns>
-        public async ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
+            => CompletePendingAsync(false, waitForCommit, token);
+
+        /// <summary>
+        /// Complete all pending synchronous FASTER operations, returning outputs for the completed operations.
+        /// Async operations must be completed individually.
+        /// </summary>
+        /// <returns>Outputs completed by this operation</returns>
+        public async ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
+        {
+            InitializeCompletedOutputs();
+            await CompletePendingAsync(true, waitForCommit, token);
+            return this.completedOutputs;
+        }
+
+        private async ValueTask CompletePendingAsync(bool getOutputs, bool waitForCommit = false, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
 
@@ -644,7 +750,7 @@ namespace FASTER.core
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
             // Complete all pending operations on session
-            await fht.CompletePendingAsync(this.FasterSession, this.ctx, token);
+            await fht.CompletePendingAsync(this.FasterSession, this.ctx, token, getOutputs ? this.completedOutputs : null);
 
             // Wait for commit if necessary
             if (waitForCommit)
@@ -652,8 +758,8 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Check if at least one request is ready for CompletePending to be called on
-        /// Returns completed immediately if there are no outstanding requests
+        /// Check if at least one synchronous request is ready for CompletePending to be called on
+        /// Returns completed immediately if there are no outstanding synchronous requests
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
@@ -676,7 +782,10 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
 
-            // Complete all pending operations on session
+            if (!ctx.prevCtx.pendingReads.IsEmpty || !ctx.pendingReads.IsEmpty)
+                throw new FasterException("Make sure all async operations issued on this session are awaited and completed first");
+
+            // Complete all pending sync operations on session
             await CompletePendingAsync(token: token);
 
             var task = fht.CheckpointTask;
@@ -771,7 +880,10 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool ConcurrentWriterNoLock(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-                => _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst, ref recordInfo, address);
+            {
+                recordInfo.Version = _clientSession.ctx.version;
+                return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst, ref recordInfo, address);
+            }
 
             private bool ConcurrentWriterLock(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
             {
@@ -800,6 +912,7 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             {
+                recordInfo.Version = _clientSession.ctx.version;
                 recordInfo.Tombstone = true;
                 _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
             }
@@ -854,7 +967,10 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
-                => _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref recordInfo, address);
+            {
+                recordInfo.Version = _clientSession.ctx.version;
+                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref recordInfo, address);
+            }
 
             private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
             {
