@@ -1,49 +1,50 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using FASTER.core;
-using Xunit;
 using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Xunit;
+using FASTER.core;
 
 namespace AsyncStress
 {
-    public class FasterWrapper<Key, Value>
+    public class FasterWrapper<Key, Value> : IFasterWrapper<Key, Value>
     {
         readonly FasterKV<Key, Value> _store;
         readonly AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>>> _sessionPool;
-        
-        // OS Buffering is safe to use in this app because Reads are done after all updates
-        internal static bool useOsReadBuffering = false;
+        readonly bool useOsReadBuffering;
+        int upsertPendingCount = 0;
 
-        public FasterWrapper()
+        // This can be used to verify the same amount data is loaded.
+        public long TailAddress => _store.Log.TailAddress;
+
+        // Indicates how many upsert operations went pending
+        public int UpsertPendingCount { get => upsertPendingCount; set => upsertPendingCount = value; }
+        // Whether OS Read buffering is enabled
+        public bool UseOsReadBuffering => useOsReadBuffering;
+
+        public FasterWrapper(bool useOsReadBuffering = false)
         {
-            var logDirectory ="d:/FasterLogs";
+            var logDirectory = "d:/AsyncStress";
             var logFileName = Guid.NewGuid().ToString();
             var logSettings = new LogSettings
             {
                 LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
-                ObjectLogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
+                ObjectLogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.obj.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
                 PageSizeBits = 12,
                 MemorySizeBits = 13
             };
 
             Console.WriteLine($"    Using {logSettings.LogDevice.GetType()}");
 
+            this.useOsReadBuffering = useOsReadBuffering;
             _store = new FasterKV<Key, Value>(1L << 20, logSettings);
             _sessionPool = new AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>>>(
                     logSettings.LogDevice.ThrottleLimit,
                     () => _store.For(new SimpleFunctions<Key, Value, Empty>()).NewSession<SimpleFunctions<Key, Value, Empty>>());
         }
-
-        // This can be used to verify the same amount data is loaded.
-        public long TailAddress => _store.Log.TailAddress;
-
-        // Indicates how many operations went pending
-        public int UpsertPendingCount = 0;
-        public int ReadPendingCount = 0;
 
         public async ValueTask UpsertAsync(Key key, Value value)
         {
@@ -52,7 +53,7 @@ namespace AsyncStress
             var r = await session.UpsertAsync(key, value);
             while (r.Status == Status.PENDING)
             {
-                Interlocked.Increment(ref UpsertPendingCount);
+                Interlocked.Increment(ref upsertPendingCount);
                 r = await r.CompleteAsync();
             }
             _sessionPool.Return(session);
@@ -63,26 +64,21 @@ namespace AsyncStress
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
             var status = session.Upsert(key, value);
-            if (status == Status.PENDING)
-            {
-                // This should not happen for sync Upsert().
-                Interlocked.Increment(ref UpsertPendingCount);
-                session.CompletePending();
-            }
+            Assert.True(status != Status.PENDING);
             _sessionPool.Return(session);
         }
 
-        public async ValueTask UpsertChunkAsync((Key, Value)[] chunk)
+        public async ValueTask UpsertChunkAsync((Key, Value)[] chunk, int offset, int count)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
 
-            for (var ii = 0; ii < chunk.Length; ++ii)
+            for (var i = 0; i < count; ++i)
             {
-                var r = await session.UpsertAsync(chunk[ii].Item1, chunk[ii].Item2);
+                var r = await session.UpsertAsync(chunk[offset + i].Item1, chunk[offset + i].Item2);
                 while (r.Status == Status.PENDING)
                 {
-                    Interlocked.Increment(ref UpsertPendingCount);
+                    Interlocked.Increment(ref upsertPendingCount);
                     r = await r.CompleteAsync();
                 }
             }
@@ -105,7 +101,6 @@ namespace AsyncStress
             var result = session.Read(key);
             if (result.status == Status.PENDING)
             {
-                Interlocked.Increment(ref ReadPendingCount);
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 int count = 0;
                 for (; completedOutputs.Next(); ++count)
@@ -120,26 +115,16 @@ namespace AsyncStress
             return new ValueTask<(Status, Value)>(result);
         }
 
-        public async ValueTask ReadChunkAsync(Key[] chunk, ValueTask<(Status, Value)>[] results, int offset)
+        public async ValueTask<(Status, Value)[]> ReadChunkAsync(Key[] chunk, int offset, int count)
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
 
             // Reads in chunk are performed serially
-            for (var ii = 0; ii < chunk.Length; ++ii)
-                results[offset + ii] = new ValueTask<(Status, Value)>((await session.ReadAsync(chunk[ii])).Complete());
-            _sessionPool.Return(session);
-        }
+            (Status, Value)[] result = new (Status, Value)[count];
+            for (var i = 0; i < count; ++i)
+                result[i] = (await session.ReadAsync(chunk[offset + i]).ConfigureAwait(false)).Complete();
 
-        public async ValueTask<(Status, Value)[]> ReadChunkAsync(Key[] chunk)
-        {
-            if (!_sessionPool.TryGet(out var session))
-                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
-
-            // Reads in chunk are performed serially
-            (Status, Value)[] result = new (Status, Value)[chunk.Length];
-            for (var ii = 0; ii < chunk.Length; ++ii)
-                result[ii] = (await session.ReadAsync(chunk[ii]).ConfigureAwait(false)).Complete();
             _sessionPool.Return(session);
             return result;
         }
