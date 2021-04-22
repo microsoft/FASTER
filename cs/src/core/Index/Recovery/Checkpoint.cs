@@ -40,6 +40,7 @@ namespace FASTER.core
         internal Guid _indexCheckpointToken;
         internal Guid _hybridLogCheckpointToken;
         internal HybridLogCheckpointInfo _hybridLogCheckpoint;
+        internal HybridLogCheckpointInfo _lastSnapshotCheckpoint;
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 
@@ -59,6 +60,11 @@ namespace FASTER.core
         internal void WriteHybridLogMetaInfo()
         {
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray());
+        }
+
+        internal void WriteHybridLogIncrementalMetaInfo(DeltaLog deltaLog)
+        {
+            checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, _hybridLogCheckpoint.info.ToByteArray(), deltaLog);
         }
 
         internal void WriteIndexMetaInfo()

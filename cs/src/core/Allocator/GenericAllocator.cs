@@ -238,7 +238,7 @@ namespace FASTER.core
             return logicalAddress;
         }
 
-        protected override bool IsAllocated(int pageIndex)
+        internal override bool IsAllocated(int pageIndex)
         {
             return values[pageIndex] != null;
         }
@@ -259,19 +259,41 @@ namespace FASTER.core
         }
 
         protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, 
+            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
-            // We are writing to separate device, so use fresh segment offsets
-            WriteAsync(flushPage,
-                        (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                        (uint)pageSize, callback, asyncResult, 
-                        device, objectLogDevice, flushPage, localSegmentOffsets);
+            bool epochTaken = false;
+            if (!epoch.ThisInstanceProtected())
+            {
+                epochTaken = true;
+                epoch.Resume();
+            }
+            try
+            {
+                if (FlushedUntilAddress < (flushPage << LogPageSizeBits) + pageSize)
+                {
+                    // We are writing to separate device, so use fresh segment offsets
+                    WriteAsync(flushPage,
+                            (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+                            (uint)pageSize, callback, asyncResult,
+                            device, objectLogDevice, flushPage, localSegmentOffsets);
+                }
+                else
+                {
+                    // Requested page is already flushed to main log, ignore
+                    callback(0, 0, asyncResult);
+                }
+            }
+            finally
+            {
+                if (epochTaken)
+                    epoch.Suspend();
+            }
         }
 
 
 
-        protected override void ClearPage(long page, int offset)
+        internal override void ClearPage(long page, int offset)
         {
             Array.Clear(values[page % BufferSize], offset / recordSize, values[page % BufferSize].Length - offset / recordSize);
 
@@ -996,6 +1018,11 @@ namespace FASTER.core
             {
                 epoch.Resume();
             }
+        }
+
+        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
+        {
+            throw new FasterException("Incremental snapshots not supported with generic allocator");
         }
     }
 }

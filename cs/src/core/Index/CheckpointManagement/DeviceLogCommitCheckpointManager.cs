@@ -31,6 +31,11 @@ namespace FASTER.core
         /// </summary>
         private long commitNum;
 
+        /// <summary>
+        /// Track historical commits for automatic purging
+        /// </summary>
+        private readonly Guid[] indexTokenHistory, logTokenHistory;
+        private int indexTokenHistoryOffset, logTokenHistoryOffset;
 
         /// <summary>
         /// Create new instance of log commit manager
@@ -49,6 +54,14 @@ namespace FASTER.core
 
             this.overwriteLogCommits = overwriteLogCommits;
             this.removeOutdated = removeOutdated;
+            if (removeOutdated)
+            {
+                // We keep two index checkpoints as the latest index might not have a
+                // later log checkpoint to work with
+                indexTokenHistory = new Guid[2];
+                // We only keep the latest log checkpoint
+                logTokenHistory = new Guid[1];
+            }
             this._disposed = false;
 
             deviceFactory.Initialize(checkpointNamingScheme.BaseName());
@@ -89,9 +102,11 @@ namespace FASTER.core
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
 
             if (!overwriteLogCommits)
+            {
                 device.Dispose();
-
-            RemoveOutdated();
+                if (removeOutdated && commitNum > 1)
+                    deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(commitNum - 2));
+            }
         }
 
         /// <inheritdoc />
@@ -169,12 +184,6 @@ namespace FASTER.core
 
             return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum++));
         }
-
-        private void RemoveOutdated()
-        {
-            if (removeOutdated && commitNum > 1)
-                deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(commitNum - 2));
-        }
         #endregion
 
 
@@ -192,6 +201,15 @@ namespace FASTER.core
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
             device.Dispose();
+
+            if (removeOutdated)
+            {
+                var prior = indexTokenHistory[indexTokenHistoryOffset];
+                indexTokenHistory[indexTokenHistoryOffset] = indexToken;
+                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenHistory.Length;
+                if (prior != default)
+                    deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(prior));
+            }
         }
 
         /// <inheritdoc />
@@ -230,6 +248,37 @@ namespace FASTER.core
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
             device.Dispose();
+
+            if (removeOutdated)
+            {
+                var prior = logTokenHistory[logTokenHistoryOffset];
+                logTokenHistory[logTokenHistoryOffset] = logToken;
+                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenHistory.Length;
+                if (prior != default)
+                    deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(prior));
+            }
+        }
+
+        /// <inheritdoc />
+        public unsafe void CommitLogIncrementalCheckpoint(Guid logToken, int version, byte[] commitMetadata, DeltaLog deltaLog)
+        {
+            deltaLog.Allocate(out int length, out long physicalAddress);
+            if (length < commitMetadata.Length)
+            {
+                deltaLog.Seal(0, type: 1);
+                deltaLog.Allocate(out length, out physicalAddress);
+                if (length < commitMetadata.Length)
+                {
+                    deltaLog.Seal(0);
+                    throw new Exception($"Metadata of size {commitMetadata.Length} does not fit in delta log space of size {length}");
+                }
+            }
+            fixed (byte* ptr = commitMetadata)
+            {
+                Buffer.MemoryCopy(ptr, (void*)physicalAddress, commitMetadata.Length, commitMetadata.Length);
+            }
+            deltaLog.Seal(commitMetadata.Length, type: 1);
+            deltaLog.FlushAsync().Wait();
         }
 
         /// <inheritdoc />
@@ -239,8 +288,27 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public byte[] GetLogCheckpointMetadata(Guid logToken)
+        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog)
         {
+            byte[] metadata = null;
+            if (deltaLog != null)
+            {
+                // Try to get latest valid metadata from delta-log
+                deltaLog.Reset();
+                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out int type))
+                {
+                    if (type != 1) continue; // consider only metadata records
+                    long endAddress = physicalAddress + entryLength;
+                    metadata = new byte[entryLength];
+                    unsafe
+                    {
+                        fixed (byte* m = metadata)
+                            Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                    }
+                }
+                if (metadata != null) return metadata;
+            }
+
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
@@ -274,6 +342,12 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
+        public IDevice GetDeltaLogDevice(Guid token)
+        {
+            return deviceFactory.Get(checkpointNamingScheme.DeltaLog(token));
+        }
+
+        /// <inheritdoc />
         public void InitializeIndexCheckpoint(Guid indexToken)
         {
         }
@@ -283,23 +357,43 @@ namespace FASTER.core
         {
         }
 
-        private IDevice NextIndexCheckpointDevice(Guid token)
+        /// <inheritdoc />
+        public void OnRecovery(Guid indexToken, Guid logToken)
         {
-            if (!removeOutdated)
+            if (!removeOutdated) return;
+
+            // Add recovered tokens to history, for eventual purging
+            if (indexToken != default)
             {
-                return deviceFactory.Get(checkpointNamingScheme.IndexCheckpointMetadata(token));
+                indexTokenHistory[indexTokenHistoryOffset] = indexToken;
+                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenHistory.Length;
             }
-            throw new NotImplementedException();
+            if (logToken != default)
+            {
+                logTokenHistory[logTokenHistoryOffset] = logToken;
+                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenHistory.Length;
+            }
+
+            // Purge all log checkpoints that were not used for recovery
+            foreach (var recoveredLogToken in GetLogCheckpointTokens())
+            {
+                if (recoveredLogToken != logToken)
+                    deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(recoveredLogToken));
+            }
+
+            // Purge all index checkpoints that were not used for recovery
+            foreach (var recoveredIndexToken in GetIndexCheckpointTokens())
+            {
+                if (recoveredIndexToken != indexToken)
+                    deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(recoveredIndexToken));
+            }
         }
 
+        private IDevice NextIndexCheckpointDevice(Guid token)
+            => deviceFactory.Get(checkpointNamingScheme.IndexCheckpointMetadata(token));
+
         private IDevice NextLogCheckpointDevice(Guid token)
-        {
-            if (!removeOutdated)
-            {
-                return deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(token));
-            }
-            throw new NotImplementedException();
-        }
+            => deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(token));
         #endregion
 
         private unsafe void IOCallback(uint errorCode, uint numBytes, object context)

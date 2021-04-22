@@ -364,6 +364,14 @@ namespace FASTER.core
             }
         }
 
+        /// <inheritdoc/>
+        public override long GetFileSize(int segment)
+        {
+            if (segmentSize > 0) return segmentSize;
+            Native32.GetFileSizeEx(GetOrAddHandle(segment), out long size);
+            return size;
+        }
+
         /// <summary>
         /// Creates a SafeFileHandle for the specified segment. This can be used by derived classes to prepopulate logHandles in the constructor.
         /// </summary>

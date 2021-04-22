@@ -59,6 +59,15 @@ namespace FASTER.core
         void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata);
 
         /// <summary>
+        /// Commit log incremental checkpoint (incremental snapshot)
+        /// </summary>
+        /// <param name="logToken"></param>
+        /// <param name="version"></param>
+        /// <param name="commitMetadata"></param>
+        /// <param name="deltaLog"></param>
+        void CommitLogIncrementalCheckpoint(Guid logToken, int version, byte[] commitMetadata, DeltaLog deltaLog);
+
+        /// <summary>
         /// Retrieve commit metadata for specified index checkpoint
         /// </summary>
         /// <param name="indexToken">Token</param>
@@ -69,8 +78,9 @@ namespace FASTER.core
         /// Retrieve commit metadata for specified log checkpoint
         /// </summary>
         /// <param name="logToken">Token</param>
+        /// <param name="deltaLog">Delta log</param>
         /// <returns>Metadata, or null if invalid</returns>
-        byte[] GetLogCheckpointMetadata(Guid logToken);
+        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog);
 
         /// <summary>
         /// Get list of index checkpoint tokens, in order of usage preference
@@ -107,8 +117,22 @@ namespace FASTER.core
         IDevice GetSnapshotObjectLogDevice(Guid token);
 
         /// <summary>
+        /// Provide device to store incremental (delta) snapshot of log (required only for incremental snapshot checkpoints)
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        IDevice GetDeltaLogDevice(Guid token);
+
+        /// <summary>
         /// Cleanup all data (subfolder) related to checkpoints by this manager
         /// </summary>
         public void PurgeAll();
+
+        /// <summary>
+        /// Initiatize manager on recovery (e.g., deleting other checkpoints)
+        /// </summary>
+        /// <param name="indexToken"></param>
+        /// <param name="logToken"></param>
+        public void OnRecovery(Guid indexToken, Guid logToken);
     }
 }
