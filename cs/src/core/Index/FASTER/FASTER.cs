@@ -359,9 +359,6 @@ namespace FASTER.core
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false)
         {
-            if (tryIncremental && checkpointType != CheckpointType.Snapshot)
-                throw new FasterException("Can use tryIncremental only with snapshot checkpoints");
-
             ISynchronizationTask backend;
             if (checkpointType == CheckpointType.FoldOver)
                 backend = new FoldOverCheckpointTask();

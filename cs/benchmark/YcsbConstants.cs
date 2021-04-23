@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.core;
+
 namespace FASTER.benchmark
 {
     enum BenchmarkType : int
@@ -73,6 +75,11 @@ namespace FASTER.benchmark
         internal const bool kAffinitizedSession = true;
         internal const int kPeriodicCheckpointMilliseconds = 0;
 #endif
+
+        internal const CheckpointType kPeriodicCheckpointType = CheckpointType.FoldOver;
+        internal const bool kPeriodicCheckpointTryIncremental = false;
+
+        internal const double SyntheticZipfTheta = 0.99;
 
         internal const long kInitCount = kUseSmallData ? 2500480 : 250000000;
         internal const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;

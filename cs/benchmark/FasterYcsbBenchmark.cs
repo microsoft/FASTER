@@ -37,9 +37,11 @@ namespace FASTER.benchmark
 
         internal FASTER_YcsbBenchmark(Key[] i_keys_, Key[] t_keys_, TestLoader testLoader)
         {
-            // Pin loading thread if it is not used for checkpointing
-            if (YcsbConstants.kPeriodicCheckpointMilliseconds <= 0)
-                Native32.AffinitizeThreadShardedNuma(0, 2);
+            // Affinize main thread to last core on first socket if not used by experiment
+            var (numGrps, numProcs) = Native32.GetNumGroupsProcsPerGroup();
+            if ((testLoader.Options.NumaStyle == 0 && testLoader.Options.ThreadCount <= (numProcs - 1)) ||
+                (testLoader.Options.NumaStyle == 1 && testLoader.Options.ThreadCount <= numGrps * (numProcs - 1)))
+                Native32.AffinitizeThreadRoundRobin(numProcs - 1);
 
             init_keys_ = i_keys_;
             txn_keys_ = t_keys_;
@@ -251,8 +253,8 @@ namespace FASTER.benchmark
             if (YcsbConstants.kDumpDistribution)
                 Console.WriteLine(store.DumpDistribution());
 
-            // Ensure first checkpoint is fast
-            if (YcsbConstants.kPeriodicCheckpointMilliseconds > 0)
+            // Ensure first fold-over checkpoint is fast
+            if (YcsbConstants.kPeriodicCheckpointMilliseconds > 0 && YcsbConstants.kPeriodicCheckpointType == CheckpointType.FoldOver)
                 store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, true);
 
             Console.WriteLine("Executing experiment.");
@@ -284,8 +286,12 @@ namespace FASTER.benchmark
                 {
                     if (checkpointTaken < swatch.ElapsedMilliseconds / YcsbConstants.kPeriodicCheckpointMilliseconds)
                     {
-                        if (store.TakeHybridLogCheckpoint(out _))
+                        long start = swatch.ElapsedTicks;
+                        if (store.TakeHybridLogCheckpoint(out _, YcsbConstants.kPeriodicCheckpointType, YcsbConstants.kPeriodicCheckpointTryIncremental))
                         {
+                            store.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                            var timeTaken = (swatch.ElapsedTicks - start) / TimeSpan.TicksPerMillisecond;
+                            Console.WriteLine("Checkpoint time: {0}ms", timeTaken);
                             checkpointTaken++;
                         }
                     }
