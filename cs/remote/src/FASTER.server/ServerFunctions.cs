@@ -13,6 +13,8 @@ namespace FASTER.server
         private readonly Functions functions;
         private readonly ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> serverNetworkSession;
 
+        public bool SupportsLocking => functions.SupportsLocking;
+
         public ServerFunctions(Functions functions, ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> serverNetworkSession)
         {
             this.functions = functions;
@@ -63,5 +65,11 @@ namespace FASTER.server
 
         public void UpsertCompletionCallback(ref Key key, ref Value value, long ctx)
             => functions.UpsertCompletionCallback(ref key, ref value, ctx);
+
+        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
+            => functions.Lock(ref recordInfo, ref key, ref value, lockType, ref lockContext);
+
+        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
+            => functions.Unlock(ref recordInfo, ref key, ref value, lockType, lockContext);
     }
 }
