@@ -7,7 +7,9 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    // TODO(Tianyu): Document
+    /// <summary>
+    /// Corresponds to a client session that is a single logical thread of execution in the system.
+    /// </summary>
     public class DprClientSession
     {
         private Guid guid;
@@ -22,7 +24,8 @@ namespace FASTER.libdpr
         private ClientBatchTracker batchTracker;
 
         private bool trackCommits;
-        public DprClientSession(Guid guid, DprClient dprClient, bool trackCommits)
+
+        internal DprClientSession(Guid guid, DprClient dprClient, bool trackCommits)
         {
             this.guid = guid;
             this.dprClient = dprClient;
@@ -49,6 +52,12 @@ namespace FASTER.libdpr
             throw new DprRollbackException(result);
         }
 
+        /// <summary>
+        /// Returns the commit point of the session. All operations in the returned commit point is guaranteed to
+        /// be recoverable, although the system may recover more. 
+        /// </summary>
+        /// <returns> CommitPoint of the session </returns>
+        /// <exception cref="NotSupportedException"> If the sessions was created with commit tracking turned off</exception>
         public CommitPoint GetCommitPoint()
         {
             if (!trackCommits) throw new NotSupportedException();
@@ -73,15 +82,19 @@ namespace FASTER.libdpr
             }
         }
         
-        // Should be called single-threadedly on client session thread with GetCommitPoint. Can be concurrent
-        // with ResolveBatch calls.
         /// <summary>
+        /// Add a batch of requests to DPR tracking, with the given number of requests issued to the given worker ID.
+        /// This method should be called before the client sends a batch.
         ///
+        /// Operations within the issued batch are numbered with ids in [return_value, return_value + batch_size) in
+        /// order for tracking.
+        ///
+        /// Not thread-safe except with ResolveBatch.
         /// </summary>
-        /// <param name="batchSize"></param>
-        /// <param name="workerId"></param>
-        /// <param name="header"></param>
-        /// <returns></returns>
+        /// <param name="batchSize">size of the batch to issue</param>
+        /// <param name="workerId"> destination of the batch</param>
+        /// <param name="header"> header that encodes tracking information (to be forwarded to batch destination)</param>
+        /// <returns> start id of the issued op for tracking purposes. </returns>
         public long IssueBatch(int batchSize, Worker workerId, out Span<byte> header)
         {
             CheckWorldlineChange();
@@ -116,6 +129,14 @@ namespace FASTER.libdpr
             return info.startSeqNum;
         }
 
+        /// <summary>
+        /// Consumes a DPR batch reply and update tracking information. This method should be called before exposing
+        /// batch result; if the method returns false, the results are rolled back and should be discarded.
+        ///
+        /// Thread-safe to invoke with other methods of the object.
+        /// </summary>
+        /// <param name="reply">The received reply</param>
+        /// <returns>whether it is safe to proceed with consuming the operation result</returns>
         public unsafe bool ResolveBatch(ref DprBatchResponseHeader reply)
         {
             var batchInfo = batchTracker.GetBatch(reply.batchId);
