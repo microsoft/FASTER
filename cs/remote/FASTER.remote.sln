@@ -29,6 +29,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FixedLenClient", "samples\F
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FixedLenServer", "samples\FixedLenServer\FixedLenServer.csproj", "{4053EC35-77A5-4728-B16F-F4FDD1104CAF}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.core", "..\src\core\FASTER.core.csproj", "{6A49ADD2-DC25-47E1-9D29-5DC6380E880A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -101,6 +103,14 @@ Global
 		{4053EC35-77A5-4728-B16F-F4FDD1104CAF}.Release|Any CPU.Build.0 = Release|Any CPU
 		{4053EC35-77A5-4728-B16F-F4FDD1104CAF}.Release|x64.ActiveCfg = Release|x64
 		{4053EC35-77A5-4728-B16F-F4FDD1104CAF}.Release|x64.Build.0 = Release|x64
+		{6A49ADD2-DC25-47E1-9D29-5DC6380E880A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6A49ADD2-DC25-47E1-9D29-5DC6380E880A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6A49ADD2-DC25-47E1-9D29-5DC6380E880A}.Debug|x64.ActiveCfg = Debug|x64
+		{6A49ADD2-DC25-47E1-9D29-5DC6380E880A}.Debug|x64.Build.0 = Debug|x64
+		{6A49ADD2-DC25-47E1-9D29-5DC6380E880A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6A49ADD2-DC25-47E1-9D29-5DC6380E880A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6A49ADD2-DC25-47E1-9D29-5DC6380E880A}.Release|x64.ActiveCfg = Release|x64
+		{6A49ADD2-DC25-47E1-9D29-5DC6380E880A}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -114,6 +124,7 @@ Global
 		{E29CE6C5-A295-4279-BA0A-BFA693B4EF07} = {1065AE7E-DEA5-4E21-AE39-95B93C074B17}
 		{0C52406C-09B3-47B9-BF85-B6490926DB73} = {1065AE7E-DEA5-4E21-AE39-95B93C074B17}
 		{4053EC35-77A5-4728-B16F-F4FDD1104CAF} = {1065AE7E-DEA5-4E21-AE39-95B93C074B17}
+		{6A49ADD2-DC25-47E1-9D29-5DC6380E880A} = {6B8D1038-C9D5-4111-B5CE-BF64E7D12AE1}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {FB603D60-F72D-4DAD-9349-442A45E20276}

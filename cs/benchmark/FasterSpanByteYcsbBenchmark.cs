@@ -209,8 +209,6 @@ namespace FASTER.benchmark
 
         internal unsafe (double, double) Run(TestLoader testLoader)
         {
-            //Native32.AffinitizeThreadShardedNuma(0, 2);
-
 #if DASHBOARD
             var dash = new Thread(() => DoContinuousMeasurements());
             dash.Start();

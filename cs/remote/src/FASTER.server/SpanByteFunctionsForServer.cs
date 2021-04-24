@@ -19,7 +19,7 @@ namespace FASTER.server
         /// </summary>
         /// <param name="wireFormat"></param>
         /// <param name="memoryPool"></param>
-        public SpanByteFunctionsForServer(WireFormat wireFormat = default, MemoryPool<byte> memoryPool = default)
+        public SpanByteFunctionsForServer(WireFormat wireFormat = default, MemoryPool<byte> memoryPool = default) : base(true)
         {
             this.wireFormat = wireFormat;
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;

@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using FASTER.core;
 
 namespace FixedLenServer
@@ -54,6 +55,9 @@ namespace FixedLenServer
 
     public struct Functions : IFunctions<Key, Value, Input, Output, long>
     {
+        // No locking needed for atomic types such as Value
+        public bool SupportsLocking => false;
+
         // Callbacks
         public void RMWCompletionCallback(ref Key key, ref Input input, long ctx, Status status) { }
 
@@ -91,11 +95,15 @@ namespace FixedLenServer
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
         {
-            value.value += input.value;
+            Interlocked.Add(ref value.value, input.value);
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) => newValue.value = input.value + oldValue.value;
+
+        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) { }
+
+        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => true;
     }
 }
