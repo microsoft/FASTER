@@ -20,7 +20,6 @@ namespace FASTER.core
         readonly SemaphoreSlim handleAvailable;
         readonly ConcurrentQueue<T> itemQueue;
         bool disposed = false;
-        int disposedCount = 0;
 
         /// <summary>
         /// Constructor
@@ -31,9 +30,9 @@ namespace FASTER.core
         {
             this.size = size;
             this.creator = creator;
-            this.handleAvailable = new SemaphoreSlim(initialCount: 1, maxCount: size);
-            this.itemQueue = new ConcurrentQueue<T>();
-            this.itemQueue.Enqueue(creator());
+            handleAvailable = new SemaphoreSlim(initialCount: size, maxCount: size);
+            itemQueue = new ConcurrentQueue<T>();
+            itemQueue.Enqueue(creator());
         }
 
         /// <summary>
@@ -43,24 +42,21 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask<T> GetAsync(CancellationToken token = default)
         {
-            for (; ; )
+            await handleAvailable.WaitAsync(token);
+
+            if (disposed)
+                throw new FasterException("Getting handle in disposed device");
+
+            if (!itemQueue.TryDequeue(out T item))
             {
-                await handleAvailable.WaitAsync(token);
-
-                if (disposed)
-                    throw new FasterException("Getting handle in disposed device");
-
-                if (!itemQueue.TryDequeue(out T item))
-                {
-                    item = creator();
-                }
-
-                return item;
+                item = creator();
             }
+
+            return item;
         }
 
         /// <summary>
-        /// Try get item
+        /// Try get item. 
         /// </summary>
         /// <param name="item"></param>
         /// <returns></returns>
@@ -94,12 +90,14 @@ namespace FASTER.core
         /// <param name="item"></param>
         public void Return(T item)
         {
-            if (this.disposed)
+            if (disposed)
             {
                 item.Dispose();
             }
             else
             {
+                // release the semaphore slot only after the item has been enqueued into the queue.
+                // this reduces the chances that TryGet will encounter an open semaphore with an empty queue.
                 itemQueue.Enqueue(item);
                 handleAvailable.Release();
             }
@@ -111,7 +109,6 @@ namespace FASTER.core
         public void Dispose()
         {
             disposed = true;
-
             while (itemQueue.TryDequeue(out var item))
             {
                 item.Dispose();
