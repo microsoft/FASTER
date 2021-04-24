@@ -16,6 +16,7 @@ namespace FASTER.core
     public class AsyncPool<T> : IDisposable where T : IDisposable
     {
         readonly int size;
+        private readonly Func<T> creator;
         readonly SemaphoreSlim handleAvailable;
         readonly ConcurrentQueue<T> itemQueue;
         bool disposed = false;
@@ -29,10 +30,10 @@ namespace FASTER.core
         public AsyncPool(int size, Func<T> creator)
         {
             this.size = size;
-            this.handleAvailable = new SemaphoreSlim(size);
+            this.creator = creator;
+            this.handleAvailable = new SemaphoreSlim(initialCount: 1, maxCount: size);
             this.itemQueue = new ConcurrentQueue<T>();
-            for (int i = 0; i < size; i++)
-                itemQueue.Enqueue(creator());
+            this.itemQueue.Enqueue(creator());
         }
 
         /// <summary>
@@ -44,12 +45,17 @@ namespace FASTER.core
         {
             for (; ; )
             {
+                await handleAvailable.WaitAsync(token);
+
                 if (disposed)
                     throw new FasterException("Getting handle in disposed device");
 
-                await handleAvailable.WaitAsync(token);
-                if (itemQueue.TryDequeue(out T item))
-                    return item;
+                if (!itemQueue.TryDequeue(out T item))
+                {
+                    item = creator();
+                }
+
+                return item;
             }
         }
 
@@ -65,7 +71,21 @@ namespace FASTER.core
                 item = default;
                 return false;
             }
-            return itemQueue.TryDequeue(out item);
+
+            if (!handleAvailable.Wait(0))
+            {
+                item = default;
+                return false;
+            }
+
+            if (!itemQueue.TryDequeue(out item))
+            {
+                handleAvailable.Release();
+                item = default;
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -74,27 +94,27 @@ namespace FASTER.core
         /// <param name="item"></param>
         public void Return(T item)
         {
-            itemQueue.Enqueue(item);
-            if (handleAvailable.CurrentCount < itemQueue.Count)
+            if (this.disposed)
+            {
+                item.Dispose();
+            }
+            else
+            {
+                itemQueue.Enqueue(item);
                 handleAvailable.Release();
+            }
         }
 
-       /// <summary>
-       /// Dispose
-       /// </summary>
+        /// <summary>
+        /// Dispose
+        /// </summary>
         public void Dispose()
         {
             disposed = true;
 
-            while (disposedCount < size)
+            while (itemQueue.TryDequeue(out var item))
             {
-                while (itemQueue.TryDequeue(out var item))
-                {
-                    item.Dispose();
-                    disposedCount++;
-                }
-                if (disposedCount < size)
-                    handleAvailable.Wait();
+                item.Dispose();
             }
         }
     }
