@@ -31,7 +31,7 @@ namespace AsyncStress
             Console.WriteLine($"    -r <mode>:      Read threading mode (listed below); default is {ThreadingMode.ParallelFor}");
             Console.WriteLine($"    -c #:           Number of chunks for {ThreadingMode.Chunks}; default is {numChunks}");
             Console.WriteLine($"    -n #:           Number of operations; default is {numOperations}");
-            Console.WriteLine($"    -b #:           Use OS buffering for reads; default is false");
+            Console.WriteLine($"    -b:             Use OS buffering for reads; default is false");
             Console.WriteLine($"    -?, /?, --help: Show this screen");
             Console.WriteLine();
             Console.WriteLine($"Threading Modes:");
@@ -110,7 +110,7 @@ namespace AsyncStress
             }
             Console.WriteLine("    Creation complete");
 
-            Assert.True(numOperations % numChunks == 0, $"Number of operations {numOperations} should be a multiple of number of chunks {numChunks}");
+            Assert.True(numOperations % numChunks == 0, $"Number of operations {numOperations:N0} should be a multiple of number of chunks {numChunks}");
 
             int chunkSize = numOperations / numChunks;
 
@@ -121,7 +121,7 @@ namespace AsyncStress
             }
             else
             {
-                Console.WriteLine($"    Inserting {numOperations} records with {threadingModeString(upsertThreadingMode)} ...");
+                Console.WriteLine($"    Inserting {numOperations:N0} records with {threadingModeString(upsertThreadingMode)} ...");
 
                 var sw = Stopwatch.StartNew();
                 if (upsertThreadingMode == ThreadingMode.Single)
@@ -148,7 +148,7 @@ namespace AsyncStress
                     throw new InvalidOperationException($"Invalid threading mode {upsertThreadingMode}");
 
                 sw.Stop();
-                Console.WriteLine($"    Insertion complete in {sw.ElapsedMilliseconds} ms; TailAddress = {store.TailAddress}, Pending = {store.UpsertPendingCount}");
+                Console.WriteLine($"    Insertion complete in {sw.ElapsedMilliseconds / 1000.0:N3} sec; TailAddress = {store.TailAddress}, Pending = {store.UpsertPendingCount:N0}");
             }
 
             // Read
@@ -159,7 +159,7 @@ namespace AsyncStress
             }
             else
             {
-                Console.WriteLine($"    Reading {numOperations} records with {threadingModeString(readThreadingMode)} (OS buffering: {store.UseOsReadBuffering}) ...");
+                Console.WriteLine($"    Reading {numOperations:N0} records with {threadingModeString(readThreadingMode)} (OS buffering: {store.UseOsReadBuffering}) ...");
                 (Status, TValue)[] results = new (Status, TValue)[numOperations];
 
                 var sw = Stopwatch.StartNew();
@@ -193,7 +193,7 @@ namespace AsyncStress
                     throw new InvalidOperationException($"Invalid threading mode {readThreadingMode}");
 
                 sw.Stop();
-                Console.WriteLine($"    Reads complete in {sw.ElapsedMilliseconds} ms");
+                Console.WriteLine($"    Reads complete in {sw.ElapsedMilliseconds / 1000.0:N3} sec");
 
                 // Verify
                 Console.WriteLine("    Verifying read results ...");

@@ -279,6 +279,7 @@ namespace FASTER.core
             deltaLog.FlushAsync().Wait();
         }
 
+        /// <inheritdoc/>
         public void OnRecovery(Guid indexToken, Guid logToken)
         {
         }

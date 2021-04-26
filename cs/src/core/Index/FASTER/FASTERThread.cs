@@ -376,6 +376,10 @@ namespace FASTER.core
             {
                 status = (Status)internalStatus;
             }
+            else if (internalStatus == OperationStatus.ALLOCATE_FAILED)
+            {
+                return Status.PENDING;  // This plus newRequest.asyncOperation == null means allocate failed
+            }
             else
             {
                 status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, asyncOp, out newRequest);
