@@ -144,7 +144,7 @@ namespace FASTER.core
                                 var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _);
                                 Debug.Assert(status != Status.PENDING);
                                 _result = (status, _pendingContext.output);
-                                unsafe { _recordInfo = _fasterKV.hlog.GetInfoFromBytePointer(_diskRequest.record.GetValidPointer()); }
+                                _recordInfo = _pendingContext.recordInfo;
                                 _pendingContext.Dispose();
                             }
                             finally
