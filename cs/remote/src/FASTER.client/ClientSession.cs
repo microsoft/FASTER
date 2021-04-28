@@ -35,6 +35,7 @@ namespace FASTER.client
         readonly int bufferSize;
         readonly MaxSizeSettings maxSizeSettings;
 
+        bool disposed;
         ReusableObject<SeaaBuffer> sendObject;
         byte* offset;
         int numMessages;
@@ -59,6 +60,7 @@ namespace FASTER.client
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
             this.bufferSize = BufferSizeUtils.ClientBufferSize(this.maxSizeSettings);
             this.messageManager = new NetworkSender(bufferSize);
+            this.disposed = false;
 
             upsertQueue = new ElasticCircularBuffer<(Key, Value, Context)>();
             readrmwQueue = new ElasticCircularBuffer<(Key, Input, Output, Context)>();
@@ -190,7 +192,15 @@ namespace FASTER.client
                 // Set packet size in header
                 *(int*)sendObject.obj.bufferPtr = -(payloadSize - sizeof(int));
 
-                messageManager.Send(sendSocket, sendObject, 0, payloadSize);
+                try
+                {
+                    messageManager.Send(sendSocket, sendObject, 0, payloadSize);
+                }
+                catch
+                {
+                    Dispose();
+                    throw;
+                }
                 sendObject = messageManager.GetReusableSeaaBuffer();
                 offset = sendObject.obj.bufferPtr + sizeof(int) + BatchHeader.Size;
                 numMessages = 0;
@@ -215,9 +225,23 @@ namespace FASTER.client
         /// </summary>
         public void Dispose()
         {
-            Flush();
+            disposed = true;
+            sendObject.Dispose();
+            sendSocket.Dispose();
             messageManager.Dispose();
         }
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        /// <param name="completePending">Complete pending operations before dispose</param>
+        public void Dispose(bool completePending)
+        {
+            if (completePending)
+                CompletePending(true);
+            Dispose();
+        }
+
 
         int lastSeqNo = -1;
         readonly Dictionary<int, (Key, Input, Output, Context)> readRmwPendingContext =
@@ -455,7 +479,7 @@ namespace FASTER.client
             receiveEventArgs.SetBuffer(new byte[bufferSize], 0, bufferSize);
             receiveEventArgs.UserToken =
                 new ClientNetworkSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>(socket, this);
-            receiveEventArgs.Completed += ClientNetworkSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>.RecvEventArg_Completed;
+            receiveEventArgs.Completed += RecvEventArg_Completed;
             var response = socket.ReceiveAsync(receiveEventArgs);
             Debug.Assert(response);
             return socket;
@@ -538,6 +562,33 @@ namespace FASTER.client
                     }
                 Flush();
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool HandleReceiveCompletion(SocketAsyncEventArgs e)
+        {
+            var connState = (ClientNetworkSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>)e.UserToken;
+            if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || disposed)
+            {
+                connState.socket.Dispose();
+                e.Dispose();
+                return false;
+            }
+
+            connState.AddBytesRead(e.BytesTransferred);
+            var newHead = connState.TryConsumeMessages(e.Buffer);
+            e.SetBuffer(newHead, e.Buffer.Length - newHead);
+            return true;
+        }
+
+        private void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
+        {
+            var connState = (ClientNetworkSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>)e.UserToken;
+            do
+            {
+                // No more things to receive
+                if (!HandleReceiveCompletion(e)) break;
+            } while (!connState.socket.ReceiveAsync(e));
         }
     }
 }

@@ -188,13 +188,29 @@ therefore instantiate a `FixedLenServer` and run the YCSB benchmark to communica
 code is available at 
 [cs/remote/benchmark/FASTER.benchmark](https://github.com/microsoft/FASTER/tree/master/cs/remote/benchmark/FASTER.benchmark).
 The benchmark takes several command-line parameters, similar to our embedded FasterKV benchmark, but including extra
-necessary information such as server IP address and port. Here is a sample run that runs the benchark with one session (`-t 1`), 
-no NUMA sharding (`-n 0`), 50% reads (`-r 50`), uniform distribution (`-d uniform`), connecting to IP address 127.0.0.1
-on port 3278 (`-i 127.0.0.1 -p 3278`). Make sure `FixedLenServer` is first listening on the same address and port.
+necessary information such as server IP address and port. 
+
+Make sure `FixedLenServer` is first listening on the same address and port, and has been
+instantiated with a sufficiently large hash table (8GB):
 
 ```
-FASTER.benchmark -b 0 -t 1 -n 0 -r 50 -d uniform -i 127.0.0.1 -p 3278
+FixedLenServer -i 8g
 ```
+
+Below is a sample benchmark run that runs the benchark with 8 sessions (`-t 8`), 50% reads (`-r 50`), Zipf 
+distribution (`-d zipf`), connecting to IP address 127.0.0.1 on port 3278 (`-i 127.0.0.1 -p 3278`).
+
+```
+FASTER.benchmark -b 0 -t 8 -r 50 -d zipf -i 127.0.0.1 -p 3278
+```
+
+Since the server is now loaded with data, you can re-run the benchmark without the setup (loading) phase using the 
+`-s` option, as follows:
+
+```
+FASTER.benchmark -b 0 -t 8 -r 50 -d zipf -i 127.0.0.1 -p 3278 -s
+```
+
 
 ## Variable-Length Server and Client
 
