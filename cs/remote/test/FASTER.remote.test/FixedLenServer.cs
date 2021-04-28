@@ -11,6 +11,7 @@ namespace FASTER.remote.test
     {
         readonly string folderName;
         readonly FasterKVServer<Key, Value, Value, Value, FixedLenServerFunctions<Key, Value>, FixedLenSerializer<Key, Value, Value, Value>> server;
+        readonly FasterKV<Key, Value> store;
 
         public FixedLenServer(string folderName, Func<Value, Value, Value> merger, string address = "127.0.0.1", int port = 33278)
         {
@@ -18,7 +19,7 @@ namespace FASTER.remote.test
             GetSettings(folderName, out var logSettings, out var checkpointSettings, out var indexSize);
 
             // We use blittable structs Key and Value to construct a costomized server for fixed-length types
-            var store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
+            store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
 
             // We specify FixedLenSerializer as our in-built serializer for blittable (fixed length) types
             // This server can be used with compatible clients such as FixedLenClient and FASTER.benchmark
@@ -30,6 +31,7 @@ namespace FASTER.remote.test
         public void Dispose()
         {
             server.Dispose();
+            store.Dispose();
             new DirectoryInfo(folderName).Delete(true);
         }
 
