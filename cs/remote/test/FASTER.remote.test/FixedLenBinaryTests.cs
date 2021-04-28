@@ -25,7 +25,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
-        public void UpsertReadTest()
+        public void UpsertReadRMWTest()
         {
             using var session = client.GetSession();
             session.Upsert(10, 23);
