@@ -39,6 +39,10 @@ jobs:
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
 
+  - task: NuGetCommand@2
+    inputs:
+      restoreSolution: '$(solutionRemote)'
+
   - task: VSBuild@1
     inputs:
       solution: '$(solutionRemote)'
