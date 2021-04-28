@@ -245,11 +245,13 @@ namespace FASTER.core
         public unsafe bool TryEnqueue(byte[] entry, out long logicalAddress)
         {
             logicalAddress = 0;
+            var length = entry.Length;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
 
-            var length = entry.Length;
-            logicalAddress = allocator.TryAllocateRetryNow(headerSize + Align(length));
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
@@ -274,11 +276,13 @@ namespace FASTER.core
         public unsafe bool TryEnqueue(ReadOnlySpan<byte> entry, out long logicalAddress)
         {
             logicalAddress = 0;
+            var length = entry.Length;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
 
-            var length = entry.Length;
-            logicalAddress = allocator.TryAllocateRetryNow(headerSize + Align(length));
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
@@ -1111,8 +1115,9 @@ namespace FASTER.core
                 allocatedLength += Align(readOnlySpanBatch.Get(i).Length) + headerSize;
             }
 
-            epoch.Resume();
+            ValidateAllocatedLength(allocatedLength);
 
+            epoch.Resume();
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
             {
@@ -1302,6 +1307,13 @@ namespace FASTER.core
                 *(int*)(dest + 8) = length;
                 *(ulong*)dest = Utility.XorBytes(dest + 8, length + 4);
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ValidateAllocatedLength(int numSlots)
+        {
+            if (numSlots > allocator.PageSize)
+                throw new FasterException("Entry does not fit on page");
         }
     }
 }

@@ -28,8 +28,9 @@ namespace FASTER.remote.test
         }
 
         [Test]
-        public void UpsertReadTest()
+        public void UpsertReadRMWTest()
         {
+            using var session = client.GetSession();
             session.Upsert(10, 23);
             session.CompletePending();
             session.Read(10, userContext: 23);
@@ -39,7 +40,7 @@ namespace FASTER.remote.test
             session.RMW(20, 23);
             session.CompletePending();
             session.Read(20, userContext: 23 * 3);
-            session.CompletePending();
+            session.CompletePending(true);
         }
     }
 }

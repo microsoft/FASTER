@@ -12,7 +12,7 @@ namespace FASTER.client
         where Functions : ICallbackFunctions<Key, Value, Input, Output, Context>
         where ParameterSerializer : IClientSerializer<Key, Value, Input, Output>
     {
-        private readonly Socket socket;
+        public readonly Socket socket;
         private readonly ClientSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer> session;
 
         private int bytesRead;
@@ -62,33 +62,6 @@ namespace FASTER.client
             // Consume this message and the header
             readHead += size + sizeof(int);
             return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool HandleReceiveCompletion(SocketAsyncEventArgs e)
-        {
-            var connState = (ClientNetworkSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>)e.UserToken;
-            if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success)
-            {
-                connState.socket.Dispose();
-                e.Dispose();
-                return false;
-            }
-
-            connState.AddBytesRead(e.BytesTransferred);
-            var newHead = connState.TryConsumeMessages(e.Buffer);
-            e.SetBuffer(newHead, e.Buffer.Length - newHead);
-            return true;
-        }
-
-        public static void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
-        {
-            var connState = (ClientNetworkSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>)e.UserToken;
-            do
-            {
-                // No more things to receive
-                if (!HandleReceiveCompletion(e)) break;
-            } while (!connState.socket.ReceiveAsync(e));
         }
     }
 }
