@@ -197,18 +197,18 @@ instantiated with a sufficiently large hash table (8GB):
 FixedLenServer -i 8g
 ```
 
-Below is a sample benchmark run that runs the benchark with one session (`-t 1`), no NUMA sharding (`-n 0`), 50% reads
-(`-r 50`), uniform distribution (`-d uniform`), connecting to IP address 127.0.0.1 on port 3278 (`-i 127.0.0.1 -p 3278`).
+Below is a sample benchmark run that runs the benchark with 8 sessions (`-t 8`), 50% reads (`-r 50`), Zipf 
+distribution (`-d zipf`), connecting to IP address 127.0.0.1 on port 3278 (`-i 127.0.0.1 -p 3278`).
 
 ```
-FASTER.benchmark -b 0 -t 1 -n 0 -r 50 -d uniform -i 127.0.0.1 -p 3278
+FASTER.benchmark -b 0 -t 8 -r 50 -d zipf -i 127.0.0.1 -p 3278
 ```
 
 Since the server is now loaded with data, you can re-run the benchmark without the setup (loading) phase using the 
 `-s` option, as follows:
 
 ```
-FASTER.benchmark -b 0 -t 1 -n 0 -r 50 -d uniform -i 127.0.0.1 -p 3278 -s
+FASTER.benchmark -b 0 -t 8 -r 50 -d zipf -i 127.0.0.1 -p 3278 -s
 ```
 
 
