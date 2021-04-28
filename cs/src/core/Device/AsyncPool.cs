@@ -44,9 +44,6 @@ namespace FASTER.core
         {
             await handleAvailable.WaitAsync(token);
 
-            if (disposed)
-                throw new FasterException("Getting handle in disposed device");
-
             if (!itemQueue.TryDequeue(out T item))
             {
                 item = creator();
@@ -109,10 +106,13 @@ namespace FASTER.core
         public void Dispose()
         {
             disposed = true;
+
             while (itemQueue.TryDequeue(out var item))
             {
                 item.Dispose();
             }
+
+            handleAvailable.Dispose();
         }
     }
 }
