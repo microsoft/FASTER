@@ -1,5 +1,6 @@
 variables:
   solution: 'cs/FASTER.sln'
+  solutionRemote: 'cs/remote/FASTER.remote.sln'
   RunAzureTests: 'yes'
 
 jobs:
@@ -35,6 +36,12 @@ jobs:
   - task: VSBuild@1
     inputs:
       solution: '$(solution)'
+      platform: '$(buildPlatform)'
+      configuration: '$(buildConfiguration)'
+
+  - task: VSBuild@1
+    inputs:
+      solution: '$(solutionRemote)'
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
 
