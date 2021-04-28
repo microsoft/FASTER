@@ -32,7 +32,6 @@ namespace FASTER.core
             this.creator = creator;
             handleAvailable = new SemaphoreSlim(initialCount: size, maxCount: size);
             itemQueue = new ConcurrentQueue<T>();
-            itemQueue.Enqueue(creator());
         }
 
         /// <summary>
@@ -73,9 +72,7 @@ namespace FASTER.core
 
             if (!itemQueue.TryDequeue(out item))
             {
-                handleAvailable.Release();
-                item = default;
-                return false;
+                item = creator();
             }
 
             return true;
@@ -106,13 +103,12 @@ namespace FASTER.core
         public void Dispose()
         {
             disposed = true;
+            handleAvailable.Dispose();
 
             while (itemQueue.TryDequeue(out var item))
             {
                 item.Dispose();
             }
-
-            handleAvailable.Dispose();
         }
     }
 }
