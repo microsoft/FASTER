@@ -41,8 +41,28 @@ namespace FASTER.server
 
         protected void GetResponseObject() { if (responseObject.obj == null) responseObject = messageManager.GetReusableSeaaBuffer(); }
 
-        protected void SendResponse(int size) => messageManager.Send(socket, responseObject, 0, size);
-        protected void SendResponse(int offset, int size) => messageManager.Send(socket, responseObject, offset, size);
+        protected void SendResponse(int size)
+        {
+            try
+            {
+                messageManager.Send(socket, responseObject, 0, size);
+            }
+            catch
+            {
+                responseObject.Dispose();
+            }
+        }
+        protected void SendResponse(int offset, int size)
+        {
+            try
+            {
+                messageManager.Send(socket, responseObject, offset, size);
+            }
+            catch
+            {
+                responseObject.Dispose();
+            }
+        }
 
         public void AddBytesRead(int bytesRead) => this.bytesRead += bytesRead;
 
@@ -55,6 +75,8 @@ namespace FASTER.server
         {
             session.Dispose();
             socket.Dispose();
+            if (responseObject.obj != null)
+                responseObject.Dispose();
             messageManager.Dispose();
         }
     }
