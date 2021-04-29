@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -37,7 +38,11 @@ namespace FASTER.common
         public void Dispose()
         {
             while (stack.TryPop(out var elem))
+            {
                 destructor?.Invoke(elem);
+                Interlocked.Decrement(ref allocatedObjects);
+            }
+            Debug.Assert(allocatedObjects == 0);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
