@@ -44,7 +44,7 @@ Before instantiating the FASTER store, you need to create storage devices that F
 (blittable) types such as `long`, `int`, and structs with value-type members, you only need one log device:
 
 
-```Csharp
+```cs
 var log = Devices.CreateLogDevice(@"C:\Temp\hlog.log");
 ```
 
@@ -60,7 +60,7 @@ For pure in-memory operation, you can just use a special `new NullDevice()` inst
 The store constructor requires a key type and a value type. For example, an instance 
 of FASTER over `long` keys and `string` values is created as follows:
 
-```Csharp
+```cs
 var store = new FasterKV<long, string>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = objlog });
 ```
 
@@ -113,7 +113,9 @@ FASTER also support an advanced callback functions API with more hooks. See
 
 Once FASTER is instantiated, one issues operations to FASTER by creating logical sessions. A session represents a "mono-threaded" sequence of operations issued to FASTER. There is no concurrency within a session, but different sessions may execute concurrently. Sessions do not need to be affinitized to threads, but if they are, FASTER can leverage the same (covered later). You create a session as follows:
 
-```var session = store.NewSession(new Functions());```
+```cs
+var session = store.NewSession(new Functions());
+```
 
 An equivalent, but more optimized API requires you to specify the Functions type a second time (it allows us to avoid accessing the session via an interface call):
 
