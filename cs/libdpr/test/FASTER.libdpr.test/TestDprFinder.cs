@@ -70,7 +70,7 @@ namespace FASTER.libdpr
             return 0;
         }
 
-        public IDprStateSnapshot ReadSnapshot()
+        public IDprStateSnapshot GetStateSnapshot()
         {
             return new GlobalMinDprStateSnapshot(globalSafeVersionNum);
         }

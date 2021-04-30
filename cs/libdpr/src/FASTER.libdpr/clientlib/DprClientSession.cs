@@ -46,7 +46,7 @@ namespace FASTER.libdpr
             if (clientWorldLine == dprClient.GetDprFinder().SystemWorldLine()) return;
             clientWorldLine = dprClient.GetDprFinder().SystemWorldLine();
             var result = new CommitPoint {UntilSerialNo = seqNum, ExcludedSerialNos = new List<long>()};
-            versionTracker.HandleRollback(dprClient.GetDprFinder().ReadSnapshot(), ref result);
+            versionTracker.HandleRollback(dprClient.GetDprFinder().GetStateSnapshot(), ref result);
             batchTracker.HandleRollback(ref result);
             AdjustCommitPoint(ref result);
             throw new DprRollbackException(result);
@@ -240,7 +240,7 @@ namespace FASTER.libdpr
             lock (versionTracker)
             {
                 // Add exceptions to all uncommitted, but finished ops
-                var dprTable = dprClient.GetDprFinder().ReadSnapshot();
+                var dprTable = dprClient.GetDprFinder().GetStateSnapshot();
                 versionTracker.ResolveOperations(dprTable);
                 foreach (var (s, _) in versionTracker)
                     currentCommitPoint.ExcludedSerialNos.Add(s);
