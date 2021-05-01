@@ -20,6 +20,9 @@ namespace StoreVarLenTypes
     {
         static void Main()
         {
+            // Sample using SpanByte and RMW to perform sums over non-negative ASCII numbers
+            AsciiSumSample.Run();
+
             // Samples using Memory<T> over byte and int as key/value types
             MemoryByteSample();
             MemoryIntSample();
@@ -98,7 +101,7 @@ namespace StoreVarLenTypes
             }
 
             if (success)
-                Console.WriteLine("Success!");
+                Console.WriteLine("MemoryByteSample: Success!");
             else
                 Console.WriteLine("Error!");
 
@@ -174,7 +177,7 @@ namespace StoreVarLenTypes
             }
 
             if (success)
-                Console.WriteLine("Success!");
+                Console.WriteLine("MemoryIntSample: Success!");
             else
                 Console.WriteLine("Error!");
 
@@ -212,7 +215,8 @@ namespace StoreVarLenTypes
             Span<byte> keyMem = stackalloc byte[1000];
             Span<byte> valueMem = stackalloc byte[1000];
 
-            for (byte i = 0; i < 200; i++)
+            byte i;
+            for (i = 0; i < 200; i++)
             {
                 var keyLen = r.Next(1, 1000);
                 var key = keyMem.Slice(0, keyLen);
@@ -226,17 +230,29 @@ namespace StoreVarLenTypes
                 s.Upsert(key, value);
             }
 
-            using (IFasterScanIterator<SpanByte, SpanByte> iterator = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
-            {
-                while (iterator.GetNext(out RecordInfo recordInfo, out SpanByte keyObj, out SpanByte valueObj))
-                {
-                    Console.WriteLine("Key: " + keyObj.ToByteArray());
-                }
-            }
             bool success = true;
 
+            i = 0;
+            using (IFasterScanIterator<SpanByte, SpanByte> iterator = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
+            {
+                while (iterator.GetNext(out RecordInfo recordInfo))
+                {
+                    ref var key = ref iterator.GetKey();
+                    if (key.ToByteArray()[0] != i++)
+                    {
+                        success = false;
+                        break;
+                    }
+                }
+            }
+
+            if (i != 200)
+            {
+                success = false;
+            }
+
             r = new Random(100);
-            for (byte i = 0; i < 200; i++)
+            for (i = 0; i < 200; i++)
             {
                 var keyLen = r.Next(1, 1000);
                 Span<byte> key = keyMem.Slice(0, keyLen);
@@ -265,7 +281,7 @@ namespace StoreVarLenTypes
             }
 
             if (success)
-                Console.WriteLine("Success!");
+                Console.WriteLine("SpanByteSample: Success!");
             else
                 Console.WriteLine("Error!");
 
