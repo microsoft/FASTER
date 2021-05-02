@@ -14,6 +14,10 @@ classes: wide
 
 ## Videos
 
+* FASTER talk at CMU
+
+[![FASTER Introduction](http://img.youtube.com/vi/4Y0oNFud-VA/0.jpg)](https://www.youtube.com/watch?v=4Y0oNFud-VA "FASTER Talk at CMU")
+
 * FASTER Introduction from MSR Faculty Summit
 
 [![FASTER Introduction](http://img.youtube.com/vi/2Dj8kbe1tg4/0.jpg)](https://www.youtube.com/watch?v=2Dj8kbe1tg4 "FASTER Introduction")
