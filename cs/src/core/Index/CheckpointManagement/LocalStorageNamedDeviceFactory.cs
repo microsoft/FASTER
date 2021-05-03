@@ -1,11 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security;
 
 namespace FASTER.core
 {
@@ -16,6 +14,7 @@ namespace FASTER.core
     {
         private string baseName;
         private readonly bool deleteOnClose;
+        private readonly int? throttleLimit;
         private readonly bool preallocateFile;
 
         /// <summary>
@@ -23,10 +22,11 @@ namespace FASTER.core
         /// </summary>
         /// <param name="preallocateFile">Whether files should be preallocated</param>
         /// <param name="deleteOnClose">Whether file should be deleted on close</param>
-        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false)
+        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, int? throttleLimit = null)
         {
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
+            this.throttleLimit = throttleLimit;
         }
 
         /// <inheritdoc />
@@ -38,7 +38,12 @@ namespace FASTER.core
         /// <inheritdoc />
         public IDevice Get(FileDescriptor fileInfo)
         {
-            return Devices.CreateLogDevice(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName), preallocateFile: preallocateFile, deleteOnClose: deleteOnClose);
+            var device = Devices.CreateLogDevice(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName), preallocateFile: preallocateFile, deleteOnClose: deleteOnClose);
+            if (this.throttleLimit.HasValue)
+            {
+                device.ThrottleLimit = this.throttleLimit.Value;
+            }
+            return device;
         }
 
 
