@@ -67,8 +67,6 @@ namespace FASTER.test
                 while (completedOutputs.Next())
                 {
                     count++;
-                    ref var completedKey = ref completedOutputs.Current.Key;
-                    var completedStringKey = new string(MemoryMarshal.Cast<byte, char>(completedKey.AsReadOnlySpan()).ToArray());
                     Assert.AreEqual(Status.OK, completedOutputs.Current.Status);
                     Assert.AreEqual(5, completedOutputs.Current.Output);
                     value = completedOutputs.Current.Output;
