@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using Xunit;
 using FASTER.core;
-using System.Linq;
 
 namespace AsyncStress
 {
@@ -17,35 +16,35 @@ namespace AsyncStress
         {
             None,
             Single,
-            ParallelAsync,
-            ParallelSync,
+            ParallelFor,
             Chunks
         }
-        static ThreadingMode upsertThreadingMode = ThreadingMode.ParallelAsync;
-        static ThreadingMode readThreadingMode = ThreadingMode.ParallelAsync;
-        static int numTasks = 4;
+        static ThreadingMode upsertThreadingMode = ThreadingMode.ParallelFor;
+        static ThreadingMode readThreadingMode = ThreadingMode.ParallelFor;
+        static int numChunks = 10;
         static int numOperations = 1_000_000;
 
         static void Usage()
         {
             Console.WriteLine($"Options:");
-            Console.WriteLine($"    -u <mode>:      Upsert threading mode (listed below); default is {ThreadingMode.ParallelAsync}");
-            Console.WriteLine($"    -r <mode>:      Read threading mode (listed below); default is {ThreadingMode.ParallelAsync}");
-            Console.WriteLine($"    -t #:           Number of tasks for {ThreadingMode.ParallelSync} and {ThreadingMode.Chunks}; default is {numTasks}");
+            Console.WriteLine($"    -u <mode>:      Upsert threading mode (listed below); default is {ThreadingMode.ParallelFor}");
+            Console.WriteLine($"    -r <mode>:      Read threading mode (listed below); default is {ThreadingMode.ParallelFor}");
+            Console.WriteLine($"    -c #:           Number of chunks for {ThreadingMode.Chunks}; default is {numChunks}");
             Console.WriteLine($"    -n #:           Number of operations; default is {numOperations}");
-            Console.WriteLine($"    -b #:           Use OS buffering for reads; default is {FasterWrapper<int, int>.useOsReadBuffering}");
+            Console.WriteLine($"    -b #:           Use OS buffering for reads; default is false");
             Console.WriteLine($"    -?, /?, --help: Show this screen");
             Console.WriteLine();
             Console.WriteLine($"Threading Modes:");
             Console.WriteLine($"    None:           Do not run this operation");
             Console.WriteLine($"    Single:         Run this operation single-threaded");
-            Console.WriteLine($"    ParallelAsync:  Run this operation using Parallel.For with an Async lambda");
-            Console.WriteLine($"    ParallelSync:   Run this operation using Parallel.For with an Sync lambda and parallelism limited to numTasks");
-            Console.WriteLine($"    Chunks:         Run this operation using a set number of async tasks to operate on partitioned chunks");
+            Console.WriteLine($"    ParallelFor:    Run this operation using Parallel.For with an Async lambda");
+            Console.WriteLine($"    Chunks:         Run this operation using a set number of data chunks as async tasks, each chunk runs operations serially");
         }
 
         public static async Task Main(string[] args)
         {
+            bool useOsReadBuffering = false;
+
             if (args.Length > 0)
             {
                 for (var ii = 0; ii < args.Length; ++ii)
@@ -63,12 +62,12 @@ namespace AsyncStress
                         upsertThreadingMode = Enum.Parse<ThreadingMode>(nextArg(), ignoreCase: true);
                     else if (arg == "-r")
                         readThreadingMode = Enum.Parse<ThreadingMode>(nextArg(), ignoreCase: true);
-                    else if (arg == "-t")
-                        numTasks = int.Parse(nextArg());
+                    else if (arg == "-c")
+                        numChunks = int.Parse(nextArg());
                     else if (arg == "-n")
                         numOperations = int.Parse(nextArg());
                     else if (arg == "-b")
-                        FasterWrapper<int, int>.useOsReadBuffering = true;
+                        useOsReadBuffering = true;
                     else if (arg == "-?" || arg == "/?" || arg == "--help")
                     {
                         Usage();
@@ -78,22 +77,42 @@ namespace AsyncStress
                         throw new ApplicationException($"Unknown switch: {arg}");
                 }
             }
-            await ProfileStore(new FasterWrapper<int, int>());
+
+            // Store with value types, no object log
+            // await ProfileStore(new FasterWrapper<long, long>(useOsReadBuffering), e => (long)e, e => (long)e);
+
+            // Store with reference types, using object log
+            // await ProfileStore(new FasterWrapper<string, string>(useOsReadBuffering), e => $"key {e}", e => $"value {e}");
+
+            // Store with reference or value types, no object log (store serialized bytes)
+            await ProfileStore(new SerializedFasterWrapper<string, string>(useOsReadBuffering), e => $"key {e}", e => $"value {e}");
         }
 
-        private static async Task ProfileStore(FasterWrapper<int, int> store)
+        private static async Task ProfileStore<TStore, TKey, TValue>(TStore store, Func<int, TKey> keyGen, Func<int, TValue> valueGen)
+            where TStore : IFasterWrapper<TKey, TValue>
         {
             static string threadingModeString(ThreadingMode threadingMode)
                 => threadingMode switch
                 {
                     ThreadingMode.Single => "Single threading",
-                    ThreadingMode.ParallelAsync => "Parallel.For using async lambda",
-                    ThreadingMode.ParallelSync => $"Parallel.For using sync lambda and {numTasks} tasks",
-                    ThreadingMode.Chunks => $"Chunks partitioned across {numTasks} tasks",
+                    ThreadingMode.ParallelFor => "Parallel.For issuing async operations",
+                    ThreadingMode.Chunks => $"Chunks partitioned across {numChunks} tasks",
                     _ => throw new ApplicationException("Unknown threading mode")
                 };
 
-            int chunkSize = numOperations / numTasks;
+            Console.WriteLine("    Creating database");
+            (TKey, TValue)[] database = new (TKey, TValue)[numOperations];
+            TKey[] keys = new TKey[numOperations];
+            for (int i = 0; i < numOperations; i++)
+            {
+                database[i] = (keyGen(i), valueGen(i));
+                keys[i] = database[i].Item1;
+            }
+            Console.WriteLine("    Creation complete");
+
+            Assert.True(numOperations % numChunks == 0, $"Number of operations {numOperations} should be a multiple of number of chunks {numChunks}");
+
+            int chunkSize = numOperations / numChunks;
 
             // Insert
             if (upsertThreadingMode == ThreadingMode.None)
@@ -108,34 +127,26 @@ namespace AsyncStress
                 if (upsertThreadingMode == ThreadingMode.Single)
                 {
                     for (int i = 0; i < numOperations; i++)
-                        await store.UpsertAsync(i, i);
+                        await store.UpsertAsync(database[i].Item1, database[i].Item2);
                 }
-                else if (upsertThreadingMode == ThreadingMode.ParallelAsync)
+                else if (upsertThreadingMode == ThreadingMode.ParallelFor)
                 {
                     var writeTasks = new ValueTask[numOperations];
-                    Parallel.For(0, numOperations, key => writeTasks[key] = store.UpsertAsync(key, key));
+                    Parallel.For(0, numOperations, i => writeTasks[i] = store.UpsertAsync(database[i].Item1, database[i].Item2));
                     foreach (var task in writeTasks)
                         await task;
                 }
-                else if (upsertThreadingMode == ThreadingMode.ParallelSync)
+                else if (upsertThreadingMode == ThreadingMode.Chunks)
                 {
-                    // Without throttling parallelism, this ends up very slow with many threads waiting on FlushTask.
-                    var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = numTasks };
-                    Parallel.For(0, numOperations, parallelOptions, key => store.Upsert(key, key));
-                }
-                else
-                {
-                    Debug.Assert(upsertThreadingMode == ThreadingMode.Chunks);
-                    var chunkTasks = new ValueTask[numTasks];
-                    for (int ii = 0; ii < numTasks; ii++)
-                    {
-                        var chunk = new (int, int)[chunkSize];
-                        for (int i = 0; i < chunkSize; i++) chunk[i] = (ii * chunkSize + i, ii * chunkSize + i);
-                        chunkTasks[ii] = store.UpsertChunkAsync(chunk);
-                    }
+                    var chunkTasks = new ValueTask[numChunks];
+                    for (int i = 0; i < numChunks; i++)
+                        chunkTasks[i] = store.UpsertChunkAsync(database, i * chunkSize, chunkSize);
                     foreach (var chunkTask in chunkTasks)
                         await chunkTask;
-                }   
+                }
+                else
+                    throw new InvalidOperationException($"Invalid threading mode {upsertThreadingMode}");
+
                 sw.Stop();
                 Console.WriteLine($"    Insertion complete in {sw.ElapsedMilliseconds} ms; TailAddress = {store.TailAddress}, Pending = {store.UpsertPendingCount}");
             }
@@ -148,56 +159,48 @@ namespace AsyncStress
             }
             else
             {
-                Console.WriteLine($"    Reading {numOperations} records with {threadingModeString(readThreadingMode)} (OS buffering: {FasterWrapper<int, int>.useOsReadBuffering}) ...");
-                var readTasks = new ValueTask<(Status, int)>[numOperations];
-                var readPendingString = string.Empty;
+                Console.WriteLine($"    Reading {numOperations} records with {threadingModeString(readThreadingMode)} (OS buffering: {store.UseOsReadBuffering}) ...");
+                (Status, TValue)[] results = new (Status, TValue)[numOperations];
 
                 var sw = Stopwatch.StartNew();
                 if (readThreadingMode == ThreadingMode.Single)
                 {
-                    for (int ii = 0; ii < numOperations; ii++)
+                    for (int i = 0; i < numOperations; i++)
                     {
-                        readTasks[ii] = store.ReadAsync(ii);
-                        await readTasks[ii];
+                        var result = await store.ReadAsync(database[i].Item1);
+                        results[i] = result;
                     }
                 }
-                else if (readThreadingMode == ThreadingMode.ParallelAsync)
+                else if (readThreadingMode == ThreadingMode.ParallelFor)
                 {
-                    Parallel.For(0, numOperations, key => readTasks[key] = store.ReadAsync(key));
-                    foreach (var task in readTasks)
-                        await task;
+                    var readTasks = new ValueTask<(Status, TValue)>[numOperations];
+                    Parallel.For(0, numOperations, i => readTasks[i] = store.ReadAsync(database[i].Item1));
+                    for (int i = 0; i < numOperations; i++)
+                        results[i] = await readTasks[i];
                 }
-                else if (readThreadingMode == ThreadingMode.ParallelSync)
+                else if(readThreadingMode == ThreadingMode.Chunks)
                 {
-                    // Without throttling parallelism, this ends up very slow with many threads waiting on completion.
-                    var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = numTasks };
-                    Parallel.For(0, numOperations, parallelOptions, key => readTasks[key] = store.Read(key));
-                    foreach (var task in readTasks)
-                        await task;
-                    readPendingString = $"; Pending = {store.ReadPendingCount}";
+                    var chunkTasks = new ValueTask<(Status, TValue)[]>[numChunks];
+                    for (int i = 0; i < numChunks; i++)
+                        chunkTasks[i] = store.ReadChunkAsync(keys, i * chunkSize, chunkSize);
+                    for (int i = 0; i < numChunks; i++)
+                    {
+                        var result = await chunkTasks[i];
+                        Array.Copy(result, 0, results, i * chunkSize, chunkSize);
+                    }
                 }
                 else
-                {
-                    var chunkTasks = Enumerable.Range(0, numTasks).Select(ii =>
-                    {
-                        var chunk = new int[chunkSize];
-                        for (int i = 0; i < chunkSize; i++) chunk[i] = ii * chunkSize + i;
-                        return store.ReadChunkAsync(chunk, readTasks, ii * chunkSize);
-                    }).ToArray();
-                    foreach (var chunkTask in chunkTasks)
-                        await chunkTask;
-                }
+                    throw new InvalidOperationException($"Invalid threading mode {readThreadingMode}");
 
                 sw.Stop();
-                Console.WriteLine($"    Reads complete in {sw.ElapsedMilliseconds} ms{readPendingString}");
+                Console.WriteLine($"    Reads complete in {sw.ElapsedMilliseconds} ms");
 
                 // Verify
                 Console.WriteLine("    Verifying read results ...");
-                Parallel.For(0, numOperations, key =>
+                Parallel.For(0, numOperations, i =>
                 {
-                    (Status status, int? result) = readTasks[key].Result;
-                    Assert.Equal(Status.OK, status);
-                    Assert.Equal(key, result);
+                    Assert.Equal(Status.OK, results[i].Item1);
+                    Assert.Equal(database[i].Item2, results[i].Item2);
                 });
 
                 Console.WriteLine("    Results verified");

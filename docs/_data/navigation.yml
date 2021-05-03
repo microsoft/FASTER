@@ -24,6 +24,8 @@ docs:
         url: /docs/fasterkv-basics/
       - title: "Tuning"
         url: /docs/fasterkv-tuning/
+      - title: "Checkpointing and Recovery"
+        url: /docs/fasterkv-recovery/
       - title: "Samples"
         url: /docs/fasterkv-samples/
       - title: "C++ Port"

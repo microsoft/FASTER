@@ -69,6 +69,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{C60F148B-2
 		..\docs\_docs\02-faqs.md = ..\docs\_docs\02-faqs.md
 		..\docs\_docs\20-fasterkv-basics.md = ..\docs\_docs\20-fasterkv-basics.md
 		..\docs\_docs\23-fasterkv-tuning.md = ..\docs\_docs\23-fasterkv-tuning.md
+		..\docs\_docs\25-fasterkv-recovery.md = ..\docs\_docs\25-fasterkv-recovery.md
 		..\docs\_docs\26-fasterkv-samples.md = ..\docs\_docs\26-fasterkv-samples.md
 		..\docs\_docs\29-fasterkv-cpp.md = ..\docs\_docs\29-fasterkv-cpp.md
 		..\docs\_docs\40-fasterlog-basics.md = ..\docs\_docs\40-fasterlog-basics.md
@@ -81,6 +82,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{C60F148B-2
 		..\docs\_docs\90-td-introduction.md = ..\docs\_docs\90-td-introduction.md
 		..\docs\_docs\95-research-papers.md = ..\docs\_docs\95-research-papers.md
 		..\docs\_docs\96-slides-videos.md = ..\docs\_docs\96-slides-videos.md
+		..\docs\_config.yml = ..\docs\_config.yml
+		..\docs\_pages\home.md = ..\docs\_pages\home.md
+		..\docs\_data\navigation.yml = ..\docs\_data\navigation.yml
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TstRunner", "playground\TstRunner\TstRunner.csproj", "{A265D9D2-3FEA-48BB-B1CC-273ECFEA0611}"

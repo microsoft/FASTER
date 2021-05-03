@@ -10,7 +10,7 @@ namespace FASTER.common
     /// Reusable object
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public struct ReusableObject<T> : IDisposable where T : class
+    public struct ReusableObject<T> : IDisposable where T : class, IDisposable
     {
         private readonly LightConcurrentStack<T> pool;
 
@@ -30,7 +30,10 @@ namespace FASTER.common
         /// </summary>
         public void Dispose()
         {
-            pool?.TryPush(obj);
+            if (pool != null)
+                pool.TryPush(obj);
+            else
+                obj.Dispose();
         }
     }
 }

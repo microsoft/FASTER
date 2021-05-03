@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -11,10 +12,9 @@ namespace FASTER.common
     /// Object pool
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    internal class SimpleObjectPool<T> : IDisposable where T : class
+    internal class SimpleObjectPool<T> : IDisposable where T : class, IDisposable
     {
         private readonly Func<T> factory;
-        private readonly Action<T> destructor;
         private readonly LightConcurrentStack<T> stack;
         private int allocatedObjects;
         private readonly int maxObjects;
@@ -23,12 +23,10 @@ namespace FASTER.common
         /// Constructor
         /// </summary>
         /// <param name="factory"></param>
-        /// <param name="destructor"></param>
         /// <param name="maxObjects"></param>
-        public SimpleObjectPool(Func<T> factory, Action<T> destructor = null, int maxObjects = 128)
+        public SimpleObjectPool(Func<T> factory, int maxObjects = 128)
         {
             this.factory = factory;
-            this.destructor = destructor;
             this.maxObjects = maxObjects;
             stack = new LightConcurrentStack<T>();
             allocatedObjects = 0;
@@ -36,8 +34,15 @@ namespace FASTER.common
 
         public void Dispose()
         {
-            while (stack.TryPop(out var elem))
-                destructor?.Invoke(elem);
+            while (allocatedObjects > 0)
+            {
+                while (stack.TryPop(out var elem))
+                {
+                    elem.Dispose();
+                    Interlocked.Decrement(ref allocatedObjects);
+                }
+                Thread.Yield();
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
