@@ -57,19 +57,19 @@ namespace FASTER.libdpr
         /// <inheritdoc/>
         public long SafeVersion(Worker worker)
         {
-            return lastKnownState.cut[worker];
+            return lastKnownState.GetCurrentCut()[worker];
         }
 
         /// <inheritdoc/>
         public IDprStateSnapshot GetStateSnapshot()
         {
-            return new DictionaryDprStateSnapshot(lastKnownState.cut);
+            return new DictionaryDprStateSnapshot(lastKnownState.GetCurrentCut());
         }
 
         /// <inheritdoc/>
         public long SystemWorldLine()
         {
-            return lastKnownState.worldLines[Worker.CLUSTER_MANAGER];
+            return lastKnownState.GetCurrentWorldLines()[Worker.CLUSTER_MANAGER];
         }
 
         /// <inheritdoc/>

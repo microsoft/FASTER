@@ -12,11 +12,11 @@ namespace FASTER.libdpr
     {
         public class State
         {
-            internal Dictionary<Worker, long> worldLines;
+            private Dictionary<Worker, long> worldLines;
 
             // Updates to cut is issued single-threadedly
             // TODO(Tianyu): also, need to add workers to it as it is the source of truth for cluster membership
-            internal Dictionary<Worker, long> cut;
+            private Dictionary<Worker, long> cut;
 
             // Dirty bit to signal that the state has been changed
             internal bool hasUpdates;
@@ -38,6 +38,16 @@ namespace FASTER.libdpr
             {
                 worldLines = new Dictionary<Worker, long>(other.worldLines);
                 cut = new Dictionary<Worker, long>(other.worldLines);
+            }
+
+            public Dictionary<Worker, long> GetCurrentCut()
+            {
+                return cut;
+            }
+
+            public Dictionary<Worker, long> GetCurrentWorldLines()
+            {
+                return worldLines;
             }
 
             internal bool Serialize(byte[] buf, out int size)
@@ -119,7 +129,7 @@ namespace FASTER.libdpr
         private List<Action> callbacks = new List<Action>();
 
         /* Persistence */
-        private IDevice persistentStorage;
+        private PingPongDevice persistentStorage;
         // Only keep the serialized persistent state for shipping to clients, as the DprFinder never needs to interpret
         // this information.
         private byte[] serializedPersistentState;
@@ -130,22 +140,35 @@ namespace FASTER.libdpr
             new SimpleObjectPool<List<WorkerVersion>>(() => new List<WorkerVersion>());
 
         private HashSet<WorkerVersion> visited = new HashSet<WorkerVersion>();
-        private Queue<WorkerVersion> frontier = new Queue<WorkerVersion>(), outstandingWvs = new Queue<WorkerVersion>();
+        private Queue<WorkerVersion> frontier = new Queue<WorkerVersion>();
+        private ConcurrentQueue<WorkerVersion> outstandingWvs = new ConcurrentQueue<WorkerVersion>();
 
         /* Serialization */
         // Start out at some arbitrary size --- the code resizes this buffer to fit
         private byte[] serializationBuffer = new byte[1 << 20];
 
-        public SimpleDprFinderBackend(IDevice persistentStorage)
+        public SimpleDprFinderBackend(PingPongDevice persistentStorage)
         {
             this.persistentStorage = persistentStorage;
+            if (persistentStorage.ReadLatestCompleteWrite(out serializedPersistentState))
+            {
+                serializedPersistentStateSize = serializedPersistentState.Length;
+                volatileState = new State(serializedPersistentState, 0);
+                maxVersion = volatileState.GetCurrentCut().Max(e => e.Value);
+            }
+            else
+            {
+                volatileState = new State();
+                serializedPersistentState = new byte[0];
+                serializedPersistentStateSize = 0;
+            }
         }
 
         // Try to commit wvs starting from the given wv. Commits and updates the volatile state the entire dependency
         // set of wv if all of them are persistent. Committed versions are removed from the precedence graph.
         private bool TryCommitWorkerVersion(WorkerVersion wv)
         {
-            if (wv.Version <= volatileState.cut.GetValueOrDefault(wv.Worker, 0))
+            if (wv.Version <= volatileState.GetCurrentCut().GetValueOrDefault(wv.Worker, 0))
             {
                 // already committed. Remove but do not signal changes to the cut
                 if (precedenceGraph.TryRemove(wv, out var list))
@@ -163,18 +186,19 @@ namespace FASTER.libdpr
                 if (!precedenceGraph.TryGetValue(node, out var val)) return false;
 
                 visited.Add(node);
-                if (volatileState.cut.GetValueOrDefault(node.Worker, 0) >= node.Version) continue;
+                if (volatileState.GetCurrentCut().GetValueOrDefault(node.Worker, 0) >= node.Version) continue;
                 foreach (var dep in val)
                     frontier.Enqueue(dep);
             }
 
             foreach (var committed in visited)
             {
-                var success = volatileState.cut.TryGetValue(committed.Worker, out var version);
+                var success = volatileState.GetCurrentCut().TryGetValue(committed.Worker, out var version);
                 // Must be a known worker
                 Debug.Assert(success);
+                // TODO(Tianyu): Reason about joining and leaving the system for nodes
                 if (version < committed.Version)
-                    volatileState.cut[committed.Worker] = committed.Version;
+                    volatileState.GetCurrentCut()[committed.Worker] = committed.Version;
 
                 if (precedenceGraph.TryRemove(committed, out var list))
                     objectPool.Return(list);
@@ -190,7 +214,7 @@ namespace FASTER.libdpr
                 // Apply any recovery-related updates
                 while (recoveryReports.TryDequeue(out var entry))
                 {
-                    volatileState.worldLines[entry.Item1.Worker] = entry.Item2;
+                    volatileState.GetCurrentWorldLines()[entry.Item1.Worker] = entry.Item2;
                     // Remove any rolled back version to avoid accidentally including them in a cut.
                     for (var v = entry.Item1.Version + 1; v <= maxVersion; v++)
                     {
@@ -201,29 +225,29 @@ namespace FASTER.libdpr
                 }
 
                 // No guarantees if recovery is in progress
-                if (volatileState.worldLines.Any(pair =>
-                    pair.Value != volatileState.worldLines[Worker.CLUSTER_MANAGER]))
+                if (volatileState.GetCurrentWorldLines().Any(pair =>
+                    pair.Value != volatileState.GetCurrentWorldLines()[Worker.CLUSTER_MANAGER]))
                     return;
             }
 
             lock (volatileState)
             {
                 // Use min to quickly prune outdated vertices
-                var minVersion = versionTable.Min(pair => pair.Value);
+                var minVersion = versionTable.Count == 0 ? 0 : versionTable.Min(pair => pair.Value);
                 // Update entries in the cut to be at least the min. No need to prune the graph as later traversals will take
                 // care of that
-                foreach (var (worker, version) in volatileState.cut)
+                foreach (var (worker, version) in volatileState.GetCurrentCut())
                 {
                     if (version > minVersion) continue;
                     volatileState.hasUpdates = true;
-                    volatileState.cut[worker] = minVersion;
+                    volatileState.GetCurrentCut()[worker] = minVersion;
                 }
             }
 
-            // Go through the unprocessed wvs and traverse the graph
-            for (var i = 0; i < outstandingWvs.Count; i++)
+            // Go through the unprocessed wvs and traverse the graph, but give up after a while
+            for (var i = 0; i < 50; i++)
             {
-                var wv = outstandingWvs.Dequeue();
+                if (!outstandingWvs.TryDequeue(out var wv)) return;
                 lock (volatileState)
                 {
                     if (TryCommitWorkerVersion(wv))
@@ -240,7 +264,6 @@ namespace FASTER.libdpr
         /// </summary>
         public void PersistState()
         {
-            var completed = new ManualResetEventSlim();
             List<Action> acks;
             State copy;
             lock (volatileState)
@@ -258,21 +281,7 @@ namespace FASTER.libdpr
                 // Grow buffer until state fits
                 serializationBuffer = new byte[Math.Max(size, serializationBuffer.Length * 2)];
 
-            Debug.Assert(size <= persistentStorage.SegmentSize);
-            unsafe
-            {
-                // TODO(Tianyu): Not atomic --- need checksum
-                fixed (byte* b = &serializationBuffer[0])
-                    persistentStorage.WriteAsync((IntPtr) b, 0, (ulong) 0, (uint) size,
-                        (e, n, o) =>
-                        {
-                            // TODO(Tianyu): error handling?
-                            completed.Set();
-                        },
-                        null);
-            }
-            
-            completed.Wait();
+            persistentStorage.WriteReliably(serializationBuffer, 0, size);
             
             // Atomically updates the current stashed copy of persistent state and its size for client consumption.
             lock (serializedPersistentState)
@@ -297,6 +306,7 @@ namespace FASTER.libdpr
             list.Clear();
             list.AddRange(deps);
             precedenceGraph.TryAdd(wv, list);
+            outstandingWvs.Enqueue(wv);
         }
 
         /// <summary>
