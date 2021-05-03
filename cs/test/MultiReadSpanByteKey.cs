@@ -41,11 +41,9 @@ namespace FASTER.test
             }
             session.CompletePending(wait: true);
 
-            // read "5" twice successfully
+            // read "5" multiple times
             Assert.AreEqual(5, ReadKey5());
             Assert.AreEqual(5, ReadKey5());
-
-            // BUT not found on the third time
             Assert.AreEqual(5, ReadKey5());
 
             long ReadKey5()
