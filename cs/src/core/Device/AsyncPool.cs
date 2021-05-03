@@ -16,10 +16,12 @@ namespace FASTER.core
     public class AsyncPool<T> : IDisposable where T : IDisposable
     {
         readonly int size;
-        private readonly Func<T> creator;
+        readonly Func<T> creator;
         readonly SemaphoreSlim handleAvailable;
         readonly ConcurrentQueue<T> itemQueue;
+
         bool disposed = false;
+        int totalAllocated = 0;
 
         /// <summary>
         /// Constructor
@@ -30,8 +32,8 @@ namespace FASTER.core
         {
             this.size = size;
             this.creator = creator;
-            handleAvailable = new SemaphoreSlim(initialCount: size, maxCount: size);
-            itemQueue = new ConcurrentQueue<T>();
+            this.handleAvailable = new SemaphoreSlim(0);
+            this.itemQueue = new ConcurrentQueue<T>();
         }
 
         /// <summary>
@@ -41,18 +43,19 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask<T> GetAsync(CancellationToken token = default)
         {
-            await handleAvailable.WaitAsync(token);
-
-            if (!itemQueue.TryDequeue(out T item))
+            for (; ; )
             {
-                item = creator();
-            }
+                if (disposed)
+                    throw new FasterException("Getting handle in disposed device");
 
-            return item;
+                await handleAvailable.WaitAsync(token);
+                if (GetOrAdd(itemQueue, out T item))
+                    return item;
+            }
         }
 
         /// <summary>
-        /// Try get item. 
+        /// Try get item (fast path)
         /// </summary>
         /// <param name="item"></param>
         /// <returns></returns>
@@ -63,19 +66,7 @@ namespace FASTER.core
                 item = default;
                 return false;
             }
-
-            if (!handleAvailable.Wait(0))
-            {
-                item = default;
-                return false;
-            }
-
-            if (!itemQueue.TryDequeue(out item))
-            {
-                item = creator();
-            }
-
-            return true;
+            return GetOrAdd(itemQueue, out item);
         }
 
         /// <summary>
@@ -84,17 +75,9 @@ namespace FASTER.core
         /// <param name="item"></param>
         public void Return(T item)
         {
-            if (disposed)
-            {
-                item.Dispose();
-            }
-            else
-            {
-                // release the semaphore slot only after the item has been enqueued into the queue.
-                // this reduces the chances that TryGet will encounter an open semaphore with an empty queue.
-                itemQueue.Enqueue(item);
+            itemQueue.Enqueue(item);
+            if (handleAvailable.CurrentCount < itemQueue.Count)
                 handleAvailable.Release();
-            }
         }
 
         /// <summary>
@@ -103,12 +86,38 @@ namespace FASTER.core
         public void Dispose()
         {
             disposed = true;
-            handleAvailable.Dispose();
 
-            while (itemQueue.TryDequeue(out var item))
+            while (totalAllocated > 0)
             {
-                item.Dispose();
+                while (itemQueue.TryDequeue(out var item))
+                {
+                    item.Dispose();
+                    Interlocked.Decrement(ref totalAllocated);
+                }
+                if (totalAllocated > 0)
+                    handleAvailable.Wait();
             }
+        }
+
+        /// <summary>
+        /// Get item from queue, adding up to pool-size items if necessary
+        /// </summary>
+        private bool GetOrAdd(ConcurrentQueue<T> itemQueue, out T item)
+        {
+            if (itemQueue.TryDequeue(out item)) return true;
+
+            var _totalAllocated = totalAllocated;
+            while (_totalAllocated < size)
+            {
+                if (Interlocked.CompareExchange(ref totalAllocated, _totalAllocated + 1, _totalAllocated) == _totalAllocated)
+                {
+                    item = creator();
+                    return true;
+                }
+                if (itemQueue.TryDequeue(out item)) return true;
+                _totalAllocated = totalAllocated;
+            }
+            return false;
         }
     }
 }
