@@ -2,15 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
 using System.Linq;
-using FASTER.core;
-using System.IO;
-using NUnit.Framework;
 using System.Runtime.InteropServices;
+using FASTER.core;
+using NUnit.Framework;
 
 namespace FASTER.test
 {
@@ -60,6 +55,69 @@ namespace FASTER.test
             fht.Dispose();
             fht = null;
             log.Dispose();
-        }        
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        public unsafe void MultiReadSpanByteKeyTest()
+        {
+            using var log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/MultiReadSpanByteKeyTest.log", deleteOnClose: true);
+            using var fht = new FasterKV<SpanByte, long>(
+                size: 1L << 20,
+                new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12, });
+            using var session = fht.For(new MultiReadSpanByteKeyTestFunctions()).NewSession<MultiReadSpanByteKeyTestFunctions>();
+
+            for (int i = 0; i < 3000; i++)
+            {
+                var keyString = $"{i}";
+                var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
+                fixed (byte* _ = key)
+                    session.Upsert(SpanByte.FromFixedSpan(key), i);
+            }
+
+            // Evict all records to disk
+            fht.Log.FlushAndEvict(true);
+
+            for (long key = 0; key < 50; key++)
+            {
+                // read each key multiple times
+                for (int i = 0; i < 10; i++)
+                    Assert.AreEqual(key, ReadKey($"{key}"));
+            }
+
+            long ReadKey(string keyString)
+            {
+                var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
+                Status status;
+
+                fixed (byte* _ = key)
+                    status = session.Read(key: SpanByte.FromFixedSpan(key), out var unused);
+
+                // key low enough to need to be fetched from disk
+                Assert.AreEqual(Status.PENDING, status);
+
+                session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+
+                var count = 0;
+                var value = 0L;
+                using (completedOutputs)
+                {
+                    while (completedOutputs.Next())
+                    {
+                        count++;
+                        Assert.AreEqual(Status.OK, completedOutputs.Current.Status);
+                        value = completedOutputs.Current.Output;
+                    }
+                }
+                Assert.AreEqual(1, count);
+                return value;
+            }
+        }
+
+        class MultiReadSpanByteKeyTestFunctions : FunctionsBase<SpanByte, long, long, long, Empty>
+        {
+            public override void SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst) => dst = value;
+            public override void ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst) => dst = value;
+        }
     }
 }
