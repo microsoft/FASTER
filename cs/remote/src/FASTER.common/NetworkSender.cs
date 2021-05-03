@@ -20,7 +20,7 @@ namespace FASTER.common
         /// <param name="bufferSize">Buffer size</param>
         public NetworkSender(int bufferSize)
         {
-             reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, bufferSize), e => e.Dispose());
+             reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, bufferSize));
         }
 
         /// <summary>

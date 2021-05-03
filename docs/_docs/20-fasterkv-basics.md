@@ -41,26 +41,36 @@ FASTER supports three basic operations:
 ### Constructor
 
 Before instantiating the FASTER store, you need to create storage devices that FASTER will use. If you are using value
-(blittable) types such as `long`, `int`, and structs with value-type members, you only need one log device. If you are 
-also using objects such as classes and strings, you need to create a separate object log device.
+(blittable) types such as `long`, `int`, and structs with value-type members, you only need one log device:
 
-```Csharp
+
+```cs
 var log = Devices.CreateLogDevice(@"C:\Temp\hlog.log");
 ```
 
-The store constructor requires a key type and a value type. For example, an instance of FASTER over `long` keys and 
-`string` values is created as follows:
+If your key or values are serializable C# objects such as classes and strings, you 
+need to create a separate object log device as well:
 
-```Csharp
-var store = new FasterKV<long, string>(1L << 20, new LogSettings { LogDevice = log });
+```cs
+var objlog = Devices.CreateLogDevice(@"C:\Temp\hlog.obj.log");
 ```
+
+For pure in-memory operation, you can just use a special `new NullDevice()` instead.
+
+The store constructor requires a key type and a value type. For example, an instance 
+of FASTER over `long` keys and `string` values is created as follows:
+
+```cs
+var store = new FasterKV<long, string>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = objlog });
+```
+
 
 #### Constructor Parameters
 
 1. Hash Table Size: This the number of buckets allocated to FASTER, where each bucket is 64 bytes (size of a cache line).
 2. Log Settings: These are settings related to the size of the log and devices used by the log.
 3. Checkpoint Settings: These are settings related to checkpoints, such as checkpoint type and folder. Covered in the
-section on checkpointing [below](#checkpointing-and-recovery).
+section on [checkpointing and recovery](/FASTER/docs/fasterkv-recovery).
 4. Serialization Settings: Used to provide custom serializers for key and value types. Serializers implement 
 `IObjectSerializer<Key>` for keys and `IObjectSerializer<Value>` for values. *These are only needed for 
 non-blittable types such as C# class objects.*
@@ -68,8 +78,8 @@ non-blittable types such as C# class objects.*
 
 The total in-memory footprint of FASTER is controlled by the following parameters:
 1. Hash table size: This parameter (the first contructor argument) times 64 is the size of the in-memory hash table in bytes.
-2. Log size: The logSettings.MemorySizeBits denotes the size of the in-memory part of the hybrid log, in bits. In other
-words, the size of the log is 2^B bytes, for a parameter setting of B. Note that if the log points to class key or value
+2. Log size: The `LogSettings.MemorySizeBits` parameter denotes the size of the in-memory part of the hybrid log, in bits. In other
+words, the size of the log is 2<sup>B</sup> bytes, for a parameter setting of B. Note that if the log points to class key or value
 objects, this size only includes the 8-byte reference to the object. The older part of the log is spilled to storage.
 
 Read more about managing memory in FASTER in the [tuning](/FASTER/docs/fasterkv-tuning) guide.
@@ -96,31 +106,22 @@ Apart from Key and Value, the IFunctions interface is defined on three additiona
 4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation.
 5. Locking: There is one property and two methods; if the SupportsLocking property returns true, then FASTER will call Lock and Unlock within a try/finally in the four concurrent callback methods: ConcurrentReader, ConcurrentWriter, ConcurrentDeleter (new in IAdvancedFunctions), and InPlaceUpdater. FunctionsBase illustrates the default implementation of Lock and Unlock as an exclusive lock using a bit in RecordInfo.
 
-#### IAdvancedFunctions
-
-`IAdvancedFunctions` is a superset of `IFunctions` and provides the same methods with some additional parameters:
-- Callbacks for in-place updates receive the logical address of the record, which can be useful for applications such as indexing, and a reference to the `RecordInfo` header of the record, for use with the new locking calls.
-- ReadCompletionCallback receives the `RecordInfo` of the record that was read.
-
-`IAdvancedFunctions` also contains a new method, ConcurrentDeleter, which may be used to implement user-defined post-deletion logic, such as calling object Dispose.
-
-`IAdvancedFunctions` is a separate interface; it does not inherit from `IFunctions`.
-
-As with `IFunctions`, [FunctionsBase.cs](https://github.com/microsoft/FASTER/blob/master/cs/src/core/Index/Interfaces/FunctionsBase.cs) defines abstract base classes to provide a default implementation of `IAdvancedFunctions`, using the same names prefixed with `Advanced`.
+FASTER also support an advanced callback functions API with more hooks. See 
+[here](#advanced-functions) for details.
 
 ### Sessions
 
 Once FASTER is instantiated, one issues operations to FASTER by creating logical sessions. A session represents a "mono-threaded" sequence of operations issued to FASTER. There is no concurrency within a session, but different sessions may execute concurrently. Sessions do not need to be affinitized to threads, but if they are, FASTER can leverage the same (covered later). You create a session as follows:
 
-```var session = store.NewSession(new Functions());```
+```cs
+var session = store.NewSession(new Functions());
+```
 
 An equivalent, but more optimized API requires you to specify the Functions type a second time (it allows us to avoid accessing the session via an interface call):
 
 ```cs
 var session = store.For(new Functions()).NewSession<Functions>();
 ```
-
-As with the `IFunctions` and `IAdvancedFunctions` interfaces, there are separate, non-inheriting session classes that provide identical methods: `ClientSession` is returned by `NewSession` for a `Functions` class that implements `IFunctions`, and `AdvancedClientSession` is returned by `NewSession` for a `Functions` class that implements `IAdvancedFunctions`.
 
 You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports synchronous versions of all operations, as well as async versions. While all methods exist in an async form, only read and RMW are generally expected to go async; upserts and deletes will only go async when it is necessary to wait on flush operations when appending records to the log. The basic forms of these operations are described below; additional overloads are available.
 
@@ -191,11 +192,25 @@ Pending operations call the appropriate completion callback on the functions obj
 For ease of retrieving outputs from the calling code, there is also a `CompletePendingWithOutputs()` and a `CompletePendingWithOutputsAsync()` that return an iterator over the `Output`s that were completed.
 
 ```cs
+// Sync API
 session.CompletePending(wait: true);
 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
 
+// Async API
 await session.CompletePendingAsync();
 var completedOutputs = await session.CompletePendingWithOutputsAsync();
+```
+
+Using the `*WithOutputs` variant, you can iterate over the completed outputs on the
+calling thread itself (instead of using the completion callbacks), as follows:
+
+```cs
+while (completedOutputs.Next())
+{
+   ref var key = ref completedOutputs.Current.Key;
+   ref var output = ref completedOutputs.Current.Output;
+}
+completedOutputs.Dispose();
 ```
 
 ### Disposing
@@ -342,177 +357,32 @@ Typically, you may compact around 20% (up to 100%) of the log, e.g., you could s
 
 ## Checkpointing and Recovery
 
-### Overall Summary
+FASTER can operate as a persistent store supporting asynchronous non-blocking 
+checkpoint-based recovery. Go to [Checkpointing and Recovery](/FASTER/docs/fasterkv-recovery) 
+for details and examples of this capability.
 
-FASTER supports asynchronous non-blocking **checkpoint-based recovery**. Every new checkpoint persists (or makes durable) additional user-operations
-(Read, Upsert or RMW). FASTER allows clients to keep track of operations that have persisted and those that have not using 
-a session-based API.
+## Advanced Functions
 
-This feature is based on a recovery model called Concurrent Prefix Recovery (CPR for short). You can read more about 
-CPR in the research paper [here](https://www.microsoft.com/en-us/research/uploads/prod/2019/01/cpr-sigmod19.pdf).
-Briefly, CPR is based on (periodic) group commit. However, instead of using an expensive 
-write-ahead log (WAL) which can kill FASTER's high performance, CPR: (1) provides a semantic description of committed
-operations, of the form “all operations until offset Ti in session i”; and (2) uses asynchronous 
-incremental checkpointing instead of a WAL to implement group commit in a scalable bottleneck-free manner.
+Users can use `IAdvancedFunctions` instead of `IFunctions` to get access to 
+a richer callback API. `IAdvancedFunctions` is a superset of `IFunctions` and 
+provides the same methods with some additional parameters:
+- Callbacks for in-place updates receive the logical address of the record, which can be useful for applications such as indexing, and a reference to the `RecordInfo` header of the record, for use with the new locking calls.
+- ReadCompletionCallback receives the `RecordInfo` of the record that was read.
 
-Recall that each FASTER client starts a session, associated with a unique session ID (or name). All FASTER session operations
-(Read, Upsert, RMW) carry a monotonic sequence number (sequence numbers are implicit in case of async calls). At any point in 
-time, one may call the checkpointing API to initiate an asynchronous checkpoint of FASTER. After invoking the checkpoint, each FASTER 
-session is (eventually) notified of a commit point. A commit point consists of (1) a sequence number, such that all operations
-until, and no operations after, that sequence number, are guaranteed to be persisted as part of that checkpoint; (2) an optional
-exception list of operations that were not part of the commit because they went pending and could not complete before the 
-checkpoint, because the session was not active at the time of checkpointing.
+`IAdvancedFunctions` also contains a new method, ConcurrentDeleter, which may 
+be used to implement user-defined post-deletion logic, such as calling object 
+Dispose.
 
-The commit point information can be used by the session to clear any in-memory buffer of operations waiting to be performed. 
-During recovery, sessions can continue using `ResumeSession` invoked with the same session ID. The function returns the thread-local 
-sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted 
-operations since that point.
+`IAdvancedFunctions` is a separate interface; it does not inherit 
+from `IFunctions`.
 
-With async session operations on FASTER, operations return as soon as they complete, before commit. In order to wait for commit,
-you simply issue an `await session.WaitForCommitAsync()` call. The call completes only after the operation is made persistent by
-an asynchronous commit (checkpoint). The user is responsible for initiating the checkpoint asynchronously.
+As with `IFunctions`, [FunctionsBase.cs](https://github.com/microsoft/FASTER/blob/master/cs/src/core/Index/Interfaces/FunctionsBase.cs)
+defines abstract base classes to provide a default implementation of 
+`IAdvancedFunctions`, using the same names prefixed with `Advanced`.
 
-### Taking Checkpoints
+For sessions, there are separate, non-inheriting session classes that provide 
+identical methods. Just as `ClientSession` is returned by `NewSession` for 
+a `Functions` class that implements `IFunctions`, `AdvancedClientSession` is 
+returned by `NewSession` for a `Functions` class that implements 
+`IAdvancedFunctions`.
 
-A FASTER checkpoint consists of an optional index checkpoint, coupled with a later log 
-checkpoint. FASTER first recovers the index and then replays the relevant part of the log
-to get back to a consistent recovered state. If an index checkpoint is unavailable, FASTER
-replays the entire log to reconstruct the index. An index checkpoint is taken as follows:
-
-```cs
-await store.TakeIndexCheckpointAsync();
-```
-
-FASTER supports two notions of log checkpointing: Snapshot and Fold-Over.
-
-### Snapshot Checkpoint
-
-This checkpoint is a full snapshot of in-memory portion of the hybrid log into a separate
-snapshot file in the checkpoint folder. We recover using the main log followed by reading the
-snapshot back into main memory to complete recovery. FASTER also supports incremental
-snapshots, where the changes since the last full (or incremental) snapshot are captured into
-a delta log file in the same folder as the base snapshot. This is specified using the 
-`tryIncremental` parameter to the checkpoint operation.
-
-```cs
-await store.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot, tryIncremental: false);
-```
-
-### Fold-Over Checkpoint
-
-A fold-over checkpoint simply flushes the main data log to disk, making it read-only, and
-writes a small metadata file (`info.dat`) to the checkpoint folder. This is an incremental 
-checkpoint by definition, as the mutable log consists of all changes since the previous 
-fold-over checkpoint. FoldOver effectively moves the read-only marker of the hybrid log to 
-the tail, and thus all the data is persisted as part of the same hybrid log (there is no 
-separate snapshot file). 
-
-All subsequent updates are written to new hybrid log tail locations, which gives Fold-Over 
-its incremental nature. FoldOver is a very fast checkpointing scheme, but creates multiple 
-versions of the data on the main log, which can increase the cost of garbage collection 
-and take up main memory.
-
-```cs
-await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
-```
-
-### Full Checkpoint
-
-You can take an index and log checkpoint together as follows:
-
-```cs
-await store.TakeFullCheckpointAsync(CheckpointType.FoldOver);
-```
-
-This is usually more expensive than log-only checkpoints as it needs to write the entire
-hash table to disk. A preferred approach is to take frequent log-only checkpoints and
-take an index checkpoint at coarse grained intervals in order to reduce recovery time.
-
-### Checkpoint Management
-
-By default, FASTER creates checkpoints in the folder specified using 
-`CheckpointSettings.CheckpointDir`, with one folder per index or log checkpoint (each
-as a unique Guid token). You can auto-purge old checkpoint as new ones are generated, by 
-setting `CheckpointSettings.RemoveOutdated` to `true`. The last two index checkpoints 
-and the last log checkpoint are kept. We keep the last two index checkpoints because the 
-last index checkpoint may not be usable in case there is no subsequent log checkpoint
-available. Make sure every index checkpoint is followed by at least one log checkpoint, for
-the index checkpoint to be usable for recovery.
-
-### Examples
-
-You can find several checkpointing examples here:
-* [StoreCheckpointRecover](https://github.com/microsoft/FASTER/tree/master/cs/samples/StoreCheckpointRecover)
-* [ClassRecoveryDurablity](https://github.com/microsoft/FASTER/tree/master/cs/playground/ClassRecoveryDurability)
-* [SumStore](https://github.com/microsoft/FASTER/tree/master/cs/playground/SumStore)
-* [SimpleRecoveryTest](https://github.com/microsoft/FASTER/blob/master/cs/test/SimpleRecoveryTest.cs)
-* [RecoveryChecks](https://github.com/microsoft/FASTER/blob/master/cs/test/RecoveryChecks.cs)
-
-Below, we show a simple recovery example with asynchronous fold-over checkpointing.
-
-```cs
-public class PersistenceExample
-{
-    private FasterKV<long, long> fht;
-    private IDevice log;
-
-    public PersistenceExample()
-    {
-        log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
-        fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
-    }
-
-    public void Run()
-    {
-        IssuePeriodicCheckpoints();
-        RunSession();
-    }
-
-    public void Continue()
-    {
-        fht.Recover();
-        IssuePeriodicCheckpoints();
-        ContinueSession();
-    }
-
-    /* Helper Functions */
-    private void RunSession()
-    {
-        using var session = fht.NewSession(new SimpleFunctions<long, long>(), "s1");
-        long seq = 0; // sequence identifier
-
-        long key = 1, input = 10;
-        while (true)
-        {
-            key = (seq % 1L << 20);
-            session.RMW(ref key, ref input, Empty.Default, seq++);
-        }
-    }
-
-    private void ContinueSession()
-    {
-        using var session = fht.ResumeSession(new SimpleFunctions<long, long>(), "s1", out CommitPoint cp); // recovered session
-        var seq = cp.UntilSerialNo + 1;
-
-        long key = 1, input = 10;
-        while (true)
-        {
-            key = (seq % 1L << 20);
-            session.RMW(ref key, ref input, Empty.Default, seq++);
-        }
-    }
-
-    private void IssuePeriodicCheckpoints()
-    {
-        var t = new Thread(() =>
-        {
-            while (true)
-            {
-                Thread.Sleep(10000);
-                (_, _) = fht.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).GetAwaiter().GetResult();
-            }
-        });
-        t.Start();
-    }
-}
-```
