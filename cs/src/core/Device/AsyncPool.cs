@@ -48,9 +48,10 @@ namespace FASTER.core
                 if (disposed)
                     throw new FasterException("Getting handle in disposed device");
 
-                await handleAvailable.WaitAsync(token);
                 if (GetOrAdd(itemQueue, out T item))
                     return item;
+
+                await handleAvailable.WaitAsync(token);
             }
         }
 
