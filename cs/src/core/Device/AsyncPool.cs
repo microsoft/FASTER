@@ -16,10 +16,12 @@ namespace FASTER.core
     public class AsyncPool<T> : IDisposable where T : IDisposable
     {
         readonly int size;
+        readonly Func<T> creator;
         readonly SemaphoreSlim handleAvailable;
         readonly ConcurrentQueue<T> itemQueue;
+
         bool disposed = false;
-        int disposedCount = 0;
+        int totalAllocated = 0;
 
         /// <summary>
         /// Constructor
@@ -29,10 +31,9 @@ namespace FASTER.core
         public AsyncPool(int size, Func<T> creator)
         {
             this.size = size;
-            this.handleAvailable = new SemaphoreSlim(size);
+            this.creator = creator;
+            this.handleAvailable = new SemaphoreSlim(0);
             this.itemQueue = new ConcurrentQueue<T>();
-            for (int i = 0; i < size; i++)
-                itemQueue.Enqueue(creator());
         }
 
         /// <summary>
@@ -47,14 +48,15 @@ namespace FASTER.core
                 if (disposed)
                     throw new FasterException("Getting handle in disposed device");
 
-                await handleAvailable.WaitAsync(token);
-                if (itemQueue.TryDequeue(out T item))
+                if (GetOrAdd(itemQueue, out T item))
                     return item;
+
+                await handleAvailable.WaitAsync(token);
             }
         }
 
         /// <summary>
-        /// Try get item
+        /// Try get item (fast path)
         /// </summary>
         /// <param name="item"></param>
         /// <returns></returns>
@@ -65,7 +67,7 @@ namespace FASTER.core
                 item = default;
                 return false;
             }
-            return itemQueue.TryDequeue(out item);
+            return GetOrAdd(itemQueue, out item);
         }
 
         /// <summary>
@@ -79,23 +81,44 @@ namespace FASTER.core
                 handleAvailable.Release();
         }
 
-       /// <summary>
-       /// Dispose
-       /// </summary>
+        /// <summary>
+        /// Dispose
+        /// </summary>
         public void Dispose()
         {
             disposed = true;
 
-            while (disposedCount < size)
+            while (totalAllocated > 0)
             {
                 while (itemQueue.TryDequeue(out var item))
                 {
                     item.Dispose();
-                    disposedCount++;
+                    Interlocked.Decrement(ref totalAllocated);
                 }
-                if (disposedCount < size)
+                if (totalAllocated > 0)
                     handleAvailable.Wait();
             }
+        }
+
+        /// <summary>
+        /// Get item from queue, adding up to pool-size items if necessary
+        /// </summary>
+        private bool GetOrAdd(ConcurrentQueue<T> itemQueue, out T item)
+        {
+            if (itemQueue.TryDequeue(out item)) return true;
+
+            var _totalAllocated = totalAllocated;
+            while (_totalAllocated < size)
+            {
+                if (Interlocked.CompareExchange(ref totalAllocated, _totalAllocated + 1, _totalAllocated) == _totalAllocated)
+                {
+                    item = creator();
+                    return true;
+                }
+                if (itemQueue.TryDequeue(out item)) return true;
+                _totalAllocated = totalAllocated;
+            }
+            return false;
         }
     }
 }
