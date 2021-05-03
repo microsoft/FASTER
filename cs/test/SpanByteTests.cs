@@ -20,13 +20,10 @@ namespace FASTER.test
             Span<byte> output = stackalloc byte[20];
             SpanByte input = default;
 
-            FasterKV<SpanByte, SpanByte> fht;
-            IDevice log;
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<SpanByte, SpanByte>
+            using var log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog1.log", deleteOnClose: true);
+            using var fht = new FasterKV<SpanByte, SpanByte>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 });
-
-            var s = fht.NewSession(new SpanByteFunctions<Empty>());
+            using var s = fht.NewSession(new SpanByteFunctions<Empty>());
 
             var key1 = MemoryMarshal.Cast<char, byte>("key1".AsSpan());
             var value1 = MemoryMarshal.Cast<char, byte>("value1".AsSpan());
@@ -49,12 +46,6 @@ namespace FASTER.test
 
             Assert.IsTrue(!output2.IsSpanByte);
             Assert.IsTrue(output2.Memory.Memory.Span.Slice(0, output2.Length).SequenceEqual(value2));
-
-
-            s.Dispose();
-            fht.Dispose();
-            fht = null;
-            log.Dispose();
         }
 
         [Test]
@@ -64,13 +55,12 @@ namespace FASTER.test
             using var log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/MultiReadSpanByteKeyTest.log", deleteOnClose: true);
             using var fht = new FasterKV<SpanByte, long>(
                 size: 1L << 20,
-                new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12, });
+                new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
             using var session = fht.For(new MultiReadSpanByteKeyTestFunctions()).NewSession<MultiReadSpanByteKeyTestFunctions>();
 
             for (int i = 0; i < 3000; i++)
             {
-                var keyString = $"{i}";
-                var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
+                var key = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
                 fixed (byte* _ = key)
                     session.Upsert(SpanByte.FromFixedSpan(key), i);
             }
@@ -87,13 +77,13 @@ namespace FASTER.test
 
             long ReadKey(string keyString)
             {
-                var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
                 Status status;
 
+                var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
                 fixed (byte* _ = key)
                     status = session.Read(key: SpanByte.FromFixedSpan(key), out var unused);
 
-                // key low enough to need to be fetched from disk
+                // All keys need to be fetched from disk
                 Assert.AreEqual(Status.PENDING, status);
 
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
