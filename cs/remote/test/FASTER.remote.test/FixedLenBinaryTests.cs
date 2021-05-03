@@ -1,6 +1,4 @@
-﻿using System;
-using NUnit.Framework;
-using FASTER.client;
+﻿using NUnit.Framework;
 
 namespace FASTER.remote.test
 {
@@ -9,20 +7,17 @@ namespace FASTER.remote.test
     {
         FixedLenServer<long, long> server;
         FixedLenClient<long, long> client;
-        ClientSession<long, long, long, long, long, FixedLenClientFunctions, FixedLenSerializer<long, long, long, long>> session;
 
         [SetUp]
         public void Setup()
         {
             server = new FixedLenServer<long, long>(TestContext.CurrentContext.TestDirectory + "/FixedLenBinaryTests", (a, b) => a + b);
             client = new FixedLenClient<long, long>();
-            session = client.GetSession();
         }
 
         [TearDown]
         public void TearDown()
         {
-            session.Dispose();
             client.Dispose();
             server.Dispose();
         }
