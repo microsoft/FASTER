@@ -329,12 +329,10 @@ namespace FASTER.core
                 // Remove from pending dictionary
                 opCtx.ioPendingRequests.Remove(request.id);
                 var status = InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
-                if (completedOutputs is { })
-                {
-                    if (status == Status.OK || status == Status.NOTFOUND)
-                        completedOutputs.Add(ref pendingContext, status);
-                }
-                pendingContext.Dispose();
+                if (completedOutputs is { } && (status == Status.OK || status == Status.NOTFOUND))
+                    completedOutputs.Add(ref pendingContext, status);
+                else
+                    pendingContext.Dispose();
             }
         }
 
