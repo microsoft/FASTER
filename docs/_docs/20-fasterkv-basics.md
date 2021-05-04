@@ -258,7 +258,7 @@ Recovery is simple; after instantiating a new store, you call:
 store.Recover();
 ```
 
-You can also checkpoint the hash index for faster recovery. Learn more about checkpoint-recovery on a dedicated page [here](/docs/fasterkv-recovery/).
+You can also checkpoint the hash index for faster recovery. Learn more about checkpoint-recovery on a dedicated page [here](/FASTER/docs/fasterkv-recovery/).
 
 
 ## Quick End-To-End Sample
