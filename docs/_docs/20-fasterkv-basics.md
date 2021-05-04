@@ -213,7 +213,21 @@ while (completedOutputs.Next())
 completedOutputs.Dispose();
 ```
 
-### Larger-Than-Memory Data Support
+### Disposing
+
+At the end, the session is disposed:
+
+```cs
+session.Dispose();
+```
+
+When all sessions are done operating on FASTER, you finally dispose the FasterKV instance:
+
+```cs
+store.Dispose();
+```
+
+## Larger-Than-Memory Data Support
 
 FasterKV consists of an in-memory hash table that points to records in a hybrid log that spans storage and main memory. When you 
 instantiate a new FasterKV instance, no log is created on disk. Records stay in main memory part of the hybrid log, whose size is
@@ -239,22 +253,12 @@ FASTER in two ways:
    await store.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
    ```
 
-You can also checkpoint the hash index for faster recovery. Learn more about checkpoint-recovery on a dedidated page [here](/docs/fasterkv-recovery/).
-
-
-### Disposing
-
-At the end, the session is disposed:
-
+Recovery is simple; after instantiating a new store, you call:
 ```cs
-session.Dispose();
+store.Recover();
 ```
 
-When all sessions are done operating on FASTER, you finally dispose the FasterKV instance:
-
-```cs
-store.Dispose();
-```
+You can also checkpoint the hash index for faster recovery. Learn more about checkpoint-recovery on a dedicated page [here](/docs/fasterkv-recovery/).
 
 
 ## Quick End-To-End Sample
