@@ -44,7 +44,8 @@ setup_sofaster() {
 
     # Create makefiles and compile if needed.
     pushd "$dir" >> /dev/null
-    cmake -DCMAKE_BUILD_TYPE="$1" -DENABLE_INFINIBAND="$INFRC" \
+    cmake -DCMAKE_BUILD_TYPE="$1" -DENABLE_REMOTE="ON" \
+          -DENABLE_INFINIBAND="$INFRC" \
           -DVALUE_SIZE="$VALUE" -DUSE_BLOBS="$AZURE" ../..
 
     popd >> /dev/null
