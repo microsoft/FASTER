@@ -1,19 +1,9 @@
 # To build an image from this file, run the following command:
-#     sudo docker image build --build-arg infiniband=[OFF|ON] \
-#                             --build-arg valuesize=[8|100|1000|<int>] \
-#                             ../../ -f Dockerfile.client -t sofaster-client
+#     sudo docker image build ../../../../ -f Dockerfile.client -t sofaster-client
 
 # We're going to use an image with dependencies pre-installed as our base
 # for building the client.
 FROM sofaster-deps AS build
-
-# These arguments help determine what kind of binary we want in the final image.
-
-# Value sizes to be used by the system.
-ARG valuesize=8
-
-# If ON, use Infiniband. Otherwise use TCP.
-ARG infiniband=OFF
 
 # First, copy all SoFASTER source code into the container.
 WORKDIR "/"
@@ -22,11 +12,10 @@ RUN mkdir SoFASTER/cc
 RUN mkdir SoFASTER/scripts
 
 COPY cc ./SoFASTER/cc/
-COPY scripts ./SoFASTER/scripts/
 
 # Run the script(s) to setup SoFASTER and compile the server.
 WORKDIR "./SoFASTER"
-RUN scripts/common/sofaster.sh $infiniband $valuesize OFF
+RUN cc/scripts/linux/common/sofaster.sh
 
 WORKDIR "./cc/build/Release"
 RUN ["make", "sofaster-client"]
@@ -43,12 +32,8 @@ COPY --from=build /SoFASTER/cc/build/Release/sofaster-client \
 
 # Copy in the ycsb deployment and thread scalability scripts.
 RUN mkdir -p SoFASTER/scripts/common
-COPY scripts/common/ycsb.py SoFASTER/scripts/common/
-COPY scripts/common/thread-scalability.py SoFASTER/scripts/common/
-
-# If enabled, copy YCSB workload files into the container image.
-RUN mkdir SoFASTER/workload/
-COPY workload SoFASTER/workload/
+COPY cc/scripts/linux/common/ycsb.py SoFASTER/scripts/common/
+COPY cc/scripts/linux/common/thread-scalability.py SoFASTER/scripts/common/
 
 # By default, launch a bash process inside the container.
 WORKDIR "/SoFASTER/"
