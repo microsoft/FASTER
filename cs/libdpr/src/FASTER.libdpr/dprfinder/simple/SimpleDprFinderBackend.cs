@@ -30,6 +30,8 @@ namespace FASTER.libdpr
             public State(byte[] buf, int offset)
             {
                 var head = offset;
+                worldLines = new Dictionary<Worker, long>();
+                cut = new Dictionary<Worker, long>();
                 head = ReadDictionaryFromBytes(buf, head, cut);
                 ReadDictionaryFromBytes(buf, head, worldLines);
             }
@@ -37,7 +39,7 @@ namespace FASTER.libdpr
             public State(State other)
             {
                 worldLines = new Dictionary<Worker, long>(other.worldLines);
-                cut = new Dictionary<Worker, long>(other.worldLines);
+                cut = new Dictionary<Worker, long>(other.cut);
             }
 
             public Dictionary<Worker, long> GetCurrentCut()
@@ -182,21 +184,18 @@ namespace FASTER.libdpr
             {
                 var node = frontier.Dequeue();
                 if (visited.Contains(node)) continue;
-
+                if (volatileState.GetCurrentCut().GetValueOrDefault(node.Worker, 0) >= node.Version) continue;
                 if (!precedenceGraph.TryGetValue(node, out var val)) return false;
 
                 visited.Add(node);
-                if (volatileState.GetCurrentCut().GetValueOrDefault(node.Worker, 0) >= node.Version) continue;
                 foreach (var dep in val)
                     frontier.Enqueue(dep);
             }
 
             foreach (var committed in visited)
             {
-                var success = volatileState.GetCurrentCut().TryGetValue(committed.Worker, out var version);
-                // Must be a known worker
-                Debug.Assert(success);
-                // TODO(Tianyu): Reason about joining and leaving the system for nodes
+                var version = volatileState.GetCurrentCut().GetValueOrDefault(committed.Worker, 0);
+
                 if (version < committed.Version)
                     volatileState.GetCurrentCut()[committed.Worker] = committed.Version;
 
