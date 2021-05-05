@@ -9,7 +9,7 @@ and [HB60rs](https://docs.microsoft.com/en-us/azure/virtual-machines/windows/siz
 class of VMs running Ubuntu server 18.04 but should work fine on others too.
 
 On CloudLab, these scripts have been tested on the
-[c6420 and c6220](https://docs.cloudlab.us/hardware.html) class of machines running
+[c6420](https://docs.cloudlab.us/hardware.html) class of machines running
 Ubuntu server 16.04 but should work fine on others too. A sample CloudLab profile is
 available [here](https://www.cloudlab.us/p/sandstorm/sofaster).
 
@@ -25,21 +25,21 @@ Before the server and client binaries can be compiled and run, few dependencies 
 to be installed. Doing so requires root permissions. Run the following from the
 project's root folder
 ```
-~/SoFASTER$ sudo ./scripts/common/deps.sh
+~/SoFASTER$ sudo ./scripts/linux/common/deps.sh
 ```
 
 ### Compiling a server
 
 To compile the server, run the following script from the project's root folder
 ```
-server:~/SoFASTER$ ./scripts/common/server.py compile
+server:~/SoFASTER$ ./scripts/linux/common/server.py compile
 ```
 The above command will setup `Debug` and `Release` Makefiles and directories, and
 compile a `Release` build of the server, stored under `cc/build/Release`. To compile
 a `Debug` build (stored under `cc/build/Debug`), run the above script with the
 `--compile-debug` flag as follows
 ```
-server:~/SoFASTER$ ./scripts/common/server.py compile --compile-debug
+server:~/SoFASTER$ ./scripts/linux/common/server.py compile --compile-debug
 ```
 
 ### Running a server
@@ -68,7 +68,7 @@ To run a server, invoke the same script that was used for compilation with `run`
 along with an IP address and identifier as arguments (do so from the project's
 root folder).
 ```
-server:~/SoFASTER$ ./scripts/common/server.py run --ip 10.0.0.30 --id 1
+server:~/SoFASTER$ ./scripts/linux/common/server.py run --ip 10.0.0.30 --id 1
 [1580838640.253452741]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-server.cc:main:117:: Running server with 48 worker threads, 128 M hash buckets, 16 GB hybrid log stored at storage, with a mutable fraction of 0.90, and sampled set of 128 KB
 ```
 By default, the server runs a thread per core and allocates a hash table with 128
@@ -76,7 +76,7 @@ million buckets, and a hybrid log of size 16GB. These and other variables can be
 changed by passing in additional arguments to the script. Invoke the script with
 `-h` for a full list.
 ```
-server:~/SoFASTER$ ./scripts/common/server.py -h
+server:~/SoFASTER$ ./scripts/linux/common/server.py -h
 ```
 
 ### Compiling a YCSB client
@@ -84,13 +84,13 @@ server:~/SoFASTER$ ./scripts/common/server.py -h
 To compile a YCSB client, invoke the following script from the project's root
 folder
 ```
-client:~/SoFASTER$ ./scripts/common/ycsb.py compile
+client:~/SoFASTER$ ./scripts/linux/common/ycsb.py compile
 ```
 This script is similar to the one for compiling a server; it setups up Makefiles
 and directories for `Debug` and `Release` builds, and compiles a `Release` build.
 To compile a `Debug` build, add a `--compile-debug` flag as follows
 ```
-client:~/SoFASTER$ ./scripts/common/ycsb.py compile --compile-debug
+client:~/SoFASTER$ ./scripts/linux/common/ycsb.py compile --compile-debug
 ```
 
 ### Running a YCSB client against a server
@@ -101,7 +101,7 @@ against them. To run a client, invoke the same script that was used for compilat
 with `run` and a list of server IP addresses as arguments from the project's root
 folder. The example below uses only one server.
 ```
-client:~/SoFASTER$ ./scripts/common/ycsb.py run --servers 10.0.0.30
+client:~/SoFASTER$ ./scripts/linux/common/ycsb.py run --servers 10.0.0.30
 [1580838675.301505995]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:433:: Running client with 48 threads. Each thread will run YCSB-F with 250000000 keys and 1000000000 transactions for 360 seconds. Requests will be issued in batches of 32768 B with a pipeline of size 2
 [1580838675.301529195]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:440:: Generating workload keys and requests from PRNG
 [1580838675.301531895]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:444:: Filling data into the server
@@ -116,7 +116,7 @@ By default, the client runs one thread per core and issues a billion requests ag
 other variables can be changed by passing in additional arguments to the script. Invoke
 the script with `-h` for a full list.
 ```
-client:~/SoFASTER$ ./scripts/common/ycsb.py -h
+client:~/SoFASTER$ ./scripts/linux/common/ycsb.py -h
 ```
 
 ### Using YCSB workload files
@@ -138,7 +138,7 @@ To run the client using the above workload files (assuming we have 250 million r
 the load file and 1 billion zipfian skewed requests in the run file), invoke the client
 script from the project's root folder as follows
 ```
-client:~/SoFASTER$ ./scripts/common/ycsb.py run --servers 10.0.0.30 --nKeys 250000000 --loadFile ~/SoFASTER/ycsb.load --nTxns 1000000000 --txnsFile ~/SoFASTER/ycsb.txns
+client:~/SoFASTER$ ./scripts/linux/common/ycsb.py run --servers 10.0.0.30 --nKeys 250000000 --loadFile ~/SoFASTER/ycsb.load --nTxns 1000000000 --txnsFile ~/SoFASTER/ycsb.txns
 [1580839988.997521074]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:433:: Running client with 48 threads. Each thread will run YCSB-F with 250000000 keys and 1000000000 transactions for 360 seconds. Requests will be issued in batches of 32768 B with a pipeline of size 2
 [1580839988.997543575]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:437:: Loading workload data from /mnt/ycsb.load.250000000 and /mnt/ycsb.txns.250000000.1000000000 into memory
 [1580840033.577002385]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:444:: Filling data into the server
@@ -176,11 +176,11 @@ few cores on the server and client to softirq's can help improve throughput and
 latency. Both server and client scripts support a `--pinirq` flag that dedicates
 8 cores to network softirqs. Root permissions are required when using this flag.
 ```
-server:~/SoFASTER$ sudo ./scripts/common/server.py run --ip 10.0.0.30 --id 1 --pinirq
+server:~/SoFASTER$ sudo ./scripts/linux/common/server.py run --ip 10.0.0.30 --id 1 --pinirq
 [1580842843.848360327]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-server.cc:main:117:: Running server with 40 worker threads, 128 M hash buckets, 128 GB hybrid log stored at storage, with a mutable fraction of 0.90, and sampled set of 128 KB
 ```
 ```
-client:~/SoFASTER$ sudo ./scripts/common/ycsb.py run --servers 10.0.0.30 --nKeys 250000000 --loadFile ~/SoFASTER/ycsb.load --nTxns 1000000000 --txnsFile ~/SoFASTER/ycsb.txns --pinirq
+client:~/SoFASTER$ sudo ./scripts/linux/common/ycsb.py run --servers 10.0.0.30 --nKeys 250000000 --loadFile ~/SoFASTER/ycsb.load --nTxns 1000000000 --txnsFile ~/SoFASTER/ycsb.txns --pinirq
 [1580840470.213499543]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:433:: Running client with 40 threads. Each thread will run YCSB-F with 250000000 keys and 1000000000 transactions for 360 seconds. Requests will be issued in batches of 32768 B with a pipeline of size 2
 [1580840470.213522443]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:437:: Loading workload data from /mnt/ycsb.load.250000000 and /mnt/ycsb.txns.250000000.1000000000 into memory
 [1580840515.872147306]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:444:: Filling data into the server
@@ -201,12 +201,12 @@ Azure HPC VMs running Ubuntu server 18.04. Running this script requires root
 permissions. First, install dependencies required by SoFASTER (do so from the root
 folder of the project)
 ```
-~/SoFASTER$ sudo ./scripts/common/deps.sh
+~/SoFASTER$ sudo ./scripts/linux/common/deps.sh
 ```
 Next, install and setup inifiniband drivers on the VM (again from the root folder
 of the project)
 ```
-~/SoFASTER$ sudo ./scripts/azure/mlnx.sh
+~/SoFASTER$ sudo ./scripts/linux/azure/mlnx.sh
 ```
 In addition to installing Mellanox drivers, the above script sets up `IPoIB` on
 the VM, allowing servers and clients to connect over infiniband using regular
@@ -222,10 +222,10 @@ The infiniband version of the server and client can be compiled by passing in a
 `--compile-infrc` flag to the scripts used to compile the TCP versions (again,
 to be invoked from the project's root folder)
 ```
-server:~/SoFASTER$ ./scripts/common/server.py compile --compile-infrc
+server:~/SoFASTER$ ./scripts/linux/common/server.py compile --compile-infrc
 ```
 ```
-client:~/SoFASTER$ ./scripts/common/ycsb.py compile --compile-infrc
+client:~/SoFASTER$ ./scripts/linux/common/ycsb.py compile --compile-infrc
 ```
 
 ### Running the Infiniband version on Azure
@@ -248,11 +248,11 @@ ib0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 2044
         TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
 ```
 ```
-server:~/SoFASTER$ ./scripts/common/server.py run --ip 172.16.1.32 --id 1
+server:~/SoFASTER$ ./scripts/linux/common/server.py run --ip 172.16.1.32 --id 1
 [1580922131.079572680]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-server.cc:main:117:: Running server with 60 worker threads, 128 M hash buckets, 16 GB hybrid log stored at storage, with a mutable fraction of 0.90, and sampled set of 128 KB
 ```
 ```
-client:~/SoFASTER$ ./scripts/common/ycsb.py run --servers 172.16.1.32
+client:~/SoFASTER$ ./scripts/linux/common/ycsb.py run --servers 172.16.1.32
 [1580922826.317821031]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:433:: Running client with 60 threads. Each thread will run YCSB-F with 250000000 keys and 1000000000 transactions for 360 seconds. Requests will be issued in batches of 4096 B with a pipeline of size 2
 [1580922826.317848132]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:440:: Generating workload keys and requests from PRNG
 [1580922826.317850232]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:444:: Filling data into the server
@@ -262,25 +262,3 @@ client:~/SoFASTER$ ./scripts/common/ycsb.py run --servers 172.16.1.32
 [1580923215.292790904]::INFO::/home/chinmayk/SoFASTER/cc/benchmark-dir/sofaster-client.cc:main:540:: Waiting for threads to exit
 [1580923219.875275799]::INFO::/home/chinmayk/SoFASTER/cc/src/client/sofaster.h:~Sofaster:126:: Median Latency: 281.61 microseconds
 ```
-
-### Setting up the Infiniband version on CloudLab
-
-This repo contains a script to download and install Mellanox infiniband drivers on
-a CloudLab machine instantiated using the
-[sample profile](https://www.cloudlab.us/p/sandstorm/sofaster). Running this script
-requires root permissions. First, install dependencies required by SoFASTER (do so
-from the root folder of the project)
-```
-~/SoFASTER$ sudo ./scripts/common/deps.sh
-```
-Next, install and setup inifiniband drivers on the machine (again from the
-root folder of the project)
-```
-~/SoFASTER$ sudo ./scripts/cloudLab/mlnx.sh
-```
-In addition to the drivers, this script also brings up an IPoIB interface called
-`ib0` that a server can listen on for incoming connections.
-
-Compiling and running servers and YCSB clients is similar to doing so on Azure. Just
-follow the instructions [here](#compiling-the-infiniband-version-on-azure) and
-[here](#running-the-infiniband-version-on-azure).
