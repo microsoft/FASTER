@@ -23,12 +23,14 @@ namespace FASTER.test
         public const string TEST_CONTAINER = "test";
 
         [Test]
+        [Category("FasterKV")]
         public void LocalStorageWriteRead()
         {
             TestDeviceWriteRead(Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BasicDiskFASTERTests.log", deleteOnClose: true));
         }
 
         [Test]
+        [Category("FasterKV")]
         public void PageBlobWriteRead()
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
@@ -36,6 +38,16 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
+        public void PageBlobWriteReadWithLease()
+        {
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+                TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "PageBlobWriteRead", "BasicDiskFASTERTests",null,true,true));
+        }
+
+
+        [Test]
+        [Category("FasterKV")]
         public void TieredWriteRead()
         {
             IDevice tested;
@@ -56,6 +68,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void ShardedWriteRead()
         {
             IDevice localDevice1 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BasicDiskFASTERTests1.log", deleteOnClose: true, capacity: 1 << 30);

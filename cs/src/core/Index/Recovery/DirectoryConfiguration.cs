@@ -20,6 +20,7 @@ namespace FASTER.core
         public const string hash_table_file = "ht";
         public const string overflow_buckets_file = "ofb";
         public const string snapshot_file = "snapshot";
+        public const string delta_file = "delta";
 
         public const string cpr_base_folder = "cpr-checkpoints";
         public const string cpr_meta_file = "info";
@@ -112,9 +113,14 @@ namespace FASTER.core
             return GetMergedFolderPath(checkpointDir, cpr_base_folder, token.ToString(), snapshot_file, ".obj.dat");
         }
 
-        private static string GetMergedFolderPath(params String[] paths)
+        public string GetDeltaLogFileName(Guid token)
         {
-            String fullPath = paths[0];
+            return GetMergedFolderPath(checkpointDir, cpr_base_folder, token.ToString(), delta_file, ".dat");
+        }
+
+        private static string GetMergedFolderPath(params string[] paths)
+        {
+            string fullPath = paths[0];
 
             for (int i = 1; i < paths.Length; i++)
             {

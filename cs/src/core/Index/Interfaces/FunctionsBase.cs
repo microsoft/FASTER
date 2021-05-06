@@ -17,22 +17,55 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public abstract class FunctionsBase<Key, Value, Input, Output, Context> : IFunctions<Key, Value, Input, Output, Context>
     {
+        protected readonly bool locking;
+
+        protected FunctionsBase(bool locking = false) => this.locking = locking;
+
+        /// <inheritdoc/>
         public virtual void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+        /// <inheritdoc/>
         public virtual void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
 
+        /// <inheritdoc/>
         public virtual bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
+        /// <inheritdoc/>
         public virtual void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
 
+        /// <inheritdoc/>
         public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
+        /// <inheritdoc/>
         public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue) => true;
+        /// <inheritdoc/>
         public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
-        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) { return true; }
+        /// <inheritdoc/>
+        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) => true;
 
+        /// <inheritdoc/>
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
+        /// <inheritdoc/>
         public virtual void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
+        /// <inheritdoc/>
         public virtual void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
+        /// <inheritdoc/>
         public virtual void DeleteCompletionCallback(ref Key key, Context ctx) { }
+        /// <inheritdoc/>
         public virtual void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
+
+        /// <inheritdoc/>
+        public virtual bool SupportsLocking => locking;
+
+        /// <inheritdoc/>
+        public virtual void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
+        {
+            recordInfo.SpinLock();
+        }
+
+        /// <inheritdoc/>
+        public virtual bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
+        {
+            recordInfo.Unlock();
+            return true;
+        }
     }
 
     /// <summary>
@@ -43,24 +76,38 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public class SimpleFunctions<Key, Value, Context> : FunctionsBase<Key, Value, Value, Value, Context>
     {
+        public SimpleFunctions(bool locking = false) : base(locking) { }
+
         private readonly Func<Value, Value, Value> merger;
         public SimpleFunctions() => merger = (l, r) => l;
         public SimpleFunctions(Func<Value, Value, Value> merger) => this.merger = merger;
 
+        /// <inheritdoc/>
         public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst) => dst = value;
+        /// <inheritdoc/>
         public override void SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst) => dst = value;
 
+        /// <inheritdoc/>
         public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
+        /// <inheritdoc/>
         public override void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
 
+        /// <inheritdoc/>
         public override void InitialUpdater(ref Key key, ref Value input, ref Value value) => value = input;
+        /// <inheritdoc/>
         public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue) => newValue = merger(input, oldValue);
+        /// <inheritdoc/>
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value) { value = merger(input, value); return true; }
 
+        /// <inheritdoc/>
         public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status) { }
+        /// <inheritdoc/>
         public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status) { }
+        /// <inheritdoc/>
         public override void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
+        /// <inheritdoc/>
         public override void DeleteCompletionCallback(ref Key key, Context ctx) { }
+        /// <inheritdoc/>
         public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 
@@ -80,22 +127,58 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public abstract class AdvancedFunctionsBase<Key, Value, Input, Output, Context> : IAdvancedFunctions<Key, Value, Input, Output, Context>
     {
-        public virtual void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address) { }
+        protected readonly bool locking;
+
+        protected AdvancedFunctionsBase(bool locking = false) => this.locking = locking;
+
+        /// <inheritdoc/>
+        public virtual void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) { }
+        /// <inheritdoc/>
         public virtual void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address) { }
 
-        public virtual bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, long address) { dst = src; return true; }
-        public virtual void SingleWriter(ref Key key, ref Value src, ref Value dst, long address) => dst = src;
+        /// <inheritdoc/>
+        public virtual bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { dst = src; return true; }
+        /// <inheritdoc/>
+        public virtual void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
 
-        public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, long address) { }
+        /// <inheritdoc/>
+        public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
+        /// <inheritdoc/>
         public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue) => true;
-        public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, long oldAddress, long newAddress) { }
-        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, long address) { return true; }
+        /// <inheritdoc/>
+        public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
+        /// <inheritdoc/>
+        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address) => true;
 
+        /// <inheritdoc/>
+        public virtual void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
+
+        /// <inheritdoc/>
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo) { }
+        /// <inheritdoc/>
         public virtual void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
+        /// <inheritdoc/>
         public virtual void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
+        /// <inheritdoc/>
         public virtual void DeleteCompletionCallback(ref Key key, Context ctx) { }
+        /// <inheritdoc/>
         public virtual void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
+
+        /// <inheritdoc/>
+        public virtual bool SupportsLocking => locking;
+
+        /// <inheritdoc/>
+        public virtual void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
+        {
+            recordInfo.SpinLock();
+        }
+
+        /// <inheritdoc/>
+        public virtual bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
+        {
+            recordInfo.Unlock();
+            return true;
+        }
     }
 
     /// <summary>
@@ -106,24 +189,38 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public class AdvancedSimpleFunctions<Key, Value, Context> : AdvancedFunctionsBase<Key, Value, Value, Value, Context>
     {
+        public AdvancedSimpleFunctions(bool locking = false) : base(locking) { }
+
         private readonly Func<Value, Value, Value> merger;
         public AdvancedSimpleFunctions() => merger = (l, r) => l;
         public AdvancedSimpleFunctions(Func<Value, Value, Value> merger) => this.merger = merger;
 
-        public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address) => dst = value;
+        /// <inheritdoc/>
+        public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref RecordInfo recordInfo, long address) => dst = value;
+        /// <inheritdoc/>
         public override void SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address) => dst = value;
 
-        public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, long address) { dst = src; return true; }
-        public override void SingleWriter(ref Key key, ref Value src, ref Value dst, long address) => dst = src;
+        /// <inheritdoc/>
+        public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { dst = src; return true; }
+        /// <inheritdoc/>
+        public override void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
 
-        public override void InitialUpdater(ref Key key, ref Value input, ref Value value, long address) => value = input;
-        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, long oldAddress, long newAddress) => newValue = merger(input, oldValue);
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, long address) { value = merger(input, value); return true; }
+        /// <inheritdoc/>
+        public override void InitialUpdater(ref Key key, ref Value input, ref Value value) => value = input;
+        /// <inheritdoc/>
+        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue) => newValue = merger(input, oldValue);
+        /// <inheritdoc/>
+        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref RecordInfo recordInfo, long address) { value = merger(input, value); return true; }
 
+        /// <inheritdoc/>
         public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo) { }
+        /// <inheritdoc/>
         public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status) { }
+        /// <inheritdoc/>
         public override void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
+        /// <inheritdoc/>
         public override void DeleteCompletionCallback(ref Key key, Context ctx) { }
+        /// <inheritdoc/>
         public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 

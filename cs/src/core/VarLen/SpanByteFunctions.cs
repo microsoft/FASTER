@@ -11,18 +11,10 @@ namespace FASTER.core
     public class SpanByteFunctions<Key, Output, Context> : FunctionsBase<Key, SpanByte, SpanByte, Output, Context>
     {
         /// <summary>
-        /// Whether we lock values before concurrent operations
-        /// </summary>
-        protected readonly bool locking;
-
-        /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="locking"></param>
-        public SpanByteFunctions(bool locking = false)
-        {
-            this.locking = locking;
-        }
+        public SpanByteFunctions(bool locking = false) : base(locking) { }
 
         /// <inheritdoc />
         public override void SingleWriter(ref Key key, ref SpanByte src, ref SpanByte dst)
@@ -102,9 +94,23 @@ namespace FASTER.core
         /// <inheritdoc />
         public unsafe override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
         {
-            if (locking) value.SpinLock();
             value.CopyTo(ref dst, memoryPool);
-            if (locking) value.Unlock();
+        }
+
+        /// <inheritdoc />
+        public override bool SupportsLocking => locking;
+
+        /// <inheritdoc />
+        public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
+        {
+            value.SpinLock();
+        }
+
+        /// <inheritdoc />
+        public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
+        {
+            value.Unlock();
+            return true;
         }
     }
 
@@ -128,9 +134,23 @@ namespace FASTER.core
         /// <inheritdoc />
         public override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
         {
-            value.SpinLock();
             dst = value.ToByteArray();
+        }
+
+        /// <inheritdoc />
+        public override bool SupportsLocking => locking;
+
+        /// <inheritdoc />
+        public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
+        {
+            value.SpinLock();
+        }
+
+        /// <inheritdoc />
+        public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
+        {
             value.Unlock();
+            return true;
         }
     }
 }

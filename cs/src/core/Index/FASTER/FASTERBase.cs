@@ -59,7 +59,10 @@ namespace FASTER.core
         public const long kInvalidEntry = 0;
 
         /// Number of times to retry a compare-and-swap before failure
-        public const long kRetryThreshold = 1000000;
+        public const long kRetryThreshold = 1000000;    // TODO unused
+
+        /// Number of times to spin before awaiting or Waiting for a Flush Task.
+        public const long kFlushSpinCount = 10;         // TODO verify this number
 
         /// Number of merge/split chunks.
         public const int kNumMergeChunkBits = 8;
@@ -244,7 +247,8 @@ namespace FASTER.core
         internal long minTableSize = 16;
 
         // Allocator for the hash buckets
-        internal readonly MallocFixedPageSize<HashBucket> overflowBucketsAllocator;
+        internal MallocFixedPageSize<HashBucket> overflowBucketsAllocator;
+        internal MallocFixedPageSize<HashBucket> overflowBucketsAllocatorResize;
 
         // An array of size two, that contains the old and new versions of the hash-table
         internal InternalHashTable[] state = new InternalHashTable[2];

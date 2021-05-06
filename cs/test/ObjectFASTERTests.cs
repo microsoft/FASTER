@@ -43,6 +43,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void ObjectInMemWriteRead()
         {
             using var session = fht.NewSession(new MyFunctions());
@@ -59,6 +60,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void ObjectInMemWriteRead2()
         {
             using var session = fht.NewSession(new MyFunctions());
@@ -84,6 +86,7 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
         public void ObjectDiskWriteRead()
         {
             using var session = fht.NewSession(new MyFunctions());
@@ -162,7 +165,8 @@ namespace FASTER.test
         }
 
         [Test]
-        public async Task AsyncObjectDiskWriteRead()
+        [Category("FasterKV")]
+        public async Task ReadAsyncObjectDiskWriteRead()
         {
             using var session = fht.NewSession(new MyFunctions());
 
@@ -170,7 +174,10 @@ namespace FASTER.test
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key, ref value);
+
+                var r = await session.UpsertAsync(ref key, ref value);
+                while (r.Status == Status.PENDING)
+                    r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
             var key1 = new MyKey { key = 1989 };
@@ -199,7 +206,7 @@ namespace FASTER.test
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
                 var r = await session.RMWAsync(ref key, ref input, Empty.Default);
-                while (r.status == Status.PENDING)
+                while (r.Status == Status.PENDING)
                 {
                     r = await r.CompleteAsync(); // test async version of RMW completion
                 }

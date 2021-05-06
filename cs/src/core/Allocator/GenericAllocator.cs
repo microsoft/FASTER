@@ -47,21 +47,17 @@ namespace FASTER.core
                 throw new FasterException("LogSettings.ObjectLogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
             }
 
-            SerializerSettings = serializerSettings;
+            SerializerSettings = serializerSettings ?? new SerializerSettings<Key, Value>();
 
             if ((!keyBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
             {
                 Debug.WriteLine("Key is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
-                if (SerializerSettings == null)
-                    SerializerSettings = new SerializerSettings<Key, Value>();
                 SerializerSettings.keySerializer = ObjectSerializer.Get<Key>();
             }
 
             if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
             {
                 Debug.WriteLine("Value is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
-                if (SerializerSettings == null)
-                    SerializerSettings = new SerializerSettings<Key, Value>();
                 SerializerSettings.valueSerializer = ObjectSerializer.Get<Value>();
             }
 
@@ -160,6 +156,8 @@ namespace FASTER.core
             return recordSize;
         }
 
+        public override int GetFixedRecordSize() => recordSize;
+
         public override (int, int) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
         {
             return (recordSize, recordSize);
@@ -168,6 +166,13 @@ namespace FASTER.core
         public override (int, int) GetRecordSize(ref Key key, ref Value value)
         {
             return (recordSize, recordSize);
+        }
+
+        internal override bool TryComplete()
+        {
+            var b1 = objectLogDevice.TryComplete();
+            var b2 = base.TryComplete();
+            return b1 || b2;
         }
 
         /// <summary>
@@ -233,7 +238,7 @@ namespace FASTER.core
             return logicalAddress;
         }
 
-        protected override bool IsAllocated(int pageIndex)
+        internal override bool IsAllocated(int pageIndex)
         {
             return values[pageIndex] != null;
         }
@@ -254,19 +259,41 @@ namespace FASTER.core
         }
 
         protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, 
+            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
-            // We are writing to separate device, so use fresh segment offsets
-            WriteAsync(flushPage,
-                        (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                        (uint)pageSize, callback, asyncResult, 
-                        device, objectLogDevice, flushPage, localSegmentOffsets);
+            bool epochTaken = false;
+            if (!epoch.ThisInstanceProtected())
+            {
+                epochTaken = true;
+                epoch.Resume();
+            }
+            try
+            {
+                if (FlushedUntilAddress < (flushPage << LogPageSizeBits) + pageSize)
+                {
+                    // We are writing to separate device, so use fresh segment offsets
+                    WriteAsync(flushPage,
+                            (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+                            (uint)pageSize, callback, asyncResult,
+                            device, objectLogDevice, flushPage, localSegmentOffsets);
+                }
+                else
+                {
+                    // Requested page is already flushed to main log, ignore
+                    callback(0, 0, asyncResult);
+                }
+            }
+            finally
+            {
+                if (epochTaken)
+                    epoch.Suspend();
+            }
         }
 
 
 
-        protected override void ClearPage(long page, int offset)
+        internal override void ClearPage(long page, int offset)
         {
             Array.Clear(values[page % BufferSize], offset / recordSize, values[page % BufferSize].Length - offset / recordSize);
 
@@ -572,7 +599,7 @@ namespace FASTER.core
             if (size > int.MaxValue)
                 throw new FasterException("Unable to read object page, total size greater than 2GB: " + size);
 
-            var alignedLength = (size + (sectorSize - 1)) & ~(sectorSize - 1);
+            var alignedLength = (size + (sectorSize - 1)) & ~((long)sectorSize - 1);
             var objBuffer = bufferPool.Get((int)alignedLength);
             result.freeBuffer2 = objBuffer;
 
@@ -971,6 +998,31 @@ namespace FASTER.core
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
             return new GenericScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
+        }
+
+        /// <inheritdoc />
+        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        {
+            var page = (beginAddress >> LogPageSizeBits) % BufferSize;
+            int start = (int)(beginAddress & PageSizeMask) / recordSize;
+            int count = (int)(endAddress - beginAddress) / recordSize;
+            int end = start + count;
+            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end);
+            Debug.Assert(epoch.ThisInstanceProtected());
+            try
+            {
+                epoch.Suspend();
+                OnEvictionObserver?.OnNext(iter);
+            }
+            finally
+            {
+                epoch.Resume();
+            }
+        }
+
+        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
+        {
+            throw new FasterException("Incremental snapshots not supported with generic allocator");
         }
     }
 }

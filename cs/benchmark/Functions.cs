@@ -3,16 +3,18 @@
 
 #pragma warning disable 1591
 
-using System;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using FASTER.core;
-using System.Collections.Generic;
 
 namespace FASTER.benchmark
 {
     public struct Functions : IFunctions<Key, Value, Input, Output, Empty>
     {
+        readonly bool locking;
+
+        public Functions(bool locking) => this.locking = locking;
+
         public void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
         {
         }
@@ -79,6 +81,19 @@ namespace FASTER.benchmark
         public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
         {
             newValue.value = input.value + oldValue.value;
+        }
+
+        public bool SupportsLocking => locking;
+
+        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
+        {
+            recordInfo.SpinLock();
+        }
+
+        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
+        {
+            recordInfo.Unlock();
+            return true;
         }
     }
 }

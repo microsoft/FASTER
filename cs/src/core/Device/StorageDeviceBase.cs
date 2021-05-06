@@ -52,6 +52,11 @@ namespace FASTER.core
         private ulong segmentSizeMask;
 
         /// <summary>
+        /// Throttle limit (max number of pending I/Os) for this device instance
+        /// </summary>
+        public int ThrottleLimit { get; set; } = int.MaxValue;
+
+        /// <summary>
         /// Instance of the epoch protection framework in the current system.
         /// A device may have internal in-memory data structure that requires epoch protection under concurrent access.
         /// </summary>
@@ -282,6 +287,19 @@ namespace FASTER.core
                 // Assuming that we still have enough physical capacity to write another segment, even if delete does not immediately free up space.
                 TruncateUntilSegmentAsync(newStartSegment, r => { }, null);
             }
+        }
+
+        /// <inheritdoc/>
+        public virtual bool TryComplete()
+        {
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public virtual long GetFileSize(int segment)
+        {
+            if (segmentSize > 0) return segmentSize;
+            return long.MaxValue;
         }
     }
 }

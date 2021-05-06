@@ -37,6 +37,8 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
+        [Category("Compaction")]
         public void BlittableLogCompactionTest1()
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -81,6 +83,8 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
+        [Category("Compaction")]
         public void BlittableLogCompactionTest2()
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -137,6 +141,8 @@ namespace FASTER.test
 
 
         [Test]
+        [Category("FasterKV")]
+        [Category("Compaction")]
         public void BlittableLogCompactionTest3()
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -197,6 +203,9 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
+        [Category("Compaction")]
+
         public void BlittableLogCompactionCustomFunctionsTest1()
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -254,6 +263,9 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
+        [Category("Compaction")]
+
         public void BlittableLogCompactionCustomFunctionsTest2()
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
@@ -273,10 +285,7 @@ namespace FASTER.test
 
             fht.Log.Flush(true);
 
-            var compactionFunctions = new Test2CompactionFunctions();
-            session.Compact(fht.Log.TailAddress, true, compactionFunctions);
-
-            Assert.IsFalse(compactionFunctions.CopyCalled);
+            session.Compact(fht.Log.TailAddress, true);
 
             var input = default(InputStruct);
             var output = default(OutputStruct);
@@ -293,45 +302,9 @@ namespace FASTER.test
             }
         }
 
-        private class Test2CompactionFunctions : ICompactionFunctions<KeyStruct, ValueStruct>
-        {
-            public bool CopyCalled;
-
-            public void Copy(ref ValueStruct src, ref ValueStruct dst, IVariableLengthStruct<ValueStruct> valueLength)
-            {
-                if (src.vfield1 == 11 && src.vfield2 == 21)
-                    CopyCalled = true;
-                dst = src;
-            }
-
-            public bool CopyInPlace(ref ValueStruct src, ref ValueStruct dst, IVariableLengthStruct<ValueStruct> valueLength)
-            {
-                return false;
-            }
-
-            public bool IsDeleted(in KeyStruct key, in ValueStruct value)
-            {
-                return false;
-            }
-        }
-
         private struct EvenCompactionFunctions : ICompactionFunctions<KeyStruct, ValueStruct>
         {
-            public void Copy(ref ValueStruct src, ref ValueStruct dst, IVariableLengthStruct<ValueStruct> valueLength)
-            {
-                dst = src;
-            }
-
-            public bool CopyInPlace(ref ValueStruct src, ref ValueStruct dst, IVariableLengthStruct<ValueStruct> valueLength)
-            {
-                dst = src;
-                return true;
-            }
-
-            public bool IsDeleted(in KeyStruct key, in ValueStruct value)
-            {
-                return value.vfield1 % 2 != 0;
-            }
+            public bool IsDeleted(in KeyStruct key, in ValueStruct value) => value.vfield1 % 2 != 0;
         }
     }
 }

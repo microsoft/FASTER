@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
@@ -9,12 +9,14 @@ using System.Threading;
 
 namespace FASTER.core
 {
-    unsafe struct IORequestLocalMemory {
+    unsafe struct IORequestLocalMemory
+    {
         public void* srcAddress;
         public void* dstAddress;
         public uint bytes;
         public DeviceIOCompletionCallback callback;
         public object context;
+        public long startTime;
     }
 
     /// <summary>
@@ -30,6 +32,7 @@ namespace FASTER.core
         private readonly Thread[] ioProcessors;
         private readonly int parallelism;
         private readonly long sz_segment;
+        private readonly long latencyTicks;
         private bool terminated;
 
         /// <summary>
@@ -38,22 +41,24 @@ namespace FASTER.core
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="sz_segment">The size of each segment</param>
         /// <param name="parallelism">Number of IO processing threads</param>
+        /// <param name="latencyMs">Induced callback latency in ms (for testing purposes)</param>
         /// <param name="sector_size">Sector size for device (default 64)</param>
-        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, uint sector_size = 64)
-            :base("/userspace/ram/storage", sector_size, capacity)
+        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyMs = 0, uint sector_size = 64)
+            : base("/userspace/ram/storage", sector_size, capacity)
         {
             if (capacity == Devices.CAPACITY_UNSPECIFIED) throw new Exception("Local memory device must have a capacity!");
             Console.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
-            num_segments = (int) (capacity / sz_segment);
+            num_segments = (int)(capacity / sz_segment);
             this.sz_segment = sz_segment;
-            
+            this.latencyTicks = latencyMs * TimeSpan.TicksPerMillisecond;
+
             ram_segments = new byte*[num_segments];
             ram_segment_handles = new GCHandle[num_segments];
 
             for (int i = 0; i < num_segments; i++)
             {
                 var new_segment = new byte[sz_segment];
-                
+
                 ram_segment_handles[i] = GCHandle.Alloc(new_segment, GCHandleType.Pinned);
                 ram_segments[i] = (byte*)(long)ram_segment_handles[i].AddrOfPinnedObject();
             }
@@ -74,9 +79,15 @@ namespace FASTER.core
 
         private void ProcessIOQueue(ConcurrentQueue<IORequestLocalMemory> q)
         {
-            while (terminated == false) {
+            while (terminated == false)
+            {
                 while (q.TryDequeue(out IORequestLocalMemory req))
                 {
+                    if (latencyTicks > 0)
+                    {
+                        long timeLeft = latencyTicks - (DateTime.UtcNow.Ticks - req.startTime);
+                        if (timeLeft > 0) Thread.Sleep((int)(timeLeft / TimeSpan.TicksPerMillisecond));
+                    }
                     Buffer.MemoryCopy(req.srcAddress, req.dstAddress, req.bytes, req.bytes);
                     req.callback(0, req.bytes, req.context);
                 }
@@ -108,6 +119,7 @@ namespace FASTER.core
                 callback = callback,
                 context = context
             };
+            if (latencyTicks > 0) req.startTime = DateTime.UtcNow.Ticks;
             q.Enqueue(req);
         }
 
@@ -142,6 +154,7 @@ namespace FASTER.core
                 callback = callback,
                 context = context
             };
+            if (latencyTicks > 0) req.startTime = DateTime.UtcNow.Ticks;
             q.Enqueue(req);
         }
 

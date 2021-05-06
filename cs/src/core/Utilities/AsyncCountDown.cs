@@ -38,6 +38,12 @@ namespace FASTER.core
                 TryCompleteAwaitingTask();
         }
 
+        /// <summary>
+        /// Check if countdown is empty
+        /// </summary>
+        public bool IsEmpty => counter == 0;
+
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void TryCompleteAwaitingTask()
         {

@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.IO;
 using FASTER.core;
 using NUnit.Framework;
@@ -50,31 +49,11 @@ namespace FASTER.test.recovery.sumstore
             fht.Dispose();
             fht = null;
             log.Dispose();
-            DeleteDirectory(test_path);
-        }
-
-        public static void DeleteDirectory(string path)
-        {
-            foreach (string directory in Directory.GetDirectories(path))
-            {
-                DeleteDirectory(directory);
-            }
-
-            try
-            {
-                Directory.Delete(path, true);
-            }
-            catch (IOException)
-            {
-                Directory.Delete(path, true);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                Directory.Delete(path, true);
-            }
+            TestUtils.DeleteDirectory(test_path);
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask RecoveryTestSeparateCheckpoint([Values]bool isAsync)
         {
             Populate(SeparateCheckpointAction);
@@ -91,6 +70,7 @@ namespace FASTER.test.recovery.sumstore
         }
 
         [Test]
+        [Category("FasterKV")]
         public async ValueTask RecoveryTestFullCheckpoint([Values] bool isAsync)
         {
             Populate(FullCheckpointAction);

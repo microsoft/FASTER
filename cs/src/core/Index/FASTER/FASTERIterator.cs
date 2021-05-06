@@ -1,38 +1,38 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
+
 namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
+        /// <summary>
+        /// Iterator for all (distinct) live key-values stored in FASTER
+        /// </summary>
+        /// <param name="functions">Functions used to manage key-values during iteration</param>
+        /// <param name="untilAddress">Report records until this address (tail by default)</param>
+        /// <returns>FASTER iterator</returns>
+        public IFasterScanIterator<Key, Value> Iterate<Input, Output, Context, Functions>(Functions functions, long untilAddress = -1)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+        {
+            if (untilAddress == -1)
+                untilAddress = Log.TailAddress;
+
+            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>
+                (this, functions, untilAddress);
+        }
+
 
         /// <summary>
         /// Iterator for all (distinct) live key-values stored in FASTER
         /// </summary>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>FASTER iterator</returns>
+        [Obsolete("Invoke Iterate() on a client session (ClientSession), or use store.Iterate overload with Functions provided as parameter")]
         public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1)
         {
-            if (untilAddress == -1)
-                untilAddress = Log.TailAddress;
-
-            if (hlog is VariableLengthBlittableAllocator<Key, Value> varLen)
-            {
-                var functions = new LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>(varLen, default);
-                var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-
-                return new FasterKVIterator<Key, Value, LogVariableCompactFunctions<Key, Value, DefaultVariableCompactionFunctions<Key, Value>>, DefaultVariableCompactionFunctions<Key, Value>>
-                    (this, functions, default, untilAddress, variableLengthStructSettings);
-            }
-            else
-            {
-                return new FasterKVIterator<Key, Value, LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>, DefaultCompactionFunctions<Key, Value>>
-                    (this, new LogCompactFunctions<Key, Value, DefaultCompactionFunctions<Key, Value>>(default), default, untilAddress, null);
-            }
+            throw new FasterException("Invoke Iterate() on a client session (ClientSession), or use store.Iterate overload with Functions provided as parameter");
         }
 
         /// <summary>
@@ -41,56 +41,43 @@ namespace FASTER.core
         /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>FASTER iterator</returns>
+        [Obsolete("Invoke Iterate() on a client session (ClientSession), or use store.Iterate overload with Functions provided as parameter")]
         public IFasterScanIterator<Key, Value> Iterate<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress = -1)
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
-            if (untilAddress == -1)
-                untilAddress = Log.TailAddress;
-
-            if (hlog is VariableLengthBlittableAllocator<Key, Value> varLen)
-            {
-                var functions = new LogVariableCompactFunctions<Key, Value, CompactionFunctions>(varLen, compactionFunctions);
-                var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-
-                return new FasterKVIterator<Key, Value, LogVariableCompactFunctions<Key, Value, CompactionFunctions>, CompactionFunctions>
-                    (this, functions, compactionFunctions, untilAddress, variableLengthStructSettings);
-            }
-            else
-            {
-                return new FasterKVIterator<Key, Value, LogCompactFunctions<Key, Value, CompactionFunctions>, CompactionFunctions>
-                    (this, new LogCompactFunctions<Key, Value, CompactionFunctions>(compactionFunctions), compactionFunctions, untilAddress, null);
-
-            }
+            throw new FasterException("Invoke Iterate() on a client session (ClientSession), or use store.Iterate overload with Functions provided as parameter");
         }
     }
 
 
-    internal sealed class FasterKVIterator<Key, Value, Functions, CompactionFunctions> : IFasterScanIterator<Key, Value>
-        where Functions : IFunctions<Key, Value, Empty, Empty, Empty>
-        where CompactionFunctions : ICompactionFunctions<Key, Value>
+    internal sealed class FasterKVIterator<Key, Value, Input, Output, Context, Functions> : IFasterScanIterator<Key, Value>
+        where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private readonly CompactionFunctions cf;
         private readonly FasterKV<Key, Value> fht;
         private readonly FasterKV<Key, Value> tempKv;
-        private readonly ClientSession<Key, Value, Empty, Empty, Empty, Functions> fhtSession;
-        private readonly ClientSession<Key, Value, Empty, Empty, Empty, Functions> tempKvSession;
+        private readonly ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession;
         private readonly IFasterScanIterator<Key, Value> iter1;
         private IFasterScanIterator<Key, Value> iter2;
 
         private int enumerationPhase;
 
-        public FasterKVIterator(FasterKV<Key, Value> fht, Functions functions, CompactionFunctions cf, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
+        public FasterKVIterator(FasterKV<Key, Value> fht, Functions functions, long untilAddress)
         {
             this.fht = fht;
-            this.cf = cf;
             enumerationPhase = 0;
-            fhtSession = fht.NewSession<Empty, Empty, Empty, Functions>(functions);
+
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null;
+            if (fht.hlog is VariableLengthBlittableAllocator<Key, Value> varLen)
+            {
+                variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = varLen.ValueLength,
+                };
+            }
+
             tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
-            tempKvSession = tempKv.NewSession<Empty, Empty, Empty, Functions>(functions);
+            tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions);
             iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);
         }
 
@@ -100,11 +87,10 @@ namespace FASTER.core
 
         public void Dispose()
         {
-            iter1.Dispose();
-            iter2.Dispose();
-            fhtSession.Dispose();
-            tempKvSession.Dispose();
-            tempKv.Dispose();
+            iter1?.Dispose();
+            iter2?.Dispose();
+            tempKvSession?.Dispose();
+            tempKv?.Dispose();
         }
 
         public ref Key GetKey()
@@ -134,23 +120,23 @@ namespace FASTER.core
                         {
                             if (recordInfo.PreviousAddress >= fht.Log.BeginAddress)
                             {
-                                if (tempKvSession.ContainsKeyInMemory(ref key) == Status.OK)
+                                if (tempKvSession.ContainsKeyInMemory(ref key, out _) == Status.OK)
                                 {
-                                    tempKvSession.Delete(ref key, Empty.Default, 0);
+                                    tempKvSession.Delete(ref key);
                                 }
                             }
 
-                            if (!recordInfo.Tombstone && !cf.IsDeleted(in key, in value))
+                            if (!recordInfo.Tombstone)
                                 return true;
 
                             continue;
                         }
                         else
                         {
-                            if (recordInfo.Tombstone || cf.IsDeleted(in key, in value))
-                                tempKvSession.Delete(ref key, Empty.Default, 0);
+                            if (recordInfo.Tombstone)
+                                tempKvSession.Delete(ref key);
                             else
-                                tempKvSession.Upsert(ref key, ref value, default, 0);
+                                tempKvSession.Upsert(ref key, ref value);
                             continue;
                         }
                     }

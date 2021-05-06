@@ -2,11 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
@@ -37,32 +33,12 @@ namespace FASTER.test.async
         [TearDown]
         public void TearDown()
         {
-            DeleteDirectory(test_path);
-        }
-
-        public static void DeleteDirectory(string path)
-        {
-            foreach (string directory in Directory.GetDirectories(path))
-            {
-                DeleteDirectory(directory);
-            }
-
-            try
-            {
-                Directory.Delete(path, true);
-            }
-            catch (IOException)
-            {
-                Directory.Delete(path, true);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                Directory.Delete(path, true);
-            }
+            TestUtils.DeleteDirectory(test_path);
         }
 
         [TestCase(CheckpointType.FoldOver)]
         [TestCase(CheckpointType.Snapshot)]
+        [Category("FasterKV")]
         public async Task LargeObjectTest(CheckpointType checkpointType)
         {
             MyInput input = default;

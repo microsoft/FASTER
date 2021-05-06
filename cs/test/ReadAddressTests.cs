@@ -6,11 +6,13 @@ using FASTER.core;
 using System.IO;
 using NUnit.Framework;
 using System.Threading.Tasks;
+using System.Threading;
 using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace FASTER.test.readaddress
 {
+#if false // TODO temporarily deactivated due to removal of addresses from single-writer callbacks (also add UpsertAsync where we do RMWAsync/Upsert)
     [TestFixture]
     public class ReadAddressTests
     {
@@ -67,16 +69,16 @@ namespace FASTER.test.readaddress
         {
             internal long lastWriteAddress = Constants.kInvalidAddress;
 
-            public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address) 
+            public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref RecordInfo recordInfo, long address) 
                 => dst.value = SetReadOutput(key.key, value.value);
 
             public override void SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address) 
                 => dst.value = SetReadOutput(key.key, value.value);
 
             // Return false to force a chain of values.
-            public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, long address) => false;
+            public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => false;
 
-            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, long address) => false;
+            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref RecordInfo recordInfo, long address) => false;
 
             // Record addresses
             public override void SingleWriter(ref Key key, ref Value src, ref Value dst, long address)
@@ -85,16 +87,16 @@ namespace FASTER.test.readaddress
                 base.SingleWriter(ref key, ref src, ref dst, address);
             }
 
-            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, long address)
+            public override void InitialUpdater(ref Key key, ref Value input, ref Value value)
             {
                 this.lastWriteAddress = address;
-                base.InitialUpdater(ref key, ref input, ref value, address);
+                base.InitialUpdater(ref key, ref input, ref value);
             }
 
-            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, long oldAddress, long newAddress)
+            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue)
             {
                 this.lastWriteAddress = newAddress;
-                base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, oldAddress, newAddress);
+                base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
             }
 
             // Track the recordInfo for its PreviousAddress.
@@ -129,7 +131,7 @@ namespace FASTER.test.readaddress
 
             internal long[] InsertAddresses = new long[numKeys];
 
-            internal TestStore(bool useReadCache, bool copyReadsToTail, bool flush)
+            internal TestStore(bool useReadCache, CopyReadsToTail copyReadsToTail, bool flush)
             {
                 this.testDir = $"{TestContext.CurrentContext.TestDirectory}/{TestContext.CurrentContext.Test.Name}";
                 this.logDevice = Devices.CreateLogDevice($"{testDir}/hlog.log");
@@ -245,10 +247,11 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
-        public void VersionedReadSyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
+        [Category("FasterKV")]
+        public void VersionedReadSyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             testStore.Populate(useRMW, useAsync:false).GetAwaiter().GetResult();
@@ -270,7 +273,7 @@ namespace FASTER.test.readaddress
                     if (status == Status.PENDING)
                     {
                         // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(spinWait: true);
+                        session.CompletePending(wait: true);
                         output = context.output;
                         recordInfo = context.recordInfo;
                         status = context.status;
@@ -283,10 +286,11 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
-        public async Task VersionedReadAsyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
+        [Category("FasterKV")]
+        public async Task VersionedReadAsyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             await testStore.Populate(useRMW, useAsync: true);
@@ -311,10 +315,11 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
-        public void ReadAtAddressSyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
+        [Category("FasterKV")]
+        public void ReadAtAddressSyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             testStore.Populate(useRMW, useAsync: false).GetAwaiter().GetResult();
@@ -338,7 +343,7 @@ namespace FASTER.test.readaddress
                     if (status == Status.PENDING)
                     {
                         // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(spinWait: true);
+                        session.CompletePending(wait: true);
                         output = context.output;
                         recordInfo = context.recordInfo;
                         status = context.status;
@@ -356,7 +361,7 @@ namespace FASTER.test.readaddress
                         if (status == Status.PENDING)
                         {
                             // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                            session.CompletePending(spinWait: true);
+                            session.CompletePending(wait: true);
                             output = context.output;
                             recordInfo = context.recordInfo;
                             status = context.status;
@@ -371,10 +376,11 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
-        public async Task ReadAtAddressAsyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
+        [Category("FasterKV")]
+        public async Task ReadAtAddressAsyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             await testStore.Populate(useRMW, useAsync: true);
@@ -412,11 +418,100 @@ namespace FASTER.test.readaddress
             }
         }
 
+        // Test is similar to others but tests the Overload where RadFlag.none is set -- probably don't need all combinations of test but doesn't hurt 
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
+        [Category("FasterKV")]
+        public async Task ReadAtAddressAsyncReadFlagsNoneTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
+        {
+            CancellationToken cancellationToken;
+            using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
+            await testStore.Populate(useRMW, useAsync: true);
+            using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
+
+            // Two iterations to ensure no issues due to read-caching or copying to tail.
+            for (int iteration = 0; iteration < 2; ++iteration)
+            {
+                var input = default(Value);
+                var key = new Key(defaultKeyToScan);
+                RecordInfo recordInfo = default;
+                int version = int.MaxValue;
+
+                for (int lap = maxLap - 1; /* tested in loop */; --lap)
+                {
+                    var readAtAddress = recordInfo.PreviousAddress;
+
+                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1);
+                    var (status, output) = readAsyncResult.Complete(out recordInfo);
+                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                        break;
+
+                    if (readAtAddress >= testStore.fkv.Log.BeginAddress)
+                    {
+                        var saveOutput = output;
+                        var saveRecordInfo = recordInfo;
+
+                        readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, ReadFlags.None, default, serialNo: maxLap + 1, cancellationToken);
+                        (status, output) = readAsyncResult.Complete(out recordInfo);
+
+                        Assert.AreEqual(saveOutput, output);
+                        Assert.AreEqual(saveRecordInfo, recordInfo);
+                    }
+                }
+            }
+        }
+
+        // Test is similar to others but tests the Overload where RadFlag.SkipReadCache is set
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
+        [Category("FasterKV")]
+        public async Task ReadAtAddressAsyncReadFlagsSkipCacheTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
+        {
+            CancellationToken cancellationToken;
+            using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
+            await testStore.Populate(useRMW, useAsync: true);
+            using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
+
+            // Two iterations to ensure no issues due to read-caching or copying to tail.
+            for (int iteration = 0; iteration < 2; ++iteration)
+            {
+                var input = default(Value);
+                var key = new Key(defaultKeyToScan);
+                RecordInfo recordInfo = default;
+                int version = int.MaxValue;
+
+                for (int lap = maxLap - 1; /* tested in loop */; --lap)
+                {
+                    var readAtAddress = recordInfo.PreviousAddress;
+
+                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1);
+                    var (status, output) = readAsyncResult.Complete(out recordInfo);
+                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                        break;
+
+                    if (readAtAddress >= testStore.fkv.Log.BeginAddress)
+                    {
+                        var saveOutput = output;
+                        var saveRecordInfo = recordInfo;
+
+                        readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, ReadFlags.SkipReadCache, default, maxLap + 1, cancellationToken);
+                        (status, output) = readAsyncResult.Complete(out recordInfo);
+
+                        Assert.AreEqual(saveOutput, output);
+                        Assert.AreEqual(saveRecordInfo, recordInfo);
+                    }
+                }
+            }
+        }
+
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
-        public void ReadNoKeySyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
+        [Category("FasterKV")]
+        public void ReadNoKeySyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             testStore.Populate(useRMW, useAsync: false).GetAwaiter().GetResult();
@@ -437,7 +532,7 @@ namespace FASTER.test.readaddress
                     if (status == Status.PENDING)
                     {
                         // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(spinWait: true);
+                        session.CompletePending(wait: true);
                         output = context.output;
                         status = context.status;
                         context.Reset();
@@ -451,10 +546,11 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, false, false, false)]
-        [TestCase(false, true, true, true)]
-        [TestCase(true, false, false, true)]
-        public async Task ReadNoKeyAsyncTests(bool useReadCache, bool copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(false, CopyReadsToTail.None, false, false)]
+        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
+        [TestCase(true, CopyReadsToTail.None, false, true)]
+        [Category("FasterKV")]
+        public async Task ReadNoKeyAsyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             await testStore.Populate(useRMW, useAsync: true);
@@ -479,4 +575,5 @@ namespace FASTER.test.readaddress
             await testStore.Flush();
         }
     }
+#endif
 }

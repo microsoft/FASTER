@@ -11,17 +11,15 @@ namespace FASTER.core
         where T : unmanaged
     {
         readonly MemoryPool<T> memoryPool;
-        readonly bool locking;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
         /// <param name="locking">Whether we lock values before concurrent operations (implemented using a spin lock on length header bit)</param>
-        public MemoryFunctions(MemoryPool<T> memoryPool = default, bool locking = false)
+        public MemoryFunctions(MemoryPool<T> memoryPool = default, bool locking = false) : base(locking)
         {
             this.memoryPool = memoryPool ?? MemoryPool<T>.Shared;
-            this.locking = locking;
         }
 
         /// <inheritdoc/>
@@ -33,14 +31,11 @@ namespace FASTER.core
         /// <inheritdoc/>
         public override bool ConcurrentWriter(ref Key key, ref Memory<T> src, ref Memory<T> dst)
         {
-            if (locking) dst.SpinLock();
-
             // We can write the source (src) data to the existing destination (dst) in-place, 
             // only if there is sufficient space
             if (dst.Length < src.Length || dst.IsMarkedReadOnly())
             {
                 dst.MarkReadOnly();
-                if (locking) dst.Unlock();
                 return false;
             }
 
@@ -51,8 +46,6 @@ namespace FASTER.core
             // We can adjust the length header on the serialized log, if we wish to.
             // This method will also zero out the extra space to retain log scan correctness.
             dst.ShrinkSerializedLength(src.Length);
-
-            if (locking) dst.Unlock();
             return true;
         }
 
@@ -67,11 +60,9 @@ namespace FASTER.core
         /// <inheritdoc/>
         public override void ConcurrentReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst)
         {
-            if (locking) value.SpinLock();
             dst.Item1 = memoryPool.Rent(value.Length);
             dst.Item2 = value.Length;
             value.CopyTo(dst.Item1.Memory);
-            if (locking) value.Unlock();
         }
 
         /// <inheritdoc/>
@@ -91,6 +82,22 @@ namespace FASTER.core
         {
             // The default implementation of IPU simply writes input to destination, if there is space
             return ConcurrentWriter(ref key, ref input, ref value);
+        }
+
+        /// <inheritdoc />
+        public override bool SupportsLocking => locking;
+
+        /// <inheritdoc />
+        public override void Lock(ref RecordInfo recordInfo, ref Key key, ref Memory<T> value, LockType lockType, ref long lockContext)
+        {
+            value.SpinLock();
+        }
+
+        /// <inheritdoc />
+        public override bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Memory<T> value, LockType lockType, long lockContext)
+        {
+            value.Unlock();
+            return true;
         }
     }
 }

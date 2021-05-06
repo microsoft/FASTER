@@ -33,6 +33,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void MemoryLogCompactionTest1()
         {
             using var session = fht.For(new MemoryCompaction()).NewSession<MemoryCompaction>();
@@ -87,7 +88,7 @@ namespace FASTER.test
             }
 
             // Test iteration of distinct live keys
-            using (var iter = fht.Iterate())
+            using (var iter = session.Iterate())
             {
                 int count = 0;
                 while (iter.GetNext(out RecordInfo recordInfo))

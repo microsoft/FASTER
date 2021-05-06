@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using FASTER.core;
 using FASTER.devices;
 using NUnit.Framework;
+using Microsoft.Azure.Storage.Blob;
+using Microsoft.Azure.Storage;
 
 namespace FASTER.test
 {
@@ -22,6 +24,7 @@ namespace FASTER.test
         public const string TEST_CONTAINER = "test";
 
         [Test]
+        [Category("FasterLog")]
         public async ValueTask PageBlobFasterLogTest1([Values] LogChecksumType logChecksum, [Values]FasterLogTests.IteratorType iteratorType)
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
@@ -37,9 +40,39 @@ namespace FASTER.test
             }
         }
 
+        [Test]
+        [Category("FasterLog")]
+        public async ValueTask PageBlobFasterLogTestWithLease([Values] LogChecksumType logChecksum, [Values] FasterLogTests.IteratorType iteratorType)
+        {
+
+            // Need this environment variable set AND Azure Storage Emulator running
+            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+            {
+                // Set up the blob manager so can set lease to it
+                CloudStorageAccount storageAccount = CloudStorageAccount.DevelopmentStorageAccount;
+                var cloudBlobClient = storageAccount.CreateCloudBlobClient();
+                CloudBlobContainer blobContainer = cloudBlobClient.GetContainerReference("test-container");
+                blobContainer.CreateIfNotExists();
+                var mycloudBlobDir = blobContainer.GetDirectoryReference(@"BlobManager/MyLeaseTest1");
+
+                var blobMgr = new DefaultBlobManager(true, mycloudBlobDir);
+                var device = new AzureStorageDevice(EMULATED_STORAGE_STRING, $"{TEST_CONTAINER}", "PageBlobFasterLogTestWithLease", "fasterlogLease.log", deleteOnClose: true, underLease: true, blobManager: blobMgr);
+
+                var checkpointManager = new DeviceLogCommitCheckpointManager(
+                    new AzureStorageNamedDeviceFactory(EMULATED_STORAGE_STRING),
+                    new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/PageBlobFasterLogTestWithLease"));
+                await FasterLogTest1(logChecksum, device, checkpointManager, iteratorType);
+                device.Dispose();
+                checkpointManager.PurgeAll();
+                checkpointManager.Dispose();
+                blobContainer.Delete();
+            }
+        }
+
         private async ValueTask FasterLogTest1(LogChecksumType logChecksum, IDevice device, ILogCommitManager logCommitManager, FasterLogTests.IteratorType iteratorType)
         {
-            log = new FasterLog(new FasterLogSettings { PageSizeBits = 20, SegmentSizeBits = 20, LogDevice = device, LogChecksum = logChecksum, LogCommitManager = logCommitManager });
+            var logSettings = new FasterLogSettings { PageSizeBits = 20, SegmentSizeBits = 20, LogDevice = device, LogChecksum = logChecksum, LogCommitManager = logCommitManager };
+            log = FasterLogTests.IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)

@@ -27,13 +27,21 @@ namespace FASTER.core
         public string BaseName() => baseName;
 
         /// <inheritdoc />
+        public FileDescriptor LogCheckpointBase(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", null);
+
+        /// <inheritdoc />
         public FileDescriptor LogCheckpointMetadata(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "info.dat");
 
         /// <inheritdoc />
         public FileDescriptor LogSnapshot(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "snapshot.dat");
         /// <inheritdoc />
         public FileDescriptor ObjectLogSnapshot(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "snapshot.obj.dat");
+        /// <inheritdoc />
+        public FileDescriptor DeltaLog(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "delta.dat");
 
+
+        /// <inheritdoc />
+        public FileDescriptor IndexCheckpointBase(Guid token) => new FileDescriptor($"{IndexCheckpointBasePath()}/{token}", null);
 
         /// <inheritdoc />
         public FileDescriptor IndexCheckpointMetadata(Guid token) => new FileDescriptor($"{IndexCheckpointBasePath()}/{token}", "info.dat");

@@ -25,6 +25,25 @@ namespace FASTER.core
     }
 
     /// <summary>
+    /// Copy reads to tail
+    /// </summary>
+    public enum CopyReadsToTail
+    {
+        /// <summary>
+        /// Never copy reads to tail
+        /// </summary>
+        None,
+        /// <summary>
+        /// Copy reads from storage to tail
+        /// </summary>
+        FromStorage,
+        /// <summary>
+        /// Copy reads from read-only region of memory and storage, to tail
+        /// </summary>
+        FromReadOnly
+    }
+
+    /// <summary>
     /// Configuration settings for hybrid log
     /// </summary>
     public class LogSettings
@@ -62,7 +81,7 @@ namespace FASTER.core
         /// <summary>
         /// Copy reads to tail of log
         /// </summary>
-        public bool CopyReadsToTail = false;
+        public CopyReadsToTail CopyReadsToTail = CopyReadsToTail.None;
 
         /// <summary>
         /// Settings for optional read cache

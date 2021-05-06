@@ -38,6 +38,7 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public void BlittableDiskWriteScan()
         {
             using var session = fht.For(new Functions()).NewSession<Functions>();
@@ -105,7 +106,6 @@ namespace FASTER.test
                     Assert.IsTrue(value.vfield2 == val + 1);
                     val++;
                 }
-                iter.Dispose();
             }
         }
     }

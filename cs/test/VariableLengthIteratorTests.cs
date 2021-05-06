@@ -13,6 +13,7 @@ namespace FASTER.test
     public class IteratorTests
     {
         [Test]
+        [Category("FasterKV")]
         public void ShouldSkipEmptySpaceAtEndOfPage()
         {
             var vlLength = new VLValue();

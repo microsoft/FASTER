@@ -46,7 +46,8 @@ namespace FASTER.test
 
 
         [Test]
-        public void GenericDiskWriteScan()
+        [Category("FasterKV")]
+        public void DiskWriteScanBasicTest()
         {
             using var session = fht.For(new MyFunctions()).NewSession<MyFunctions>();
 
@@ -110,7 +111,6 @@ namespace FASTER.test
                     Assert.IsTrue(value.value == val);
                     val++;
                 }
-                iter.Dispose();
             }
         }
     }

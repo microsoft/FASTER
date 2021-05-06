@@ -47,7 +47,8 @@ namespace FASTER.test
         }
 
         [Test]
-        public void GenericIterationTest1()
+        [Category("FasterKV")]
+        public void IterationBasicTest()
         {
             using var session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
 
@@ -62,7 +63,7 @@ namespace FASTER.test
             }
 
             int count = 0;
-            var iter = fht.Iterate();
+            var iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
@@ -81,7 +82,7 @@ namespace FASTER.test
             }
 
             count = 0;
-            iter = fht.Iterate();
+            iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
@@ -99,7 +100,7 @@ namespace FASTER.test
             }
 
             count = 0;
-            iter = fht.Iterate();
+            iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
@@ -116,7 +117,7 @@ namespace FASTER.test
             }
 
             count = 0;
-            iter = fht.Iterate();
+            iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
@@ -133,7 +134,7 @@ namespace FASTER.test
             }
 
             count = 0;
-            iter = fht.Iterate();
+            iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
@@ -150,7 +151,7 @@ namespace FASTER.test
             }
 
             count = 0;
-            iter = fht.Iterate();
+            iter = session.Iterate();
             while (iter.GetNext(out var recordInfo))
             {
                 count++;

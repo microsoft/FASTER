@@ -124,6 +124,25 @@ namespace FASTER.core
             [Out] out UInt32 lpNumberOfBytesWritten,
             [In] NativeOverlapped* lpOverlapped);
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern IntPtr CreateIoCompletionPort(
+            [In] SafeFileHandle hFile,
+            IntPtr ExistingCompletionPort,
+            UIntPtr CompletionKey,
+            uint NumberOfConcurrentThreads);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern bool GetQueuedCompletionStatus(
+            [In] IntPtr hCompletionPort,
+            [Out] out UInt32 lpNumberOfBytesWritten,
+            [Out] out IntPtr lpCompletionKey,
+            [Out] out NativeOverlapped* lpOverlapped,
+            [In] UInt32 dwMilliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern bool GetFileSizeEx(
+            [In] SafeFileHandle hFile,
+            [Out] out long lpFileSize);
 
         internal enum EMoveMethod : uint
         {
@@ -216,6 +235,18 @@ namespace FASTER.core
             {
                 throw new FasterException("Unable to affinitize thread");
             }
+        }
+
+        /// <summary>
+        /// Get number of groups (sockets) and processors per group
+        /// </summary>
+        /// <returns></returns>
+        public static (uint numGroups, uint numProcsPerGroup) GetNumGroupsProcsPerGroup()
+        {
+            uint nrOfProcessors = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+            ushort nrOfProcessorGroups = GetActiveProcessorGroupCount();
+            uint nrOfProcsPerGroup = nrOfProcessors / nrOfProcessorGroups;
+            return (nrOfProcessorGroups, nrOfProcsPerGroup);
         }
 
         /// <summary>
