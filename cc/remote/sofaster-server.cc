@@ -93,12 +93,12 @@ int main(int argc, char* argv[]) {
   logMessage(Lvl::INFO,
              (std::string("Running server with %lu worker threads, ") +
               std::string("%lu M hash buckets, %lu GB hybrid log stored ") +
-              std::string("at %s, with a mutable fraction of %.2f") +
+              std::string("at %s, with a mutable fraction of %.2f")).c_str(),
               threads,
               vm["htSizeM"].as<uint64_t>(),
               vm["logSizeGB"].as<uint64_t>(),
               logDisk.c_str(),
-              mFrn));
+              mFrn);
   server.run(pinOffset);
 
   return 0;
