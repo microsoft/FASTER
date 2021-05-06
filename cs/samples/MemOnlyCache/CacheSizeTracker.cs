@@ -13,7 +13,7 @@ namespace MemOnlyCache
     public class CacheSizeTracker : IObserver<IFasterScanIterator<CacheKey, CacheValue>>
     {
         readonly FasterKV<CacheKey, CacheValue> store;
-        long storeSize;
+        long storeHeapSize;
 
         /// <summary>
         /// Target size request for FASTER
@@ -23,34 +23,29 @@ namespace MemOnlyCache
         /// <summary>
         /// Total size (bytes) used by FASTER including index and log
         /// </summary>
-        public long TotalSizeBytes => storeSize + store.OverflowBucketCount * 64;
+        public long TotalSizeBytes => storeHeapSize + store.IndexSize * 64 + store.Log.MemorySizeBytes + (store.ReadCache != null ? store.ReadCache.MemorySizeBytes : 0) + store.OverflowBucketCount * 64;
 
         /// <summary>
         /// Class to track and update cache size
         /// </summary>
         /// <param name="store">FASTER store instance</param>
-        /// <param name="memorySizeBits">Memory size (bits) used by FASTER log settings</param>
-        /// <param name="targetMemoryBytes">Target memory size of FASTER in bytes</param>
-        public CacheSizeTracker(FasterKV<CacheKey, CacheValue> store, int memorySizeBits, long targetMemoryBytes = long.MaxValue)
+        /// <param name="targetMemoryBytes">Initial target memory size of FASTER in bytes</param>
+        public CacheSizeTracker(FasterKV<CacheKey, CacheValue> store, long targetMemoryBytes = long.MaxValue)
         {
             this.store = store;
             if (targetMemoryBytes < long.MaxValue)
-            {
                 Console.WriteLine("**** Setting initial target memory: {0,11:N2}KB", targetMemoryBytes / 1024.0);
-                this.TargetSizeBytes = targetMemoryBytes;
-            }
+            this.TargetSizeBytes = targetMemoryBytes;
 
-            storeSize = store.IndexSize * 64 + store.Log.MemorySizeBytes;
+            Console.WriteLine("Index size: {0}", store.IndexSize * 64);
+            Console.WriteLine("Total store size: {0}", TotalSizeBytes);
 
             // Register subscriber to receive notifications of log evictions from memory
             store.Log.SubscribeEvictions(this);
 
             // Include the separate read cache, if enabled
             if (store.ReadCache != null)
-            {
-                storeSize += store.ReadCache.MemorySizeBytes;
                 store.ReadCache.SubscribeEvictions(this);
-            }
         }
 
         /// <summary>
@@ -72,7 +67,7 @@ namespace MemOnlyCache
         /// Add to the tracked size of FASTER. This is called by IFunctions as well as the subscriber to evictions (OnNext)
         /// </summary>
         /// <param name="size"></param>
-        public void AddTrackedSize(int size) => Interlocked.Add(ref storeSize, size);
+        public void AddTrackedSize(int size) => Interlocked.Add(ref storeHeapSize, size);
 
         /// <summary>
         /// Subscriber to pages as they are getting evicted from main memory

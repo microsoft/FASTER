@@ -565,6 +565,9 @@ namespace FASTER.core
         /// <param name="page">Page number to be cleared</param>
         /// <param name="offset">Offset to clear from (if partial clear)</param>
         internal abstract void ClearPage(long page, int offset = 0);
+
+        internal abstract void FreePage(long page);
+
         /// <summary>
         /// Write page (async)
         /// </summary>
@@ -730,6 +733,11 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Number of extra overflow pages allocated
+        /// </summary>
+        internal abstract int OverflowPageCount { get; }
+
+        /// <summary>
         /// Initialize allocator
         /// </summary>
         /// <param name="firstValidAddress"></param>
@@ -790,7 +798,6 @@ namespace FASTER.core
             OnReadOnlyObserver?.OnCompleted();
             OnEvictionObserver?.OnCompleted();
         }
-
 
         /// <summary>
         /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
@@ -998,12 +1005,21 @@ namespace FASTER.core
                     return -1; // RETRY_NOW
                 }
 
+                // Allocate this page, if needed
+                int thisPageIndex = (localTailPageOffset.Page + 1) % BufferSize;
+                if ((!IsAllocated(thisPageIndex)))
+                {
+                    AllocatePage(thisPageIndex);
+                }
+
+                /*
                 // Allocate next page in advance, if needed
                 int nextPageIndex = (localTailPageOffset.Page + 2) % BufferSize;
                 if ((!IsAllocated(nextPageIndex)))
                 {
                     AllocatePage(nextPageIndex);
                 }
+                */
 
                 localTailPageOffset.Page++;
                 localTailPageOffset.Offset = numSlots;
@@ -1235,11 +1251,8 @@ namespace FASTER.core
 
                     int closePage = (int)(closePageAddress >> LogPageSizeBits);
                     int closePageIndex = closePage % BufferSize;
-
-                    if (!IsAllocated(closePageIndex))
-                        AllocatePage(closePageIndex);
-                    else
-                        ClearPage(closePage);
+                    
+                    FreePage(closePage);
 
                     Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, closePageAddress + PageSize, out _);
                     ShiftClosedUntilAddress();

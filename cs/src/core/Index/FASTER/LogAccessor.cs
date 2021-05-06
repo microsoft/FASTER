@@ -79,8 +79,8 @@ namespace FASTER.core
         /// <summary>
         /// Memory used by log (not including reference heap object sizes)
         /// </summary>
-        public long MemorySizeBytes => ((long)allocator.BufferSize) << allocator.LogPageSizeBits;
-
+        public long MemorySizeBytes => ((long)(allocator.BufferSize - allocator.EmptyPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+        
         /// <summary>
         /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.
         /// </summary>
