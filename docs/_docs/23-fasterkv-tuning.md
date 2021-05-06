@@ -103,8 +103,7 @@ be configured independently of the main log. Any prefix of a hash chain may resi
 the FASTER index may point to the read cache, which in turn may point to earlier entries in the read cache or
 eventually to the main log. As items age out of the read cache, they are simply dropped (to the null device). Hash
 chain pointers are adjusted before invalidation so that the hash chains (starting from the index, going to the read
-cache, and finally to the main log) stay consistent. Since hash index entries may now point to read cache objects
-rather than the main log, checkpointing FASTER when the read cache is enabled, is not yet supported.
+cache, and finally to the main log) stay consistent.
 
 The following settings are available to configure with the read cache:
 
