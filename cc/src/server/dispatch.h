@@ -356,8 +356,9 @@ static uint32_t dispatch(void* context, uint8_t* requests, uint8_t* responses)
 
   // If there is space on the response buffer, then add in responses to
   // requests that went pending earlier but have now completed.
+  auto limit = session_t::maxTxBytes - sizeof(ResponseBatchHdr);
   auto space = limit - respHdr->size;
-  space = (space / sizeof(ReadResponse)) * sizeof(ReadResponse);
+  space = (space / sizeof(ReadResponse<V>)) * sizeof(ReadResponse<V>);
   if (space > 0 && session->pendingResponses.size() > 0) {
     auto b = std::min(space, session->pendingResponses.size());
     memcpy(responses, &(session->pendingResponses[0]), b);
