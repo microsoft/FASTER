@@ -21,16 +21,6 @@ using namespace wireformat;
 /// Callback invoked when a read that went async inside FASTER completes.
 template <class K, class V, class R, class session_t>
 void readCallback(IAsyncContext* ctxt, FASTER::core::Status result) {
-  // If the result says NotReady, then it means that the record was not found,
-  // but it belongs to a migrating hash range. Add it to the session's waiting
-  // queue and return. Don't need to heap allocate again here.
-  if (result == FASTER::core::Status::NotReady) {
-    auto context = reinterpret_cast<ReadContext<K, V, R, session_t>*>(ctxt);
-    context->session_->waiting.emplace_back(std::make_tuple(
-                                            (uint8_t) Opcode::READ, context));
-    return;
-  }
-
   // If we're sure that the request does not need to wait, then typecast so
   // that the destructor frees up the heap allocation.
   CallbackContext<ReadContext<K, V, R, session_t>> context(ctxt);
@@ -65,16 +55,6 @@ void readCallback(IAsyncContext* ctxt, FASTER::core::Status result) {
 /// Callback invoked when an upsert that went async inside FASTER completes.
 template <class K, class V, class R, class session_t>
 void upsertCallback(IAsyncContext* ctxt, FASTER::core::Status result) {
-  // If the result says NotReady, then it means that the record was not found,
-  // but it belongs to a migrating hash range. Add it to the session's waiting
-  // queue and return. Don't need to heap allocate again here.
-  if (result == FASTER::core::Status::NotReady) {
-    auto context = reinterpret_cast<UpsertContext<K, V, R, session_t>*>(ctxt);
-    context->session_->waiting.emplace_back(std::make_tuple(
-                                            (uint8_t) Opcode::UPSERT, context));
-    return;
-  }
-
   // If we're sure that the request does not need to wait, then typecast so
   // that the destructor frees up the heap allocation.
   CallbackContext<UpsertContext<K, V, R, session_t>> context(ctxt);
@@ -97,16 +77,6 @@ void upsertCallback(IAsyncContext* ctxt, FASTER::core::Status result) {
 /// Callback invoked when an rmw that went async inside FASTER completes.
 template <class K, class V, class R, class session_t>
 void rmwCallback(IAsyncContext* ctxt, FASTER::core::Status result) {
-  // If the result says NotReady, then it means that the record was not found,
-  // but it belongs to a migrating hash range. Add it to the session's waiting
-  // queue and return. Don't need to heap allocate again here.
-  if (result == FASTER::core::Status::NotReady) {
-    auto context = reinterpret_cast<RmwContext<K, V, R, session_t>*>(ctxt);
-    context->session_->waiting.emplace_back(std::make_tuple(
-                                            (uint8_t) Opcode::RMW, context));
-    return;
-  }
-
   // If we're sure that the request does not need to wait, then typecast so
   // that the destructor frees up the heap allocation.
   CallbackContext<RmwContext<K, V, R, session_t>> context(ctxt);
