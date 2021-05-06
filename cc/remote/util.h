@@ -74,7 +74,7 @@ void load(const std::string& fill,
   }
 
   if (count != kInitCount) {
-    logMessage(Lvl::ERROR, "Expected %lu keys, found %lu", kInitCount, count);
+    logMessage(Lvl::ERR, "Expected %lu keys, found %lu", kInitCount, count);
     exit(1);
   }
 
@@ -104,7 +104,7 @@ void load(const std::string& fill,
   }
 
   if (count != kTxnsCount) {
-    logMessage(Lvl::ERROR, "Expected %lu txns, found %lu", kTxnsCount, count);
+    logMessage(Lvl::ERR, "Expected %lu txns, found %lu", kTxnsCount, count);
     exit(1);
   }
 }

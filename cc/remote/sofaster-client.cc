@@ -339,7 +339,7 @@ void exec(size_t threadId) {
   uint64_t lHash = 0UL;
   uint64_t rHash = lHash + split;
 
-  for (auto i = 1; i <= nServers && numSplits == 0; i++) {
+  for (auto i = 1; i <= nServers; i++) {
     sofaster.addHashRange(lHash, rHash, servers[i - 1],
                           std::to_string(serverBasePort + threadId));
     lHash = rHash + 1;
@@ -480,7 +480,7 @@ int main(int argc, char* argv[]) {
   } else if (workload == "YCSB-F") {
     readPct = 0;
   } else {
-    logMessage(Lvl::ERROR, "Unrecognized workload");
+    logMessage(Lvl::ERR, "Unrecognized workload");
     exit(-1);
   }
 

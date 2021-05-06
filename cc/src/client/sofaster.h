@@ -163,8 +163,6 @@ class Sofaster {
       // session, we currently need these requests to be of same size.
       static_assert(sizeof(rmw_t) == sizeof(read_t), "RPC sizes don't match");
       static_assert(sizeof(rmw_t) == sizeof(upsert_t), "RPC sizes don't match");
-      static_assert(sizeof(rmw_t) == sizeof(cond_upsert_t),
-                    "RPC sizes don't match");
       auto batch =
         ((transmitBytes - sizeof(RequestBatchHdr)) / sizeof(rmw_t)) *
         sizeof(rmw_t);
@@ -189,8 +187,6 @@ class Sofaster {
     // session, we currently need these requests to be of same size.
     static_assert(sizeof(rmw_t) == sizeof(read_t), "RPC sizes don't match");
     static_assert(sizeof(rmw_t) == sizeof(upsert_t), "RPC sizes don't match");
-    static_assert(sizeof(rmw_t) == sizeof(cond_upsert_t),
-                    "RPC sizes don't match");
     auto batch =
       ((transmitBytes - sizeof(RequestBatchHdr)) / sizeof(rmw_t)) *
       sizeof(rmw_t);
@@ -631,7 +627,7 @@ class Sofaster {
     }
 
     if (hdr->status != Status::SUCCESS && hdr->status != Status::RETRY_LATER) {
-      logMessage(Lvl::ERROR, "Request batch did not succeed on session %s",
+      logMessage(Lvl::ERR, "Request batch did not succeed on session %s",
                  session->sessionUID.ToString().c_str());
       throw std::runtime_error("Request batch did not succeed.");
     }
@@ -746,7 +742,7 @@ class Sofaster {
       break;
 
     default:
-      logMessage(Lvl::ERROR, "Read failed on session %s with unexpected status",
+      logMessage(Lvl::ERR, "Read failed on session %s with unexpected status",
                  session->sessionUID.ToString().c_str());
       assert(false);
       break;
@@ -788,7 +784,7 @@ class Sofaster {
       break;
 
     default:
-      logMessage(Lvl::ERROR, "Upsert failed on session %s, unexpected status",
+      logMessage(Lvl::ERR, "Upsert failed on session %s, unexpected status",
                  session->sessionUID.ToString().c_str());
       assert(false);
       break;
@@ -830,7 +826,7 @@ class Sofaster {
       break;
 
     default:
-      logMessage(Lvl::ERROR, "Rmw failed on session %s with unexpected status",
+      logMessage(Lvl::ERR, "Rmw failed on session %s with unexpected status",
                  session->sessionUID.ToString().c_str());
       assert(false);
       break;

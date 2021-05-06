@@ -158,9 +158,6 @@ class ClientSession {
     if (status != Status::OPEN) {
       throw std::runtime_error("Timed out while trying to open session");
     }
-
-    // The session was opened. We can now open up our persistent buffer.
-    buffer.open(sessionUID.ToString());
   }
 
   /// Initializes the session with a passed in view number and ID.
