@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
               vm["htSizeM"].as<uint64_t>(),
               vm["logSizeGB"].as<uint64_t>(),
               logDisk.c_str(),
-              mFrn);
+              mFrn));
   server.run(pinOffset);
 
   return 0;
