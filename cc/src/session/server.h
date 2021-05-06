@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include "status.h"
 
 #include "core/guid.h"

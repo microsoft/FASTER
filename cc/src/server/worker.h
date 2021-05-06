@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include "dispatch.h"
 #include "session/server.h"
 
@@ -90,7 +92,7 @@ class Worker {
     // then create a new incoming session on the worker.
     connection_t* conn = connPoller.poll();
     if (conn) {
-      incomingSessions.emplace_back(currentView, metadisk, faster, conn);
+      incomingSessions.emplace_back(currentView, faster, conn);
     }
 
     // Next, try to receive incoming RPCs. The RPC poller will take care of
@@ -120,8 +122,7 @@ class Worker {
       }
 
       try {
-        DispatchContext<session_t> context(&(*it), currentView,
-                                           reinterpret_cast<void*>(&ranges));
+        DispatchContext<session_t> context(&(*it), currentView);
         it->poll(dispatch<K, V, R, session_t>,
                  reinterpret_cast<void*>(&context));
       } catch (std::runtime_error&) {
