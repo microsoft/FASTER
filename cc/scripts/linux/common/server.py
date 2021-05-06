@@ -101,7 +101,7 @@ def run(binary, cfg, debug=False):
 
     l = [binary, "--threads", cfg["threads"], "--htSizeM", cfg["bucketM"],
          "--logSizeGB", cfg["logSzGB"], "--logDisk", cfg["logDisk"], "--ipAddr",
-         cfg["ipAddr"], "--id", cfg["serverId"], "--dfs", cfg["dfsConn"],
+         cfg["ipAddr"], "--dfs", cfg["dfsConn"],
          "--pinOffset", cfg["pinOffset"]]
     if debug: l = ['gdb', '--args'] + l
 
