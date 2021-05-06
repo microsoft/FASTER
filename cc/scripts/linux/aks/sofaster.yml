@@ -33,10 +33,5 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        - name: DFS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: dfs
-              key: dfs-key
         command: ["/SoFASTER/scripts/common/server.py"]
-        args: ["run", "--ip", "$(POD_IP)", "--dfsKey", "$(DFS_KEY)"]
+        args: ["run", "--ip", "$(POD_IP)"]

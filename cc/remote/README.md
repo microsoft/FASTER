@@ -68,15 +68,6 @@ kubectl create secret docker-registry sofaster-secret \
 	--docker-email=<any-email>
 ```
 
-The server image uses
-[Azure Blob Store](https://docs.microsoft.com/en-us/azure/storage/blobs/storage-blob-pageblob-overview)
-for the hybrid log. To allow deployed servers to authenticate with a
-premium storage account, configure a secret containing the account's
-connection string
-```
-kubectl create secret generic dfs --from-literal=dfs-key='<conn-string>'
-```
-
 ### Deploying servers
 
 A cluster of servers can be deployed using the sample config file under
