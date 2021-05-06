@@ -1,7 +1,11 @@
-# Distributed FASTER
+# Client-Server FASTER
 
 This repo contains scripts to automate setup, compilation and running of
 FASTER in a client-server setting.
+```
+The C++ implementation often refers to this setting as SoFASTER/Sofaster due
+to artifactual reasons.
+```
 
 ## Running using Azure Kubernetes Service (AKS)
 
