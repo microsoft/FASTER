@@ -3,6 +3,131 @@
 This repo contains scripts to automate setup, compilation and running of
 FASTER in a client-server setting.
 
+## Running using Azure Kubernetes Service (AKS)
+
+This repo contains YAML files to deploy a cluster of servers running Shadowfax, load a
+dataset into this cluster and run a YCSB based workload against this loaded dataset
+using Azure's kubernetes service
+([aks](https://azure.microsoft.com/en-us/services/kubernetes-service/)). Deployments
+using these YAML files have been tested on Ubuntu server 18.04 and Windows Server 2019
+Datacenter.
+
+### Installing dependencies
+
+Running the system using aks requires the Azure CLI. This can be downloaded and
+installed on Linux and Windows from
+[here](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli?view=azure-cli-latest).
+Once installed, it can be used to install `kubectl` via the following command
+```
+az aks install-cli
+```
+
+The above command will require root permissions (`sudo`) on Linux. On Windows, it
+occassionally fails when a new version of the Azure CLI comes out; in this case,
+`kubectl` can be directly installed by following the instructions
+[here](https://kubernetes.io/docs/tasks/tools/install-kubectl/#install-kubectl-on-windows).
+
+### Creating the Kubernetes service
+
+To create the kubernetes service on Azure, you first have to login. Run the
+following command to login using an existing service principal
+```
+az login --service-principal -u <client-ID> -p <client-secret> -t <tenant-ID>
+```
+
+Next, create the service. The following command creates a service called
+`sofaster-cluster` under a pre-existing resource group called `sofaster`
+```
+az aks create --resource-group sofaster \
+              --name sofaster-cluster \
+	      --service-principal <client-ID> \
+	      --client-secret <client-secret> \
+	      -c 12 \
+	      -s Standard_D8_v3 \
+	      --generate-ssh-keys
+```
+
+Once it returns, the created service will have a node-pool of 12
+[D8_v3](https://docs.microsoft.com/en-us/azure/virtual-machines/windows/sizes-general)
+virtual machines. This service needs to be connected to `kubectl`. This can be done
+by running the following command
+```
+az aks get-credentials --resource-group sofaster --name sofaster-cluster
+```
+
+### Connecting to docker registry and blob store
+
+Server and client images are currently hosted on a private Azure container
+registry. To allow aks to pull these images, configure a secret called
+`sofaster-secret` containing the registry's access keys
+```
+kubectl create secret docker-registry sofaster-secret \
+        --docker-server=sofaster.azurecr.io \
+	--docker-username=<user> \
+	--docker-password=<password> \
+	--docker-email=<any-email>
+```
+
+The server image uses
+[Azure Blob Store](https://docs.microsoft.com/en-us/azure/storage/blobs/storage-blob-pageblob-overview)
+for the hybrid log. To allow deployed servers to authenticate with a
+premium storage account, configure a secret containing the account's
+connection string
+```
+kubectl create secret generic dfs --from-literal=dfs-key='<conn-string>'
+```
+
+### Deploying servers
+
+A cluster of servers can be deployed using the sample config file under
+`scripts/kubernetes/sofaster.yml`
+([link](https://github.com/badrishc/SoFASTER/blob/master/scripts/kubernetes/sofaster.yml)).
+Set the `replicas` field to the number of servers you would like to deploy.
+```
+kubectl create -f scripts/kubernetes/sofaster.yml
+```
+
+### Running YCSB against a deployment
+
+To run YCSB against a deployment, clients need to know the IP addresses of servers
+within the deployment. Once all servers are running, their IP addresses can be
+obtained using the following command
+```
+kubectl get pods -o wide
+```
+
+Configure a cluster secret containing a comma separated list of these addresses. The
+below example does so for a deployment with two servers
+```
+kubectl create secret generic servers --from-literal=ips="10.244.0.4,10.244.8.2"
+```
+
+The cluster can be loaded with data using the sample config file under
+`scripts/kubernetes/load.yml`
+([link](https://github.com/badrishc/SoFASTER/blob/master/scripts/kubernetes/load.yml)).
+The following command creates a single pod that loads the dataset.
+```
+kubectl create -f scripts/kubernetes/load.yml
+```
+
+Once the above pod has completed, a YCSB workload can be run against the
+deployment using the sample config file under
+`scripts/kubernetes/ycsb.yml`
+([link](https://github.com/badrishc/SoFASTER/blob/master/scripts/kubernetes/ycsb.yml)).
+Set the `parallelism` field to the number of clients you would like to run.
+```
+kubectl create -f scripts/kubernetes/ycsb.yml
+```
+
+A client runs the workload and prints its observed throughput to `stdout`. This
+output can be retrieved by inspecting the pod's logs. The command below does so
+for a pod with name `exec-ycsb-xxhp5`.
+```
+kubectl logs -l pod/exec-ycsb-xxhp5
+```
+
+## Manually running the system
+
 ### Installing dependencies
 
 Before the server and client binaries can be compiled and run, few dependencies need
