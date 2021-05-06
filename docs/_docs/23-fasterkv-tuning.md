@@ -2,7 +2,7 @@
 title: "Tuning FasterKV"
 permalink: /docs/fasterkv-tuning/
 excerpt: "Tuning FasterKV"
-last_modified_at: 2020-11-08
+last_modified_at: 2021-05-06
 toc: false
 classes: wide
 ---
