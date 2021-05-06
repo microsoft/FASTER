@@ -63,7 +63,7 @@ class ReadContext : public IAsyncContext {
 
   /// Atomically copies a passed in value into the context. Called internally
   /// by FASTER when a record falls inside the mutable region.
-  inline void GetAtomic(R& val) {
+  inline void GetAtomic(const R& val) {
     val.copyAtomic(&value_);
   }
 
@@ -226,6 +226,13 @@ class RmwContext : public IAsyncContext {
   /// a new key-value pair (because the key did not map to a value to begin
   /// with).
   inline static constexpr uint32_t value_size() {
+    return sizeof(R);
+  }
+
+  /// Returns the size of the value. Invoked from within FASTER when creating
+  /// a new key-value pair (because the key was found to be in the read-only
+  /// region of the HybridLog).
+  inline static constexpr uint32_t value_size(const R& old) {
     return sizeof(R);
   }
 
