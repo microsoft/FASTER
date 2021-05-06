@@ -101,7 +101,7 @@ Apart from Key and Value, the IFunctions interface is defined on three additiona
 `IFunctions<>` encapsulates all callbacks made by FASTER back to the caller, which are described next:
 
 1. SingleReader and ConcurrentReader: These are used to read from the store values and copy them to Output. Single reader can assume that there are no concurrent operations on the record.
-2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value. Concurrent writer can assume that there are no concurrent operations on the record.
+2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value. Single writer can assume that there are no concurrent operations on the record.
 3. Completion callbacks: Called by FASTER when various operations complete after they have gone "pending" due to requiring IO.
 4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation.
 5. Locking: There is one property and two methods; if the SupportsLocking property returns true, then FASTER will call Lock and Unlock within a try/finally in the four concurrent callback methods: ConcurrentReader, ConcurrentWriter, ConcurrentDeleter (new in IAdvancedFunctions), and InPlaceUpdater. FunctionsBase illustrates the default implementation of Lock and Unlock as an exclusive lock using a bit in RecordInfo.
@@ -226,6 +226,39 @@ When all sessions are done operating on FASTER, you finally dispose the FasterKV
 ```cs
 store.Dispose();
 ```
+
+## Larger-Than-Memory Data Support
+
+FasterKV consists of an in-memory hash table that points to records in a hybrid log that spans storage and main memory. When you 
+instantiate a new FasterKV instance, no log is created on disk. Records stay in main memory part of the hybrid log, whose size is
+configured via `LogSettings` when calling the constructor. Specifically, the memory portion of the log takes up a size of
+2<sup>MemorySizeBits</sup> bytes of space. As long as all records fit in this space, nothing will be spilled to storage. Note that
+for C# class types, the log only holds references (pointers) to heap data 
+(discussed [here](/FASTER/docs/fasterkv-tuning#managing-log-size-with-c-objects)).
+
+Once the mutable portion of main memory is full, pages become immutable and start getting flushed to storage and you will see the
+log size grow on disk. Reads of flushed records will be served by going to disk, returning a status of `Status.PENDING`, as discussed
+above.
+
+If you need recoverability, you need to take a checkpoint of FASTER. This will cause all data in the memory portion of the log to
+be proactively written to disk, along with checkpoint metadata that allows you to subsequently recover. Briefy, you can checkpoint 
+FASTER in two ways:
+
+1. Flush the hybrid log to disk, i.e., make everything read-only:
+   ```cs
+   await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
+   ```
+2. Take a "snapshot" of all in-memory data into a _separate_ file, and continue in-place updates in the mutable log:
+   ```cs
+   await store.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
+   ```
+
+Recovery is simple; after instantiating a new store, you call:
+```cs
+store.Recover();
+```
+
+You can also checkpoint the hash index for faster recovery. Learn more about checkpoint-recovery on a dedicated page [here](/FASTER/docs/fasterkv-recovery/).
 
 
 ## Quick End-To-End Sample
