@@ -438,11 +438,10 @@ namespace FASTER.core
         {
             if (segmentSize > 0) return segmentSize;
             var pool = GetOrAddHandle(segment);
-            long size;
             if (!pool.Item1.TryGet(out var stream))
-                stream = pool.Item1.GetAsync().GetAwaiter().GetResult();
+                stream = pool.Item1.Get();
 
-            size = stream.Length;
+            long size = stream.Length;
             pool.Item1.Return(stream);
             return size;
         }
