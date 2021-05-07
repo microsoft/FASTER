@@ -20,6 +20,8 @@ namespace FASTER.test
         const int entryLength = 100;
         const int numEntries = 100000;
         private FasterLog log;
+        static readonly byte[] entry = new byte[100];
+
         public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
         public const string TEST_CONTAINER = "test";
 
@@ -68,6 +70,43 @@ namespace FASTER.test
                 blobContainer.Delete();
             }
         }
+
+
+        [Test]
+        [Category("FasterLog")]
+        public void BasicHighLatencyDeviceTest()
+        {
+
+            // Create devices \ log for test for in memory device
+            LocalMemoryDevice device = new LocalMemoryDevice(1L << 30, 1L << 25, 2, latencyMs: 20);
+            FasterLog LocalMemorylog = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
+
+            int entryLength = 10;
+
+            // Set Default entry data
+            for (int i = 0; i < entryLength; i++)
+            {
+                entry[i] = (byte)i;
+                LocalMemorylog.Enqueue(entry);
+            }
+
+            // Commit to the log
+            LocalMemorylog.Commit(true);
+
+            // Read the log just to verify was actually committed
+            int currentEntry = 0;
+            using (var iter = LocalMemorylog.Scan(0, 100_000_000))
+            {
+                while (iter.GetNext(out byte[] result, out _, out _))
+                {
+                    Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as " + currentEntry.ToString());
+
+                    currentEntry++;
+                }
+            }
+
+        }
+
 
         private async ValueTask FasterLogTest1(LogChecksumType logChecksum, IDevice device, ILogCommitManager logCommitManager, FasterLogTests.IteratorType iteratorType)
         {
