@@ -2,7 +2,7 @@
 title: "FasterKV Checkpointing and Recovery"
 permalink: /docs/fasterkv-recovery/
 excerpt: "FasterKV Checkpointing and Recovery"
-last_modified_at: 2021-04-29
+last_modified_at: 2021-05-06
 toc: true
 ---
 
@@ -10,48 +10,35 @@ toc: true
 
 ### Overall Summary
 
-FASTER supports asynchronous non-blocking **checkpoint-based recovery**. Every new checkpoint persists (or makes durable) additional user-operations
-(Read, Upsert or RMW). FASTER allows clients to keep track of operations that have persisted and those that have not using 
-a session-based API.
+Recall that FASTER basically consists of a primary hash index operating over a hybrid log that spans disk 
+and main memory. By default, operations on main memory are lost on failure, similar to in-memory stores. To address
+this, FASTER supports asynchronous non-blocking **checkpoint-based recovery**.
 
-This feature is based on a recovery model called Concurrent Prefix Recovery (CPR for short). You can read more about 
-CPR in the research paper [here](https://www.microsoft.com/en-us/research/uploads/prod/2019/01/cpr-sigmod19.pdf).
-Briefly, CPR is based on (periodic) group commit. However, instead of using an expensive 
-write-ahead log (WAL) which can kill FASTER's high performance, CPR: (1) provides a semantic description of committed
-operations, of the form “all operations until offset Ti in session i”; and (2) uses asynchronous 
-incremental checkpointing instead of a WAL to implement group commit in a scalable bottleneck-free manner.
+The user invokes a checkpoint periodically. Every new checkpoint persists (or makes durable) the effects
+of all operations (Read, Upsert, RMW) until that point. FASTER allows clients to keep track of which 
+operations have persisted using a session-based API. In this recovery model (details [here](#concurrent-prefix-recovery)), a
+session can issue a sequence of operations with monotonic operation sequence numbers. After a checkpoint,
+and during recovery, the session is informed of what prefix of issued sequence numbers is now durable on
+the session.
 
-Recall that each FASTER client starts a session, associated with a unique session ID (or name). All FASTER session operations
-(Read, Upsert, RMW) carry a monotonic sequence number (sequence numbers are implicit in case of async calls). At any point in 
-time, one may call the checkpointing API to initiate an asynchronous checkpoint of FASTER. After invoking the checkpoint, each FASTER 
-session is (eventually) notified of a commit point. A commit point consists of (1) a sequence number, such that all operations
-until, and no operations after, that sequence number, are guaranteed to be persisted as part of that checkpoint; (2) an optional
-exception list of operations that were not part of the commit because they went pending and could not complete before the 
-checkpoint, because the session was not active at the time of checkpointing.
-
-The commit point information can be used by the session to clear any in-memory buffer of operations waiting to be performed. 
-During recovery, sessions can continue using `ResumeSession` invoked with the same session ID. The function returns the thread-local 
-sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted 
-operations since that point.
-
-With async session operations on FASTER, operations return as soon as they complete, before commit. In order to wait for commit,
-you simply issue an `await session.WaitForCommitAsync()` call. The call completes only after the operation is made persistent by
-an asynchronous commit (checkpoint). The user is responsible for initiating the checkpoint asynchronously.
+Note that FASTER operations return as soon as they complete in memory. In order to wait for commit, you simply issue 
+an `await session.WaitForCommitAsync()` call. This call completes only after all prior operations on the session are
+made persistent. Note that the user is responsible for initiating the checkpoint.
 
 ### Taking Checkpoints
 
 A FASTER checkpoint consists of an optional index checkpoint, coupled with a later log 
 checkpoint. FASTER first recovers the index and then replays the relevant part of the log
 to get back to a consistent recovered state. If an index checkpoint is unavailable, FASTER
-replays the entire log to reconstruct the index. An index checkpoint is taken as follows:
+replays the entire log to reconstruct the index. An index-only checkpoint is taken as follows:
 
 ```cs
 await store.TakeIndexCheckpointAsync();
 ```
 
-FASTER supports two notions of log checkpointing: Snapshot and Fold-Over.
+FASTER supports two types of log checkpointing: Snapshot and Fold-Over.
 
-### Snapshot Checkpoint
+### Snapshot Log Checkpoint
 
 This checkpoint is a full snapshot of in-memory portion of the hybrid log into a separate
 snapshot file in the checkpoint folder. We recover using the main log followed by reading the
@@ -64,7 +51,7 @@ a delta log file in the same folder as the base snapshot. This is specified usin
 await store.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot, tryIncremental: false);
 ```
 
-### Fold-Over Checkpoint
+### Fold-Over Log Checkpoint
 
 A fold-over checkpoint simply flushes the main data log to disk, making it read-only, and
 writes a small metadata file (`info.dat`) to the checkpoint folder. This is an incremental 
@@ -91,8 +78,9 @@ await store.TakeFullCheckpointAsync(CheckpointType.FoldOver);
 ```
 
 This is usually more expensive than log-only checkpoints as it needs to write the entire
-hash table to disk. A preferred approach is to take frequent log-only checkpoints and
-take an index checkpoint at coarse grained intervals in order to reduce recovery time.
+hash table to disk. When using a large hash index, a preferred approach is to take 
+frequent log-only checkpoints and take an index checkpoint at coarse-grained intervals 
+in order to reduce recovery time.
 
 ### Checkpoint Management
 
@@ -103,7 +91,7 @@ setting `CheckpointSettings.RemoveOutdated` to `true`. The last two index checkp
 and the last log checkpoint are kept. We keep the last two index checkpoints because the 
 last index checkpoint may not be usable in case there is no subsequent log checkpoint
 available. Make sure every index checkpoint is followed by at least one log checkpoint, for
-the index checkpoint to be usable for recovery.
+the index checkpoint to be usable during recovery.
 
 ### Examples
 
@@ -182,3 +170,26 @@ public class PersistenceExample
     }
 }
 ```
+
+
+### Concurrent Prefix Recovery
+
+Concurrent Prefix Recovery (CPR for short) is the default recovery model of FASTER. You can read more about 
+CPR in the research paper [here](https://www.microsoft.com/en-us/research/uploads/prod/2019/01/cpr-sigmod19.pdf).
+Briefly, CPR is based on (periodic) group commit. However, instead of using an expensive write-ahead log (WAL) 
+which can kill FASTER's high performance, CPR: (1) provides a semantic description of committed
+operations, of the form “all operations until offset Ti in session i”; and (2) uses asynchronous 
+incremental checkpointing instead of a WAL to implement group commit in a scalable bottleneck-free manner.
+
+Recall that each FASTER client starts a session, associated with a unique session ID (or name). All FASTER session operations
+(Read, Upsert, RMW) carry a monotonic sequence number (sequence numbers are implicit in case of async calls). At any point in 
+time, one may call the checkpointing API to initiate an asynchronous checkpoint of FASTER. After invoking the checkpoint, each FASTER 
+session is (eventually) notified of a commit point. A commit point consists of (1) a sequence number, such that all operations
+until, and no operations after, that sequence number, are guaranteed to be persisted as part of that checkpoint; (2) an optional
+exception list of operations that were not part of the commit because they went pending and could not complete before the 
+checkpoint, because the session was not active at the time of checkpointing.
+
+The commit point information can be used by the session to clear any in-memory buffer of operations waiting to be performed. 
+During recovery, sessions can continue using `ResumeSession` invoked with the same session ID. The function returns the thread-local 
+sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted 
+operations since that point.
