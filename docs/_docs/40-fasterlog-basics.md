@@ -124,7 +124,7 @@ end of iteration, or because we are waiting for a page read or commit to complet
        while (!iter.GetNext(out byte[] result, out int entryLength, out long currentAddress, out long nextAddress))
        {
           if (currentAddress >= 100_000_000) return;
-          await iter.WaitAsyc();
+          await iter.WaitAsync();
        }
        // Process record
     }
