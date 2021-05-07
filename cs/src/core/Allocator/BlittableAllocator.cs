@@ -130,6 +130,8 @@ namespace FASTER.core
         /// <param name="index"></param>
         internal override void AllocatePage(int index)
         {
+            Interlocked.Increment(ref AllocatedPageCount);
+
             if (overflowPagePool.TryGet(out var item))
             {
                 handles[index] = item.handle;
@@ -236,6 +238,7 @@ namespace FASTER.core
                 values[index] = null;
                 pointers[index] = 0;
                 handles[index] = default;
+                Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
 

@@ -231,6 +231,8 @@ namespace FASTER.core
 
         internal Record<Key, Value>[] AllocatePage()
         {
+            Interlocked.Increment(ref AllocatedPageCount);
+
             if (overflowPagePool.TryGet(out var item))
                 return item;
 
@@ -325,6 +327,7 @@ namespace FASTER.core
             {
                 overflowPagePool.TryAdd(values[page % BufferSize]);
                 values[page % BufferSize] = default;
+                Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
 

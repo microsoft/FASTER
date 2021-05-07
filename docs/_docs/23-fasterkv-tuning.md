@@ -89,7 +89,7 @@ For example, suppose `PageSizeBits` is 20 (i.e., each page is 2<sup>20</sup> = 1
 in memory, each of size 1MB. If we set `EmptyPageCount` to 512, we will instead have 1024-512=512 pages in 
 memory, for a total memory utilization of 512x1MB = 512MB, half of the full utilization of 1GB.
 
-As mentioned above, the actual log size (in bytes) can be queried at any time via `store.Log.MemorySizeBytes`.
+As mentioned above, the actual current log size (in bytes) can be queried at any time via `store.Log.MemorySizeBytes`.
 
 ## Log Memory Size with C# Heap Objects
 

@@ -800,6 +800,11 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Number of pages in circular buffer that are allocated
+        /// </summary>
+        public int AllocatedPageCount;
+
+        /// <summary>
         /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
         public int EmptyPageCount
