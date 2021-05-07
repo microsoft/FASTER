@@ -464,6 +464,7 @@ namespace FASTER.core
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static Status TranslateStatus(OperationStatus internalStatus)
         { 
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -531,7 +532,7 @@ namespace FASTER.core
                 return updelAsyncInternal.CompleteAsync(token);
             }
 
-            /// <summary>Complete the Upsert operation, issuing additional (rare) I/O synchronously if needed.</summary>
+            /// <summary>Complete the Upsert operation, issuing additional I/O synchronously if needed.</summary>
             /// <returns>Status of Upsert operation</returns>
             public Status Complete()
             {
@@ -627,7 +628,7 @@ namespace FASTER.core
                 return updelAsyncInternal.CompleteAsync(token);
             }
 
-            /// <summary>Complete the Delete operation, issuing additional (rare) I/O synchronously if needed.</summary>
+            /// <summary>Complete the Delete operation, issuing additional I/O synchronously if needed.</summary>
             /// <returns>Status of Delete operation</returns>
             public Status Complete()
             {
@@ -722,7 +723,7 @@ namespace FASTER.core
                 // Note: We currently do not await anything here, and we must never do any post-await work inside CompleteAsync; this includes any code in
                 // a 'finally' block. All post-await work must be re-initiated by end user on the mono-threaded session.
 
-                if (TryCompleteAsyncState(out AsyncIOContext<Key, Value> newDiskRequest, out Task flushTask, out var rmwAsyncResult))
+                if (TryCompleteAsyncState(asyncOp: true, out AsyncIOContext<Key, Value> newDiskRequest, out Task flushTask, out var rmwAsyncResult))
                     return new ValueTask<RmwAsyncResult<Input, Output, Context>>(rmwAsyncResult);
 
                 if (_exception != default)
@@ -730,7 +731,7 @@ namespace FASTER.core
                 return SlowRmwAsync(_fasterKV, _fasterSession, _currentCtx, _pendingContext, newDiskRequest, flushTask, token);
             }
 
-            internal bool TryCompleteAsyncState(out AsyncIOContext<Key, Value> newDiskRequest, out Task flushTask, out RmwAsyncResult<Input, Output, Context> rmwAsyncResult)
+            internal bool TryCompleteAsyncState(bool asyncOp, out AsyncIOContext<Key, Value> newDiskRequest, out Task flushTask, out RmwAsyncResult<Input, Output, Context> rmwAsyncResult)
             {
                 // This makes one attempt to complete the async operation's synchronous state, and clears the async pending counters.
                 if (CompletionComputeStatus != Completed
@@ -739,7 +740,7 @@ namespace FASTER.core
                     try
                     {
                         if (_exception == default)
-                            return TryCompleteSync(asyncOp: true, out newDiskRequest, out flushTask, out rmwAsyncResult);
+                            return TryCompleteSync(asyncOp, out newDiskRequest, out flushTask, out rmwAsyncResult);
                     }
                     catch (Exception e)
                     {
@@ -765,7 +766,7 @@ namespace FASTER.core
                 try
                 {
                     Status status;
-                    if (_diskRequest.asyncOperation != null)
+                    if (!_diskRequest.IsDefault())
                     {
                         flushTask = _fasterKV.hlog.FlushTask;
                         status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, asyncOp, out newDiskRequest);
@@ -773,7 +774,7 @@ namespace FASTER.core
                     else
                     {
                         status = _fasterKV.CallInternalRMW(_fasterSession, _currentCtx, ref _pendingContext, ref _pendingContext.key.Get(), ref _pendingContext.input.Get(), _pendingContext.userContext,
-                                                         _pendingContext.serialNum, out flushTask, out newDiskRequest);
+                                                         _pendingContext.serialNum, asyncOp, out flushTask, out newDiskRequest);
                     }
 
                     if (status != Status.PENDING)
@@ -794,7 +795,9 @@ namespace FASTER.core
             internal Status CompletePending()
             {
                 _fasterSession.CompletePendingWithOutputs(out var completedOutputs, wait: true, spinWaitForCommit: false);
-                return completedOutputs.Next() ? completedOutputs.Current.Status : Status.ERROR;
+                var status = completedOutputs.Next() ? completedOutputs.Current.Status : Status.ERROR;
+                completedOutputs.Dispose();
+                return status;
             }
         }
 
@@ -847,20 +850,18 @@ namespace FASTER.core
                 if (Status != Status.PENDING)
                     return Status;
 
-                if (!rmwAsyncInternal.TryCompleteAsyncState(out var newDiskRequest, out var flushTask, out var rmwAsyncResult))
+                if (!rmwAsyncInternal.TryCompleteAsyncState(asyncOp: false, out var newDiskRequest, out var flushTask, out var rmwAsyncResult))
                 {
-                    if (newDiskRequest.asyncOperation is null)
+                    if (newDiskRequest.IsDefault())
                         flushTask.GetAwaiter().GetResult();
                     rmwAsyncInternal.SetDiskRequest(newDiskRequest);
 
                     while (!rmwAsyncInternal.TryCompleteSync(asyncOp: false, out newDiskRequest, out flushTask, out rmwAsyncResult))
                     {
-                        if (newDiskRequest.asyncOperation is null)
-                        {
-                            flushTask.GetAwaiter().GetResult();
-                            continue;
-                        }
-                        return rmwAsyncInternal.CompletePending();
+                        // CompletePending() may encounter OperationStatus.ALLOCATE_FAILED; if so, we don't have a more current flushTask.
+                        if (!newDiskRequest.IsDefault() && rmwAsyncInternal.CompletePending() != Status.PENDING)
+                            break;
+                        flushTask.GetAwaiter().GetResult();
                     }
                 }
                 return rmwAsyncResult.Status;
@@ -886,7 +887,7 @@ namespace FASTER.core
             fasterSession.UnsafeResumeThread();
             try
             {
-                var status = CallInternalRMW(fasterSession, currentCtx, ref pcontext, ref key, ref input, context, serialNo, out flushTask, out diskRequest);
+                var status = CallInternalRMW(fasterSession, currentCtx, ref pcontext, ref key, ref input, context, serialNo, asyncOp: true, out flushTask, out diskRequest);
                 if (status != Status.PENDING)
                     return new ValueTask<RmwAsyncResult<Input, Output, Context>>(new RmwAsyncResult<Input, Output, Context>(status, default));
             }
@@ -903,7 +904,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status CallInternalRMW<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pcontext, ref Key key, ref Input input, Context context, long serialNo,
-            out Task flushTask, out AsyncIOContext<Key, Value> diskRequest)
+            bool asyncOp, out Task flushTask, out AsyncIOContext<Key, Value> diskRequest)
         {
             diskRequest = default;
             OperationStatus internalStatus;
@@ -916,10 +917,10 @@ namespace FASTER.core
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 return (Status)internalStatus;
             if (internalStatus == OperationStatus.ALLOCATE_FAILED)
-                return Status.PENDING;    // This plus diskRequest.asyncOperation == null means allocate failed
+                return Status.PENDING;    // This plus diskRequest.IsDefault() means allocate failed
 
             flushTask = null;
-            return HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, true, out diskRequest);
+            return HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, asyncOp, out diskRequest);
         }
 
         private static async ValueTask<RmwAsyncResult<Input, Output, Context>> SlowRmwAsync<Input, Output, Context>(
@@ -939,7 +940,7 @@ namespace FASTER.core
                     throw new NotSupportedException("Async operations not supported over protected epoch");
 
                 // If we are here because of flushTask, then _diskRequest is default--there is no pending disk operation.
-                if (diskRequest.asyncOperation is null)
+                if (diskRequest.IsDefault())
                     await flushTask.WithCancellationAsync(token);
                 else
                 {

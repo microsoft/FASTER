@@ -376,7 +376,7 @@ namespace FASTER.core
             }
             else if (internalStatus == OperationStatus.ALLOCATE_FAILED)
             {
-                return Status.PENDING;  // This plus newRequest.asyncOperation == null means allocate failed
+                return Status.PENDING;  // This plus newRequest.IsDefault() means allocate failed
             }
             else
             {
