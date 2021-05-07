@@ -79,7 +79,7 @@ namespace FASTER.core
         /// <summary>
         /// Task notifying log flush completions
         /// </summary>
-        internal Task<long> FlushTask => allocator.FlushTask;
+        internal CompletionEvent FlushEvent => allocator.FlushEvent;
 
         /// <summary>
         /// Task notifying refresh uncommitted
@@ -332,13 +332,13 @@ namespace FASTER.core
             long logicalAddress;
             while (true)
             {
-                var task = @this.FlushTask;
+                var flushEvent = @this.FlushEvent;
                 if (@this.TryEnqueue(entry, out logicalAddress))
                     break;
                 // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
                 try
                 {
-                    await task.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
@@ -367,13 +367,13 @@ namespace FASTER.core
             long logicalAddress;
             while (true)
             {
-                var task = @this.FlushTask;
+                var flushEvent = @this.FlushEvent;
                 if (@this.TryEnqueue(entry.Span, out logicalAddress))
                     break;
                 // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
                 try
                 {
-                    await task.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
@@ -402,13 +402,13 @@ namespace FASTER.core
             long logicalAddress;
             while (true)
             {
-                var task = @this.FlushTask;
+                var flushEvent = @this.FlushEvent;
                 if (@this.TryEnqueue(readOnlySpanBatch, out logicalAddress))
                     break;
                 // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
                 try
                 {
-                    await task.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
@@ -610,19 +610,19 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
-            Task<long> flushTask;
+            CompletionEvent flushEvent;
             Task<LinkedCommitInfo> commitTask;
 
             // Phase 1: wait for commit to memory
             while (true)
             {
-                flushTask = FlushTask;
+                flushEvent = FlushEvent;
                 commitTask = CommitTask;
                 if (TryEnqueue(entry, out logicalAddress))
                     break;
                 try
                 {
-                    await flushTask.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
@@ -662,19 +662,19 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
-            Task<long> flushTask;
+            CompletionEvent flushEvent;
             Task<LinkedCommitInfo> commitTask;
 
             // Phase 1: wait for commit to memory
             while (true)
             {
-                flushTask = FlushTask;
+                flushEvent = FlushEvent;
                 commitTask = CommitTask;
                 if (TryEnqueue(entry.Span, out logicalAddress))
                     break;
                 try
                 {
-                    await flushTask.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
@@ -714,19 +714,19 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
-            Task<long> flushTask;
+            CompletionEvent flushEvent;
             Task<LinkedCommitInfo> commitTask;
 
             // Phase 1: wait for commit to memory
             while (true)
             {
-                flushTask = FlushTask;
+                flushEvent = FlushEvent;
                 commitTask = CommitTask;
                 if (TryEnqueue(readOnlySpanBatch, out logicalAddress))
                     break;
                 try
                 {
-                    await flushTask.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
