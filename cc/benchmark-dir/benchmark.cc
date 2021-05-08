@@ -31,6 +31,7 @@ enum class Op : uint8_t {
 enum class Workload {
   A_50_50 = 0,
   RMW_100 = 1,
+  A_100_0 = 2,
 };
 
 static constexpr uint64_t kInitCount = 250000000;
@@ -251,7 +252,8 @@ class RmwContext : public IAsyncContext {
 
 /// Key-value store, specialized to our key and value types.
 #ifdef _WIN32
-typedef FASTER::environment::ThreadPoolIoHandler handler_t;
+typedef FASTER::environment::QueueIoHandler handler_t;
+//typedef FASTER::environment::ThreadPoolIoHandler handler_t;
 #else
 typedef FASTER::environment::QueueIoHandler handler_t;
 #endif
@@ -264,6 +266,10 @@ inline Op ycsb_a_50_50(std::mt19937& rng) {
   } else {
     return Op::Upsert;
   }
+}
+
+inline Op ycsb_a_100_0(std::mt19937& rng) {
+    return Op::Read;
 }
 
 inline Op ycsb_rmw_100(std::mt19937& rng) {
@@ -353,7 +359,7 @@ void load_files(const std::string& load_filename, const std::string& run_filenam
   while(true) {
     uint64_t size = init_file.Read(chunk, kFileChunkSize, offset);
     for(uint64_t idx = 0; idx < size / 8; ++idx) {
-      init_keys_.get()[count] = chunk[idx];
+        init_keys_.get()[count] = chunk[idx];
       ++count;
     }
     if(size == kFileChunkSize) {
@@ -381,7 +387,7 @@ void load_files(const std::string& load_filename, const std::string& run_filenam
   while(true) {
     uint64_t size = txn_file.Read(chunk, kFileChunkSize, offset);
     for(uint64_t idx = 0; idx < size / 8; ++idx) {
-      txn_keys_.get()[count] = chunk[idx];
+        txn_keys_.get()[count] = chunk[idx];
       ++count;
     }
     if(size == kFileChunkSize) {
@@ -438,7 +444,7 @@ void setup_store(store_t* store, size_t num_threads) {
 
   init_keys_.reset();
 
-  printf("Finished populating store: contains ?? elements.\n");
+  printf("Finished populating store.\n");
 }
 
 
@@ -585,16 +591,24 @@ void run_benchmark(store_t* store, size_t num_threads) {
     thread.join();
   }
 
-  printf("Finished benchmark: %" PRIu64 " thread checkpoints completed;  %.2f ops/second/thread\n",
+  printf("Finished benchmark: %" PRIu64 " thread checkpoints completed;  %.2f ops/second\n",
          num_checkpoints.load(),
-         ((double)total_reads_done_ + (double)total_writes_done_) / ((double)total_duration_ /
+         ((double)num_threads * ((double)total_reads_done_ + (double)total_writes_done_)) / ((double)total_duration_ /
              kNanosPerSecond));
+  printf("# %.2f\n",
+      ((double)num_threads * ((double)total_reads_done_ + (double)total_writes_done_)) / ((double)total_duration_ /
+          kNanosPerSecond));
 }
 
 void run(Workload workload, size_t num_threads) {
   // FASTER store has a hash table with approx. kInitCount / 2 entries and a log of size 16 GB
-  size_t init_size = next_power_of_two(kInitCount / 2);
-  store_t store{ init_size, 17179869184, "storage" };
+  //size_t init_size = next_power_of_two(kInitCount / 2);
+  size_t init_size = next_power_of_two(kInitCount / 4); // 16B per key
+
+  store_t store{ init_size, 17179869184, "storage" }; // large log
+  //store_t store{ init_size, 1048576 * 192ULL, "D:\\storage" , 0.4 /*mutable_fraction*/ }; // small log - IOPS bound
+
+  //store_t store{ init_size, 1048576 * 24ULL, "D:\\storage" , 0.4 /*mutable_fraction*/ }; // Use with kOffsetBits=22
 
   printf("Populating the store...\n");
 
@@ -607,6 +621,9 @@ void run(Workload workload, size_t num_threads) {
   case Workload::A_50_50:
     run_benchmark<ycsb_a_50_50>(&store, num_threads);
     break;
+  case Workload::A_100_0:
+      run_benchmark<ycsb_a_100_0>(&store, num_threads);
+      break;
   case Workload::RMW_100:
     run_benchmark<ycsb_rmw_100>(&store, num_threads);
     break;
@@ -627,7 +644,6 @@ int main(int argc, char* argv[]) {
   size_t num_threads = ::atol(argv[2]);
   std::string load_filename{ argv[3] };
   std::string run_filename{ argv[4] };
-
   load_files(load_filename, run_filename);
 
   run(workload, num_threads);
