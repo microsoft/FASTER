@@ -283,6 +283,8 @@ inline void InternalHashTable<D>::DumpDistribution(
 
   printf("number of hash buckets: %" PRIu64 "\n", table_size);
   printf("total record count: %" PRIu64 "\n", total_record_count);
+  printf("hash table size (bytes): %" PRIu64 "\n", table_size * sizeof(FASTER::core::HashBucket));
+  printf("overflow bucket size (bytes): %" PRIu64 "\n", (1 + overflow_buckets_allocator.count().page()) * sizeof(FASTER::core::HashBucket) * ((uint64_t)1 << 20));
   printf("histogram:\n");
   for(uint8_t idx = 0; idx < 15; ++idx) {
     printf("%2u : %" PRIu64 "\n", idx, histogram[idx]);
