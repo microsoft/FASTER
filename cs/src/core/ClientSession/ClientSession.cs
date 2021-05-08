@@ -700,7 +700,7 @@ namespace FASTER.core
         public async ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
         {
             InitializeCompletedOutputs();
-            await CompletePendingAsync(true, waitForCommit, token);
+            await CompletePendingAsync(true, waitForCommit, token).ConfigureAwait(false);
             return this.completedOutputs;
         }
 
@@ -712,11 +712,11 @@ namespace FASTER.core
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
             // Complete all pending operations on session
-            await fht.CompletePendingAsync(this.FasterSession, this.ctx, token, getOutputs ? this.completedOutputs : null);
+            await fht.CompletePendingAsync(this.FasterSession, this.ctx, token, getOutputs ? this.completedOutputs : null).ConfigureAwait(false);
 
             // Wait for commit if necessary
             if (waitForCommit)
-                await WaitForCommitAsync(token);
+                await WaitForCommitAsync(token).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -732,7 +732,7 @@ namespace FASTER.core
             if (fht.epoch.ThisInstanceProtected())
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
-            await fht.ReadyToCompletePendingAsync(this.ctx, token);
+            await fht.ReadyToCompletePendingAsync(this.ctx, token).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -748,7 +748,7 @@ namespace FASTER.core
                 throw new FasterException("Make sure all async operations issued on this session are awaited and completed first");
 
             // Complete all pending sync operations on session
-            await CompletePendingAsync(token: token);
+            await CompletePendingAsync(token: token).ConfigureAwait(false);
 
             var task = fht.CheckpointTask;
             CommitPoint localCommitPoint = LatestCommitPoint;
@@ -757,7 +757,7 @@ namespace FASTER.core
 
             while (true)
             {
-                await task.WithCancellationAsync(token);
+                await task.WithCancellationAsync(token).ConfigureAwait(false);
                 Refresh();
 
                 task = fht.CheckpointTask;

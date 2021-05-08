@@ -70,7 +70,7 @@ namespace FASTER.core
                 if (GetOrAdd(itemQueue, out T item))
                     return item;
 
-                await handleAvailable.WaitAsync(token);
+                await handleAvailable.WaitAsync(token).ConfigureAwait(false);
             }
         }
 

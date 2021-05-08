@@ -32,13 +32,13 @@ namespace FASTER.core
                 if (currentCtx.phase == Phase.IN_PROGRESS || currentCtx.phase == Phase.WAIT_PENDING)
                 {
                     if (currentCtx.prevCtx.SyncIoPendingCount != 0)
-                        await currentCtx.prevCtx.readyResponses.WaitForEntryAsync(token);
+                        await currentCtx.prevCtx.readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
                 }
             }
             #endregion
 
             if (currentCtx.SyncIoPendingCount != 0)
-                await currentCtx.readyResponses.WaitForEntryAsync(token);
+                await currentCtx.readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -69,7 +69,7 @@ namespace FASTER.core
                         {
                             fasterSession.UnsafeSuspendThread();
                         }
-                        await currentCtx.prevCtx.WaitPendingAsync(token);
+                        await currentCtx.prevCtx.WaitPendingAsync(token).ConfigureAwait(false);
                         done &= currentCtx.prevCtx.HasNoPendingRequests;
                     }
                 }
@@ -86,7 +86,7 @@ namespace FASTER.core
                     fasterSession.UnsafeSuspendThread();
                 }
 
-                await currentCtx.WaitPendingAsync(token);
+                await currentCtx.WaitPendingAsync(token).ConfigureAwait(false);
                 done &= currentCtx.HasNoPendingRequests;
 
                 if (done) return;
@@ -295,7 +295,7 @@ namespace FASTER.core
                     throw new NotSupportedException("Async operations not supported over protected epoch");
 
                 using (token.Register(() => diskRequest.asyncOperation.TrySetCanceled()))
-                    diskRequest = await diskRequest.asyncOperation.Task;
+                    diskRequest = await diskRequest.asyncOperation.Task.WithCancellationAsync(token).ConfigureAwait(false);
             }
             catch (Exception e)
             {
@@ -945,7 +945,7 @@ namespace FASTER.core
                 else
                 {
                     using (token.Register(() => diskRequest.asyncOperation.TrySetCanceled()))
-                        diskRequest = await diskRequest.asyncOperation.Task;
+                        diskRequest = await diskRequest.asyncOperation.Task.WithCancellationAsync(token).ConfigureAwait(false);
                 }
             }
             catch (Exception e)

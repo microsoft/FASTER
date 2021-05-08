@@ -49,12 +49,12 @@ namespace AsyncStress
         public async ValueTask UpsertAsync(Key key, Value value)
         {
             if (!_sessionPool.TryGet(out var session))
-                session = await _sessionPool.GetAsync();
-            var r = await session.UpsertAsync(key, value);
+                session = await _sessionPool.GetAsync().ConfigureAwait(false);
+            var r = await session.UpsertAsync(key, value).ConfigureAwait(false);
             while (r.Status == Status.PENDING)
             {
                 Interlocked.Increment(ref upsertPendingCount);
-                r = await r.CompleteAsync();
+                r = await r.CompleteAsync().ConfigureAwait(false);
             }
             _sessionPool.Return(session);
         }
@@ -71,7 +71,7 @@ namespace AsyncStress
         public async ValueTask UpsertChunkAsync((Key, Value)[] chunk, int offset, int count)
         {
             if (!_sessionPool.TryGet(out var session))
-                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
+                session = await _sessionPool.GetAsync().ConfigureAwait(false);
 
             for (var i = 0; i < count; ++i)
             {
@@ -79,7 +79,7 @@ namespace AsyncStress
                 while (r.Status == Status.PENDING)
                 {
                     Interlocked.Increment(ref upsertPendingCount);
-                    r = await r.CompleteAsync();
+                    r = await r.CompleteAsync().ConfigureAwait(false);
                 }
             }
             _sessionPool.Return(session);
@@ -88,7 +88,7 @@ namespace AsyncStress
         public async ValueTask<(Status, Value)> ReadAsync(Key key)
         {
             if (!_sessionPool.TryGet(out var session))
-                session = await _sessionPool.GetAsync();
+                session = await _sessionPool.GetAsync().ConfigureAwait(false);
             var result = (await session.ReadAsync(key).ConfigureAwait(false)).Complete();
             _sessionPool.Return(session);
             return result;

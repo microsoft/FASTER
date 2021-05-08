@@ -48,7 +48,7 @@ namespace AsyncStress
         public async ValueTask UpsertAsync(Key key, Value value)
         {
             if (!_sessionPool.TryGet(out var session))
-                session = await _sessionPool.GetAsync();
+                session = await _sessionPool.GetAsync().ConfigureAwait(false);
 
             byte[] keyBytes = MessagePackSerializer.Serialize(key);
             byte[] valueBytes = MessagePackSerializer.Serialize(value);
@@ -66,11 +66,11 @@ namespace AsyncStress
                     }
                 }
             }
-            var r = await task;
+            var r = await task.ConfigureAwait(false);
             while (r.Status == Status.PENDING)
             {
                 Interlocked.Increment(ref upsertPendingCount);
-                r = await r.CompleteAsync();
+                r = await r.CompleteAsync().ConfigureAwait(false);
             }
             _sessionPool.Return(session);
         }
@@ -125,11 +125,11 @@ namespace AsyncStress
                     }
                 }
 
-                var r = await task;
+                var r = await task.ConfigureAwait(false);
                 while (r.Status == Status.PENDING)
                 {
                     Interlocked.Increment(ref upsertPendingCount);
-                    r = await r.CompleteAsync();
+                    r = await r.CompleteAsync().ConfigureAwait(false);
                 }
             }
             _sessionPool.Return(session);
@@ -138,7 +138,7 @@ namespace AsyncStress
         public async ValueTask<(Status, Value)> ReadAsync(Key key)
         {
             if (!_sessionPool.TryGet(out var session))
-                session = await _sessionPool.GetAsync();
+                session = await _sessionPool.GetAsync().ConfigureAwait(false);
 
             byte[] keyBytes = MessagePackSerializer.Serialize(key);
             ValueTask<FasterKV<SpanByte, SpanByte>.ReadAsyncResult<SpanByte, SpanByteAndMemory, Empty>> task;

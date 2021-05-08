@@ -238,7 +238,7 @@ namespace FASTER.devices
         {
             try
             {
-                await BlobManager.AsyncStorageWriteMaxConcurrency.WaitAsync();
+                await BlobManager.AsyncStorageWriteMaxConcurrency.WaitAsync().ConfigureAwait(false);
 
                 int numAttempts = 0;
                 long streamPosition = stream.Position;
@@ -265,7 +265,7 @@ namespace FASTER.devices
                     {
                         TimeSpan nextRetryIn = TimeSpan.FromSeconds(1 + Math.Pow(2, (numAttempts - 1)));
                         this.BlobManager?.HandleBlobError(nameof(WritePortionToBlobAsync), $"could not write to page blob, will retry in {nextRetryIn}s", blob?.Name, e, false);
-                        await Task.Delay(nextRetryIn);
+                        await Task.Delay(nextRetryIn).ConfigureAwait(false);
                         stream.Seek(streamPosition, SeekOrigin.Begin);  // must go back to original position before retrying
                         continue;
                     }
@@ -294,7 +294,7 @@ namespace FASTER.devices
 
             try
             {
-                await BlobManager.AsyncStorageReadMaxConcurrency.WaitAsync();
+                await BlobManager.AsyncStorageReadMaxConcurrency.WaitAsync().ConfigureAwait(false);
 
                 int numAttempts = 0;
 
@@ -329,7 +329,7 @@ namespace FASTER.devices
                     {
                         TimeSpan nextRetryIn = TimeSpan.FromSeconds(1 + Math.Pow(2, (numAttempts - 1)));
                         this.BlobManager?.HandleBlobError(nameof(ReadFromBlobAsync), $"could not write to page blob, will retry in {nextRetryIn}s", blob?.Name, e, false);
-                        await Task.Delay(nextRetryIn);
+                        await Task.Delay(nextRetryIn).ConfigureAwait(false);
                         stream.Seek(0, SeekOrigin.Begin); // must go back to original position before retrying
                         continue;
                     }

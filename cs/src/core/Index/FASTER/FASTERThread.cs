@@ -308,7 +308,7 @@ namespace FASTER.core
                 }
                 else
                 {
-                    request = await opCtx.readyResponses.DequeueAsync(token);
+                    request = await opCtx.readyResponses.DequeueAsync(token).ConfigureAwait(false);
 
                     fasterSession.UnsafeResumeThread();
                     InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request, completedOutputs);

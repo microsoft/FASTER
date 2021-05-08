@@ -128,7 +128,7 @@ namespace FASTER.core
         public static async ValueTask<FasterLog> CreateAsync(FasterLogSettings logSettings, CancellationToken cancellationToken = default)
         {
             var fasterLog = new FasterLog(logSettings, false);
-            fasterLog.RecoveredIterators = await fasterLog.RestoreAsync(cancellationToken);
+            fasterLog.RecoveredIterators = await fasterLog.RestoreAsync(cancellationToken).ConfigureAwait(false);
             return fasterLog;
         }
 
@@ -451,7 +451,7 @@ namespace FASTER.core
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
-                var linkedCommitInfo = await task.WithCancellationAsync(token);
+                var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
                 if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     task = linkedCommitInfo.NextTask;
                 else
@@ -486,7 +486,7 @@ namespace FASTER.core
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
-                var linkedCommitInfo = await task.WithCancellationAsync(token);
+                var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
                 if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     task = linkedCommitInfo.NextTask;
                 else
@@ -508,7 +508,7 @@ namespace FASTER.core
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
-                var linkedCommitInfo = await prevCommitTask.WithCancellationAsync(token);
+                var linkedCommitInfo = await prevCommitTask.WithCancellationAsync(token).ConfigureAwait(false);
                 if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     prevCommitTask = linkedCommitInfo.NextTask;
                 else
@@ -541,7 +541,7 @@ namespace FASTER.core
 
             while (SafeTailAddress < tailAddress)
             {
-                await task.WithCancellationAsync(token);
+                await task.WithCancellationAsync(token).ConfigureAwait(false);
                 task = RefreshUncommittedTask;
             }
         }
@@ -634,7 +634,7 @@ namespace FASTER.core
                 LinkedCommitInfo linkedCommitInfo;
                 try
                 {
-                    linkedCommitInfo = await commitTask.WithCancellationAsync(token);
+                    linkedCommitInfo = await commitTask.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (CommitFailureException e)
                 {
@@ -686,7 +686,7 @@ namespace FASTER.core
                 LinkedCommitInfo linkedCommitInfo;
                 try
                 {
-                    linkedCommitInfo = await commitTask.WithCancellationAsync(token);
+                    linkedCommitInfo = await commitTask.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (CommitFailureException e)
                 {
@@ -738,7 +738,7 @@ namespace FASTER.core
                 LinkedCommitInfo linkedCommitInfo;
                 try
                 {
-                    linkedCommitInfo = await commitTask.WithCancellationAsync(token);
+                    linkedCommitInfo = await commitTask.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (CommitFailureException e)
                 {
@@ -846,7 +846,7 @@ namespace FASTER.core
                 allocator.AsyncReadRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
-            await ctx.completedRead.WaitAsync(token);
+            await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
             return GetRecordAndFree(ctx.record);
         }
 
@@ -979,7 +979,7 @@ namespace FASTER.core
             if (!readOnlyMode)
                 throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            await this.RestoreAsync(cancellationToken);
+            await this.RestoreAsync(cancellationToken).ConfigureAwait(false);
             SignalWaitingROIterators();
         }
 
@@ -1039,7 +1039,7 @@ namespace FASTER.core
                         return default;
 
                     if (headAddress > 0)
-                        await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress, cancellationToken: cancellationToken);
+                        await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
 
                     return CompleteRestoreFromCommit(info);
                 }

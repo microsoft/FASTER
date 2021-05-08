@@ -39,7 +39,7 @@ namespace FASTER.core
         internal async ValueTask WaitAsync(CancellationToken cancellationToken)
         {
             using var reg = cancellationToken.Register(() => this.asyncTcs.TrySetCanceled());
-            await this.asyncTcs.Task;
+            await this.asyncTcs.Task.ConfigureAwait(false);
         }
 
         internal void Decrement()
@@ -466,7 +466,7 @@ namespace FASTER.core
         public async ValueTask IsCheckpointCompletedAsync(CancellationToken token = default)
         {
             var s = checkpointSemaphore;
-            await s.WaitAsync(token);
+            await s.WaitAsync(token).ConfigureAwait(false);
             s.Release();
         }
 
@@ -596,7 +596,7 @@ namespace FASTER.core
         public async ValueTask<ulong> RecoverAsync(IDevice device, ulong offset, int buckets, ulong numBytes, CancellationToken cancellationToken)
         {
             BeginRecovery(device, offset, buckets, numBytes, out ulong numBytesRead, isAsync: true);
-            await this.recoveryCountdown.WaitAsync(cancellationToken);
+            await this.recoveryCountdown.WaitAsync(cancellationToken).ConfigureAwait(false);
             return numBytesRead;
         }
 
