@@ -290,6 +290,7 @@ class FasterKv {
  public:
   disk_t disk;
   hlog_t hlog;
+  int throttle_limit = 120;
 
  private:
   static constexpr bool kCopyReadsToTail = false;
@@ -1495,7 +1496,7 @@ void FasterKv<K, V, D>::AsyncGetFromDisk(Address address, uint32_t num_records,
     AsyncIOCallback callback, AsyncIOContext& context) {
   if(epoch_.IsProtected()) {
     /// Throttling. (Thread pool, unprotected threads are not throttled.)
-    while(num_pending_ios.load() > 120) {
+    while(num_pending_ios.load() > throttle_limit) {
       disk.TryComplete();
       std::this_thread::yield();
       epoch_.ProtectAndDrain();

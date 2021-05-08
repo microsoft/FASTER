@@ -608,7 +608,11 @@ void run(Workload workload, size_t num_threads) {
   store_t store{ init_size, 17179869184, "storage" }; // large log
   //store_t store{ init_size, 1048576 * 192ULL, "D:\\storage" , 0.4 /*mutable_fraction*/ }; // small log - IOPS bound
 
-  //store_t store{ init_size, 1048576 * 24ULL, "D:\\storage" , 0.4 /*mutable_fraction*/ }; // Use with kOffsetBits=22
+  //store_t store{ init_size, 1048576 * 24ULL, "D:\\storage" , 0.4 /*mutable_fraction*/ }; // Use with kOffsetBits=22 in address.h
+
+  // increase disk throttle limit when using > 16 threads
+  if (num_threads > 16)
+      store.throttle_limit *= 2;
 
   printf("Populating the store...\n");
 
