@@ -15,7 +15,7 @@ namespace FASTER.core
         // UpsertAsync and DeleteAsync can only go pending when they generate Flush operations on BlockAllocate when inserting new records at the tail.
         // Define a couple interfaces to allow defining a shared UpdelAsyncInternal class rather than duplicating.
 
-        internal interface IUpdelAsyncOperation<Input, Output, Context, TAsyncResult>
+        internal interface IUpdateAsyncOperation<Input, Output, Context, TAsyncResult>
         {
             TAsyncResult CreateResult(OperationStatus internalStatus);
 
@@ -30,8 +30,8 @@ namespace FASTER.core
             Status GetStatus(TAsyncResult asyncResult);
         }
 
-        internal sealed class UpdelAsyncInternal<Input, Output, Context, TAsyncOperation, TAsyncResult>
-            where TAsyncOperation : IUpdelAsyncOperation<Input, Output, Context, TAsyncResult>
+        internal sealed class UpdateAsyncInternal<Input, Output, Context, TAsyncOperation, TAsyncResult>
+            where TAsyncOperation : IUpdateAsyncOperation<Input, Output, Context, TAsyncResult>
         {
             const int Completed = 1;
             const int Pending = 0;
@@ -43,7 +43,7 @@ namespace FASTER.core
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 
-            internal UpdelAsyncInternal(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            internal UpdateAsyncInternal(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                       FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
                                       ExceptionDispatchInfo exceptionDispatchInfo, TAsyncOperation asyncOperation)
             {
