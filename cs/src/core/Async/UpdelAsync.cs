@@ -24,44 +24,14 @@ namespace FASTER.core
             ValueTask<TAsyncResult> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
                                             CompletionEvent flushEvent, CancellationToken token);
-        }
 
-        internal interface IUpdelAsyncResult<Input, Output, Context, TAsyncResult>
-        {
-            ValueTask<TAsyncResult> CompleteAsync(CancellationToken token = default);
+            void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx);
 
-            Status Status { get; }
-        }
-
-        internal struct UpsertAsyncOperation<Input, Output, Context> : IUpdelAsyncOperation<Input, Output, Context, UpsertAsyncResult<Input, Output, Context>>
-        {
-            public UpsertAsyncResult<Input, Output, Context> CreateResult(OperationStatus internalStatus) => new UpsertAsyncResult<Input, Output, Context>(internalStatus);
-
-            public OperationStatus DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx)
-                => fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.value.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
-
-            public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CompletionEvent flushEvent, CancellationToken token)
-                => SlowUpsertAsync(fasterKV, fasterSession, currentCtx, pendingContext, flushEvent, token);
-        }
-
-        internal struct DeleteAsyncOperation<Input, Output, Context> : IUpdelAsyncOperation<Input, Output, Context, DeleteAsyncResult<Input, Output, Context>>
-        {
-            public DeleteAsyncResult<Input, Output, Context> CreateResult(OperationStatus internalStatus) => new DeleteAsyncResult<Input, Output, Context>(internalStatus);
-
-            public OperationStatus DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx)
-                => fasterKV.InternalDelete(ref pendingContext.key.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
-
-            public ValueTask<DeleteAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CompletionEvent flushEvent, CancellationToken token)
-                => SlowDeleteAsync(fasterKV, fasterSession, currentCtx, pendingContext, flushEvent, token);
+            Status GetStatus(TAsyncResult asyncResult);
         }
 
         internal sealed class UpdelAsyncInternal<Input, Output, Context, TAsyncOperation, TAsyncResult>
-            where TAsyncOperation : IUpdelAsyncOperation<Input, Output, Context, TAsyncResult>, new()
-            where TAsyncResult : IUpdelAsyncResult<Input, Output, Context, TAsyncResult>
+            where TAsyncOperation : IUpdelAsyncOperation<Input, Output, Context, TAsyncResult>
         {
             const int Completed = 1;
             const int Pending = 0;
@@ -69,20 +39,20 @@ namespace FASTER.core
             readonly FasterKV<Key, Value> _fasterKV;
             readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
             readonly FasterExecutionContext<Input, Output, Context> _currentCtx;
-            internal readonly TAsyncOperation asyncOperation;
+            readonly TAsyncOperation _asyncOperation;
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 
             internal UpdelAsyncInternal(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                       FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
-                                      ExceptionDispatchInfo exceptionDispatchInfo)
+                                      ExceptionDispatchInfo exceptionDispatchInfo, TAsyncOperation asyncOperation)
             {
                 _exception = exceptionDispatchInfo;
                 _fasterKV = fasterKV;
                 _fasterSession = fasterSession;
                 _currentCtx = currentCtx;
                 _pendingContext = pendingContext;
-                asyncOperation = new TAsyncOperation();
+                _asyncOperation = asyncOperation;
                 CompletionComputeStatus = Pending;
             }
 
@@ -93,12 +63,12 @@ namespace FASTER.core
                 // Note: We currently do not await anything here, and we must never do any post-await work inside CompleteAsync; this includes any code in
                 // a 'finally' block. All post-await work must be re-initiated by end user on the mono-threaded session.
 
-                if (TryCompleteAsyncState(out CompletionEvent flushEvent, out var rmwAsyncResult))
-                    return new ValueTask<TAsyncResult>(rmwAsyncResult);
+                if (TryCompleteAsyncState(out CompletionEvent flushEvent, out var asyncResult))
+                    return new ValueTask<TAsyncResult>(asyncResult);
 
                 if (_exception != default)
                     _exception.Throw();
-                return asyncOperation.DoSlowOperation(_fasterKV, _fasterSession, _currentCtx, _pendingContext, flushEvent, token);
+                return _asyncOperation.DoSlowOperation(_fasterKV, _fasterSession, _currentCtx, _pendingContext, flushEvent, token);
             }
 
             internal bool TryCompleteAsyncState(out CompletionEvent flushEvent, out TAsyncResult asyncResult)
@@ -118,7 +88,7 @@ namespace FASTER.core
                     }
                     finally
                     {
-                        _currentCtx.asyncPendingCount--;
+                        _asyncOperation.DecrementPending(_currentCtx);
                     }
                 }
 
@@ -136,13 +106,13 @@ namespace FASTER.core
                     do
                     {
                         flushEvent = _fasterKV.hlog.FlushEvent;
-                        internalStatus = asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx);
+                        internalStatus = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx);
                     } while (internalStatus == OperationStatus.RETRY_NOW);
 
                     if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                     {
                         _pendingContext.Dispose();
-                        asyncResult = asyncOperation.CreateResult(internalStatus);
+                        asyncResult = _asyncOperation.CreateResult(internalStatus);
                         return true;
                     }
                     Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
@@ -164,7 +134,7 @@ namespace FASTER.core
                     while (!this.TryCompleteSync(out flushEvent, out asyncResult))
                         flushEvent.Wait();
                 }
-                return asyncResult.Status;
+                return _asyncOperation.GetStatus(asyncResult);
             }
         }
 

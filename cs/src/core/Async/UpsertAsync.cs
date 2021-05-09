@@ -11,10 +11,27 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
+        internal struct UpsertAsyncOperation<Input, Output, Context> : IUpdelAsyncOperation<Input, Output, Context, UpsertAsyncResult<Input, Output, Context>>
+        {
+            public UpsertAsyncResult<Input, Output, Context> CreateResult(OperationStatus internalStatus) => new UpsertAsyncResult<Input, Output, Context>(internalStatus);
+
+            public OperationStatus DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+                                            FasterExecutionContext<Input, Output, Context> currentCtx)
+                => fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.value.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+
+            public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CompletionEvent flushEvent, CancellationToken token)
+                => SlowUpsertAsync(fasterKV, fasterSession, currentCtx, pendingContext, flushEvent, token);
+
+            public void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx) => currentCtx.asyncPendingCount--;
+
+            public Status GetStatus(UpsertAsyncResult<Input, Output, Context> asyncResult) => asyncResult.Status;
+        }
+
         /// <summary>
         /// State storage for the completion of an async Upsert, or the result if the Upsert was completed synchronously
         /// </summary>
-        public struct UpsertAsyncResult<Input, Output, Context> : IUpdelAsyncResult<Input, Output, Context, UpsertAsyncResult<Input, Output, Context>>
+        public struct UpsertAsyncResult<Input, Output, Context>
         {
             private readonly OperationStatus internalStatus;
             internal readonly UpdelAsyncInternal<Input, Output, Context, UpsertAsyncOperation<Input, Output, Context>, UpsertAsyncResult<Input, Output, Context>> updelAsyncInternal;
@@ -34,7 +51,7 @@ namespace FASTER.core
             {
                 internalStatus = OperationStatus.ALLOCATE_FAILED;
                 updelAsyncInternal = new UpdelAsyncInternal<Input, Output, Context, UpsertAsyncOperation<Input, Output, Context>, UpsertAsyncResult<Input, Output, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo);
+                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new UpsertAsyncOperation<Input, Output, Context>());
             }
 
             /// <summary>Complete the Upsert operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
@@ -60,8 +77,7 @@ namespace FASTER.core
         internal ValueTask<UpsertAsyncResult<Input, Output, Context>> UpsertAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx, ref Key key, ref Value value, Context userContext, long serialNo, CancellationToken token = default)
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.IsAsync = true;
+            var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
             return UpsertAsync(fasterSession, currentCtx, ref pcontext, ref key, ref value, userContext, serialNo, token);
         }
 

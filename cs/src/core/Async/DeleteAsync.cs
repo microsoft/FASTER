@@ -11,10 +11,27 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
+        internal struct DeleteAsyncOperation<Input, Output, Context> : IUpdelAsyncOperation<Input, Output, Context, DeleteAsyncResult<Input, Output, Context>>
+        {
+            public DeleteAsyncResult<Input, Output, Context> CreateResult(OperationStatus internalStatus) => new DeleteAsyncResult<Input, Output, Context>(internalStatus);
+
+            public OperationStatus DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+                                            FasterExecutionContext<Input, Output, Context> currentCtx)
+                => fasterKV.InternalDelete(ref pendingContext.key.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+
+            public ValueTask<DeleteAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CompletionEvent flushEvent, CancellationToken token)
+                => SlowDeleteAsync(fasterKV, fasterSession, currentCtx, pendingContext, flushEvent, token);
+
+            public void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx) => currentCtx.asyncPendingCount--;
+
+            public Status GetStatus(DeleteAsyncResult<Input, Output, Context> asyncResult) => asyncResult.Status;
+        }
+
         /// <summary>
         /// Contained state storage for the completion of an async Delete, or the result if the Delete was completed synchronously
         /// </summary>
-        public struct DeleteAsyncResult<Input, Output, Context> : IUpdelAsyncResult<Input, Output, Context, DeleteAsyncResult<Input, Output, Context>>
+        public struct DeleteAsyncResult<Input, Output, Context>
         {
             private readonly OperationStatus internalStatus;
             internal readonly UpdelAsyncInternal<Input, Output, Context, DeleteAsyncOperation<Input, Output, Context>, DeleteAsyncResult<Input, Output, Context>> updelAsyncInternal;
@@ -34,7 +51,7 @@ namespace FASTER.core
             {
                 internalStatus = OperationStatus.ALLOCATE_FAILED;
                 updelAsyncInternal = new UpdelAsyncInternal<Input, Output, Context, DeleteAsyncOperation<Input, Output, Context>, DeleteAsyncResult<Input, Output, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo);
+                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new DeleteAsyncOperation<Input, Output, Context>());
             }
 
             /// <summary>Complete the Delete operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
@@ -60,8 +77,7 @@ namespace FASTER.core
         internal ValueTask<DeleteAsyncResult<Input, Output, Context>> DeleteAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx, ref Key key, Context userContext, long serialNo, CancellationToken token = default)
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.IsAsync = true;
+            var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
             return DeleteAsync(fasterSession, currentCtx, ref pcontext, ref key, userContext, serialNo, token);
         }
 
