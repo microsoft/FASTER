@@ -12,20 +12,22 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        // UpsertAsync and DeleteAsync can only go pending when they generate Flush operations on BlockAllocate when inserting new records at the tail.
-        // Define a couple interfaces to allow defining a shared UpdelAsyncInternal class rather than duplicating.
+        // UpsertAsync, DeleteAsync, and RMWAsync can go pending when they generate Flush operations on BlockAllocate when inserting new records at the tail.
+        // RMW can also go pending with a disk operation. Define some interfaces to and a shared UpdateAsyncInternal class to consolidate the code.
 
         internal interface IUpdateAsyncOperation<Input, Output, Context, TAsyncResult>
         {
-            TAsyncResult CreateResult(OperationStatus internalStatus);
+            TAsyncResult CreateResult(Status status, Output output);
 
-            OperationStatus DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx);
+            Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushTask, out Output output);
             ValueTask<TAsyncResult> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
                                             CompletionEvent flushEvent, CancellationToken token);
 
-            void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx);
+            bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession);
+
+            void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext);
 
             Status GetStatus(TAsyncResult asyncResult);
         }
@@ -63,7 +65,7 @@ namespace FASTER.core
                 // Note: We currently do not await anything here, and we must never do any post-await work inside CompleteAsync; this includes any code in
                 // a 'finally' block. All post-await work must be re-initiated by end user on the mono-threaded session.
 
-                if (TryCompleteAsyncState(out CompletionEvent flushEvent, out var asyncResult))
+                if (TryCompleteAsyncState(asyncOp: true, out CompletionEvent flushEvent, out var asyncResult))
                     return new ValueTask<TAsyncResult>(asyncResult);
 
                 if (_exception != default)
@@ -71,7 +73,7 @@ namespace FASTER.core
                 return _asyncOperation.DoSlowOperation(_fasterKV, _fasterSession, _currentCtx, _pendingContext, flushEvent, token);
             }
 
-            internal bool TryCompleteAsyncState(out CompletionEvent flushEvent, out TAsyncResult asyncResult)
+            internal bool TryCompleteAsyncState(bool asyncOp, out CompletionEvent flushEvent, out TAsyncResult asyncResult)
             {
                 // This makes one attempt to complete the async operation's synchronous state, and clears the async pending counters.
                 if (CompletionComputeStatus != Completed
@@ -80,7 +82,7 @@ namespace FASTER.core
                     try
                     {
                         if (_exception == default)
-                            return TryCompleteSync(out flushEvent, out asyncResult);
+                            return TryCompleteSync(asyncOp, out flushEvent, out asyncResult);
                     }
                     catch (Exception e)
                     {
@@ -88,7 +90,7 @@ namespace FASTER.core
                     }
                     finally
                     {
-                        _asyncOperation.DecrementPending(_currentCtx);
+                        _asyncOperation.DecrementPending(_currentCtx, ref _pendingContext);
                     }
                 }
 
@@ -97,25 +99,19 @@ namespace FASTER.core
                 return false;
             }
 
-            internal bool TryCompleteSync(out CompletionEvent flushEvent, out TAsyncResult asyncResult)
+            internal bool TryCompleteSync(bool asyncOp, out CompletionEvent flushEvent, out TAsyncResult asyncResult)
             {
                 _fasterSession.UnsafeResumeThread();
                 try
                 {
-                    OperationStatus internalStatus;
-                    do
-                    {
-                        flushEvent = _fasterKV.hlog.FlushEvent;
-                        internalStatus = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx);
-                    } while (internalStatus == OperationStatus.RETRY_NOW);
+                    Status status = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx, asyncOp, out flushEvent, out Output output);
 
-                    if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+                    if (status != Status.PENDING)
                     {
                         _pendingContext.Dispose();
-                        asyncResult = _asyncOperation.CreateResult(internalStatus);
+                        asyncResult = _asyncOperation.CreateResult(status, output);
                         return true;
                     }
-                    Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
                 }
                 finally
                 {
@@ -128,11 +124,17 @@ namespace FASTER.core
 
             internal Status Complete()
             {
-                if (!TryCompleteAsyncState(out CompletionEvent flushEvent, out TAsyncResult asyncResult))
+                if (!TryCompleteAsyncState(asyncOp: false, out CompletionEvent flushEvent, out TAsyncResult asyncResult))
                 {
-                    flushEvent.Wait();
-                    while (!this.TryCompleteSync(out flushEvent, out asyncResult))
+                    if (_exception != default)
+                        _exception.Throw();
+                    if (flushEvent is { })
                         flushEvent.Wait();
+                    while (!this.TryCompleteSync(asyncOp: false, out flushEvent, out asyncResult))
+                    {
+                        if (!_asyncOperation.CompletePendingIO(_fasterSession))
+                            flushEvent.Wait();
+                    }
                 }
                 return _asyncOperation.GetStatus(asyncResult);
             }
@@ -149,8 +151,6 @@ namespace FASTER.core
 
         private static async ValueTask<ExceptionDispatchInfo> WaitForFlushCompletionAsync<Input, Output, Context>(FasterKV<Key, Value> @this, FasterExecutionContext<Input, Output, Context> currentCtx, CompletionEvent flushEvent, CancellationToken token)
         {
-            currentCtx.asyncPendingCount++;
-
             ExceptionDispatchInfo exceptionDispatchInfo = default;
             try
             {
@@ -165,7 +165,6 @@ namespace FASTER.core
             {
                 exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
             }
-
             return exceptionDispatchInfo;
         }
     }
