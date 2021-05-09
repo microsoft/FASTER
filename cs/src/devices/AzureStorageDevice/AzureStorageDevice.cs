@@ -200,20 +200,18 @@ namespace FASTER.devices
 
                 if (this.underLease)
                 {
-                    this.BlobManager.ConfirmLeaseAsync().GetAwaiter().GetResult();
+                    this.BlobManager.ConfirmLeaseAsync().GetAwaiter().GetResult();  // REVIEW: this method cannot avoid GetAwaiter
                 }
 
                 if (!this.BlobManager.CancellationToken.IsCancellationRequested)
                 {
-                    pageBlob.DeleteAsync(cancellationToken: this.BlobManager.CancellationToken)
-                       .ContinueWith((Task t) =>
-                       {
-                           if (t.IsFaulted)
-                           {
-                               this.BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
-                           }
-                           callback(result);
-                       });
+                    var t = pageBlob.DeleteAsync(cancellationToken: this.BlobManager.CancellationToken);
+                    t.GetAwaiter().GetResult();                                     // REVIEW: this method cannot avoid GetAwaiter
+                    if (t.IsFaulted)
+                    {
+                        this.BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
+                    }
+                    callback(result);
                 }
             }
         }
