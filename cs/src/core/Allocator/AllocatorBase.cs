@@ -981,19 +981,21 @@ namespace FASTER.core
             #region HANDLE PAGE OVERFLOW
             if (localTailPageOffset.Offset > PageSize)
             {
+                int pageIndex = localTailPageOffset.Page + 1;
+
                 // All overflow threads try to shift addresses
-                long shiftAddress = ((long)(localTailPageOffset.Page + 1)) << LogPageSizeBits;
+                long shiftAddress = ((long)pageIndex) << LogPageSizeBits;
                 PageAlignedShiftReadOnlyAddress(shiftAddress);
                 PageAlignedShiftHeadAddress(shiftAddress);
 
                 if (offset > PageSize)
                 {
-                    if (NeedToWait(localTailPageOffset.Page + 1))
+                    if (NeedToWait(pageIndex))
                         return 0; // RETRY_LATER
                     return -1; // RETRY_NOW
                 }
 
-                if (NeedToWait(localTailPageOffset.Page + 1))
+                if (NeedToWait(pageIndex))
                 {
                     // Reset to end of page so that next attempt can retry
                     localTailPageOffset.Offset = PageSize;
@@ -1002,7 +1004,7 @@ namespace FASTER.core
                 }
 
                 // The thread that "makes" the offset incorrect should allocate next page and set new tail
-                if (CannotAllocate(localTailPageOffset.Page + 1))
+                if (CannotAllocate(pageIndex))
                 {
                     // Reset to end of page so that next attempt can retry
                     localTailPageOffset.Offset = PageSize;
@@ -1011,20 +1013,12 @@ namespace FASTER.core
                 }
 
                 // Allocate this page, if needed
-                int thisPageIndex = (localTailPageOffset.Page + 1) % BufferSize;
-                if ((!IsAllocated(thisPageIndex)))
-                {
-                    AllocatePage(thisPageIndex);
-                }
+                if (!IsAllocated(pageIndex % BufferSize))
+                    AllocatePage(pageIndex % BufferSize);
 
-                /*
                 // Allocate next page in advance, if needed
-                int nextPageIndex = (localTailPageOffset.Page + 2) % BufferSize;
-                if ((!IsAllocated(nextPageIndex)))
-                {
-                    AllocatePage(nextPageIndex);
-                }
-                */
+                if (!IsAllocated((pageIndex + 1) % BufferSize))
+                    AllocatePage((pageIndex + 1) % BufferSize);
 
                 localTailPageOffset.Page++;
                 localTailPageOffset.Offset = numSlots;
@@ -1090,7 +1084,7 @@ namespace FASTER.core
             return logicalAddress;
         }
 
-        
+
         private bool CannotAllocate(int page) => page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits);
 
         private bool NeedToWait(int page) => page >= BufferSize + (FlushedUntilAddress >> LogPageSizeBits);
@@ -1256,7 +1250,7 @@ namespace FASTER.core
 
                     int closePage = (int)(closePageAddress >> LogPageSizeBits);
                     int closePageIndex = closePage % BufferSize;
-                    
+
                     FreePage(closePage);
 
                     Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, closePageAddress + PageSize, out _);
