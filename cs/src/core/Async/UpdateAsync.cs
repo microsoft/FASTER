@@ -73,7 +73,24 @@ namespace FASTER.core
                 return _asyncOperation.DoSlowOperation(_fasterKV, _fasterSession, _currentCtx, _pendingContext, flushEvent, token);
             }
 
-            internal bool TryCompleteAsyncState(bool asyncOp, out CompletionEvent flushEvent, out TAsyncResult asyncResult)
+            internal Status Complete()
+            {
+                if (!TryCompleteAsyncState(asyncOp: false, out CompletionEvent flushEvent, out TAsyncResult asyncResult))
+                {
+                    if (_exception != default)
+                        _exception.Throw();
+                    if (flushEvent is { })
+                        flushEvent.Wait();
+                    while (!this.TryCompleteSync(asyncOp: false, out flushEvent, out asyncResult))
+                    {
+                        if (!_asyncOperation.CompletePendingIO(_fasterSession))
+                            flushEvent.Wait();
+                    }
+                }
+                return _asyncOperation.GetStatus(asyncResult);
+            }
+
+            private bool TryCompleteAsyncState(bool asyncOp, out CompletionEvent flushEvent, out TAsyncResult asyncResult)
             {
                 // This makes one attempt to complete the async operation's synchronous state, and clears the async pending counters.
                 if (CompletionComputeStatus != Completed
@@ -99,7 +116,7 @@ namespace FASTER.core
                 return false;
             }
 
-            internal bool TryCompleteSync(bool asyncOp, out CompletionEvent flushEvent, out TAsyncResult asyncResult)
+            private bool TryCompleteSync(bool asyncOp, out CompletionEvent flushEvent, out TAsyncResult asyncResult)
             {
                 _fasterSession.UnsafeResumeThread();
                 try
@@ -120,23 +137,6 @@ namespace FASTER.core
 
                 asyncResult = default;
                 return false;
-            }
-
-            internal Status Complete()
-            {
-                if (!TryCompleteAsyncState(asyncOp: false, out CompletionEvent flushEvent, out TAsyncResult asyncResult))
-                {
-                    if (_exception != default)
-                        _exception.Throw();
-                    if (flushEvent is { })
-                        flushEvent.Wait();
-                    while (!this.TryCompleteSync(asyncOp: false, out flushEvent, out asyncResult))
-                    {
-                        if (!_asyncOperation.CompletePendingIO(_fasterSession))
-                            flushEvent.Wait();
-                    }
-                }
-                return _asyncOperation.GetStatus(asyncResult);
             }
         }
 

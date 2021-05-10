@@ -10,33 +10,42 @@ using MessagePack;
 
 namespace AsyncStress
 {
-    public class SerializedFasterWrapper<Key, Value> : IFasterWrapper<Key, Value>
+    public partial class SerializedFasterWrapper<Key, Value> : IFasterWrapper<Key, Value>
     {
         readonly FasterKV<SpanByte, SpanByte> _store;
         readonly AsyncPool<ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions>> _sessionPool;
+        readonly UpsertUpdater upsertUpdater = new UpsertUpdater();
+        readonly RmwUpdater rmwUpdater = new RmwUpdater();
         readonly bool useOsReadBuffering;
-        int upsertPendingCount = 0;
+        int pendingCount = 0;
 
         // This can be used to verify the same amount data is loaded.
         public long TailAddress => _store.Log.TailAddress;
 
         // Indicates how many operations went pending
-        public int UpsertPendingCount { get => upsertPendingCount; set => upsertPendingCount = value; }
+        public int PendingCount { get => pendingCount; set => pendingCount = value; }
+
+        public void ClearPendingCount() => pendingCount = 0;
+
         // Whether OS Read buffering is enabled
         public bool UseOsReadBuffering => useOsReadBuffering;
 
-        public SerializedFasterWrapper(bool useOsReadBuffering = false)
+        public SerializedFasterWrapper(bool useLargeLog, bool useOsReadBuffering = false)
         {
             var logDirectory = "d:/FasterLogs";
             var logFileName = Guid.NewGuid().ToString();
             var logSettings = new LogSettings
             {
-                LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
-                PageSizeBits = 12,
-                MemorySizeBits = 13
+                LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering)
             };
 
-            Console.WriteLine($"    Using {logSettings.LogDevice.GetType()}");
+            if (!useLargeLog)
+            {
+                logSettings.PageSizeBits = 12;
+                logSettings.MemorySizeBits = 13;
+            }
+
+            Console.WriteLine($"    SerializedFasterWrapper using {logSettings.LogDevice.GetType()} and {(useLargeLog ? "large" : "small")} memory log");
 
             this.useOsReadBuffering = useOsReadBuffering;
             _store = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings);
@@ -45,14 +54,33 @@ namespace AsyncStress
                     () => _store.For(new SpanByteFunctions()).NewSession<SpanByteFunctions>());
         }
 
-        public async ValueTask UpsertAsync(Key key, Value value)
+        public ValueTask UpsertAsync(Key key, Value value) 
+            => this.UpdateAsync<UpsertUpdater, FasterKV<SpanByte, SpanByte>.UpsertAsyncResult<SpanByte, SpanByteAndMemory, Empty>>(this.upsertUpdater, key, value);
+
+        public void Upsert(Key key, Value value)
+            => this.Update<UpsertUpdater, FasterKV<SpanByte, SpanByte>.UpsertAsyncResult<SpanByte, SpanByteAndMemory, Empty>>(this.upsertUpdater, key, value);
+
+        public ValueTask UpsertChunkAsync((Key, Value)[] chunk, int offset, int count)
+            => this.UpdateChunkAsync<UpsertUpdater, FasterKV<SpanByte, SpanByte>.UpsertAsyncResult<SpanByte, SpanByteAndMemory, Empty>>(this.upsertUpdater, chunk, offset, count);
+
+        public ValueTask RMWAsync(Key key, Value value)
+            => this.UpdateAsync<RmwUpdater, FasterKV<SpanByte, SpanByte>.RmwAsyncResult<SpanByte, SpanByteAndMemory, Empty>>(this.rmwUpdater, key, value);
+
+        public void RMW(Key key, Value value)
+            => this.Update<RmwUpdater, FasterKV<SpanByte, SpanByte>.RmwAsyncResult<SpanByte, SpanByteAndMemory, Empty>>(this.rmwUpdater, key, value);
+
+        public ValueTask RMWChunkAsync((Key, Value)[] chunk, int offset, int count)
+            => this.UpdateChunkAsync<RmwUpdater, FasterKV<SpanByte, SpanByte>.RmwAsyncResult<SpanByte, SpanByteAndMemory, Empty>>(this.rmwUpdater, chunk, offset, count);
+
+        internal async ValueTask UpdateAsync<TUpdater, TAsyncResult>(TUpdater updater, Key key, Value value)
+            where TUpdater : IUpdater<TAsyncResult>
         {
             if (!_sessionPool.TryGet(out var session))
                 session = await _sessionPool.GetAsync().ConfigureAwait(false);
 
             byte[] keyBytes = MessagePackSerializer.Serialize(key);
             byte[] valueBytes = MessagePackSerializer.Serialize(value);
-            ValueTask<FasterKV<SpanByte, SpanByte>.UpsertAsyncResult<SpanByte, SpanByteAndMemory, Empty>> task;
+            ValueTask<TAsyncResult> task;
 
             unsafe
             {
@@ -62,20 +90,15 @@ namespace AsyncStress
                     {
                         var keySpanByte = SpanByte.FromPointer(kb, keyBytes.Length);
                         var valueSpanByte = SpanByte.FromPointer(vb, valueBytes.Length);
-                        task = session.UpsertAsync(ref keySpanByte, ref valueSpanByte);
+                        task = updater.UpdateAsync(session, ref keySpanByte, ref valueSpanByte);
                     }
                 }
             }
-            var r = await task.ConfigureAwait(false);
-            while (r.Status == Status.PENDING)
-            {
-                Interlocked.Increment(ref upsertPendingCount);
-                r = await r.CompleteAsync().ConfigureAwait(false);
-            }
-            _sessionPool.Return(session);
+            Interlocked.Add(ref pendingCount, await updater.CompleteAsync(await task.ConfigureAwait(false)));
         }
 
-        public void Upsert(Key key, Value value)
+        public void Update<TUpdater, TAsyncResult>(TUpdater updater, Key key, Value value)
+            where TUpdater : IUpdater<TAsyncResult>
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
@@ -92,7 +115,7 @@ namespace AsyncStress
                     {
                         var keySpanByte = SpanByte.FromPointer(kb, keyBytes.Length);
                         var valueSpanByte = SpanByte.FromPointer(vb, valueBytes.Length);
-                        status = session.Upsert(ref keySpanByte, ref valueSpanByte);
+                        status = updater.Update(session, ref keySpanByte, ref valueSpanByte);
                     }
                 }
             }
@@ -101,7 +124,8 @@ namespace AsyncStress
             _sessionPool.Return(session);
         }
 
-        public async ValueTask UpsertChunkAsync((Key, Value)[] chunk, int offset, int count)
+        public async ValueTask UpdateChunkAsync<TUpdater, TAsyncResult>(TUpdater updater, (Key, Value)[] chunk, int offset, int count)
+            where TUpdater : IUpdater<TAsyncResult>
         {
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
@@ -110,7 +134,7 @@ namespace AsyncStress
             {
                 byte[] keyBytes = MessagePackSerializer.Serialize(chunk[offset + i].Item1);
                 byte[] valueBytes = MessagePackSerializer.Serialize(chunk[offset + i].Item2);
-                ValueTask<FasterKV<SpanByte, SpanByte>.UpsertAsyncResult<SpanByte, SpanByteAndMemory, Empty>> task;
+                ValueTask<TAsyncResult> task;
 
                 unsafe
                 {
@@ -120,17 +144,11 @@ namespace AsyncStress
                         {
                             var keySpanByte = SpanByte.FromPointer(kb, keyBytes.Length);
                             var valueSpanByte = SpanByte.FromPointer(vb, valueBytes.Length);
-                            task = session.UpsertAsync(ref keySpanByte, ref valueSpanByte);
+                            task = updater.UpdateAsync(session, ref keySpanByte, ref valueSpanByte);
                         }
                     }
                 }
-
-                var r = await task.ConfigureAwait(false);
-                while (r.Status == Status.PENDING)
-                {
-                    Interlocked.Increment(ref upsertPendingCount);
-                    r = await r.CompleteAsync().ConfigureAwait(false);
-                }
+                Interlocked.Add(ref pendingCount, await updater.CompleteAsync(await task.ConfigureAwait(false)));
             }
             _sessionPool.Return(session);
         }
@@ -212,7 +230,6 @@ namespace AsyncStress
             _sessionPool.Return(session);
             return result;
         }
-
 
         public void Dispose()
         {
