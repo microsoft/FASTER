@@ -194,7 +194,8 @@ jobs:
     inputs:
       command: test
       projects: '**/test/*.csproj'
-      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1 -l "console;verbosity=detailed"'
+      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1 -l "console;verbosity=detailed" --TestCaseFilter TestCategory=Smoke'
+'
       
   - task: PublishTestResults@2
     displayName: 'Publish Test Results'
