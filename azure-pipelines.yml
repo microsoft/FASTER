@@ -71,7 +71,7 @@ jobs:
        !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0 /TestCaseFilter:"TestCategory=Smoke"'
+      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0 /TestCaseFilter:TestCategory=Smoke'
 
   - task: VSTest@2
     inputs:
@@ -83,7 +83,7 @@ jobs:
        !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.2 /TestCaseFilter:"TestCategory=Smoke"'
+      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.2 /TestCaseFilter:TestCategory=Smoke'
 
   - task: VSTest@2
     inputs:
@@ -95,7 +95,7 @@ jobs:
        !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v3.1 /TestCaseFilter:"TestCategory=Smoke"'
+      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v3.1 /TestCaseFilter:TestCategory=Smoke'
 
   - task: PublishTestResults@2
     inputs:
