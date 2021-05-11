@@ -9,6 +9,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
+using FASTER.devices;
+using Microsoft.Azure.Storage.Blob;
+using Microsoft.Azure.Storage;
+
 
 
 namespace FASTER.test
@@ -38,6 +42,7 @@ namespace FASTER.test
             public int TotalEntries() => batchSize;
         }
 
+
         [SetUp]
         public void Setup()
         {
@@ -47,10 +52,6 @@ namespace FASTER.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             if (Directory.Exists(commitPath))
                 Directory.Delete(commitPath, true);
-
-            // Create devices \ log for test
-            device = Devices.CreateLogDevice(commitPath + "Enqueue.log", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
         }
 
         [TearDown]
@@ -68,11 +69,15 @@ namespace FASTER.test
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
-        public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType)
+        public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
             int entryLength = 20;
             int numEntries = 1000;
             int entryFlag = 9999;
+
+            string filename = commitPath+ "Enqueue"+deviceType.ToString()+".log";
+            device = TestUtils.CreateTestDevice(device,deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             // Reduce SpanBatch to make sure entry fits on page
             if (iteratorType == EnqueueIteratorType.SpanBatch)
@@ -161,10 +166,14 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async Task EnqueueAsyncBasicTest()
+        public async Task EnqueueAsyncBasicTest([Values] TestUtils.DeviceType deviceType)
         {
 
             bool datacheckrun = false;
+            string filename = commitPath + "EnqueueAsync" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(device, deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+
 
             CancellationToken cancellationToken = default;
             ReadOnlyMemory<byte> readOnlyMemoryEntry = entry;
