@@ -11,6 +11,7 @@ namespace FASTER.libdpr
         public static Worker CLUSTER_MANAGER = new Worker(-1);
         public readonly long guid;
 
+
         /// <summary>
         /// Constructs a worker with the given guid
         /// </summary>

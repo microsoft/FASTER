@@ -37,6 +37,7 @@ namespace FASTER.libdpr
         /// Obtains a consistent snapshot of current DPR cut of the system.
         /// </summary>
         /// <returns> a consistent snapshot of current DPR cut of the system </returns>
+
         IDprStateSnapshot GetStateSnapshot();
 
         /// <summary>
