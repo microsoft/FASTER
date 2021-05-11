@@ -24,30 +24,16 @@ namespace FASTER.core
                         faster._hybridLogCheckpointToken = Guid.NewGuid();
                         faster.InitializeHybridLogCheckpoint(faster._hybridLogCheckpointToken, next.version);
                     }
-
+                    faster._hybridLogCheckpoint.info.version = next.version;
                     faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.startLogicalAddress);
                     break;
                 case Phase.WAIT_FLUSH:
                     faster._hybridLogCheckpoint.info.headAddress = faster.hlog.HeadAddress;
                     faster._hybridLogCheckpoint.info.beginAddress = faster.hlog.BeginAddress;
+                    faster._hybridLogCheckpoint.info.nextVersion = next.version;
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
-                    // Collect object log offsets only after flushes
-                    // are completed
-                    var seg = faster.hlog.GetSegmentOffsets();
-                    if (seg != null)
-                    {
-                        faster._hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
-                        Array.Copy(seg, faster._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
-                    }
-
-                    // Temporarily block new sessions from starting, which may add an entry to the table and resize the
-                    // dictionary. There should be minimal contention here.
-                    lock (faster._activeSessions)
-                        // write dormant sessions to checkpoint
-                        foreach (var kvp in faster._activeSessions)
-                            kvp.Value.AtomicSwitch(next.version - 1);
-
+                    CollectMetadata(next, faster);
                     faster.WriteHybridLogMetaInfo();
                     break;
                 case Phase.REST:
@@ -57,6 +43,25 @@ namespace FASTER.core
                     faster.checkpointTcs = nextTcs;
                     break;
             }
+        }
+
+        protected void CollectMetadata<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
+        {
+            // Collect object log offsets only after flushes
+            // are completed
+            var seg = faster.hlog.GetSegmentOffsets();
+            if (seg != null)
+            {
+                faster._hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
+                Array.Copy(seg, faster._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
+            }
+
+            // Temporarily block new sessions from starting, which may add an entry to the table and resize the
+            // dictionary. There should be minimal contention here.
+            lock (faster._activeSessions)
+                // write dormant sessions to checkpoint
+                foreach (var kvp in faster._activeSessions)
+                    kvp.Value.AtomicSwitch(next.version - 1);
         }
 
         /// <inheritdoc />
@@ -105,6 +110,13 @@ namespace FASTER.core
             FasterKV<Key, Value> faster)
         {
             base.GlobalBeforeEnteringState(next, faster);
+
+            if (next.phase == Phase.PREPARE)
+            {
+                faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
+                faster._lastSnapshotCheckpoint.deltaLog?.Dispose();
+                faster._lastSnapshotCheckpoint = default;
+            }
             if (next.phase != Phase.WAIT_FLUSH) return;
 
             faster.hlog.ShiftReadOnlyToTail(out var tailAddress,
@@ -162,15 +174,20 @@ namespace FASTER.core
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
         {
-            base.GlobalBeforeEnteringState(next, faster);
             switch (next.phase)
             {
                 case Phase.PREPARE:
-                    faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
+                    faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
+                    faster._lastSnapshotCheckpoint.deltaLog?.Dispose();
+                    faster._lastSnapshotCheckpoint = default;
+                    base.GlobalBeforeEnteringState(next, faster);
+                    faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.FlushedUntilAddress;
                     faster._hybridLogCheckpoint.info.useSnapshotFile = 1;
                     break;
                 case Phase.WAIT_FLUSH:
+                    base.GlobalBeforeEnteringState(next, faster);
                     faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.finalLogicalAddress);
+                    faster._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = faster._hybridLogCheckpoint.info.finalLogicalAddress;
 
                     faster._hybridLogCheckpoint.snapshotFileDevice =
                         faster.checkpointManager.GetSnapshotLogDevice(faster._hybridLogCheckpointToken);
@@ -179,7 +196,7 @@ namespace FASTER.core
                     faster._hybridLogCheckpoint.snapshotFileDevice.Initialize(faster.hlog.GetSegmentSize());
                     faster._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
 
-                    long startPage = faster.hlog.GetPage(faster._hybridLogCheckpoint.info.flushedLogicalAddress);
+                    long startPage = faster.hlog.GetPage(faster._hybridLogCheckpoint.info.startLogicalAddress);
                     long endPage = faster.hlog.GetPage(faster._hybridLogCheckpoint.info.finalLogicalAddress);
                     if (faster._hybridLogCheckpoint.info.finalLogicalAddress >
                         faster.hlog.GetStartLogicalAddress(endPage))
@@ -187,8 +204,10 @@ namespace FASTER.core
                         endPage++;
                     }
 
-                    // This can be run on a new thread if we want to immediately parallelize 
-                    // the rest of the log flush
+                    // We are writing pages outside epoch protection, so callee should be able to
+                    // handle corrupted or unexpected concurrent page changes during the flush, e.g., by
+                    // resuming epoch protection if necessary. Correctness is not affected as we will
+                    // only read safe pages during recovery.
                     faster.hlog.AsyncFlushPagesToDevice(
                         startPage,
                         endPage,
@@ -196,6 +215,103 @@ namespace FASTER.core
                         faster._hybridLogCheckpoint.snapshotFileDevice,
                         faster._hybridLogCheckpoint.snapshotFileObjectLogDevice,
                         out faster._hybridLogCheckpoint.flushedSemaphore);
+                    break;
+                case Phase.PERSISTENCE_CALLBACK:
+                    // update flushed-until address to the latest
+                    faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
+                    base.GlobalBeforeEnteringState(next, faster);
+                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
+                    break;
+                default:
+                    base.GlobalBeforeEnteringState(next, faster);
+                    break;
+            }
+        }
+
+        /// <inheritdoc />
+        public override void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+            SystemState current,
+            SystemState prev, FasterKV<Key, Value> faster,
+            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterSession fasterSession,
+            List<ValueTask> valueTasks,
+            CancellationToken token = default)
+        {
+            base.OnThreadState(current, prev, faster, ctx, fasterSession, valueTasks, token);
+
+            if (current.phase != Phase.WAIT_FLUSH) return;
+
+            if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
+            {
+                var s = faster._hybridLogCheckpoint.flushedSemaphore;
+
+                var notify = s != null && s.CurrentCount > 0;
+                notify = notify || !faster.SameCycle(ctx, current) || s == null;
+
+                if (valueTasks != null && !notify)
+                {
+                    Debug.Assert(s != null);
+                    valueTasks.Add(new ValueTask(s.WaitAsync(token).ContinueWith(t => s.Release())));
+                }
+
+                if (!notify) return;
+
+                if (ctx != null)
+                    ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
+            }
+
+            if (ctx != null)
+                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.version);
+
+            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.version))
+                faster.GlobalStateMachineStep(current);
+        }
+    }
+
+    /// <summary>
+    /// A Incremental Snapshot makes a copy of only changes that have happened since the last full Snapshot. It is
+    /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
+    /// update performance as it does not advance the readonly marker unnecessarily.
+    /// </summary>
+    internal sealed class IncrementalSnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
+    {
+        /// <inheritdoc />
+        public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
+        {
+            switch (next.phase)
+            {
+                case Phase.PREPARE:
+                    faster._hybridLogCheckpoint = faster._lastSnapshotCheckpoint;
+                    base.GlobalBeforeEnteringState(next, faster);
+                    faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.FlushedUntilAddress;
+                    faster._hybridLogCheckpoint.prevVersion = next.version;
+                    break;
+                case Phase.WAIT_FLUSH:
+                    base.GlobalBeforeEnteringState(next, faster);
+                    faster._hybridLogCheckpoint.info.finalLogicalAddress = 0;
+                    faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.finalLogicalAddress);
+
+                    if (faster._hybridLogCheckpoint.deltaLog == null)
+                    {
+                        faster._hybridLogCheckpoint.deltaFileDevice = faster.checkpointManager.GetDeltaLogDevice(faster._hybridLogCheckpointToken);
+                        faster._hybridLogCheckpoint.deltaFileDevice.Initialize(-1);
+                        faster._hybridLogCheckpoint.deltaLog = new DeltaLog(faster._hybridLogCheckpoint.deltaFileDevice, faster.hlog.LogPageSizeBits, -1);
+                        faster._hybridLogCheckpoint.deltaLog.InitializeForWrites(faster.hlog.bufferPool);
+                    }
+
+                    faster.hlog.AsyncFlushDeltaToDevice(
+                        faster._hybridLogCheckpoint.info.startLogicalAddress,
+                        faster._hybridLogCheckpoint.info.finalLogicalAddress,
+                        faster._lastSnapshotCheckpoint.info.finalLogicalAddress,
+                        faster._hybridLogCheckpoint.prevVersion,
+                        faster._hybridLogCheckpoint.deltaLog);
+                    break;
+                case Phase.PERSISTENCE_CALLBACK:
+                    faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
+                    CollectMetadata(next, faster);
+                    faster.WriteHybridLogIncrementalMetaInfo(faster._hybridLogCheckpoint.deltaLog);
+                    faster._hybridLogCheckpoint.info.deltaTailAddress = faster._hybridLogCheckpoint.deltaLog.TailAddress;
+                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
                     break;
             }
         }

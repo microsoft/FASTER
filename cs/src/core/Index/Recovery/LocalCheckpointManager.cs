@@ -119,9 +119,31 @@ namespace FASTER.core
         /// Retrieve commit metadata for specified log checkpoint
         /// </summary>
         /// <param name="logToken">Token</param>
+        /// <param name="deltaLog">Delta log</param>
         /// <returns>Metadata, or null if invalid</returns>
-        public byte[] GetLogCheckpointMetadata(Guid logToken)
+        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog)
         {
+            byte[] metadata = null;
+            if (deltaLog != null)
+            {
+                // Get latest valid metadata from delta-log
+                deltaLog.Reset();
+                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out int type))
+                {
+                    if (type != 1) continue; // consider only metadata records
+                    long endAddress = physicalAddress + entryLength;
+                    metadata = new byte[entryLength];
+                    unsafe
+                    {
+                        fixed (byte* m = metadata)
+                        {
+                            Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                        }
+                    }
+                }
+                if (metadata != null) return metadata;
+            }
+
             var dir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder(logToken));
             if (!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat"))
                 return null;
@@ -162,6 +184,16 @@ namespace FASTER.core
         public IDevice GetSnapshotObjectLogDevice(Guid token)
         {
             return Devices.CreateLogDevice(directoryConfiguration.GetObjectLogSnapshotFileName(token), false);
+        }
+
+        /// <summary>
+        /// Provide device to store delta log for incremental snapshot checkpoints
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public IDevice GetDeltaLogDevice(Guid token)
+        {
+            return Devices.CreateLogDevice(directoryConfiguration.GetDeltaLogFileName(token), false);
         }
 
         /// <inheritdoc />
@@ -222,6 +254,32 @@ namespace FASTER.core
 
         /// <inheritdoc />
         public void Dispose()
+        {
+        }
+
+        /// <inheritdoc />
+        public unsafe void CommitLogIncrementalCheckpoint(Guid logToken, int version, byte[] commitMetadata, DeltaLog deltaLog)
+        {
+            deltaLog.Allocate(out int length, out long physicalAddress);
+            if (length < commitMetadata.Length)
+            {
+                deltaLog.Seal(0, type: 1);
+                deltaLog.Allocate(out length, out physicalAddress);
+                if (length < commitMetadata.Length)
+                {
+                    deltaLog.Seal(0);
+                    throw new Exception($"Metadata of size {commitMetadata.Length} does not fit in delta log space of size {length}");
+                }
+            }
+            fixed (byte* ptr = commitMetadata)
+            {
+                Buffer.MemoryCopy(ptr, (void*)physicalAddress, commitMetadata.Length, commitMetadata.Length);
+            }
+            deltaLog.Seal(commitMetadata.Length, type: 1);
+            deltaLog.FlushAsync().Wait();
+        }
+
+        public void OnRecovery(Guid indexToken, Guid logToken)
         {
         }
     }

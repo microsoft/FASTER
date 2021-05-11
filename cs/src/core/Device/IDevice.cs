@@ -174,6 +174,13 @@ namespace FASTER.core
         /// </summary>
         /// <param name="segment">index of the segment to remov</param>
         void RemoveSegment(int segment);
+
+        /// <summary>
+        /// Get file size for given segment
+        /// </summary>
+        /// <param name="segment"></param>
+        /// <returns></returns>
+        long GetFileSize(int segment);
     }
 
     /// <summary>

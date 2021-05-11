@@ -21,6 +21,8 @@ namespace FASTER.core
         public long LastFlushedUntilAddress;
         [FieldOffset(8)]
         public long LastClosedUntilAddress;
+        [FieldOffset(16)]
+        public int Dirty;
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -102,14 +104,14 @@ namespace FASTER.core
         protected readonly int SegmentBufferSize;
 
         /// <summary>
-        /// HeadOffset lag (from tail)
+        /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
-        protected readonly bool HeadOffsetExtraLag;
+        private int emptyPageCount;
 
         /// <summary>
         /// HeadOFfset lag address
         /// </summary>
-        protected readonly long HeadOffsetLagAddress;
+        protected long HeadOffsetLagAddress;
 
         /// <summary>
         /// Log mutable fraction
@@ -118,7 +120,7 @@ namespace FASTER.core
         /// <summary>
         /// ReadOnlyOffset lag (from tail)
         /// </summary>
-        protected readonly long ReadOnlyLagAddress;
+        protected long ReadOnlyLagAddress;
 
         #endregion
 
@@ -379,7 +381,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="pageIndex"></param>
         /// <returns></returns>
-        protected abstract bool IsAllocated(int pageIndex);
+        internal abstract bool IsAllocated(int pageIndex);
         /// <summary>
         /// Populate page
         /// </summary>
@@ -400,6 +402,141 @@ namespace FASTER.core
         /// <param name="objectLogDevice"></param>
         /// <param name="localSegmentOffsets"></param>
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
+
+        /// <summary>
+        /// Delta flush
+        /// </summary>
+        /// <param name="startAddress"></param>
+        /// <param name="endAddress"></param>
+        /// <param name="prevEndAddress"></param>
+        /// <param name="version"></param>
+        /// <param name="deltaLog"></param>
+        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
+        {
+            long startPage = GetPage(startAddress);
+            long endPage = GetPage(endAddress);
+            if (endAddress > GetStartLogicalAddress(endPage))
+                endPage++;
+
+            long prevEndPage = GetPage(prevEndAddress);
+
+            deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
+            int destOffset = 0;
+
+            for (long p = startPage; p < endPage; p++)
+            {
+                // All RCU pages need to be added to delta
+                // For IPU-only pages, prune based on dirty bit
+                if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
+                    continue;
+
+                var logicalAddress = p << LogPageSizeBits;
+                var physicalAddress = GetPhysicalAddress(logicalAddress);
+                var endPhysicalAddress = physicalAddress + PageSize;
+
+                if (p == startPage)
+                {
+                    physicalAddress += (int)(startAddress & PageSizeMask);
+                    logicalAddress += (int)(startAddress & PageSizeMask);
+                }
+
+                while (physicalAddress < endPhysicalAddress)
+                {
+                    ref var info = ref GetInfo(physicalAddress);
+                    var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
+                    if (info.Version == RecordInfo.GetShortVersion(version))
+                    {
+                        int size = sizeof(long) + sizeof(int) + alignedRecordSize;
+                        if (destOffset + size > entryLength)
+                        {
+                            deltaLog.Seal(destOffset);
+                            deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                            destOffset = 0;
+                            if (destOffset + size > entryLength)
+                                throw new FasterException("Insufficient page size to write delta");
+                        }
+                        *((long*)(destPhysicalAddress + destOffset)) = logicalAddress;
+                        destOffset += sizeof(long);
+                        *((int*)(destPhysicalAddress + destOffset)) = alignedRecordSize;
+                        destOffset += sizeof(int);
+                        Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
+                        destOffset += alignedRecordSize;
+                    }
+                    physicalAddress += alignedRecordSize;
+                    logicalAddress += alignedRecordSize;
+                }
+            }
+
+            if (destOffset > 0)
+                deltaLog.Seal(destOffset);
+        }
+
+        internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage)
+        {
+            if (log == null) return;
+
+            long startLogicalAddress = GetStartLogicalAddress(startPage);
+            long endLogicalAddress = GetStartLogicalAddress(endPage);
+
+            log.Reset();
+            while (log.GetNext(out long physicalAddress, out int entryLength, out int type))
+            {
+                if (type != 0) continue; // consider only delta records
+                long endAddress = physicalAddress + entryLength;
+                while (physicalAddress < endAddress)
+                {
+                    long address = *(long*)physicalAddress;
+                    physicalAddress += sizeof(long);
+                    int size = *(int*)physicalAddress;
+                    physicalAddress += sizeof(int);
+                    if (address >= startLogicalAddress && address < endLogicalAddress)
+                    {
+                        var destination = GetPhysicalAddress(address);
+                        Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
+                    }
+                    physicalAddress += size;
+                }
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void MarkPage(long logicalAddress, int version)
+        {
+            var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
+            if (PageStatusIndicator[offset].Dirty < version)
+                PageStatusIndicator[offset].Dirty = version;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void MarkPageAtomic(long logicalAddress, int version)
+        {
+            var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
+            Utility.MonotonicUpdate(ref PageStatusIndicator[offset].Dirty, version, out _);
+        }
+
+        internal void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
+                DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
+                IDevice device)
+        {
+            if (asyncResult.partial)
+            {
+                // Write only required bytes within the page
+                int aligned_start = (int)((asyncResult.fromAddress - (asyncResult.page << LogPageSizeBits)));
+                aligned_start = (aligned_start / sectorSize) * sectorSize;
+
+                int aligned_end = (int)((asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits)));
+                aligned_end = ((aligned_end + (sectorSize - 1)) & ~(sectorSize - 1));
+
+                numBytesToWrite = (uint)(aligned_end - aligned_start);
+                device.WriteAsync(alignedSourceAddress + aligned_start, alignedDestinationAddress + (ulong)aligned_start, numBytesToWrite, callback, asyncResult);
+            }
+            else
+            {
+                device.WriteAsync(alignedSourceAddress, alignedDestinationAddress,
+                    numBytesToWrite, callback, asyncResult);
+            }
+        }
+
 
         /// <summary>
         /// Read objects to memory (async)
@@ -427,7 +564,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="page">Page number to be cleared</param>
         /// <param name="offset">Offset to clear from (if partial clear)</param>
-        protected abstract void ClearPage(long page, int offset = 0);
+        internal abstract void ClearPage(long page, int offset = 0);
         /// <summary>
         /// Write page (async)
         /// </summary>
@@ -563,15 +700,9 @@ namespace FASTER.core
             BufferSize = (int)(LogTotalSizeBytes / (1L << LogPageSizeBits));
             BufferSizeMask = BufferSize - 1;
 
-            // HeadOffset lag (from tail).
-            var headOffsetLagSize = BufferSize - 1; // (ReadCache ? ReadCacheHeadOffsetLagNumPages : HeadOffsetLagNumPages);
-            if (BufferSize > 1 && HeadOffsetExtraLag) headOffsetLagSize--;
-
-            HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
-
-            // ReadOnlyOffset lag (from tail). This should not exceed HeadOffset lag.
             LogMutableFraction = settings.MutableFraction;
-            ReadOnlyLagAddress = Math.Min((long)(LogMutableFraction * BufferSize) << LogPageSizeBits, HeadOffsetLagAddress);
+
+            EmptyPageCount = 0;
 
             // Segment size
             LogSegmentSizeBits = settings.SegmentSizeBits;
@@ -658,6 +789,54 @@ namespace FASTER.core
 
             OnReadOnlyObserver?.OnCompleted();
             OnEvictionObserver?.OnCompleted();
+        }
+
+
+        /// <summary>
+        /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
+        /// </summary>
+        public int EmptyPageCount
+        {
+            get => emptyPageCount;
+
+            set
+            {
+                // HeadOffset lag (from tail).
+                var headOffsetLagSize = BufferSize - 1;
+                if (value > headOffsetLagSize) return;
+                if (value < 0) return;
+
+                int oldEPC;
+                lock (this) // linearize all setters of EmptyPageCount
+                {
+                    oldEPC = emptyPageCount;
+                    emptyPageCount = value;
+                    headOffsetLagSize -= emptyPageCount;
+
+                    ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
+                    HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
+                }
+
+                // Force eviction now if empty page count has increased
+                if (value > oldEPC)
+                {
+                    bool prot = true;
+                    if (!epoch.ThisInstanceProtected())
+                        prot = false;
+
+                    if (!prot) epoch.Resume();
+                    try
+                    {
+                        var _tailAddress = GetTailAddress();
+                        PageAlignedShiftReadOnlyAddress(_tailAddress);
+                        PageAlignedShiftHeadAddress(_tailAddress);
+                    }
+                    finally
+                    {
+                        if (!prot) epoch.Suspend();
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -1754,7 +1933,7 @@ namespace FASTER.core
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
         /// <param name="context"></param>
-        private void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, object context)
+        protected void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, object context)
         {
             try
             {

@@ -28,6 +28,14 @@ namespace FASTER.core
         /// <returns></returns>
         FileDescriptor HashTable(Guid token);
 
+
+        /// <summary>
+        /// Index checkpoint base location (folder)
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        FileDescriptor IndexCheckpointBase(Guid token);
+
         /// <summary>
         /// Index checkpoint metadata
         /// </summary>
@@ -35,6 +43,13 @@ namespace FASTER.core
         /// <returns></returns>
         FileDescriptor IndexCheckpointMetadata(Guid token);
 
+
+        /// <summary>
+        /// Hybrid log checkpoint base location (folder)
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        FileDescriptor LogCheckpointBase(Guid token);
 
         /// <summary>
         /// Hybrid log checkpoint metadata
@@ -56,6 +71,13 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <returns></returns>
         FileDescriptor ObjectLogSnapshot(Guid token);
+
+        /// <summary>
+        /// Delta log
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        FileDescriptor DeltaLog(Guid token);
 
         /// <summary>
         /// FasterLog commit metadata

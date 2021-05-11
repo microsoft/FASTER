@@ -90,6 +90,7 @@ jobs:
     inputs:
       testRunner: VSTest
       testResultsFiles: '**/*.trx'
+      searchFolder: '$(Agent.TempDirectory)'
 
 - job: 'cppWindows'
   pool:
@@ -152,11 +153,6 @@ jobs:
     workingDirectory: 'cc/build/Debug'
     displayName: 'Run Tests (Debug)'
 
-  #- script: |
-  #    CTEST_OUTPUT_ON_FAILURE=1 make test
-  #  workingDirectory: 'cc/build/Release'
-  #  displayName: 'Run Tests (Release)'
-
 - job: 'csharpLinux'
   pool:
     vmImage: ubuntu-16.04
@@ -187,8 +183,15 @@ jobs:
     inputs:
       command: test
       projects: '**/test/*.csproj'
-      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1'
-   
+      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1 -l "console;verbosity=detailed"'
+      
+  - task: PublishTestResults@2
+    displayName: 'Publish Test Results'
+    inputs:
+      testResultsFormat: 'VSTest'
+      testResultsFiles: '*.trx'
+      searchFolder: '$(Agent.TempDirectory)'
+
 # - job: 'cppBlobsWindows'
 #   pool:
 #     vmImage: vs2017-win2016

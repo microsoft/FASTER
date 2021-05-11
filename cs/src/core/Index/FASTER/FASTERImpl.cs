@@ -360,7 +360,10 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 if (!recordInfo.Tombstone
                     && fasterSession.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
+                {
+                    hlog.MarkPage(logicalAddress, sessionCtx.version);
                     return OperationStatus.SUCCESS;
+                }
                 goto CreateNewRecord;
             }
 
@@ -383,6 +386,8 @@ namespace FASTER.core
                     if (!recordInfo.Tombstone
                         && fasterSession.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
                     {
+                        if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
+                        else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
                         status = OperationStatus.SUCCESS;
                         goto LatchRelease; // Release shared latch (if acquired)
                     }
@@ -543,8 +548,18 @@ namespace FASTER.core
                 return OperationStatus.SUCCESS;
             }
 
-            // CAS failed
-            hlog.GetInfo(newPhysicalAddress).Invalid = true;
+            // CAS failed - let user dispose similar to a deleted record
+            ref RecordInfo insertedRecordInfo = ref hlog.GetInfo(newPhysicalAddress);
+            ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
+            ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
+            // First set Invalid to true so that ConcurrentDeleter knows to dispose key as well
+            insertedRecordInfo.Invalid = true;
+            fasterSession.ConcurrentDeleter(ref insertedKey, ref insertedValue, ref insertedRecordInfo, newLogicalAddress);
+            if (WriteDefaultOnDelete)
+            {
+                insertedKey = default;
+                insertedValue = default;
+            }
             return OperationStatus.RETRY_NOW;
         }
 
@@ -644,7 +659,10 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 if (!recordInfo.Tombstone
                     && fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
+                {
+                    hlog.MarkPage(logicalAddress, sessionCtx.version);
                     return OperationStatus.SUCCESS;
+                }
                 goto CreateNewRecord;
             }
 
@@ -673,6 +691,8 @@ namespace FASTER.core
 
                         if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
                         {
+                            if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
+                            else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
                             status = OperationStatus.SUCCESS;
                             goto LatchRelease; // Release shared latch (if acquired)
                         }
@@ -1089,6 +1109,8 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 ref Value value = ref hlog.GetValue(physicalAddress);
                 fasterSession.ConcurrentDeleter(ref hlog.GetKey(physicalAddress), ref value, ref recordInfo, logicalAddress);
+                if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
+                else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
                 if (WriteDefaultOnDelete)
                     value = default;
 
