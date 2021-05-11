@@ -117,7 +117,7 @@ namespace FASTER.libdpr
         {
             buf = null;
             var vfront = ReadFromDevice(frontDevice, out var bufFront);
-            var vback = ReadFromDevice(frontDevice, out var bufBack);
+            var vback = ReadFromDevice(backDevice, out var bufBack);
             if (vback == -1 && vfront == -1)
                 // No available writes to read back in
                 return false;

@@ -164,6 +164,9 @@ namespace FASTER.libdpr
                 serializedPersistentState = new byte[0];
                 serializedPersistentStateSize = 0;
             }
+
+            foreach (var (worker, version) in volatileState.GetCurrentCut())
+                versionTable[worker] = version;
         }
 
         // Try to commit wvs starting from the given wv. Commits and updates the volatile state the entire dependency
@@ -206,6 +209,8 @@ namespace FASTER.libdpr
             return true;
         }
 
+        public State GetVolatileState() => volatileState;
+
         public void TryFindDprCut()
         {
             lock (volatileState)
@@ -235,7 +240,7 @@ namespace FASTER.libdpr
                 var minVersion = versionTable.Count == 0 ? 0 : versionTable.Min(pair => pair.Value);
                 // Update entries in the cut to be at least the min. No need to prune the graph as later traversals will take
                 // care of that
-                foreach (var (worker, version) in volatileState.GetCurrentCut())
+                foreach (var (worker, version) in volatileState.GetCurrentCut().ToList())
                 {
                     if (version > minVersion) continue;
                     volatileState.hasUpdates = true;
@@ -300,12 +305,19 @@ namespace FASTER.libdpr
         /// <param name="deps">dependencies of the checkpoint</param>
         public void NewCheckpoint(WorkerVersion wv, IEnumerable<WorkerVersion> deps)
         {
-            maxVersion = Math.Max(wv.Version, maxVersion);
             var list = objectPool.Checkout();
             list.Clear();
-            list.AddRange(deps);
+            foreach (var dep in deps)
+            {
+                list.Add(dep);
+                // If dep wasn't known by the cluster, add an entry so global min calculation does not skip it.
+                versionTable.TryAdd(dep.Worker, 0);
+            }
+            
+            maxVersion = Math.Max(wv.Version, maxVersion);
             precedenceGraph.TryAdd(wv, list);
             outstandingWvs.Enqueue(wv);
+            versionTable.AddOrUpdate(wv.Worker, wv.Version, (worker, l) => Math.Max(l, wv.Version));
         }
 
         /// <summary>
