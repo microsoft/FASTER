@@ -166,6 +166,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
+        [Category("Smoke")]
         public async Task EnqueueAsyncBasicTest([Values] TestUtils.DeviceType deviceType)
         {
 
