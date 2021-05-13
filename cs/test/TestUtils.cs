@@ -48,8 +48,8 @@ namespace FASTER.test
         //** Used to test the various devices by using the same test with VALUES parameter
         public enum DeviceType
         {
-            //LSD,
-            MLSD
+            LSD
+            //MLSD
             //EmulatedAzure,
             //LocalMemory
         }
@@ -59,12 +59,12 @@ namespace FASTER.test
         {
             switch (testDeviceType)
             {
-//                case DeviceType.LSD:
-  //                  device = new LocalStorageDevice(filename, true, deleteOnClose: true, true, -1, false, false);
-    //                break;
-                case DeviceType.MLSD:
-                    device = new ManagedLocalStorageDevice(filename, deleteOnClose: true);
+                case DeviceType.LSD:
+                    device = new LocalStorageDevice(filename, true, deleteOnClose: true, true, -1, false, false);
                     break;
+                //case DeviceType.MLSD:
+                  //  device = new ManagedLocalStorageDevice(filename, deleteOnClose: true);
+//                    break;
                     /*  For now, just start with two and can add more devices 
                                     case DeviceType.EmulatedAzure:
                                         string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
