@@ -111,7 +111,7 @@ namespace FASTER.core
         /// <summary>
         /// HeadOFfset lag address
         /// </summary>
-        protected long HeadOffsetLagAddress;
+        internal long HeadOffsetLagAddress;
 
         /// <summary>
         /// Log mutable fraction
@@ -830,7 +830,7 @@ namespace FASTER.core
                 }
 
                 // Force eviction now if empty page count has increased
-                if (value > oldEPC)
+                if (value >= oldEPC)
                 {
                     bool prot = true;
                     if (!epoch.ThisInstanceProtected())

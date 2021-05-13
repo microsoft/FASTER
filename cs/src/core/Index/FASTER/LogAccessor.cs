@@ -72,6 +72,21 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Set empty page count in allocator
+        /// </summary>
+        /// <param name="pageCount">New empty page count</param>
+        /// <param name="wait">Whether to wait for shift addresses to complete</param>
+        public void SetEmptyPageCount(int pageCount, bool wait = false)
+        {
+            allocator.EmptyPageCount = pageCount;
+            if (wait)
+            {
+                long newHeadAddress = (allocator.GetTailAddress() & ~allocator.PageSizeMask) - allocator.HeadOffsetLagAddress;
+                ShiftHeadAddress(newHeadAddress, wait);
+            }
+        }
+        
+        /// <summary>
         /// Total in-memory circular buffer capacity (in number of pages)
         /// </summary>
         public int BufferSize => allocator.BufferSize;
