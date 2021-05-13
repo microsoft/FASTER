@@ -39,9 +39,13 @@ namespace FASTER.core
         private readonly bool keyBlittable = Utility.IsBlittable<Key>();
         private readonly bool valueBlittable = Utility.IsBlittable<Value>();
 
+        private readonly OverflowPool<Record<Key, Value>[]> overflowPagePool;
+
         public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
             : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
+            overflowPagePool = new OverflowPool<Record<Key, Value>[]>(4);
+
             if (settings.ObjectLogDevice == null)
             {
                 throw new FasterException("LogSettings.ObjectLogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
@@ -74,6 +78,8 @@ namespace FASTER.core
                     throw new FasterException("Object log device should not have fixed segment size. Set preallocateFile to false when calling CreateLogDevice for object log");
             }
         }
+
+        internal override int OverflowPageCount => overflowPagePool.Count;
 
         public override void Initialize()
         {
@@ -188,6 +194,7 @@ namespace FASTER.core
                 }
                 values = null;
             }
+            overflowPagePool.Dispose();
             base.Dispose();
         }
 
@@ -224,6 +231,11 @@ namespace FASTER.core
 
         internal Record<Key, Value>[] AllocatePage()
         {
+            Interlocked.Increment(ref AllocatedPageCount);
+
+            if (overflowPagePool.TryGet(out var item))
+                return item;
+
             Record<Key, Value>[] tmp;
             if (PageSize % recordSize == 0)
                 tmp = new Record<Key, Value>[PageSize / recordSize];
@@ -305,6 +317,17 @@ namespace FASTER.core
             {
                 // We are clearing the last page in current segment
                 segmentOffsets[thisCloseSegment % SegmentBufferSize] = 0;
+            }
+        }
+
+        internal override void FreePage(long page)
+        {
+            ClearPage(page, 0);
+            if (EmptyPageCount > 0)
+            {
+                overflowPagePool.TryAdd(values[page % BufferSize]);
+                values[page % BufferSize] = default;
+                Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
 
