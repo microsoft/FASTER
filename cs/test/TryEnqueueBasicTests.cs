@@ -22,8 +22,8 @@ namespace FASTER.test
     {
         private FasterLog log;
         private IDevice device;
-        private string path = Path.GetTempPath() + "TryEnqueueTests/";
         static readonly byte[] entry = new byte[100];
+        private string commitPath;
 
         public enum TryEnqueueIteratorType
         {
@@ -43,13 +43,11 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            // Clean up log files from previous test runs in case they weren't cleaned up
-            try {  new DirectoryInfo(path).Delete(true);  }
-            catch {} 
+            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
 
-            // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "TryEnqueue", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            try {  new DirectoryInfo(commitPath).Delete(true);  }
+            catch {} 
         }
 
         [TearDown]
@@ -59,7 +57,7 @@ namespace FASTER.test
             device.Dispose();
 
             // Clean up log files
-            try { new DirectoryInfo(path).Delete(true); }
+            try { new DirectoryInfo(commitPath).Delete(true); }
             catch { }
         }
 
@@ -67,11 +65,16 @@ namespace FASTER.test
        [Test]
        [Category("FasterLog")]
        [Category("Smoke")]
-        public void TryEnqueueBasicTest([Values] TryEnqueueIteratorType iteratorType)
+        public void TryEnqueueBasicTest([Values] TryEnqueueIteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
             int entryLength = 50;
             int numEntries = 10000; 
             int entryFlag = 9999;
+
+            // Create devices \ log for test
+            string filename = commitPath + "TryEnqueue" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(device, deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             // Reduce SpanBatch to make sure entry fits on page
             if (iteratorType == TryEnqueueIteratorType.SpanBatch)
@@ -87,7 +90,6 @@ namespace FASTER.test
             }
 
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
-
 
             // TryEnqueue but set each Entry in a way that can differentiate between entries
             for (int i = 0; i < numEntries; i++)
