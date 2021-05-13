@@ -59,9 +59,9 @@ namespace FASTER.test
         {
             switch (testDeviceType)
             {
-                case DeviceType.LSD:
-                    device = new LocalStorageDevice(filename, true, deleteOnClose: true, true, -1, false, false);
-                    break;
+//                case DeviceType.LSD:
+  //                  device = new LocalStorageDevice(filename, true, deleteOnClose: true, true, -1, false, false);
+    //                break;
                 case DeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, deleteOnClose: true);
                     break;
