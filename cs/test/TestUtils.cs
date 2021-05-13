@@ -48,7 +48,7 @@ namespace FASTER.test
         //** Used to test the various devices by using the same test with VALUES parameter
         public enum DeviceType
         {
-            LSD,
+            //LSD,
             MLSD
             //EmulatedAzure,
             //LocalMemory
