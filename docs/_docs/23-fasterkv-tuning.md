@@ -52,12 +52,17 @@ default) indicates that 90% of memory will be mutable.
 each chunk independently of pages, as one segment typically consists of many pages. For instance, if we want
 each file on disk to be 1GB (the default), we can set `SegmentSizeBits` S to 30, since 2<sup>30</sup> = 1GB.
 
-* `CopyReadsToTail`: This boolean setting indicates whether reads should be copied to the tail of the log. This
-is useful when reads are infrequent, but will be followed by an update, or subsequent reads.
+* `CopyReadsToTail`: This enum setting indicates whether reads should be copied to the tail of the log. This
+is useful when reads are infrequent, but will be followed by an update, or subsequent reads. `CopyReadsToTail.FromStorage` 
+causes any reads from disk to be copied to the tail of log. `CopyReadsToTail.FromReadOnly` causes any reads from either
+disk or the read-only region of memory to be copied to the tail of log. Latter is helpful when you do not want particularly
+hot items to "escape" to disk only to be immediately brought back to the tail of main memory. It is also useful when you
+use FASTER as a memory-only cache (with `NullDevice`) as in [this](https://github.com/microsoft/FASTER/tree/master/cs/samples/MemOnlyCache) sample.
 
-* `ReadCacheSettings`: This setting is used to enable our new feature, a separate read cache. If reads are
-frequent, we recommend the read cache instead of `CopyReadsToTail`, as the latter can inflate
-log growth unnecessarily.
+
+* `ReadCacheSettings`: This setting is used to enable a read cache, separately from the main FASTER log. If you need to frequently read 
+disk-resident records, we recommend the read cache instead of using `CopyReadsToTail`, as the latter can inflate log growth 
+unnecessarily.
 
 ## Computing Total FASTER Memory
 
