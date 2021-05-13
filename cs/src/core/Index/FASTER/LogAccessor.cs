@@ -63,7 +63,7 @@ namespace FASTER.core
         public int FixedRecordSize => allocator.GetFixedRecordSize();
 
         /// <summary>
-        /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
+        /// Number of pages left empty or unallocated in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
         public int EmptyPageCount
         {
@@ -72,14 +72,34 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Circular buffer size (in number of pages)
+        /// Set empty page count in allocator
         /// </summary>
-        public int BufferSizePages => allocator.BufferSize;
+        /// <param name="pageCount">New empty page count</param>
+        /// <param name="wait">Whether to wait for shift addresses to complete</param>
+        public void SetEmptyPageCount(int pageCount, bool wait = false)
+        {
+            allocator.EmptyPageCount = pageCount;
+            if (wait)
+            {
+                long newHeadAddress = (allocator.GetTailAddress() & ~allocator.PageSizeMask) - allocator.HeadOffsetLagAddress;
+                ShiftHeadAddress(newHeadAddress, wait);
+            }
+        }
+        
+        /// <summary>
+        /// Total in-memory circular buffer capacity (in number of pages)
+        /// </summary>
+        public int BufferSize => allocator.BufferSize;
 
         /// <summary>
-        /// Memory used by log (not including reference heap object sizes)
+        /// Actual memory used by log (not including heap objects)
         /// </summary>
-        public long MemorySizeBytes => ((long)allocator.BufferSize) << allocator.LogPageSizeBits;
+        public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+
+        /// <summary>
+        /// Memory allocatable on the log (not including heap objects)
+        /// </summary>
+        public long AllocatableMemorySizeBytes => ((long)(allocator.BufferSize - allocator.EmptyPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
 
         /// <summary>
         /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.
