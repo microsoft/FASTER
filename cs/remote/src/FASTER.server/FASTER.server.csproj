@@ -7,6 +7,7 @@
 	<SignAssembly>true</SignAssembly>
 	<AssemblyOriginatorKeyFile>../../../FASTER.snk</AssemblyOriginatorKeyFile>
 	<DelaySign>false</DelaySign>
+	<EmbedUntrackedSources>true</EmbedUntrackedSources>
 	<DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
 
