@@ -236,8 +236,10 @@ function RenameProperties([System.Object[]]$results) {
     $results | Select-Object `
                 BaselineMean,
                 BaselineStdDev,
+                @{N='BStDev %';E={[System.Math]::Round(($_.BaselineStdDev / $_.BaselineMean) * 100, 1)}},
                 CurrentMean,
                 CurrentStdDev,
+                @{N='CStDev %';E={[System.Math]::Round(($_.CurrentStdDev / $_.CurrentMean) * 100, 1)}},
                 MeanDiff,
                 @{N='MeanDiff %';E={$_.MeanDiffPercent}},
                 StdDevDiff,
