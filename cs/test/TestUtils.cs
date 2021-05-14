@@ -45,10 +45,13 @@ namespace FASTER.test
         // Get Emulator Device working
         // Get Local Memory Device working
 
-        //** Used to test the various devices by using the same test with VALUES parameter
+        // Used to test the various devices by using the same test with VALUES parameter
+        // Cannot use LocalStorageDevice from non-Windows OS platform
         public enum DeviceType
         {
+#if Windows
             LSD,
+#endif
             MLSD
             //EmulatedAzure,
             //LocalMemory
@@ -61,9 +64,11 @@ namespace FASTER.test
 
             switch (testDeviceType)
             {
+#if Windows
                 case DeviceType.LSD:
                     device = new LocalStorageDevice(filename, true, deleteOnClose: true, true, -1, false, false);
                     break;
+#endif
                 case DeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, deleteOnClose: true);
                     break;
