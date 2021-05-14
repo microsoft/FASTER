@@ -73,7 +73,7 @@ namespace FASTER.test
 
             // Create devices \ log for test
             string filename = commitPath + "TryEnqueue" + deviceType.ToString() + ".log";
-            device = TestUtils.CreateTestDevice(device, deviceType, filename);
+            device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             // Reduce SpanBatch to make sure entry fits on page

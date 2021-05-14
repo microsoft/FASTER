@@ -76,7 +76,7 @@ namespace FASTER.test
             int entryFlag = 9999;
 
             string filename = commitPath+ "Enqueue"+deviceType.ToString()+".log";
-            device = TestUtils.CreateTestDevice(device,deviceType, filename);
+            device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
             // Reduce SpanBatch to make sure entry fits on page
@@ -172,7 +172,7 @@ namespace FASTER.test
 
             bool datacheckrun = false;
             string filename = commitPath + "EnqueueAsync" + deviceType.ToString() + ".log";
-            device = TestUtils.CreateTestDevice(device, deviceType, filename);
+            device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
 

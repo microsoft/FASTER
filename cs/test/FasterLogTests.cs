@@ -18,6 +18,7 @@ namespace FASTER.test
     {
 
         [Test]
+        [Category("FasterLog")]
         public void TestDisposeReleasesFileLocksWithInprogressCommit()
         {
             string commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";

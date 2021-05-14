@@ -13,6 +13,7 @@ namespace FASTER.test
     {
 
         [Test]
+        [Category("FasterLog")]
         public void DeltaLogTest1()
         {
             int TotalCount = 1000;

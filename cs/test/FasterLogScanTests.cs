@@ -20,10 +20,7 @@ namespace FASTER.test
 
         private FasterLog log;
         private IDevice device;
-        private FasterLog logUncommitted;
-        private IDevice deviceUnCommitted;
-
-        private string path = Path.GetTempPath() + "ScanTests/";
+        private string commitPath;
         static readonly byte[] entry = new byte[100];
         static int entryLength = 100;
         static int numEntries = 1000;
@@ -33,16 +30,29 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try {  new DirectoryInfo(path).Delete(true);  }
+            try {  new DirectoryInfo(commitPath).Delete(true);  }
             catch {}
 
-            // Set up the Devices \ logs
-            device = Devices.CreateLogDevice(path + "LogScan", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
-            deviceUnCommitted = Devices.CreateLogDevice(path + "LogScanUncommitted", deleteOnClose: true);
-            logUncommitted = new FasterLog(new FasterLogSettings { LogDevice = deviceUnCommitted });
+            // do not set up devices and log here because have DeviceType Enum which can't be set up here and has to be in the test
 
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            log.Dispose();
+            device.Dispose();
+
+            try { new DirectoryInfo(commitPath).Delete(true); }
+            catch { }
+
+        }
+
+        public void PopulateLog(FasterLog log)
+        {
             //****** Populate log for Basic data for tests 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
@@ -68,7 +78,10 @@ namespace FASTER.test
             // Commit to the log
             log.Commit(true);
 
+        }
 
+        public void PopulateUncommittedLog(FasterLog logUncommitted)
+        {
             //****** Populate uncommitted log / device for ScanUncommittedTest
             // Set Default entry data
             for (int j = 0; j < entryLength; j++)
@@ -93,26 +106,21 @@ namespace FASTER.test
 
             // refresh uncommitted so can see it when scan - do NOT commit though 
             logUncommitted.RefreshUncommitted(true);
-
         }
 
-        [TearDown]
-        public void TearDown()
-        {
-            log.Dispose();
-            device.Dispose();
-            deviceUnCommitted.Dispose();
-            logUncommitted.Dispose();
 
-            // Clean up log files
-            try { new DirectoryInfo(path).Delete(true); }
-            catch { }
-        }
 
         [Test]
         [Category("FasterLog")]
-        public void ScanBasicDefaultTest()
+        [Category("Smoke")]
+        public void ScanBasicDefaultTest([Values] TestUtils.DeviceType deviceType)
         {
+
+            // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
+            string filename = commitPath + "LogScanDefault" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            PopulateLog(log);
 
             // Basic default scan from start to end 
             // Indirectly used in other tests, but good to have the basic test here for completeness
@@ -146,10 +154,17 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public void ScanNoDefaultTest()
+        [Category("Smoke")]
+        public void ScanNoDefaultTest([Values] TestUtils.DeviceType deviceType)
         {
 
             // Test where all params are set just to make sure handles it ok
+
+            // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
+            string filename = commitPath + "LogScanNoDefault" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            PopulateLog(log);
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
@@ -181,10 +196,18 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public void ScanByNameTest()
+        [Category("Smoke")]
+        public void ScanByNameTest([Values] TestUtils.DeviceType deviceType)
         {
 
             //You can persist iterators(or more precisely, their CompletedUntilAddress) as part of a commit by simply naming them during their creation. 
+
+            // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
+            string filename = commitPath + "LogScanByName" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            PopulateLog(log);
+
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
@@ -216,9 +239,17 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public void ScanWithoutRecoverTest()
+        [Category("Smoke")]
+        public void ScanWithoutRecoverTest([Values] TestUtils.DeviceType deviceType)
         {
             // You may also force an iterator to start at the specified begin address, i.e., without recovering: recover parameter = false
+
+            // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
+            string filename = commitPath + "LogScanWithoutRecover" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            PopulateLog(log);
+
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
@@ -249,9 +280,17 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public void ScanBufferingModeDoublePageTest()
+        [Category("Smoke")]
+        public void ScanBufferingModeDoublePageTest([Values] TestUtils.DeviceType deviceType)
         {
             // Same as default, but do it just to make sure have test in case default changes
+
+            // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
+            string filename = commitPath + "LogScanDoublePage" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            PopulateLog(log);
+
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
@@ -282,9 +321,16 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public void ScanBufferingModeSinglePageTest()
+        [Category("Smoke")]
+        public void ScanBufferingModeSinglePageTest([Values] TestUtils.DeviceType deviceType)
         {
-            
+
+            // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
+            string filename = commitPath + "LogScanSinglePage" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            PopulateLog(log);
+
             // flag to make sure data has been checked 
             bool datacheckrun = false;
 
@@ -315,8 +361,15 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public void ScanUncommittedTest()
+        [Category("Smoke")]
+        public void ScanUncommittedTest([Values] TestUtils.DeviceType deviceType)
         {
+
+            // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
+            string filename = commitPath + "LogScan" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            PopulateUncommittedLog(log);
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
@@ -324,7 +377,7 @@ namespace FASTER.test
             // Setting scanUnCommitted to true is actual test here.
             // Read the log - Look for the flag so know each entry is unique and still reads uncommitted
             int currentEntry = 0;
-            using (var iter = logUncommitted.Scan(0, 100_000_000, scanUncommitted: true))
+            using (var iter = log.Scan(0, 100_000_000, scanUncommitted: true))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -345,7 +398,6 @@ namespace FASTER.test
             if (datacheckrun == false)
                 Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
         }
-
 
     }
 }

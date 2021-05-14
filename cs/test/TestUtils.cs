@@ -55,8 +55,10 @@ namespace FASTER.test
         }
 
 
-        internal static IDevice CreateTestDevice(IDevice device, DeviceType testDeviceType, string filename, int latencyMs = 20)  // latencyMs works only for DeviceType = LocalMemory
+        internal static IDevice CreateTestDevice(DeviceType testDeviceType, string filename, int latencyMs = 20)  // latencyMs works only for DeviceType = LocalMemory
         {
+            IDevice device = null;
+
             switch (testDeviceType)
             {
                 case DeviceType.LSD:
