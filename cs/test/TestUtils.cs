@@ -49,7 +49,7 @@ namespace FASTER.test
         // Cannot use LocalStorageDevice from non-Windows OS platform
         public enum DeviceType
         {
-#if Windows
+#if WINDOWS
             LSD,
 #endif
             MLSD
@@ -64,7 +64,7 @@ namespace FASTER.test
 
             switch (testDeviceType)
             {
-#if Windows
+#if WINDOWS
                 case DeviceType.LSD:
                     device = new LocalStorageDevice(filename, true, deleteOnClose: true, true, -1, false, false);
                     break;
