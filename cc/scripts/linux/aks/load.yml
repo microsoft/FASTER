@@ -1,0 +1,29 @@
+# This YAML file runs a single pod that fills up a pre-existing sofaster
+# deployment with data for a YCSB style workload. We're going to call
+# this pod "load-sofaster".
+apiVersion: v1
+kind: Pod
+metadata:
+  name: load-sofaster
+
+# We're going to pull our images from a private azure registry for now.
+# Make sure you've configured a secret with Kubernetes for access to
+# this particular registry. We supply the IP addresses of servers in
+# the deployment through a secret. Please make sure this has been
+# configured with Kubernetes before creating.
+spec:
+  imagePullSecrets:
+  - name: sofaster-cluster
+  restartPolicy: Never
+  containers:
+  - name: load
+    image: sofaster.azurecr.io/ycsb:tcp-latest
+    imagePullPolicy: Always
+    env:
+    - name: SERVERS
+      valueFrom:
+        secretKeyRef:
+          name: servers
+          key: ips
+    command: ["/SoFASTER/scripts/common/ycsb.py"]
+    args: ["run", "--servers", "$(SERVERS)", "--no-ycsb"]

@@ -26,6 +26,26 @@ struct KeyHash {
     return *this;
   }
 
+  inline bool operator>=(const KeyHash& other) {
+    return control_ >= other.control_;
+  }
+
+  inline bool operator<(const KeyHash& other) {
+    return control_ < other.control_;
+  }
+
+  inline bool operator<(const KeyHash& other) const {
+    return control_ < other.control_;
+  }
+
+  inline bool operator<=(const KeyHash& other) {
+    return control_ <= other.control_;
+  }
+
+  inline bool operator==(const KeyHash& other) {
+    return control_ == other.control_;
+  }
+
   /// Truncate the key hash's address to get the page_index into a hash table of specified size.
   inline uint64_t idx(uint64_t size) const {
     assert(Utility::IsPowerOfTwo(size));

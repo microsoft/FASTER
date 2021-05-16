@@ -1,0 +1,37 @@
+# This YAML file deploys a cluster of SoFASTER storage servers. We're going to
+# call this deployment "sofaster-cluster".
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sofaster-cluster
+
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sofaster-cluster
+
+  # Pod templates for this deployment.
+  template:
+    metadata:
+      labels:
+        app: sofaster-cluster
+
+    # We're going to pull our images from a private azure registry for now.
+    # Make sure you've configured a secret with Kubernetes for access to
+    # this particular registry. We also access DFS through a secret key.
+    # Make sure this has been configured with Kubernetes too.
+    spec:
+      imagePullSecrets:
+      - name: sofaster-secret
+      containers:
+      - name: server
+        image: sofaster.azurecr.io/server:tcp-latest
+        imagePullPolicy: Always
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        command: ["/SoFASTER/scripts/common/server.py"]
+        args: ["run", "--ip", "$(POD_IP)"]

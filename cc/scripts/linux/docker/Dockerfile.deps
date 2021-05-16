@@ -1,0 +1,13 @@
+# To build an image from this file, run the following command:
+#     sudo docker image build ../ -f Dockerfile.deps -t sofaster-deps
+
+# We're going to use Ubuntu 18.04 to run Sofaster.
+FROM ubuntu:bionic
+
+# Copy the Dependencies script into the container.
+RUN mkdir dependencies
+COPY common/deps.sh ./dependencies/
+
+# Run the Dependencies script.
+WORKDIR "./dependencies"
+RUN ["/bin/bash", "deps.sh"]

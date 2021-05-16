@@ -7,10 +7,13 @@ enable_testing()
 include(ExternalProject)
 project(FASTER)
 
-# The set of additional options that we can pass into cmake. We currently support
+# The set of additional options that we can pass into cmake.
+# We currently support
 # a flag `USE_BLOBS` that will link in azure's blob store library so that FASTER
 # can be used with a blob device for the hybrid log.
 OPTION(USE_BLOBS "Extend FASTER's hybrid log to blob store" OFF)
+# We also support a flag to compile client and server binaries.
+OPTION(USE_REMOTE "Compile Client-Server code" OFF)
 
 if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi /nologo /Gm- /W3 /WX /EHsc /GS /fp:precise /permissive- /Zc:wchar_t /Zc:forScope /Zc:inline /Gd /TP")
@@ -89,6 +92,11 @@ if(WIN32)
 set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_LINK_LIBS} rpcrt4 wsock32 Ws2_32)
 else()
   set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_BENCHMARK_LINK_LIBS} stdc++fs uuid tbb gcc aio m stdc++ pthread)
+  # Using remote code. Link in appropriate libraries.
+  if(USE_REMOTE)
+    set (FASTER_BENCHMARK_LINK_LIBS ${FASTER_BENCHMARK_LINK_LIBS} crypto ssl
+         boost_program_options boost_system boost_thread)
+  endif()
 endif()
 
 #Function to automate building test binaries
@@ -115,4 +123,9 @@ add_subdirectory(test)
 # Compile tests for blob device too
 if(USE_BLOBS)
   add_subdirectory(test/blobs)
+endif()
+
+# Compile client and server binaries if enabled
+if(USE_REMOTE)
+  add_subdirectory(remote)
 endif()
