@@ -24,12 +24,19 @@
 .PARAMETER RunSeconds
     The directory containing the results of the new run, with the changes to be tested for impact; the result comparison is "NewDir throughput minus OldDir throughput".
 
+.PARAMETER CloneAndBuild
+    Clone the repo and switch to the branches in ExeDirs, then build these.
+
 .EXAMPLE
     ./compare_runs.ps1 './baseline' './refactor_FASTERImpl'
+
+.EXAMPLE
+    ./compare_runs.ps1 './baseline' './refactor_FASTERImpl' -NoLock
 #>
 param (
   [Parameter(Mandatory)] [String]$OldDir,
-  [Parameter(Mandatory)] [String]$NewDir
+  [Parameter(Mandatory)] [String]$NewDir,
+  [Parameter(Mandatory=$false)] [switch]$NoLock
 )
 
 class Result : System.IComparable, System.IEquatable[Object] {
@@ -232,6 +239,10 @@ $LoadResults.Sort()
 $RunResults.Sort()
 
 function RenameProperties([System.Object[]]$results) {
+    if ($NoLock) {
+        $results = $results | Where-Object {$_.LockMode -eq 0}
+    }
+    
     # Use this to rename "Percent" suffix to "%"
     $results | Select-Object `
                 BaselineMean,
