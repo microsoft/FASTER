@@ -22,6 +22,7 @@ namespace FASTER.test.recovery
         string path;
         string deviceName;
         CancellationTokenSource cts;
+        SemaphoreSlim done;
 
         [SetUp]
         public void Setup()
@@ -31,6 +32,7 @@ namespace FASTER.test.recovery
             if (Directory.Exists(path))
                 TestUtils.DeleteDirectory(path);
             cts = new CancellationTokenSource();
+            done = new SemaphoreSlim(0);
         }
 
         [TearDown]
@@ -61,7 +63,8 @@ namespace FASTER.test.recovery
                 log.RefreshUncommitted();
                 await Task.Delay(TimeSpan.FromMilliseconds(ProducerPauseMs));
             }
-            await Task.Delay(TimeSpan.FromMilliseconds(CommitPeriodMs * 4));
+            // Ensure the reader had time to see all data
+            await done.WaitAsync();
             cts.Cancel();
         }
 
@@ -99,6 +102,8 @@ namespace FASTER.test.recovery
                     Assert.AreEqual(prevValue + 1, value);
                     prevValue = value;
                     iter.CompleteUntil(nextAddress);
+                    if (prevValue == NumElements - 1)
+                        done.Release();
                 }
             } catch (OperationCanceledException) { }
             Assert.AreEqual(NumElements - 1, prevValue);
