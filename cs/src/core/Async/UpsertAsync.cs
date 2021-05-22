@@ -13,8 +13,10 @@ namespace FASTER.core
     {
         internal struct UpsertAsyncOperation<Input, Output, Context> : IUpdateAsyncOperation<Input, Output, Context, UpsertAsyncResult<Input, Output, Context>>
         {
+            /// <inheritdoc/>
             public UpsertAsyncResult<Input, Output, Context> CreateResult(Status status, Output output) => new UpsertAsyncResult<Input, Output, Context>(status);
 
+            /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output)
             {
@@ -28,14 +30,18 @@ namespace FASTER.core
                 return TranslateStatus(internalStatus);
             }
 
+            /// <inheritdoc/>
             public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CompletionEvent flushEvent, CancellationToken token)
                 => SlowUpsertAsync(fasterKV, fasterSession, currentCtx, pendingContext, flushEvent, token);
 
+            /// <inheritdoc/>
             public bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession) => false;
 
+            /// <inheritdoc/>
             public void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext) { }
 
+            /// <inheritdoc/>
             public Status GetStatus(UpsertAsyncResult<Input, Output, Context> asyncResult) => asyncResult.Status;
         }
 

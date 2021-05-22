@@ -17,18 +17,61 @@ namespace FASTER.core
 
         internal interface IUpdateAsyncOperation<Input, Output, Context, TAsyncResult>
         {
+            /// <summary>
+            /// This creates an instance of the <typeparamref name="TAsyncResult"/>, for example <see cref="RmwAsyncResult{Input, Output, Context}"/>
+            /// </summary>
+            /// <param name="status">The status code; for this variant of <typeparamref name="TAsyncResult"/> intantiation, this will not be <see cref="Status.PENDING"/></param>
+            /// <param name="output">The completed output of the operation, if any</param>
+            /// <returns></returns>
             TAsyncResult CreateResult(Status status, Output output);
 
+            /// <summary>
+            /// This performs the low-level synchronous operation for the implementation class of <typeparamref name="TAsyncResult"/>; for example,
+            /// <see cref="FasterKV{Key, Value}.InternalRMW"/>.
+            /// </summary>
+            /// <param name="fasterKV">The <see cref="FasterKV{Key, Value}"/> instance the async call was made on</param>
+            /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
+            /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
+            /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
+            /// <param name="asyncOp">Whether this is from a synchronous or asynchronous completion call</param>
+            /// <param name="flushEvent">The event to wait for flush completion on</param>
+            /// <param name="output">The output to be populated by this operation</param>
+            /// <returns></returns>
             Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushTask, out Output output);
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output);
+            /// <summary>
+            /// Performs the asynchronous operation. This may be a wait for <paramref name="flushEvent"/> or a disk IO.
+            /// </summary>
+            /// <param name="fasterKV">The <see cref="FasterKV{Key, Value}"/> instance the async call was made on</param>
+            /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
+            /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
+            /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
+            /// <param name="flushEvent">The event to wait for flush completion on</param>
+            /// <param name="token">The cancellation token, if any</param>
+            /// <returns></returns>
             ValueTask<TAsyncResult> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
                                             CompletionEvent flushEvent, CancellationToken token);
 
+            /// <summary>
+            /// For RMW only, completes any pending IO; no-op for other implementations.
+            /// </summary>
+            /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
+            /// <returns>Whether the pending operation was complete</returns>
             bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession);
 
+            /// <summary>
+            /// For RMW only, decrements the count of pending IOs and async operations; no-op for other implementations.
+            /// </summary>
+            /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
+            /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
             void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext);
 
+            /// <summary>
+            /// Returns the current status of the <paramref name="asyncResult"/>; usually examined for whether it <see cref="Status.PENDING"/> or not.
+            /// </summary>
+            /// <param name="asyncResult"></param>
+            /// <returns>The current status of the <paramref name="asyncResult"/></returns>
             Status GetStatus(TAsyncResult asyncResult);
         }
 

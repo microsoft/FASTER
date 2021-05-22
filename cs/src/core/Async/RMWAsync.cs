@@ -18,8 +18,10 @@ namespace FASTER.core
 
             internal RmwAsyncOperation(AsyncIOContext<Key, Value> diskRequest) => this.diskRequest = diskRequest;
 
+            /// <inheritdoc/>
             public RmwAsyncResult<Input, Output, Context> CreateResult(Status status, Output output) => new RmwAsyncResult<Input, Output, Context>(status, output);
 
+            /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output)
             {
@@ -38,10 +40,12 @@ namespace FASTER.core
                 return status;
             }
 
+            /// <inheritdoc/>
             public ValueTask<RmwAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CompletionEvent flushEvent, CancellationToken token)
                 => SlowRmwAsync(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest, flushEvent, token);
 
+            /// <inheritdoc/>
             public bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession)
             {
                 if (this.diskRequest.IsDefault())
@@ -54,6 +58,7 @@ namespace FASTER.core
                 return status != Status.PENDING;
             }
 
+            /// <inheritdoc/>
             public void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext)
             {
                 currentCtx.ioPendingRequests.Remove(pendingContext.id);
@@ -61,6 +66,7 @@ namespace FASTER.core
                 currentCtx.pendingReads.Remove();
             }
 
+            /// <inheritdoc/>
             public Status GetStatus(RmwAsyncResult<Input, Output, Context> asyncResult) => asyncResult.Status;
         }
 

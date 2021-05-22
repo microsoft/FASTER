@@ -24,8 +24,8 @@
 .PARAMETER RunSeconds
     The directory containing the results of the new run, with the changes to be tested for impact; the result comparison is "NewDir throughput minus OldDir throughput".
 
-.PARAMETER CloneAndBuild
-    Clone the repo and switch to the branches in ExeDirs, then build these.
+.PARAMETER NoLock
+    Do not include results with locking
 
 .EXAMPLE
     ./compare_runs.ps1 './baseline' './refactor_FASTERImpl'
