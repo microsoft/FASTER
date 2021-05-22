@@ -116,6 +116,8 @@ namespace FASTER.core
 
             if (!scanUncommitted)
             {
+                if (NextAddress >= endAddress)
+                    return new ValueTask<bool>(false);
                 if (NextAddress < fasterLog.CommittedUntilAddress)
                     return new ValueTask<bool>(true);
 
