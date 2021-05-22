@@ -1829,7 +1829,7 @@ namespace FASTER.core
             var spins = 0;
             while (true)
             {
-                var flushEvent = allocator.FlushEvent;
+                var flushTask = allocator.FlushTask;
                 logicalAddress = allocator.TryAllocate(recordSize);
                 if (logicalAddress > 0)
                     return;
@@ -1844,7 +1844,7 @@ namespace FASTER.core
                     try
                     {
                         epoch.Suspend();
-                        flushEvent.Wait();
+                        flushTask.GetAwaiter().GetResult();
                     }
                     finally
                     {

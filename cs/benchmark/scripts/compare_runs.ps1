@@ -24,19 +24,12 @@
 .PARAMETER RunSeconds
     The directory containing the results of the new run, with the changes to be tested for impact; the result comparison is "NewDir throughput minus OldDir throughput".
 
-.PARAMETER NoLock
-    Do not include results with locking
-
 .EXAMPLE
     ./compare_runs.ps1 './baseline' './refactor_FASTERImpl'
-
-.EXAMPLE
-    ./compare_runs.ps1 './baseline' './refactor_FASTERImpl' -NoLock
 #>
 param (
   [Parameter(Mandatory)] [String]$OldDir,
-  [Parameter(Mandatory)] [String]$NewDir,
-  [Parameter(Mandatory=$false)] [switch]$NoLock
+  [Parameter(Mandatory)] [String]$NewDir
 )
 
 class Result : System.IComparable, System.IEquatable[Object] {
@@ -239,18 +232,12 @@ $LoadResults.Sort()
 $RunResults.Sort()
 
 function RenameProperties([System.Object[]]$results) {
-    if ($NoLock) {
-        $results = $results | Where-Object {$_.LockMode -eq 0}
-    }
-    
     # Use this to rename "Percent" suffix to "%"
     $results | Select-Object `
                 BaselineMean,
                 BaselineStdDev,
-                @{N='BStDev %';E={[System.Math]::Round(($_.BaselineStdDev / $_.BaselineMean) * 100, 1)}},
                 CurrentMean,
                 CurrentStdDev,
-                @{N='CStDev %';E={[System.Math]::Round(($_.CurrentStdDev / $_.CurrentMean) * 100, 1)}},
                 MeanDiff,
                 @{N='MeanDiff %';E={$_.MeanDiffPercent}},
                 StdDevDiff,

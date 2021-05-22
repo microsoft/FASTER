@@ -51,7 +51,7 @@ namespace FASTER.test
             Assert.AreEqual(key + numRecords * 60, contextStruct.cfield2);
         }
 
-        // This class reduces code duplication due to ClientSession vs. AdvancedClientSession
+        // This class reduces code duplication due to ClientSession vs. AdvancedClietnSession
         class ProcessPending
         {
             // Get the first chunk of outputs as a group, testing realloc.

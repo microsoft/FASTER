@@ -29,8 +29,8 @@ namespace FASTER.core
         internal async ValueTask RecoverFuzzyIndexAsync(IndexCheckpointInfo info, CancellationToken cancellationToken)
         {
             ulong alignedIndexSize = InitializeMainIndexRecovery(ref info, isAsync: true);
-            await this.recoveryCountdown.WaitAsync(cancellationToken).ConfigureAwait(false);
-            await overflowBucketsAllocator.RecoverAsync(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes, cancellationToken).ConfigureAwait(false);
+            await this.recoveryCountdown.WaitAsync(cancellationToken);
+            await overflowBucketsAllocator.RecoverAsync(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes, cancellationToken);
             FinalizeMainIndexRecovery(info);
         }
 
@@ -79,10 +79,10 @@ namespace FASTER.core
         internal async ValueTask RecoverFuzzyIndexAsync(int ht_version, IDevice device, ulong num_ht_bytes, IDevice ofbdevice, int num_buckets, ulong num_ofb_bytes, CancellationToken cancellationToken)
         {
             BeginMainIndexRecovery(ht_version, device, num_ht_bytes, isAsync: true);
-            await this.recoveryCountdown.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await this.recoveryCountdown.WaitAsync(cancellationToken);
             var sectorSize = device.SectorSize;
             var alignedIndexSize = (num_ht_bytes + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
-            await overflowBucketsAllocator.RecoverAsync(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes, cancellationToken).ConfigureAwait(false);
+            await overflowBucketsAllocator.RecoverAsync(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes, cancellationToken);
         }
 
         internal bool IsFuzzyIndexRecoveryComplete(bool waitUntilComplete = false)

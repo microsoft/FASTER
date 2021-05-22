@@ -22,7 +22,6 @@ namespace FASTER.core
         /// </summary>
         /// <param name="preallocateFile">Whether files should be preallocated</param>
         /// <param name="deleteOnClose">Whether file should be deleted on close</param>
-        /// <param name="throttleLimit">Throttle limit (max number of pending I/Os) for this device instance</param>
         public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, int? throttleLimit = null)
         {
             this.preallocateFile = preallocateFile;

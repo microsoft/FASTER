@@ -409,9 +409,6 @@ namespace FASTER.core
             {
                 return new StandardHeapContainer<Input>(ref input);
             }
-
-            public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-                => throw new NotImplementedException();
         }
     }
 
@@ -626,6 +623,7 @@ namespace FASTER.core
         /// Get accessor for FASTER read cache
         /// </summary>
         LogAccessor<Key, Value> ReadCache { get; }
+
         #endregion
     }
 }

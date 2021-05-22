@@ -359,7 +359,7 @@ namespace FASTER.core
                 FlushPage();
             if (Interlocked.Decrement(ref issuedFlush) == 0)
                 completedSemaphore.Release();
-            await completedSemaphore.WaitAsync().ConfigureAwait(false);
+            await completedSemaphore.WaitAsync();
             Interlocked.Increment(ref issuedFlush);
             completedSemaphore = new SemaphoreSlim(0);
         }

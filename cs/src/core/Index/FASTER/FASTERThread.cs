@@ -308,7 +308,7 @@ namespace FASTER.core
                 }
                 else
                 {
-                    request = await opCtx.readyResponses.DequeueAsync(token).ConfigureAwait(false);
+                    request = await opCtx.readyResponses.DequeueAsync(token);
 
                     fasterSession.UnsafeResumeThread();
                     InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request, completedOutputs);
@@ -373,10 +373,6 @@ namespace FASTER.core
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 status = (Status)internalStatus;
-            }
-            else if (internalStatus == OperationStatus.ALLOCATE_FAILED)
-            {
-                return Status.PENDING;  // This plus newRequest.IsDefault() means allocate failed
             }
             else
             {

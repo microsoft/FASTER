@@ -59,11 +59,6 @@ namespace FASTER.core
         public TaskCompletionSource<AsyncIOContext<Key, Value>> asyncOperation;
 
         /// <summary>
-        /// Indicates whether this is a default instance with no pending operation
-        /// </summary>
-        public bool IsDefault() => this.callbackQueue is null && this.asyncOperation is null;
-
-        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()

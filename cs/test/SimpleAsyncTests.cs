@@ -340,53 +340,7 @@ namespace FASTER.test.async
             Assert.IsTrue(status == Status.OK && output == key + input + input);
         }
 
-        // Test that does both UpsertAsync and RMWAsync to populate the FasterKV and update it, possibly after flushing it from memory.
-        [Test]
-        [Category("FasterKV")]
-        public async Task UpsertAsyncAndRMWAsyncTest([Values] bool useRMW, [Values] bool doFlush, [Values] bool completeAsync)
-        {
-            using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
 
-            async ValueTask completeRmw(FasterKV<long, long>.RmwAsyncResult<long, long, Empty> ar)
-            {
-                if (completeAsync)
-                {
-                    while (ar.Status == Status.PENDING)
-                        ar = await ar.CompleteAsync(); // test async version of Upsert completion
-                    return;
-                }
-                ar.Complete();
-            }
 
-            async ValueTask completeUpsert(FasterKV<long, long>.UpsertAsyncResult<long, long, Empty> ar)
-            {
-                if (completeAsync)
-                {
-                    while (ar.Status == Status.PENDING)
-                        ar = await ar.CompleteAsync(); // test async version of Upsert completion
-                    return;
-                }
-                ar.Complete();
-            }
-
-            for (long key = 0; key < numOps; key++)
-            {
-                if (useRMW)
-                    await completeRmw(await s1.RMWAsync(key, key));
-                else
-                    await completeUpsert(await s1.UpsertAsync(key, key));
-            }
-
-            if (doFlush)
-                fht1.Log.FlushAndEvict(wait: true);
-
-            for (long key = 0; key < numOps; key++)
-            {
-                if (useRMW)
-                    await completeRmw(await s1.RMWAsync(key, key + numOps));
-                else
-                    await completeUpsert(await s1.UpsertAsync(key, key + numOps));
-            }
-        }
     }
 }

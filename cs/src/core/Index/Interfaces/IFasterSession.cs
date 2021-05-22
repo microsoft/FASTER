@@ -21,8 +21,6 @@
     /// <typeparam name="Context"></typeparam>
     internal interface IFasterSession<Key, Value, Input, Output, Context> : IAdvancedFunctions<Key, Value, Input, Output, Context>, IFasterSession, IVariableLengthStruct<Value, Input>
     {
-        bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
-
         IHeapContainer<Input> GetHeapContainer(ref Input input);
     }
 }

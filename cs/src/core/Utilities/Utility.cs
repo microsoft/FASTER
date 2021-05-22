@@ -297,7 +297,7 @@ namespace FASTER.core
         /// Throws OperationCanceledException if token cancels before the real task completes.
         /// Doesn't abort the inner task, but allows the calling code to get "unblocked" and react to stuck tasks.
         /// </summary>
-        internal static Task<T> WithCancellationAsync<T>(this Task<T> task, CancellationToken token, bool useSynchronizationContext = false)
+        internal static Task<T> WithCancellationAsync<T>(this Task<T> task, CancellationToken token, bool useSynchronizationContext = false, bool continueOnCapturedContext = false)
         {
             if (!token.CanBeCanceled || task.IsCompleted)
             {
@@ -308,10 +308,10 @@ namespace FASTER.core
                 return Task.FromCanceled<T>(token);
             }
 
-            return SlowWithCancellationAsync(task, token, useSynchronizationContext);
+            return SlowWithCancellationAsync(task, token, useSynchronizationContext, continueOnCapturedContext);
         }
 
-        private static async Task<T> SlowWithCancellationAsync<T>(Task<T> task, CancellationToken token, bool useSynchronizationContext)
+        private static async Task<T> SlowWithCancellationAsync<T>(Task<T> task, CancellationToken token, bool useSynchronizationContext, bool continueOnCapturedContext)
         {
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             using (token.Register(s => ((TaskCompletionSource<bool>)s).TrySetResult(true), tcs, useSynchronizationContext))
@@ -323,7 +323,40 @@ namespace FASTER.core
             }
 
             // make sure any exceptions in the task get unwrapped and exposed to the caller.
-            return await task;
+            return await task.ConfigureAwait(continueOnCapturedContext);
+        }
+
+        /// <summary>
+        /// Throws OperationCanceledException if token cancels before the real task completes.
+        /// Doesn't abort the inner task, but allows the calling code to get "unblocked" and react to stuck tasks.
+        /// </summary>
+        internal static Task WithCancellationAsync(this Task task, CancellationToken token, bool useSynchronizationContext = false, bool continueOnCapturedContext = false)
+        {
+            if (!token.CanBeCanceled || task.IsCompleted)
+            {
+                return task;
+            }
+            else if (token.IsCancellationRequested)
+            {
+                return Task.FromCanceled(token);
+            }
+
+            return SlowWithCancellationAsync(task, token, useSynchronizationContext, continueOnCapturedContext);
+        }
+
+        private static async Task SlowWithCancellationAsync(Task task, CancellationToken token, bool useSynchronizationContext, bool continueOnCapturedContext)
+        {
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (token.Register(s => ((TaskCompletionSource<bool>)s).TrySetResult(true), tcs, useSynchronizationContext))
+            {
+                if (task != await Task.WhenAny(task, tcs.Task))
+                {
+                    token.ThrowIfCancellationRequested();
+                }
+            }
+
+            // make sure any exceptions in the task get unwrapped and exposed to the caller.
+            await task.ConfigureAwait(continueOnCapturedContext);
         }
     }
 }

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
@@ -9,13 +10,18 @@ namespace FASTER.core
     /// Heap container to store keys and values when they go pending
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public interface IHeapContainer<T> : IDisposable
+    public interface IHeapContainer<T>
     {
         /// <summary>
         /// Get object
         /// </summary>
         /// <returns></returns>
         ref T Get();
+
+        /// <summary>
+        /// Dispose container
+        /// </summary>
+        void Dispose();
     }
 
     /// <summary>

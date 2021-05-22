@@ -200,18 +200,20 @@ namespace FASTER.devices
 
                 if (this.underLease)
                 {
-                    this.BlobManager.ConfirmLeaseAsync().GetAwaiter().GetResult();  // REVIEW: this method cannot avoid GetAwaiter
+                    this.BlobManager.ConfirmLeaseAsync().GetAwaiter().GetResult();
                 }
 
                 if (!this.BlobManager.CancellationToken.IsCancellationRequested)
                 {
-                    var t = pageBlob.DeleteAsync(cancellationToken: this.BlobManager.CancellationToken);
-                    t.GetAwaiter().GetResult();                                     // REVIEW: this method cannot avoid GetAwaiter
-                    if (t.IsFaulted)
-                    {
-                        this.BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
-                    }
-                    callback(result);
+                    pageBlob.DeleteAsync(cancellationToken: this.BlobManager.CancellationToken)
+                       .ContinueWith((Task t) =>
+                       {
+                           if (t.IsFaulted)
+                           {
+                               this.BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
+                           }
+                           callback(result);
+                       });
                 }
             }
         }
@@ -236,7 +238,7 @@ namespace FASTER.devices
         {
             try
             {
-                await BlobManager.AsyncStorageWriteMaxConcurrency.WaitAsync().ConfigureAwait(false);
+                await BlobManager.AsyncStorageWriteMaxConcurrency.WaitAsync();
 
                 int numAttempts = 0;
                 long streamPosition = stream.Position;
@@ -263,7 +265,7 @@ namespace FASTER.devices
                     {
                         TimeSpan nextRetryIn = TimeSpan.FromSeconds(1 + Math.Pow(2, (numAttempts - 1)));
                         this.BlobManager?.HandleBlobError(nameof(WritePortionToBlobAsync), $"could not write to page blob, will retry in {nextRetryIn}s", blob?.Name, e, false);
-                        await Task.Delay(nextRetryIn).ConfigureAwait(false);
+                        await Task.Delay(nextRetryIn);
                         stream.Seek(streamPosition, SeekOrigin.Begin);  // must go back to original position before retrying
                         continue;
                     }
@@ -292,7 +294,7 @@ namespace FASTER.devices
 
             try
             {
-                await BlobManager.AsyncStorageReadMaxConcurrency.WaitAsync().ConfigureAwait(false);
+                await BlobManager.AsyncStorageReadMaxConcurrency.WaitAsync();
 
                 int numAttempts = 0;
 
@@ -327,7 +329,7 @@ namespace FASTER.devices
                     {
                         TimeSpan nextRetryIn = TimeSpan.FromSeconds(1 + Math.Pow(2, (numAttempts - 1)));
                         this.BlobManager?.HandleBlobError(nameof(ReadFromBlobAsync), $"could not write to page blob, will retry in {nextRetryIn}s", blob?.Name, e, false);
-                        await Task.Delay(nextRetryIn).ConfigureAwait(false);
+                        await Task.Delay(nextRetryIn);
                         stream.Seek(0, SeekOrigin.Begin); // must go back to original position before retrying
                         continue;
                     }
