@@ -60,7 +60,7 @@ namespace FASTER.devices
         private async Task StartAsync()
         {
             this.leaseBlob = this.leaseDirectory.GetBlockBlobReference(LeaseBlobName);
-            await this.AcquireOwnership();
+            await this.AcquireOwnership().ConfigureAwait(false);
         }
 
         /// <summary>
@@ -70,7 +70,7 @@ namespace FASTER.devices
         public async Task StopAsync()
         {
             this.cts.Cancel(); // has no effect if already cancelled
-            await this.LeaseMaintenanceLoopTask; // wait for loop to terminate cleanly
+            await this.LeaseMaintenanceLoopTask.ConfigureAwait(false); // wait for loop to terminate cleanly
         }
 
         /// <inheritdoc />
@@ -101,7 +101,7 @@ namespace FASTER.devices
 
                 Debug.WriteLine("Access is waiting for fresh lease");
 
-                await this.NextLeaseRenewalTask;
+                await this.NextLeaseRenewalTask.ConfigureAwait(false);
             }
         }
 

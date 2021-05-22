@@ -37,7 +37,26 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Get item
+        /// Get item synchronously
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public T Get(CancellationToken token = default)
+        {
+            for (; ; )
+            {
+                if (disposed)
+                    throw new FasterException("Getting handle in disposed device");
+
+                if (GetOrAdd(itemQueue, out T item))
+                    return item;
+
+                handleAvailable.Wait(token);
+            }
+        }
+
+        /// <summary>
+        /// Get item asynchronously
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
@@ -51,7 +70,7 @@ namespace FASTER.core
                 if (GetOrAdd(itemQueue, out T item))
                     return item;
 
-                await handleAvailable.WaitAsync(token);
+                await handleAvailable.WaitAsync(token).ConfigureAwait(false);
             }
         }
 
