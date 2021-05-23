@@ -234,18 +234,8 @@ namespace FASTER.core
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
-        public bool TakeFullCheckpoint(out Guid token)
-        {
-            ISynchronizationTask backend;
-            if (FoldOverSnapshot)
-                backend = new FoldOverCheckpointTask();
-            else
-                backend = new SnapshotCheckpointTask();
-
-            var result = StartStateMachine(new FullCheckpointStateMachine(backend, -1));
-            token = _hybridLogCheckpointToken;
-            return result;
-        }
+        public bool TakeFullCheckpoint(out Guid token) 
+            => TakeFullCheckpoint(out token, this.FoldOverSnapshot ? CheckpointType.FoldOver : CheckpointType.Snapshot);
 
         /// <summary>
         /// Initiate full checkpoint
@@ -293,7 +283,7 @@ namespace FASTER.core
             var success = TakeFullCheckpoint(out Guid token, checkpointType);
 
             if (success)
-                await CompleteCheckpointAsync(cancellationToken);
+                await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
 
             return (success, token);
         }
@@ -327,7 +317,7 @@ namespace FASTER.core
             var success = TakeIndexCheckpoint(out Guid token);
 
             if (success)
-                await CompleteCheckpointAsync(cancellationToken);
+                await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
 
             return (success, token);
         }
@@ -396,7 +386,7 @@ namespace FASTER.core
             var success = TakeHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental);
 
             if (success)
-                await CompleteCheckpointAsync(cancellationToken);
+                await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
 
             return (success, token);
         }
@@ -492,7 +482,7 @@ namespace FASTER.core
                 foreach (var task in valueTasks)
                 {
                     if (!task.IsCompleted)
-                        await task;
+                        await task.ConfigureAwait(false);
                 }
             }
         }

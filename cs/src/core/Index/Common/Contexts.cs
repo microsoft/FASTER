@@ -196,7 +196,7 @@ namespace FASTER.core
             public async ValueTask WaitPendingAsync(CancellationToken token = default)
             {
                 if (SyncIoPendingCount > 0)
-                    await readyResponses.WaitForEntryAsync(token);
+                    await readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
             }
 
             public FasterExecutionContext<Input, Output, Context> prevCtx;
