@@ -52,8 +52,8 @@ namespace FASTER.test
 #if WINDOWS
             LSD,
 #endif
-            MLSD
-            //EmulatedAzure,
+            MLSD,
+            EmulatedAzure
             //LocalMemory
         }
 
@@ -72,12 +72,13 @@ namespace FASTER.test
                 case DeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, deleteOnClose: true);
                     break;
+                case DeviceType.EmulatedAzure:
+                    string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
+                    string TEST_CONTAINER = "test";
+                    device = new AzureStorageDevice(EMULATED_STORAGE_STRING, $"{TEST_CONTAINER}", "AzureStorageDeviceLogDir", "fasterlogblob", deleteOnClose: true); 
+                    break;
                     /*  For now, just start with two and can add more devices 
-                                    case DeviceType.EmulatedAzure:
-                                        string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-                                        string TEST_CONTAINER = "test";
-                                        device = new AzureStorageDevice(EMULATED_STORAGE_STRING, $"{TEST_CONTAINER}", "AzureStorageDevicerLogTest", "fasterlog.log", deleteOnClose: true); 
-                                        break;
+
                                     case DeviceType.LocalMemory:
                                         device = new LocalMemoryDevice(1L << 30, 1L << 25, 2, latencyMs: latencyMs);
                                         break;

@@ -265,8 +265,13 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask TryEnqueue2([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        [Category("Smoke")]
+
+        public async ValueTask TryEnqueue2([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
+            string filename = commitPath + "TryEnqueue2" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+
             var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
@@ -323,8 +328,13 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask TruncateUntilBasic([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        [Category("Smoke")]
+
+        public async ValueTask TruncateUntilBasic([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
+            string filename = commitPath + "TruncateUntilBasic" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+
             var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
@@ -362,12 +372,16 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values]LogChecksumType logChecksum)
+        [Category("Smoke")]
+
+        public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values]LogChecksumType logChecksum, [Values] TestUtils.DeviceType deviceType)
         {
             CancellationToken cancellationToken = default;
 
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numSpanEntries);
 
+            string filename = commitPath + "EnqueueAndWaitForCommitAsyncBasicTest" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager });
 
             int headerSize = logChecksum == LogChecksumType.None ? 4 : 12;
@@ -540,8 +554,11 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public void CommitNoSpinWait()
+        [Category("Smoke")]
+        public void CommitNoSpinWait([Values] TestUtils.DeviceType deviceType)
         {
+            string filename = commitPath + "CommitNoSpinWait" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager });
 
             int commitFalseEntries = 100;
@@ -593,13 +610,16 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask CommitAsyncPrevTask()
+        [Category("Smoke")]
+        public async ValueTask CommitAsyncPrevTask([Values] TestUtils.DeviceType deviceType)
         {
 
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
             Task currentTask;
 
+            string filename = commitPath + "CommitAsyncPrevTask" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
             var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager };
             log = await FasterLog.CreateAsync(logSettings);
 
@@ -679,11 +699,15 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType)
+        [Category("Smoke")]
+        public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
 
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
+
+            string filename = commitPath + "RefreshUncommittedAsyncTest" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
 
             log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogCommitManager = manager });
             byte[] data1 = new byte[1000];
@@ -741,7 +765,7 @@ namespace FASTER.test
                 if (!IsAsync(iteratorType))
                     Assert.IsFalse(iter.GetNext(out _, out _, out _));
 
-                // Actual tess is here 
+                // Actual test is here 
                 await log.RefreshUncommittedAsync(token);
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
