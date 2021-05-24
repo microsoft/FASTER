@@ -170,7 +170,7 @@ namespace FASTER.core
                 {
                     try
                     {
-                        logReadHandle = await streampool.GetAsync();
+                        logReadHandle = await streampool.GetAsync().ConfigureAwait(false);
                         logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
 #if NETSTANDARD2_1
                         unsafe
@@ -210,7 +210,7 @@ namespace FASTER.core
                
                 try
                 {
-                    numBytes = await readTask;
+                    numBytes = await readTask.ConfigureAwait(false);
 
 #if !NETSTANDARD2_1
                     unsafe
@@ -332,7 +332,7 @@ namespace FASTER.core
                 {
                     try
                     {
-                        logWriteHandle = await streampool.GetAsync();
+                        logWriteHandle = await streampool.GetAsync().ConfigureAwait(false);
                         logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
 #if NETSTANDARD2_1
                         unsafe
@@ -379,7 +379,7 @@ namespace FASTER.core
 
                 try
                 {
-                    await writeTask;
+                    await writeTask.ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -398,7 +398,7 @@ namespace FASTER.core
                     memory?.Return();
 #endif
                     // Sequentialize all writes to same handle
-                    await ((FileStream)logWriteHandle).FlushAsync();
+                    await ((FileStream)logWriteHandle).FlushAsync().ConfigureAwait(false);
                     streampool?.Return(logWriteHandle);
 
                     // Issue user callback
@@ -438,11 +438,10 @@ namespace FASTER.core
         {
             if (segmentSize > 0) return segmentSize;
             var pool = GetOrAddHandle(segment);
-            long size;
             if (!pool.Item1.TryGet(out var stream))
-                stream = pool.Item1.GetAsync().GetAwaiter().GetResult();
+                stream = pool.Item1.Get();
 
-            size = stream.Length;
+            long size = stream.Length;
             pool.Item1.Return(stream);
             return size;
         }

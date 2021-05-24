@@ -237,14 +237,9 @@ namespace FASTER.core
         internal IObserver<IFasterScanIterator<Key, Value>> OnEvictionObserver;
 
         /// <summary>
-        /// The TaskCompletionSource for flush completion
+        /// The "event" to be waited on for flush completion by the initiator of an operation
         /// </summary>
-        private TaskCompletionSource<long> flushTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        /// <summary>
-        /// The task ato be waited on for flush completion by the initiator of an operation
-        /// </summary>
-        internal Task<long> FlushTask => flushTcs.Task;
+        internal CompletionEvent FlushEvent;
 
         #region Abstract methods
         /// <summary>
@@ -676,6 +671,7 @@ namespace FASTER.core
             }
             FlushCallback = flushCallback;
             PreallocateLog = settings.PreallocateLog;
+            this.FlushEvent.Initialize();
 
             if (settings.LogDevice is NullDevice)
                 IsNullDevice = true;
@@ -1043,7 +1039,7 @@ namespace FASTER.core
             var spins = 0;
             while (true)
             {
-                var flushTask = this.FlushTask;
+                var flushEvent = this.FlushEvent;
                 var logicalAddress = this.TryAllocate(numSlots);
                 if (logicalAddress > 0)
                     return logicalAddress;
@@ -1057,7 +1053,7 @@ namespace FASTER.core
                     try
                     {
                         epoch.Suspend();
-                        await flushTask.WithCancellationAsync(token);
+                        await flushEvent.WaitAsync(token).ConfigureAwait(false);
                     }
                     finally
                     {
@@ -1138,7 +1134,7 @@ namespace FASTER.core
             var b = oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits;
 
             // Shift read-only address
-            var flushTask = FlushTask;
+            var flushEvent = FlushEvent;
             try
             {
                 epoch.Resume();
@@ -1160,8 +1156,8 @@ namespace FASTER.core
                     Thread.Yield();
                     continue;
                 }
-                flushTask.Wait();
-                flushTask = FlushTask;
+                flushEvent.Wait();
+                flushEvent = FlushEvent;
             }
 
             // Then shift head address
@@ -1391,16 +1387,7 @@ namespace FASTER.core
                             ErrorCode = errorCode
                         });
 
-                    var newFlushTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    while (true)
-                    {
-                        var _flushTcs = flushTcs;
-                        if (Interlocked.CompareExchange(ref flushTcs, newFlushTcs, _flushTcs) == _flushTcs)
-                        {
-                            _flushTcs.TrySetResult(errorCode);
-                            break;
-                        }
-                    }
+                    this.FlushEvent.Set();
 
                     if (errorList.Count > 0)
                     {

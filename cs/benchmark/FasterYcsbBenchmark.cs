@@ -68,11 +68,14 @@ namespace FASTER.benchmark
             for (int i = 0; i < 8; i++)
                 input_[i].value = i;
 
-            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: true);
+            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: true, useIoCompletionPort: true);
+
+            if (testLoader.Options.ThreadCount >= 16)
+                device.ThrottleLimit = testLoader.Options.ThreadCount * 12;
 
             if (YcsbConstants.kSmallMemoryLog)
                 store = new FasterKV<Key, Value>
-                    (YcsbConstants.kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 },
+                    (YcsbConstants.kMaxKey / 4, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
                     new CheckpointSettings { CheckPointType = CheckpointType.Snapshot, CheckpointDir = testLoader.BackupPath });
             else
                 store = new FasterKV<Key, Value>
