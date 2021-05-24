@@ -121,9 +121,11 @@ namespace FASTER.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
+#if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
+#endif
 
             PopulateLog(log);
 
@@ -170,10 +172,11 @@ namespace FASTER.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
+#if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
-
+#endif
             PopulateLog(log);
 
             // flag to make sure data has been checked 
@@ -217,10 +220,11 @@ namespace FASTER.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
+#if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
-
+#endif
             PopulateLog(log);
 
 
@@ -264,9 +268,11 @@ namespace FASTER.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
+#if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
+#endif
 
             PopulateLog(log);
 
@@ -310,9 +316,11 @@ namespace FASTER.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
+#if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
+#endif
 
             PopulateLog(log);
 
@@ -355,10 +363,11 @@ namespace FASTER.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
+#if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
-
+#endif
             PopulateLog(log);
 
             // flag to make sure data has been checked 
@@ -400,9 +409,11 @@ namespace FASTER.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
+#if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
+#endif
 
             PopulateUncommittedLog(log);
 
