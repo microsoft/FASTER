@@ -41,19 +41,15 @@ namespace FASTER.test
             }
         }
 
-        //*#*# To do *#*#*
-        // Get Emulator Device working
-        // Get Local Memory Device working
-
         // Used to test the various devices by using the same test with VALUES parameter
         // Cannot use LocalStorageDevice from non-Windows OS platform
         public enum DeviceType
         {
 #if WINDOWS
             LSD,
+            EmulatedAzure,
 #endif
-            MLSD,
-            EmulatedAzure
+            MLSD
             //LocalMemory
         }
 
@@ -68,27 +64,24 @@ namespace FASTER.test
                 case DeviceType.LSD:
                     device = new LocalStorageDevice(filename, true, deleteOnClose: true, true, -1, false, false);
                     break;
+                case DeviceType.EmulatedAzure:
+                    string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
+                    string TEST_CONTAINER = "test";
+                    device = new AzureStorageDevice(EMULATED_STORAGE_STRING, $"{TEST_CONTAINER}", "AzureStorageDeviceLogDir", "fasterlogblob", deleteOnClose: true);
+                    break;
 #endif
                 case DeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, deleteOnClose: true);
                     break;
-                case DeviceType.EmulatedAzure:
-                    string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-                    string TEST_CONTAINER = "test";
-                    device = new AzureStorageDevice(EMULATED_STORAGE_STRING, $"{TEST_CONTAINER}", "AzureStorageDeviceLogDir", "fasterlogblob", deleteOnClose: true); 
+/* Best to not have every test run this - have specific tests that are for latency testing - difficult to have stable tests in such mixed environment.
+                // Emulated higher latency storage device - takes a disk latency arg (latencyMs) and emulates an IDevice using main memory, serving data at specified latency
+                case DeviceType.LocalMemory:  
+                    device = new LocalMemoryDevice(1L << 30, 1L << 25, 2, latencyMs: latencyMs);
                     break;
-                    /*  For now, just start with two and can add more devices 
-
-                                    case DeviceType.LocalMemory:
-                                        device = new LocalMemoryDevice(1L << 30, 1L << 25, 2, latencyMs: latencyMs);
-                                        break;
-                    */
+*/
             }
 
             return device;
-
         }
-
-
     }
 }
