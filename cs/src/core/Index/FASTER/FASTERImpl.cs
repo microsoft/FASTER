@@ -2250,12 +2250,12 @@ namespace FASTER.core
                         }
                     }
                 }
-                logicalAddress += allocatedSize;
                 if ((logicalAddress & readcache.PageSizeMask) + allocatedSize > readcache.PageSize)
                 {
                     logicalAddress = (1 + (logicalAddress >> readcache.LogPageSizeBits)) << readcache.LogPageSizeBits;
                     continue;
                 }
+                logicalAddress += allocatedSize;
             }
         }
 
