@@ -122,8 +122,6 @@ class LightEpoch {
   static constexpr uint32_t kDrainListSize = 256;
   /// Epoch table
   Entry* table_;
-  /// Number of entries in epoch table.
-  uint32_t num_entries_;
 
   /// List of action, epoch pairs containing actions to performed when an epoch becomes
   /// safe to reclaim.
@@ -139,10 +137,9 @@ class LightEpoch {
 
   LightEpoch()
     : table_{ nullptr }
-    , num_entries_{ 0 }
     , drain_count_{ 0 }
     , drain_list_{} {
-    Initialize(kTableSize);
+    Initialize();
   }
 
   ~LightEpoch() {
@@ -150,12 +147,11 @@ class LightEpoch {
   }
 
  private:
-  void Initialize(uint32_t size) {
-    num_entries_ = size;
+  void Initialize() {
     // do cache-line alignment
     table_ = reinterpret_cast<Entry*>(aligned_alloc(Constants::kCacheLineBytes,
-                                      (size + 2) * sizeof(Entry)));
-    new(table_) Entry[size + 2];
+                                      (kTableSize + 2) * sizeof(Entry)));
+    new(table_) Entry[kTableSize + 2];
     current_epoch = 1;
     safe_to_reclaim_epoch = 0;
     for(uint32_t idx = 0; idx < kDrainListSize; ++idx) {
@@ -167,7 +163,6 @@ class LightEpoch {
   void Uninitialize() {
     aligned_free(table_);
     table_ = nullptr;
-    num_entries_ = 0;
     current_epoch = 1;
     safe_to_reclaim_epoch = 0;
   }
@@ -272,7 +267,7 @@ class LightEpoch {
   /// Compute latest epoch that is safe to reclaim, by scanning the epoch table
   uint64_t ComputeNewSafeToReclaimEpoch(uint64_t current_epoch_) {
     uint64_t oldest_ongoing_call = current_epoch_;
-    for(uint32_t index = 0; index < Thread::kMaxNumThreads; ++index) {
+    for(uint32_t index = 0; index < kTableSize; ++index) {
       uint64_t entry_epoch = table_[index].local_current_epoch;
       if(entry_epoch != kUnprotected && entry_epoch < oldest_ongoing_call) {
         oldest_ongoing_call = entry_epoch;
@@ -294,7 +289,7 @@ class LightEpoch {
 
   /// CPR checkpoint functions.
   inline void ResetPhaseFinished() {
-    for(uint32_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
+    for(uint32_t idx = 0; idx < kTableSize; ++idx) {
       assert(table_[idx].phase_finished.load() == Phase::REST ||
              table_[idx].phase_finished.load() == Phase::INDEX_CHKPT ||
              table_[idx].phase_finished.load() == Phase::PERSISTENCE_CALLBACK ||
@@ -308,7 +303,7 @@ class LightEpoch {
     uint32_t entry = Thread::id();
     table_[entry].phase_finished = phase;
     // Check if other threads have reported complete.
-    for(uint32_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
+    for(uint32_t idx = 0; idx < kTableSize; ++idx) {
       Phase entry_phase = table_[idx].phase_finished.load();
       uint64_t entry_epoch = table_[idx].local_current_epoch;
       if(entry_epoch != 0 && entry_phase != phase) {
