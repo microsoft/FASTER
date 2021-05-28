@@ -137,12 +137,12 @@ class LightEpoch {
   /// Cached value of epoch that is safe to reclaim
   std::atomic<uint64_t> safe_to_reclaim_epoch;
 
-  LightEpoch(uint32_t size = kTableSize)
+  LightEpoch()
     : table_{ nullptr }
     , num_entries_{ 0 }
     , drain_count_{ 0 }
     , drain_list_{} {
-    Initialize(size);
+    Initialize(kTableSize);
   }
 
   ~LightEpoch() {
@@ -272,7 +272,7 @@ class LightEpoch {
   /// Compute latest epoch that is safe to reclaim, by scanning the epoch table
   uint64_t ComputeNewSafeToReclaimEpoch(uint64_t current_epoch_) {
     uint64_t oldest_ongoing_call = current_epoch_;
-    for(uint32_t index = 1; index <= num_entries_; ++index) {
+    for(uint32_t index = 0; index < Thread::kMaxNumThreads; ++index) {
       uint64_t entry_epoch = table_[index].local_current_epoch;
       if(entry_epoch != kUnprotected && entry_epoch < oldest_ongoing_call) {
         oldest_ongoing_call = entry_epoch;
@@ -294,7 +294,7 @@ class LightEpoch {
 
   /// CPR checkpoint functions.
   inline void ResetPhaseFinished() {
-    for(uint32_t idx = 1; idx <= num_entries_; ++idx) {
+    for(uint32_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
       assert(table_[idx].phase_finished.load() == Phase::REST ||
              table_[idx].phase_finished.load() == Phase::INDEX_CHKPT ||
              table_[idx].phase_finished.load() == Phase::PERSISTENCE_CALLBACK ||
@@ -308,7 +308,7 @@ class LightEpoch {
     uint32_t entry = Thread::id();
     table_[entry].phase_finished = phase;
     // Check if other threads have reported complete.
-    for(uint32_t idx = 1; idx <= num_entries_; ++idx) {
+    for(uint32_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
       Phase entry_phase = table_[idx].phase_finished.load();
       uint64_t entry_epoch = table_[idx].local_current_epoch;
       if(entry_epoch != 0 && entry_phase != phase) {
