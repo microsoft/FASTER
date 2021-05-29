@@ -538,6 +538,9 @@ TEST(CLASS, UpsertRead_Concurrent) {
   ASSERT_TRUE(result);
   ASSERT_EQ(kNumRecords, records_read.load());
 
+  // Stop session as we are going to wait for threads
+  store.StopSession();
+
   //// Update.
   num_writes = 0;
   threads.clear();
@@ -549,6 +552,9 @@ TEST(CLASS, UpsertRead_Concurrent) {
   }
 
   ASSERT_EQ(kNumRecords, num_writes.load());
+
+  // Restart session
+  store.StartSession();
 
   // Delete some old copies of records (160 MB) that we no longer need.
   static constexpr uint64_t kNewBeginAddress{ 167772160L };
