@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using CommandLine;
+using FASTER.core;
 
 namespace FASTER.benchmark
 {
@@ -77,16 +78,26 @@ namespace FASTER.benchmark
             HelpText = "If > 0, the number of milliseconds between checkpoints in experiment (else checkpointing is not done")]
         public int PeriodicCheckpointMilliseconds { get; set; }
 
+        [Option("chkptsnap", Required = false, Default = false,
+            HelpText = "Use Snapshot checkpoint if doing periodic checkpoints (default is FoldOver")]
+        public bool PeriodicCheckpointUseSnapshot { get; set; }
+
+        [Option("chkptincr", Required = false, Default = false,
+            HelpText = "Try incremental checkpoint if doing periodic checkpoints (default is false")]
+        public bool PeriodicCheckpointTryIncremental { get; set; }
+
         [Option("dumpdist", Required = false, Default = false,
             HelpText = "Dump the distribution of each non-empty bucket in the hash table")]
         public bool DumpDistribution { get; set; }
+
+        internal CheckpointType PeriodicCheckpointType => this.PeriodicCheckpointUseSnapshot ? CheckpointType.Snapshot : CheckpointType.FoldOver;
 
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
             return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockImpl}; i: {IterationCount};"
-                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)};" 
-                        + $" noaff: {boolStr(this.NoThreadAffinity)}; chkpt: {this.PeriodicCheckpointMilliseconds}";
+                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; noaff: {boolStr(this.NoThreadAffinity)};"
+                        + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")}; chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
         }
     }
 }

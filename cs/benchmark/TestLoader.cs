@@ -301,7 +301,7 @@ namespace FASTER.benchmark
         private static void LoadSyntheticData<TKey, TKeySetter>(string distribution, uint seed, TKey[] init_keys, TKey[] txn_keys, TKeySetter keySetter)
             where TKeySetter : IKeySetter<TKey>
         {
-            Console.WriteLine($"Loading synthetic data ({distribution} distribution), seed = {seed}");
+            Console.WriteLine($"Loading synthetic data ({distribution} distribution {(distribution == "zipf" ? "theta " + YcsbConstants.SyntheticZipfTheta : "")}), seed = {seed}");
             var sw = Stopwatch.StartNew();
 
             long val = 0;
@@ -314,7 +314,7 @@ namespace FASTER.benchmark
             Console.WriteLine($"loaded {init_keys.Length:N0} keys in {(double)sw.ElapsedMilliseconds / 1000:N3} seconds");
 
             RandomGenerator generator = new RandomGenerator(seed);
-            var zipf = new ZipfGenerator(generator, (int)init_keys.Length, theta: 0.99);
+            var zipf = new ZipfGenerator(generator, (int)init_keys.Length, theta: YcsbConstants.SyntheticZipfTheta);
 
             sw.Restart();
             for (int idx = 0; idx < txn_keys.Length; idx++)
@@ -369,7 +369,7 @@ namespace FASTER.benchmark
             {
                 Console.WriteLine($"Checkpointing FasterKV to {this.BackupPath} for fast restart");
                 Stopwatch sw = Stopwatch.StartNew();
-                store.TakeFullCheckpoint(out _);
+                store.TakeFullCheckpoint(out _, CheckpointType.Snapshot);
                 store.CompleteCheckpointAsync().GetAwaiter().GetResult();
                 sw.Stop();
                 Console.WriteLine($"  Completed checkpoint in {(double)sw.ElapsedMilliseconds / 1000:N3} seconds");

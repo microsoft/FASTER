@@ -79,7 +79,7 @@ namespace SecondaryReaderStore
             {
                 try
                 {
-                    secondaryStore.Recover(undoFutureVersions: false); // read-only recovery, no writing back undos
+                    secondaryStore.Recover(undoNextVersion: false); // read-only recovery, no writing back undos
                 }
                 catch
                 {

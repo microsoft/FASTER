@@ -143,10 +143,10 @@ namespace FASTER.core
         internal bool InternalCompletePending<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> ctx, 
             FasterSession fasterSession, 
-            bool wait = false)
+            bool wait = false, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            do
+            while (true)
             {
                 bool done = true;
 
@@ -155,35 +155,26 @@ namespace FASTER.core
                 {
                     if (ctx.phase == Phase.IN_PROGRESS || ctx.phase == Phase.WAIT_PENDING)
                     {
-                        InternalCompletePendingRequests(ctx.prevCtx, ctx, fasterSession);
+                        InternalCompletePendingRequests(ctx.prevCtx, ctx, fasterSession, completedOutputs);
                         InternalCompleteRetryRequests(ctx.prevCtx, ctx, fasterSession);
-                        InternalRefresh(ctx, fasterSession);
-
-                        done &= (ctx.prevCtx.HasNoPendingRequests);
+                        if (wait) ctx.prevCtx.WaitPending(epoch);
+                        done &= ctx.prevCtx.HasNoPendingRequests;
                     }
                 }
                 #endregion
 
-                InternalCompletePendingRequests(ctx, ctx, fasterSession);
+                InternalCompletePendingRequests(ctx, ctx, fasterSession, completedOutputs);
                 InternalCompleteRetryRequests(ctx, ctx, fasterSession);
+                if (wait) ctx.WaitPending(epoch);
+                done &= ctx.HasNoPendingRequests;
 
-                done &= (ctx.HasNoPendingRequests);
-
-                if (done)
-                {
-                    return true;
-                }
+                if (done) return true;
 
                 InternalRefresh(ctx, fasterSession);
 
-                if (wait)
-                {
-                    // Yield before checking again
-                    Thread.Yield();
-                }
-            } while (wait);
-
-            return false;
+                if (!wait) return false;
+                Thread.Yield();
+            }
         }
 
         internal bool InRestPhase() => systemState.phase == Phase.REST;
@@ -280,7 +271,7 @@ namespace FASTER.core
         internal void InternalCompletePendingRequests<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> opCtx, 
             FasterExecutionContext<Input, Output, Context> currentCtx, 
-            FasterSession fasterSession)
+            FasterSession fasterSession, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             hlog.TryComplete();
@@ -289,7 +280,7 @@ namespace FASTER.core
 
             while (opCtx.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))
             {
-                InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request);
+                InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request, completedOutputs);
             }
         }
 
@@ -297,7 +288,8 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> opCtx, 
             FasterExecutionContext<Input, Output, Context> currentCtx, 
             FasterSession fasterSession, 
-            CancellationToken token = default)
+            CancellationToken token,
+            CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             while (opCtx.SyncIoPendingCount > 0)
@@ -310,16 +302,16 @@ namespace FASTER.core
                     while (opCtx.readyResponses.Count > 0)
                     {
                         opCtx.readyResponses.TryDequeue(out request);
-                        InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request);
+                        InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request, completedOutputs);
                     }
                     fasterSession.UnsafeSuspendThread();
                 }
                 else
                 {
-                    request = await opCtx.readyResponses.DequeueAsync(token);
+                    request = await opCtx.readyResponses.DequeueAsync(token).ConfigureAwait(false);
 
                     fasterSession.UnsafeResumeThread();
-                    InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request);
+                    InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request, completedOutputs);
                     fasterSession.UnsafeSuspendThread();
                 }
             }
@@ -329,15 +321,18 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> opCtx, 
             FasterExecutionContext<Input, Output, Context> currentCtx, 
             FasterSession fasterSession, 
-            AsyncIOContext<Key, Value> request)
+            AsyncIOContext<Key, Value> request, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (opCtx.ioPendingRequests.TryGetValue(request.id, out var pendingContext))
             {
                 // Remove from pending dictionary
                 opCtx.ioPendingRequests.Remove(request.id);
-                InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
-                pendingContext.Dispose();
+                var status = InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
+                if (completedOutputs is { } && (status == Status.OK || status == Status.NOTFOUND))
+                    completedOutputs.Add(ref pendingContext, status);
+                else
+                    pendingContext.Dispose();
             }
         }
 
@@ -367,6 +362,7 @@ namespace FASTER.core
             {
                 internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
             }
+            unsafe { pendingContext.recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
 
             request.Dispose();
 
@@ -377,6 +373,10 @@ namespace FASTER.core
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 status = (Status)internalStatus;
+            }
+            else if (internalStatus == OperationStatus.ALLOCATE_FAILED)
+            {
+                return Status.PENDING;  // This plus newRequest.IsDefault() means allocate failed
             }
             else
             {
@@ -391,15 +391,12 @@ namespace FASTER.core
 
                 if (pendingContext.type == OperationType.READ)
                 {
-                    RecordInfo recordInfo;
-                    unsafe { recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
-
                     fasterSession.ReadCompletionCallback(ref key,
                                                      ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
                                                      status,
-                                                     recordInfo);
+                                                     pendingContext.recordInfo);
                 }
                 else
                 {

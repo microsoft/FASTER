@@ -41,9 +41,11 @@ namespace FASTER.benchmark
 
         internal FasterSpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader)
         {
-            // Pin loading thread if it is not used for checkpointing
-            if (testLoader.Options.PeriodicCheckpointMilliseconds <= 0)
-                Native32.AffinitizeThreadShardedNuma(0, 2);
+            // Affinize main thread to last core on first socket if not used by experiment
+            var (numGrps, numProcs) = Native32.GetNumGroupsProcsPerGroup();
+            if ((testLoader.Options.NumaStyle == 0 && testLoader.Options.ThreadCount <= (numProcs - 1)) ||
+                (testLoader.Options.NumaStyle == 1 && testLoader.Options.ThreadCount <= numGrps * (numProcs - 1)))
+                Native32.AffinitizeThreadRoundRobin(numProcs - 1);
 
             this.testLoader = testLoader;
             init_keys_ = i_keys_;
@@ -71,7 +73,7 @@ namespace FASTER.benchmark
             for (int i = 0; i < 8; i++)
                 input_[i].value = i;
 
-            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true);
+            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: true);
 
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<SpanByte, SpanByte>
@@ -209,8 +211,6 @@ namespace FASTER.benchmark
 
         internal unsafe (double, double) Run(TestLoader testLoader)
         {
-            //Native32.AffinitizeThreadShardedNuma(0, 2);
-
 #if DASHBOARD
             var dash = new Thread(() => DoContinuousMeasurements());
             dash.Start();
@@ -263,8 +263,8 @@ namespace FASTER.benchmark
             if (testLoader.Options.DumpDistribution)
                 Console.WriteLine(store.DumpDistribution());
 
-            // Ensure first checkpoint is fast
-            if (testLoader.Options.PeriodicCheckpointMilliseconds > 0)
+            // Ensure first fold-over checkpoint is fast
+            if (testLoader.Options.PeriodicCheckpointMilliseconds > 0 && testLoader.Options.PeriodicCheckpointType == CheckpointType.FoldOver)
                 store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, true);
 
             Console.WriteLine("Executing experiment.");
@@ -296,8 +296,12 @@ namespace FASTER.benchmark
                 {
                     if (checkpointTaken < swatch.ElapsedMilliseconds / testLoader.Options.PeriodicCheckpointMilliseconds)
                     {
-                        if (store.TakeHybridLogCheckpoint(out _))
+                        long start = swatch.ElapsedTicks;
+                        if (store.TakeHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType, testLoader.Options.PeriodicCheckpointTryIncremental))
                         {
+                            store.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                            var timeTaken = (swatch.ElapsedTicks - start) / TimeSpan.TicksPerMillisecond;
+                            Console.WriteLine("Checkpoint time: {0}ms", timeTaken);
                             checkpointTaken++;
                         }
                     }

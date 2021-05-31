@@ -36,10 +36,10 @@ namespace FASTER.core
         /// </summary>
         protected long currentAddress, nextAddress;
         
-        private readonly CountdownEvent[] loaded;
-        private readonly CancellationTokenSource[] loadedCancel;
-        private readonly long[] loadedPage;
-        private readonly long[] nextLoadedPage;
+        private CountdownEvent[] loaded;
+        private CancellationTokenSource[] loadedCancel;
+        private long[] loadedPage;
+        private long[] nextLoadedPage;
         private readonly int logPageSizeBits;
 
         /// <summary>
@@ -60,10 +60,11 @@ namespace FASTER.core
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
         /// <param name="logPageSizeBits"></param>
-        public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int logPageSizeBits)
+        /// <param name="initForReads"></param>
+        public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int logPageSizeBits, bool initForReads = true)
         {
             // If we are protected when creating the iterator, we do not need per-GetNext protection
-            if (!epoch.ThisInstanceProtected())
+            if (epoch != null && !epoch.ThisInstanceProtected())
                 this.epoch = epoch;
 
             this.beginAddress = beginAddress;
@@ -82,7 +83,14 @@ namespace FASTER.core
                 frameSize = 0;
                 return;
             }
+            if (initForReads) InitializeForReads();
+        }
 
+        /// <summary>
+        /// Initialize for reads
+        /// </summary>
+        public virtual void InitializeForReads()
+        {
             loaded = new CountdownEvent[frameSize];
             loadedCancel = new CancellationTokenSource[frameSize];
             loadedPage = new long[frameSize];
@@ -93,6 +101,8 @@ namespace FASTER.core
                 nextLoadedPage[i] = -1;
                 loadedCancel[i] = new CancellationTokenSource();
             }
+            currentAddress = -1;
+            nextAddress = beginAddress;
         }
 
         /// <summary>
@@ -129,11 +139,19 @@ namespace FASTER.core
                     if (val < pageEndAddress && Interlocked.CompareExchange(ref nextLoadedPage[nextFrame], pageEndAddress, val) == val)
                     {
                         var tmp_i = i;
-                        epoch.BumpCurrentEpoch(() =>
+                        if (epoch != null)
+                        {
+                            epoch.BumpCurrentEpoch(() =>
+                            {
+                                AsyncReadPagesFromDeviceToFrame(tmp_i + (currentAddress >> logPageSizeBits), 1, endAddress, Empty.Default, out loaded[nextFrame], 0, null, null, loadedCancel[nextFrame]);
+                                loadedPage[nextFrame] = pageEndAddress;
+                            });
+                        }
+                        else
                         {
                             AsyncReadPagesFromDeviceToFrame(tmp_i + (currentAddress >> logPageSizeBits), 1, endAddress, Empty.Default, out loaded[nextFrame], 0, null, null, loadedCancel[nextFrame]);
                             loadedPage[nextFrame] = pageEndAddress;
-                        });
+                        }
                     }
                     else
                         epoch?.ProtectAndDrain();
@@ -172,18 +190,40 @@ namespace FASTER.core
         /// </summary>
         public virtual void Dispose()
         {
-            // Wait for ongoing reads to complete/fail
-            for (int i = 0; i < frameSize; i++)
+            if (loaded != null)
             {
-                if (loadedPage[i] != -1)
+                // Wait for ongoing reads to complete/fail
+                for (int i = 0; i < frameSize; i++)
                 {
-                    try
+                    if (loadedPage[i] != -1)
                     {
-                        loaded[i].Wait(loadedCancel[i].Token);
+                        try
+                        {
+                            loaded[i].Wait(loadedCancel[i].Token);
+                        }
+                        catch { }
                     }
-                    catch { }
                 }
             }
+        }
+
+        /// <summary>
+        /// Reset iterator
+        /// </summary>
+        public void Reset()
+        {
+            loaded = new CountdownEvent[frameSize];
+            loadedCancel = new CancellationTokenSource[frameSize];
+            loadedPage = new long[frameSize];
+            nextLoadedPage = new long[frameSize];
+            for (int i = 0; i < frameSize; i++)
+            {
+                loadedPage[i] = -1;
+                nextLoadedPage[i] = -1;
+                loadedCancel[i] = new CancellationTokenSource();
+            }
+            currentAddress = -1;
+            nextAddress = beginAddress;
         }
     }
 }

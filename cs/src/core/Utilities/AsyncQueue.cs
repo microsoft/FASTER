@@ -49,7 +49,7 @@ namespace FASTER.core
         {
             for (; ; )
             {
-                await semaphore.WaitAsync(cancellationToken);
+                await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
                 if (queue.TryDequeue(out T item))
                 {
@@ -61,11 +61,17 @@ namespace FASTER.core
         /// <summary>
         /// Wait for queue to have at least one entry
         /// </summary>
+        /// <returns></returns>
+        public void WaitForEntry() => semaphore.Wait();
+
+        /// <summary>
+        /// Wait for queue to have at least one entry
+        /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
         public async Task WaitForEntryAsync(CancellationToken token = default)
         {
-            await semaphore.WaitAsync(token);
+            await semaphore.WaitAsync(token).ConfigureAwait(false);
         }
 
         /// <summary>

@@ -218,6 +218,7 @@ namespace FASTER.core
             {
                 return (int)(((word & kVersionMaskInWord) >> kVersionShiftInWord) & kVersionMaskInInteger);
             }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
                 word &= ~kVersionMaskInWord;
@@ -243,5 +244,8 @@ namespace FASTER.core
         {
             return kTotalSizeInBytes;
         }
+        
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int GetShortVersion(long version) => (int) (version & kVersionMaskInInteger);
     }
 }

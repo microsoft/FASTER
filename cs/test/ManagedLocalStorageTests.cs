@@ -28,19 +28,19 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-
             commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            if (Directory.Exists(commitPath))
+            // We loop to ensure clean-up as deleteOnClose does not always work for MLSD
+            while (Directory.Exists(commitPath))
                 Directory.Delete(commitPath, true);
 
             // Create devices \ log for test
             device = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStore.log", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
 
             deviceFullParams = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStoreFullParams.log", deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
-            logFullParams = new FasterLog(new FasterLogSettings { LogDevice = device });
+            logFullParams = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
 
         }
 
@@ -64,8 +64,9 @@ namespace FASTER.test
         {
             int entryLength = 20;
             int numEntries = 1000;
-            int entryFlag = 9999;
-
+            int numEnqueueThreads = 1;
+            int numIterThreads = 1;
+            bool commitThread = false;
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
@@ -73,44 +74,83 @@ namespace FASTER.test
                 entry[i] = (byte)i;
             }
 
-            // Enqueue but set each Entry in a way that can differentiate between entries
-            for (int i = 0; i < numEntries; i++)
+            bool disposeCommitThread = false;
+            var commit =
+                new Thread(() =>
+                {
+                    while (!disposeCommitThread)
+                    {
+                        Thread.Sleep(10);
+                        log.Commit(true);
+                    }
+                });
+
+            if (commitThread)
+                commit.Start();
+
+            Thread[] th = new Thread[numEnqueueThreads];
+            for (int t = 0; t < numEnqueueThreads; t++)
             {
-                // Flag one part of entry data that corresponds to index
-                if (i < entryLength)
-                    entry[i] = (byte)entryFlag;
+                th[t] =
+                new Thread(() =>
+                {
+                    // Enqueue but set each Entry in a way that can differentiate between entries
+                    for (int i = 0; i < numEntries; i++)
+                    {
+                        // Flag one part of entry data that corresponds to index
+                        entry[0] = (byte)i;
 
-                // puts back the previous entry value
-                if ((i > 0) && (i < entryLength))
-                    entry[i - 1] = (byte)(i - 1);
+                        // Default is add bytes so no need to do anything with it
+                        log.Enqueue(entry);
+                    }
+                });
+            }
+            for (int t = 0; t < numEnqueueThreads; t++)
+                th[t].Start();
+            for (int t = 0; t < numEnqueueThreads; t++)
+                th[t].Join();
 
-                // Default is add bytes so no need to do anything with it
-                log.Enqueue(entry);
+            if (commitThread)
+            {
+                disposeCommitThread = true;
+                commit.Join();
             }
 
-            // Commit to the log
+            // Final commit to the log
             log.Commit(true);
-
+            
             // flag to make sure data has been checked 
             bool datacheckrun = false;
 
-            // Read the log - Look for the flag so know each entry is unique
-            int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))
+            Thread[] th2 = new Thread[numIterThreads];
+            for (int t = 0; t < numIterThreads; t++)
             {
-                while (iter.GetNext(out byte[] result, out _, out _))
-                {
-                    if (currentEntry < entryLength)
+                th2[t] =
+                    new Thread(() =>
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
+                        // Read the log - Look for the flag so know each entry is unique
+                        int currentEntry = 0;
+                        using (var iter = log.Scan(0, long.MaxValue))
+                        {
+                            while (iter.GetNext(out byte[] result, out _, out _))
+                            {
+                                // set check flag to show got in here
+                                datacheckrun = true;
 
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                                if (numEnqueueThreads == 1)
+                                    Assert.IsTrue(result[0] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString());
+                                currentEntry++;
+                            }
+                        }
 
-                        currentEntry++;
-                    }
-                }
+                        Assert.IsTrue(currentEntry == numEntries * numEnqueueThreads);
+                    });
             }
+
+            for (int t = 0; t < numIterThreads; t++)
+                th2[t].Start();
+            for (int t = 0; t < numIterThreads; t++)
+                th2[t].Join();
 
             // if data verification was skipped, then pop a fail
             if (datacheckrun == false)

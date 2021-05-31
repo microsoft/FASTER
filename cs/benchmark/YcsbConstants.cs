@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.core;
+
 namespace FASTER.benchmark
 {
     enum BenchmarkType : int
@@ -57,6 +59,11 @@ namespace FASTER.benchmark
 
         internal const string InsPerSec = "ins/sec";
         internal const string OpsPerSec = "ops/sec";
+
+        internal const CheckpointType kPeriodicCheckpointType = CheckpointType.FoldOver;
+        internal const bool kPeriodicCheckpointTryIncremental = false;
+
+        internal const double SyntheticZipfTheta = 0.99;
 
         internal const int kFileChunkSize = 4096;
         internal const long kChunkSize = 640;

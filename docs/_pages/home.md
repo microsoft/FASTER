@@ -10,7 +10,7 @@ header:
       url: "/docs/quick-start-guide/"
 excerpt: >
   A fast concurrent persistent key-value store and log, in C# and C++.<br />
-  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v1.8.2">Latest release v1.8.2</a></small>
+  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v1.9.5">Latest release v1.9.5</a></small>
 features:
   - image_path: /assets/images/faster-feature-1.png
     alt: "feature1"
@@ -51,6 +51,7 @@ shape the memory working set and retain performance.
 5. Asynchronous non-blocking recovery model based on group commit.
 6. A rich extensible storage device abstraction called `IDevice`, with implementations for local
 storage, cloud storage, tiered storage, and sharded storage.
+7. A new high performance remote interface, making the store accessible via TCP from remote clients.
 
 For standard benchmarks where the working set fits in main memory, we found FASTER KV to achieve
 significantly higher throughput than current systems, and match or exceed the performance of pure 
@@ -62,7 +63,11 @@ NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded se
 
 # News and Updates
 
-* We now support variable-length keys and values in FasterKV C# via `Memory<byte>` and more generally `Memory<T> where T : unmanaged` as key/value/input types. We also added
+* A high-performance remote (TCP) interface to FasterKV is now available! It provides linear server scalability with increasing client sessions, with similar server throughput as embedded FasterKV. We provide a default C# client as well as an ability to extend to other protocols. Learn more [here](docs/remote-basics/).
+
+* Async API support has been improved, with async versions of `Upsert` and `Delete` added. Spin-wait has been significantly reduced in the codebase.
+
+* We support variable-length keys and values in FasterKV C# via `Memory<byte>` and more generally `Memory<T> where T : unmanaged` as key/value/input types. We also added
 a new type called `SpanByte` to represent variable-length keys and values. See the sample [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples/StoreVarLenTypes) for details on these capabilities. This is in addition to the existing object-log support for class types.
 
 * We support C# async in FASTER KV (and FASTER Log). See the guides for [FasterKV](docs/fasterkv-basics/) and [FasterLog](docs/fasterlog-basics/) 

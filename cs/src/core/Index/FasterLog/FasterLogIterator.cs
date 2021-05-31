@@ -76,7 +76,7 @@ namespace FASTER.core
                 {
                     if (currentAddress >= endAddress)
                         yield break;
-                    if (!await WaitAsync(token))
+                    if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
                 }
                 yield return (result, length, currentAddress, nextAddress);
@@ -99,7 +99,7 @@ namespace FASTER.core
                 {
                     if (currentAddress >= endAddress)
                         yield break;
-                    if (!await WaitAsync(token))
+                    if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
                 }
                 yield return (result, length, currentAddress, nextAddress);
@@ -116,6 +116,8 @@ namespace FASTER.core
 
             if (!scanUncommitted)
             {
+                if (NextAddress >= endAddress)
+                    return new ValueTask<bool>(false);
                 if (NextAddress < fasterLog.CommittedUntilAddress)
                     return new ValueTask<bool>(true);
 
@@ -142,7 +144,7 @@ namespace FASTER.core
                 // Ignore commit exceptions, except when the token is signaled
                 try
                 {
-                    await commitTask.WithCancellationAsync(token);
+                    await commitTask.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (ObjectDisposedException) { return false; }
                 catch when (!token.IsCancellationRequested) { }
@@ -162,7 +164,7 @@ namespace FASTER.core
                 // Ignore refresh-uncommitted exceptions, except when the token is signaled
                 try
                 {
-                    await refreshUncommittedTask.WithCancellationAsync(token);
+                    await refreshUncommittedTask.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (ObjectDisposedException) { return false; }
                 catch when (!token.IsCancellationRequested) { }

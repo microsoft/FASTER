@@ -124,7 +124,7 @@ end of iteration, or because we are waiting for a page read or commit to complet
        while (!iter.GetNext(out byte[] result, out int entryLength, out long currentAddress, out long nextAddress))
        {
           if (currentAddress >= 100_000_000) return;
-          await iter.WaitAsyc();
+          await iter.WaitAsync();
        }
        // Process record
     }
@@ -161,7 +161,7 @@ using (var iter = log.Scan(0, long.MaxValue, name: "foo", recover: false))
 By default, scan allows iteration over log entries that are committed (persisted on an I/O device) only, awaiting 
 (in case of `IAsyncEnumerable`) or returning `false` (in case of `GetNext`) if we have returned the last 
 committed entry. This is a desired behaviour in most cases, but sometimes consumers do not care whether the data 
-is commited or not, but just wish to read and process log entries as soon as possible, similar to a regular Channel.
+is committed or not, but just wish to read and process log entries as soon as possible, similar to a regular Channel.
 
 You can allow scans to proceed and read uncommitted data by setting `scanUncommitted` to `true`, as follows:
 
@@ -337,7 +337,7 @@ async IAsyncEnumerable<(IMemoryOwner<byte>, int entryLength, long currentAddress
 
 async ValueTask<(byte[], int)> ReadAsync(long address, int estimatedLength = 0)
 
-// Refreshing uncommited entries
+// Refreshing uncommitted entries
 
 void RefreshUncommitted(bool spinWait = false)
 

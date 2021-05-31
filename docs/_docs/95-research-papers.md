@@ -14,15 +14,19 @@ classes: wide
 * Badrish Chandramouli, Guna Prasaad, Donald Kossmann, Justin Levandoski, James Hunter, Mike Barnett. FASTER: An Embedded Concurrent Key-Value Store for State Management. <i>PVLDB 2018, Rio de Janeiro, Brazil, August 2018</i>
 [[pdf](https://www.microsoft.com/en-us/research/uploads/prod/2018/08/p809-chandramouli.pdf)]
 
-## Recovery
+## Single-Node Recovery
 
 * Guna Prasaad, Badrish Chandramouli, Donald Kossmann. Concurrent Prefix Recovery: Performing CPR on a Database. <i>SIGMOD 2019, Amsterdam, Netherlands, June 2019</i>
 [[pdf](https://www.microsoft.com/en-us/research/uploads/prod/2019/01/cpr-sigmod19.pdf)]
 
 ## Scale-Out
 
-* Chinmay Kulkarni, Badrish Chandramouli, Ryan Stutsman. Achieving High Throughput and Elasticity in a Larger-than-Memory Store.
+* Chinmay Kulkarni, Badrish Chandramouli, Ryan Stutsman. Achieving High Throughput and Elasticity in a Larger-than-Memory Store. <i>Proc. VLDB Endow. Volume 14, Issue 8, 2021 (to appear)</i>
 [[arXiv:2006.03206](https://arxiv.org/pdf/2006.03206.pdf)]
+
+## Distributed Recovery
+
+* Tianyu Li, Badrish Chandramouli, Jose M. Faleiro, Samuel Madden, Donald Kossmann. Asynchronous Prefix Recoverability for Fast Distributed Stores. <i>SIGMOD 2021, Virtual Event, China, June 2021 (to appear)</i>
 
 ## Secondary Indexing
 

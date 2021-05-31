@@ -2,12 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.core
 {
@@ -18,7 +18,8 @@ namespace FASTER.core
     {
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
-        private readonly SafeConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)> logHandles;
+        private readonly bool osReadBuffering;
+        private readonly SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)> logHandles;
         private readonly SectorAlignedBufferPool pool;
 
         /// <summary>
@@ -36,7 +37,8 @@ namespace FASTER.core
         /// <param name="deleteOnClose"></param>
         /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit</param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
-        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false)
+        /// <param name="osReadBuffering">Enable OS read buffering</param>
+        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false)
             : base(filename, GetSectorSize(filename), capacity)
         {
             pool = new SectorAlignedBufferPool(1, 1);
@@ -49,13 +51,15 @@ namespace FASTER.core
             this._disposed = false;
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
-            logHandles = new SafeConcurrentDictionary<int, (FixedPool<Stream>, FixedPool<Stream>)>();
+            this.osReadBuffering = osReadBuffering;
+            logHandles = new SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)>();
             if (recoverDevice)
                 RecoverFiles();
         }
 
         /// <inheritdoc />
-        public override bool Throttle() => numPending > ThrottleLimit;
+        // We do not throttle ManagedLocalStorageDevice because our AsyncPool of handles takes care of this
+        public override bool Throttle() => false;
 
         private void RecoverFiles()
         {
@@ -97,65 +101,148 @@ namespace FASTER.core
         /// <param name="readLength"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        public override unsafe void ReadAsync(int segmentId, ulong sourceAddress,
+        public override void ReadAsync(int segmentId, ulong sourceAddress,
                                      IntPtr destinationAddress,
                                      uint readLength,
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
             Stream logReadHandle = null;
-            int offset = -1;
-            FixedPool<Stream> streampool = null;
-
-            streampool = GetOrAddHandle(segmentId).Item1;
-            (logReadHandle, offset) = streampool.Get();
-
-            logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-            Interlocked.Increment(ref numPending);
+            AsyncPool<Stream> streampool = null;
+            uint errorCode = 0;
+            Task<int> readTask = default;
+            bool gotHandle;
+            int numBytes = 0;
 
 #if NETSTANDARD2_1
-            var umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
-            logReadHandle.ReadAsync(umm.Memory).AsTask()
+            UnmanagedMemoryManager<byte> umm = default;
 #else
-            SectorAlignedMemory memory = pool.Get((int)readLength);
-            logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength)
+            SectorAlignedMemory memory = default;
 #endif
-                .ContinueWith(t =>
+
+            try
+            {
+                Interlocked.Increment(ref numPending);
+                streampool = GetOrAddHandle(segmentId).Item1;
+                gotHandle = streampool.TryGet(out logReadHandle);
+                if (gotHandle)
+                {
+                    logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
+#if NETSTANDARD2_1
+                    unsafe
+                    {
+                        umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
+                    }
+
+                    // FileStream.ReadAsync is not thread-safe hence need a lock here
+                    lock (this)
+                    {
+                        readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
+                    }
+#else
+                    memory = pool.Get((int)readLength);
+                    // FileStream.ReadAsync is not thread-safe hence need a lock here
+                    lock (this)
+                    {
+                        readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
+                    }
+#endif
+                }
+            }
+            catch
+            {
+                Interlocked.Decrement(ref numPending);
+
+                // Perform pool returns and disposals
+#if !NETSTANDARD2_1
+                memory?.Return();
+#endif
+                if (logReadHandle != null) streampool?.Return(logReadHandle);
+
+                // Issue user callback
+                callback(uint.MaxValue, 0, context);
+                return;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                if (!gotHandle)
+                {
+                    try
+                    {
+                        logReadHandle = await streampool.GetAsync().ConfigureAwait(false);
+                        logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
+#if NETSTANDARD2_1
+                        unsafe
+                        {
+                            umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
+                        }
+
+                        // FileStream.ReadAsync is not thread-safe hence need a lock here
+                        lock (this)
+                        {
+                            readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
+                        }
+#else
+                        memory = pool.Get((int)readLength);
+                        // FileStream.ReadAsync is not thread-safe hence need a lock here
+                        lock (this)
+                        {
+                            readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
+                        }
+#endif
+                    }
+                    catch
+                    {
+                        Interlocked.Decrement(ref numPending);
+
+                        // Perform pool returns and disposals
+#if !NETSTANDARD2_1
+                        memory?.Return();
+#endif
+                        if (logReadHandle != null) streampool?.Return(logReadHandle);
+
+                        // Issue user callback
+                        callback(uint.MaxValue, 0, context);
+                        return;
+                    }
+                }
+               
+                try
+                {
+                    numBytes = await readTask.ConfigureAwait(false);
+
+#if !NETSTANDARD2_1
+                    unsafe
+                    {
+                        fixed (void* source = memory.buffer)
+                            Buffer.MemoryCopy(source, (void*)destinationAddress, numBytes, numBytes);
+                    }
+#endif
+                }
+                catch (Exception ex)
+                {
+                    if (ex.InnerException != null && ex.InnerException is IOException ioex)
+                        errorCode = (uint)(ioex.HResult & 0x0000FFFF);
+                    else
+                        errorCode = uint.MaxValue;
+                    numBytes = 0;
+                }
+                finally
                 {
                     Interlocked.Decrement(ref numPending);
 
-                    uint errorCode = 0;
-                    if (t.IsFaulted)
-                    {
-                        if (t.Exception.InnerException is IOException)
-                        {
-                            var e = t.Exception.InnerException as IOException;
-                            errorCode = (uint)(e.HResult & 0x0000FFFF);
-                        }
-                        else
-                        {
-                            errorCode = uint.MaxValue;
-                        }
-                    }
-
-                    // Sequentialize all reads from same handle on non-windows
-#if NETSTANDARD
-                    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    {
-                        if (offset >= 0) streampool?.Return(offset);
-                    }
+                    // Perform pool returns and disposals
+#if !NETSTANDARD2_1
+                    memory?.Return();
 #endif
+                    // Sequentialize all reads from same handle
+                    streampool?.Return(logReadHandle);
 
-                    callback(errorCode, (uint)t.Result, context);
+                    // Issue user callback
+                    callback(errorCode, (uint)numBytes, context);
                 }
-                );
-
-#if NETSTANDARD
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                if (offset >= 0) streampool?.Return(offset);
-#else
-            if (offset >= 0) streampool?.Return(offset);
-#endif
+            });
         }
 
         /// <summary>
@@ -167,73 +254,157 @@ namespace FASTER.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        public override unsafe void WriteAsync(IntPtr sourceAddress,
+        public override void WriteAsync(IntPtr sourceAddress,
                                       int segmentId,
                                       ulong destinationAddress,
                                       uint numBytesToWrite,
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
-            HandleCapacity(segmentId);
-
             Stream logWriteHandle = null;
-            int offset = -1;
-            FixedPool<Stream> streampool = null;
-
-            streampool = GetOrAddHandle(segmentId).Item2;
-            (logWriteHandle, offset) = streampool.Get();
-
-            logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
-            Interlocked.Increment(ref numPending);
+            AsyncPool<Stream> streampool = null;
+            uint errorCode = 0;
+            Task writeTask = default;
+            bool gotHandle;
 
 #if NETSTANDARD2_1
-            var umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
-            logWriteHandle.WriteAsync(umm.Memory).AsTask()
+            UnmanagedMemoryManager<byte> umm = default;
 #else
-            SectorAlignedMemory memory = pool.Get((int)numBytesToWrite);
-            fixed (void* destination = memory.buffer)
-            {
-                Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
-            }
-            logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite)
+            SectorAlignedMemory memory = default;
 #endif
-                .ContinueWith(t =>
+
+            HandleCapacity(segmentId);
+
+            try
+            {
+                Interlocked.Increment(ref numPending);
+                streampool = GetOrAddHandle(segmentId).Item2;
+                gotHandle = streampool.TryGet(out logWriteHandle);
+                if (gotHandle)
+                {
+                    logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
+#if NETSTANDARD2_1
+                    unsafe
+                    {
+                        umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
+                    }
+
+                    // FileStream.WriteAsync is not thread-safe hence need a lock here
+                    lock (this)
+                    {
+                        writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
+                    }
+#else
+                    memory = pool.Get((int)numBytesToWrite);
+                    unsafe
+                    {
+                        fixed (void* destination = memory.buffer)
+                        {
+                            Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
+                        }
+                    }
+                    // FileStream.WriteAsync is not thread-safe hence need a lock here
+                    lock (this)
+                    {
+                        writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
+                    }
+#endif
+                }
+            }
+            catch
+            {
+                Interlocked.Decrement(ref numPending);
+
+                // Perform pool returns and disposals
+#if !NETSTANDARD2_1
+                memory?.Return();
+#endif
+                if (logWriteHandle != null) streampool?.Return(logWriteHandle);
+
+                // Issue user callback
+                callback(uint.MaxValue, 0, context);
+                return;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                if (!gotHandle)
+                {
+                    try
+                    {
+                        logWriteHandle = await streampool.GetAsync().ConfigureAwait(false);
+                        logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
+#if NETSTANDARD2_1
+                        unsafe
+                        {
+                            umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
+                        }
+
+                        // FileStream.WriteAsync is not thread-safe hence need a lock here
+                        lock (this)
+                        {
+                            writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
+                        }
+#else
+                        memory = pool.Get((int)numBytesToWrite);
+                        unsafe
+                        {
+                            fixed (void* destination = memory.buffer)
+                            {
+                                Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
+                            }
+                        }
+                        // FileStream.WriteAsync is not thread-safe hence need a lock here
+                        lock (this)
+                        {
+                            writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
+                        }
+#endif
+                    }
+                    catch
+                    {
+                        Interlocked.Decrement(ref numPending);
+
+                        // Perform pool returns and disposals
+#if !NETSTANDARD2_1
+                        memory?.Return();
+#endif
+                        if (logWriteHandle != null) streampool?.Return(logWriteHandle);
+
+                        // Issue user callback
+                        callback(uint.MaxValue, 0, context);
+                        return;
+                    }
+                }
+
+                try
+                {
+                    await writeTask.ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    if (ex.InnerException != null && ex.InnerException is IOException ioex)
+                        errorCode = (uint)(ioex.HResult & 0x0000FFFF);
+                    else
+                        errorCode = uint.MaxValue;
+                    numBytesToWrite = 0;
+                }
+                finally
                 {
                     Interlocked.Decrement(ref numPending);
 
-                    uint errorCode = 0;
-                    if (t.IsFaulted)
-                    {
-                        if (t.Exception.InnerException is IOException)
-                        {
-                            var e = t.Exception.InnerException as IOException;
-                            errorCode = (uint)(e.HResult & 0x0000FFFF);
-                        }
-                        else
-                        {
-                            errorCode = uint.MaxValue;
-                        }
-                    }
-
-                    // Sequentialize all writes to same handle on non-windows
-#if NETSTANDARD
-                    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    {
-                        ((FileStream)logWriteHandle).Flush(true);
-                        if (offset >= 0) streampool?.Return(offset);
-                    }
+                    // Perform pool returns and disposals
+#if !NETSTANDARD2_1
+                    memory?.Return();
 #endif
+                    // Sequentialize all writes to same handle
+                    await ((FileStream)logWriteHandle).FlushAsync().ConfigureAwait(false);
+                    streampool?.Return(logWriteHandle);
 
+                    // Issue user callback
                     callback(errorCode, numBytesToWrite, context);
                 }
-                );
-
-#if NETSTANDARD
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                if (offset >= 0) streampool?.Return(offset);
-#else
-            if (offset >= 0) streampool?.Return(offset);
-#endif
+            });
         }
 
         /// <summary>
@@ -242,7 +413,7 @@ namespace FASTER.core
         /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
-            if (logHandles.TryRemove(segment, out (FixedPool<Stream>, FixedPool<Stream>) logHandle))
+            if (logHandles.TryRemove(segment, out (AsyncPool<Stream>, AsyncPool<Stream>) logHandle))
             {
                 logHandle.Item1.Dispose();
                 logHandle.Item2.Dispose();
@@ -261,6 +432,20 @@ namespace FASTER.core
             RemoveSegment(segment);
             callback(result);
         }
+
+        /// <inheritdoc/>
+        public override long GetFileSize(int segment)
+        {
+            if (segmentSize > 0) return segmentSize;
+            var pool = GetOrAddHandle(segment);
+            if (!pool.Item1.TryGet(out var stream))
+                stream = pool.Item1.Get();
+
+            long size = stream.Length;
+            pool.Item1.Return(stream);
+            return size;
+        }
+
 
         /// <summary>
         /// Close device
@@ -309,10 +494,11 @@ namespace FASTER.core
         {
             const int FILE_FLAG_NO_BUFFERING = 0x20000000;
             FileOptions fo =
-                (FileOptions)FILE_FLAG_NO_BUFFERING |
-                FileOptions.WriteThrough | 
+                FileOptions.WriteThrough |
                 FileOptions.Asynchronous |
                 FileOptions.None;
+            if (!osReadBuffering)
+                fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
             var logReadHandle = new FileStream(
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
@@ -326,7 +512,7 @@ namespace FASTER.core
             const int FILE_FLAG_NO_BUFFERING = 0x20000000;
             FileOptions fo =
                 (FileOptions)FILE_FLAG_NO_BUFFERING |
-                FileOptions.WriteThrough | 
+                FileOptions.WriteThrough |
                 FileOptions.Asynchronous |
                 FileOptions.None;
 
@@ -340,12 +526,12 @@ namespace FASTER.core
             return logWriteHandle;
         }
 
-        private (FixedPool<Stream>, FixedPool<Stream>) AddHandle(int _segmentId)
+        private (AsyncPool<Stream>, AsyncPool<Stream>) AddHandle(int _segmentId)
         {
-            return (new FixedPool<Stream>(8, () => CreateReadHandle(_segmentId)), new FixedPool<Stream>(8, () => CreateWriteHandle(_segmentId)));
+            return (new AsyncPool<Stream>(ThrottleLimit, () => CreateReadHandle(_segmentId)), new AsyncPool<Stream>(ThrottleLimit, () => CreateWriteHandle(_segmentId)));
         }
 
-        private (FixedPool<Stream>, FixedPool<Stream>) GetOrAddHandle(int _segmentId)
+        private (AsyncPool<Stream>, AsyncPool<Stream>) GetOrAddHandle(int _segmentId)
         {
             if (logHandles.TryGetValue(_segmentId, out var h))
             {

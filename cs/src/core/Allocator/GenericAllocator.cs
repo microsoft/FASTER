@@ -39,9 +39,13 @@ namespace FASTER.core
         private readonly bool keyBlittable = Utility.IsBlittable<Key>();
         private readonly bool valueBlittable = Utility.IsBlittable<Value>();
 
+        private readonly OverflowPool<Record<Key, Value>[]> overflowPagePool;
+
         public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
             : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
+            overflowPagePool = new OverflowPool<Record<Key, Value>[]>(4);
+
             if (settings.ObjectLogDevice == null)
             {
                 throw new FasterException("LogSettings.ObjectLogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
@@ -74,6 +78,8 @@ namespace FASTER.core
                     throw new FasterException("Object log device should not have fixed segment size. Set preallocateFile to false when calling CreateLogDevice for object log");
             }
         }
+
+        internal override int OverflowPageCount => overflowPagePool.Count;
 
         public override void Initialize()
         {
@@ -188,6 +194,7 @@ namespace FASTER.core
                 }
                 values = null;
             }
+            overflowPagePool.Dispose();
             base.Dispose();
         }
 
@@ -224,6 +231,11 @@ namespace FASTER.core
 
         internal Record<Key, Value>[] AllocatePage()
         {
+            Interlocked.Increment(ref AllocatedPageCount);
+
+            if (overflowPagePool.TryGet(out var item))
+                return item;
+
             Record<Key, Value>[] tmp;
             if (PageSize % recordSize == 0)
                 tmp = new Record<Key, Value>[PageSize / recordSize];
@@ -238,7 +250,7 @@ namespace FASTER.core
             return logicalAddress;
         }
 
-        protected override bool IsAllocated(int pageIndex)
+        internal override bool IsAllocated(int pageIndex)
         {
             return values[pageIndex] != null;
         }
@@ -259,19 +271,41 @@ namespace FASTER.core
         }
 
         protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, 
+            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
-            // We are writing to separate device, so use fresh segment offsets
-            WriteAsync(flushPage,
-                        (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                        (uint)pageSize, callback, asyncResult, 
-                        device, objectLogDevice, flushPage, localSegmentOffsets);
+            bool epochTaken = false;
+            if (!epoch.ThisInstanceProtected())
+            {
+                epochTaken = true;
+                epoch.Resume();
+            }
+            try
+            {
+                if (FlushedUntilAddress < (flushPage << LogPageSizeBits) + pageSize)
+                {
+                    // We are writing to separate device, so use fresh segment offsets
+                    WriteAsync(flushPage,
+                            (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+                            (uint)pageSize, callback, asyncResult,
+                            device, objectLogDevice, flushPage, localSegmentOffsets);
+                }
+                else
+                {
+                    // Requested page is already flushed to main log, ignore
+                    callback(0, 0, asyncResult);
+                }
+            }
+            finally
+            {
+                if (epochTaken)
+                    epoch.Suspend();
+            }
         }
 
 
 
-        protected override void ClearPage(long page, int offset)
+        internal override void ClearPage(long page, int offset)
         {
             Array.Clear(values[page % BufferSize], offset / recordSize, values[page % BufferSize].Length - offset / recordSize);
 
@@ -283,6 +317,17 @@ namespace FASTER.core
             {
                 // We are clearing the last page in current segment
                 segmentOffsets[thisCloseSegment % SegmentBufferSize] = 0;
+            }
+        }
+
+        internal override void FreePage(long page)
+        {
+            ClearPage(page, 0);
+            if (EmptyPageCount > 0)
+            {
+                overflowPagePool.TryAdd(values[page % BufferSize]);
+                values[page % BufferSize] = default;
+                Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
 
@@ -996,6 +1041,11 @@ namespace FASTER.core
             {
                 epoch.Resume();
             }
+        }
+
+        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
+        {
+            throw new FasterException("Incremental snapshots not supported with generic allocator");
         }
     }
 }
