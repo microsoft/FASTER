@@ -307,17 +307,19 @@ namespace FASTER.libdpr
         {
             var list = objectPool.Checkout();
             list.Clear();
+            list.Add(new WorkerVersion(wv.Worker, wv.Version - 1));
             foreach (var dep in deps)
             {
                 list.Add(dep);
                 // If dep wasn't known by the cluster, add an entry so global min calculation does not skip it.
-                versionTable.TryAdd(dep.Worker, 0);
+                // TODO(Tianyu): XOXO Does not work.
+                // versionTable.TryAdd(dep.Worker, 0);
             }
             
             maxVersion = Math.Max(wv.Version, maxVersion);
             precedenceGraph.TryAdd(wv, list);
             outstandingWvs.Enqueue(wv);
-            versionTable.AddOrUpdate(wv.Worker, wv.Version, (worker, l) => Math.Max(l, wv.Version));
+            // versionTable.AddOrUpdate(wv.Worker, wv.Version, (worker, l) => Math.Max(l, wv.Version));
         }
 
         /// <summary>
