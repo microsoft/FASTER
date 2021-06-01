@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
     <Platforms>x64</Platforms>
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>

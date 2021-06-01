@@ -2,31 +2,32 @@
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.1;netstandard2.0;net461</TargetFrameworks>
-	<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-	<Platforms>AnyCPU</Platforms>
-	<SignAssembly>true</SignAssembly>
-	<AssemblyOriginatorKeyFile>../../../FASTER.snk</AssemblyOriginatorKeyFile>
-	<DelaySign>false</DelaySign>
-	<EmbedUntrackedSources>true</EmbedUntrackedSources>
-	<DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>AnyCPU</Platforms>
+    <LangVersion>latest</LangVersion>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>../../../FASTER.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-		<DefineConstants>TRACE;DEBUG</DefineConstants>
-		<DebugType>full</DebugType>
-		<OutputPath>bin\$(Platform)\Debug\</OutputPath>
-	</PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>TRACE;DEBUG</DefineConstants>
+    <DebugType>full</DebugType>
+    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
+  </PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
-		<DefineConstants>TRACE</DefineConstants>
-		<Optimize>true</Optimize>
-		<OutputPath>bin\$(Platform)\Release\</OutputPath>
-	</PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DefineConstants>TRACE</DefineConstants>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\$(Platform)\Release\</OutputPath>
+  </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\FASTER.common\FASTER.common.csproj" />
     <ProjectReference Include="..\..\..\src\core\FASTER.core.csproj" />
-	<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All"/>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All"/>
   </ItemGroup>
 
 </Project>

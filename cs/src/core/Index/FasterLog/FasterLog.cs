@@ -1060,7 +1060,7 @@ namespace FASTER.core
             }
 
             info = new FasterLogRecoveryInfo();
-            using (var r = new BinaryReader(new MemoryStream(commitInfo)))
+            using (BinaryReader r = new(new MemoryStream(commitInfo)))
             {
                 info.Initialize(r);
             }

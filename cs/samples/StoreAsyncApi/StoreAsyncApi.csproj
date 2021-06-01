@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>netcoreapp3.1</TargetFramework>
     <Platforms>x64</Platforms>
+    <LangVersion>latest</LangVersion>
     <RuntimeIdentifiers>win7-x64;linux-x64</RuntimeIdentifiers>
   </PropertyGroup>
 

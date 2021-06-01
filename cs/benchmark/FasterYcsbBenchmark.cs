@@ -19,7 +19,7 @@ namespace FASTER.benchmark
         const long kInitCount = YcsbConstants.kChunkSize * (YcsbConstants.kInitCount / YcsbConstants.kChunkSize);
         const long kTxnCount = YcsbConstants.kChunkSize * (YcsbConstants.kTxnCount / YcsbConstants.kChunkSize);
 
-        readonly ManualResetEventSlim waiter = new ManualResetEventSlim();
+        readonly ManualResetEventSlim waiter = new();
         readonly int numaStyle;
         readonly int readPercent;
         readonly Functions functions;
@@ -91,7 +91,7 @@ namespace FASTER.benchmark
 
         private void RunYcsb(int thread_idx)
         {
-            RandomGenerator rng = new RandomGenerator((uint)(1 + thread_idx));
+            RandomGenerator rng = new((uint)(1 + thread_idx));
 
             if (numaStyle == 0)
                 Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
@@ -100,8 +100,7 @@ namespace FASTER.benchmark
 
             waiter.Wait();
 
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
+            var sw = Stopwatch.StartNew();
 
             Value value = default;
             Input input = default;
@@ -275,8 +274,7 @@ namespace FASTER.benchmark
             }
 
             waiter.Set();
-            Stopwatch swatch = new Stopwatch();
-            swatch.Start();
+            var swatch = Stopwatch.StartNew();
 
             if (YcsbConstants.kPeriodicCheckpointMilliseconds <= 0)
             {

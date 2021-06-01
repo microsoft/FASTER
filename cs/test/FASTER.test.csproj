@@ -3,8 +3,9 @@
   <PropertyGroup>
     <TargetFrameworks>netcoreapp3.1;netcoreapp2.1;net461</TargetFrameworks>
     <Platforms>AnyCPU;x64</Platforms>
+    <LangVersion>latest</LangVersion>
     <HighEntropyVA>true</HighEntropyVA>
-    <LangVersion>8</LangVersion>
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
   <PropertyGroup>

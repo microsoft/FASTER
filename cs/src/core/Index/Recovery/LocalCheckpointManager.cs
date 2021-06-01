@@ -21,7 +21,7 @@ namespace FASTER.core
         /// <param name="CheckpointDir"></param>
         public LocalCheckpointManager(string CheckpointDir)
         {
-            directoryConfiguration = new DirectoryConfiguration(CheckpointDir);
+            directoryConfiguration = new(CheckpointDir);
         }
 
         /// <summary>
@@ -58,7 +58,7 @@ namespace FASTER.core
         public void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
             string filename = directoryConfiguration.GetIndexCheckpointMetaFileName(indexToken);
-            using (var writer = new BinaryWriter(new FileStream(filename, FileMode.Create)))
+            using (BinaryWriter writer = new(new FileStream(filename, FileMode.Create)))
             {
                 writer.Write(commitMetadata.Length);
                 writer.Write(commitMetadata);
@@ -67,10 +67,8 @@ namespace FASTER.core
 
             string completed_filename = directoryConfiguration.GetIndexCheckpointFolder(indexToken);
             completed_filename += Path.DirectorySeparatorChar + "completed.dat";
-            using (var file = new FileStream(completed_filename, FileMode.Create))
-            {
-                file.Flush();
-            }
+            using FileStream file = new(completed_filename, FileMode.Create);
+            file.Flush();
         }
 
         /// <summary>
@@ -81,7 +79,7 @@ namespace FASTER.core
         public void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
             string filename = directoryConfiguration.GetHybridLogCheckpointMetaFileName(logToken);
-            using (var writer = new BinaryWriter(new FileStream(filename, FileMode.Create)))
+            using (BinaryWriter writer = new(new FileStream(filename, FileMode.Create)))
             {
                 writer.Write(commitMetadata.Length);
                 writer.Write(commitMetadata);
@@ -90,10 +88,8 @@ namespace FASTER.core
 
             string completed_filename = directoryConfiguration.GetHybridLogCheckpointFolder(logToken);
             completed_filename += Path.DirectorySeparatorChar + "completed.dat";
-            using (var file = new FileStream(completed_filename, FileMode.Create))
-            {
-                file.Flush();
-            }
+            using FileStream file = new(completed_filename, FileMode.Create);
+            file.Flush();
         }
 
         /// <summary>
@@ -103,16 +99,14 @@ namespace FASTER.core
         /// <returns>Metadata, or null if invalid</returns>
         public byte[] GetIndexCheckpointMetadata(Guid indexToken)
         {
-            var dir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder(indexToken));
+            DirectoryInfo dir = new(directoryConfiguration.GetIndexCheckpointFolder(indexToken));
             if (!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat"))
                 return null;
 
             string filename = directoryConfiguration.GetIndexCheckpointMetaFileName(indexToken);
-            using (var reader = new BinaryReader(new FileStream(filename, FileMode.Open)))
-            {
-                var len = reader.ReadInt32();
-                return reader.ReadBytes(len);
-            }
+            using BinaryReader reader = new(new FileStream(filename, FileMode.Open));
+            var len = reader.ReadInt32();
+            return reader.ReadBytes(len);
         }
 
         /// <summary>
@@ -144,16 +138,14 @@ namespace FASTER.core
                 if (metadata != null) return metadata;
             }
 
-            var dir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder(logToken));
+            DirectoryInfo dir = new(directoryConfiguration.GetHybridLogCheckpointFolder(logToken));
             if (!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat"))
                 return null;
 
             string checkpointInfoFile = directoryConfiguration.GetHybridLogCheckpointMetaFileName(logToken);
-            using (var reader = new BinaryReader(new FileStream(checkpointInfoFile, FileMode.Open)))
-            {
-                var len = reader.ReadInt32();
-                return reader.ReadBytes(len);
-            }
+            using BinaryReader reader = new(new FileStream(checkpointInfoFile, FileMode.Open));
+            var len = reader.ReadInt32();
+            return reader.ReadBytes(len);
         }
 
         /// <summary>
@@ -199,7 +191,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public IEnumerable<Guid> GetIndexCheckpointTokens()
         {
-            var indexCheckpointDir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder());
+            DirectoryInfo indexCheckpointDir = new(directoryConfiguration.GetIndexCheckpointFolder());
             var dirs = indexCheckpointDir.GetDirectories();
             foreach (var dir in dirs)
             {
@@ -227,7 +219,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public IEnumerable<Guid> GetLogCheckpointTokens()
         {
-            var hlogCheckpointDir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder());
+            DirectoryInfo hlogCheckpointDir = new(directoryConfiguration.GetHybridLogCheckpointFolder());
             var dirs = hlogCheckpointDir.GetDirectories();
             foreach (var dir in dirs)
             {

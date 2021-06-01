@@ -155,7 +155,7 @@ namespace FASTER.core
                     // Issue CPR callback for full session
                     if (ctx.serialNum != -1)
                     {
-                        List<long> excludedSerialNos = new List<long>();
+                        List<long> excludedSerialNos = new();
                         foreach (var v in ctx.ioPendingRequests.Values)
                         {
                             excludedSerialNos.Add(v.serialNum);

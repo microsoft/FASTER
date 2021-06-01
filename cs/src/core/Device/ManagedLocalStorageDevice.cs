@@ -41,7 +41,7 @@ namespace FASTER.core
         public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false)
             : base(filename, GetSectorSize(filename), capacity)
         {
-            pool = new SectorAlignedBufferPool(1, 1);
+            pool = new(1, 1);
             ThrottleLimit = 120;
 
             string path = new FileInfo(filename).Directory.FullName;
@@ -52,7 +52,7 @@ namespace FASTER.core
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.osReadBuffering = osReadBuffering;
-            logHandles = new SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)>();
+            logHandles = new();
             if (recoverDevice)
                 RecoverFiles();
         }
@@ -63,13 +63,13 @@ namespace FASTER.core
 
         private void RecoverFiles()
         {
-            FileInfo fi = new FileInfo(FileName); // may not exist
+            FileInfo fi = new(FileName); // may not exist
             DirectoryInfo di = fi.Directory;
             if (!di.Exists) return;
 
             string bareName = fi.Name;
 
-            List<int> segids = new List<int>();
+            List<int> segids = new();
             foreach (FileInfo item in di.GetFiles(bareName + "*"))
             {
                 segids.Add(Int32.Parse(item.Name.Replace(bareName, "").Replace(".", "")));

@@ -3,23 +3,24 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-	  <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-	  <Platforms>AnyCPU;x64</Platforms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>AnyCPU;x64</Platforms>
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-		<DefineConstants>TRACE;DEBUG</DefineConstants>
-		<DebugType>full</DebugType>
-		<OutputPath>bin\$(Platform)\Debug\</OutputPath>
-	</PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>TRACE;DEBUG</DefineConstants>
+    <DebugType>full</DebugType>
+    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
+  </PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
-		<DefineConstants>TRACE</DefineConstants>
-		<Optimize>true</Optimize>
-		<OutputPath>bin\$(Platform)\Release\</OutputPath>
-	</PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DefineConstants>TRACE</DefineConstants>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\$(Platform)\Release\</OutputPath>
+  </PropertyGroup>
 
-	<ItemGroup>
+  <ItemGroup>
     <Compile Include="..\VarLenServer\Options.cs" Link="Options.cs" />
   </ItemGroup>
 
