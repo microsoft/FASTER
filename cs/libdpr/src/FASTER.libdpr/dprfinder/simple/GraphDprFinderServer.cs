@@ -8,26 +8,28 @@ using System.Threading.Tasks;
 namespace FASTER.libdpr
 {
     /// <summary>
-    /// A simple single-server DprFinder implementation.
+    /// A simple single-server DprFinder implementation relying primarily on graph traversal.
     ///
     /// Fault-tolerant in that all reported commits are persisted on a given IDevice and a new SimpleDprFinderServer
     /// can restart from persisted state of a failed one to appear as if it never failed.
     ///
-    /// The server speaks the Redis protocol and appears as a Redis server that supports the following commands:
+    /// The server speaks the Redis protocol and appears as a Redis server that supports the following commands:\
+    /// AddWorker(worker) -> OK
+    /// RemoveWorker(worker) -> OK
     /// NewCheckpoint(wv, deps) -> OK
     /// ReportRecovery(wv, worldLine) -> OK
     /// Sync() -> state
     /// All parameters and return values are Redis bulk strings of bytes that encode the corresponding C#
     /// object with the exception of return values of '+OK\r\n's
     /// </summary>
-    public class SimpleDprFinderServer : IDisposable
+    public class GraphDprFinderServer : IDisposable
     {
         private static readonly byte[] OkResponse = Encoding.GetEncoding("ASCII").GetBytes("+OK\r\n");
         private readonly string ip;
         private readonly int port;
         private Socket servSocket;
 
-        private readonly SimpleDprFinderBackend backend;
+        private readonly GraphDprFinderBackend backend;
         private ManualResetEventSlim termination;
         private Thread ioThread, processThread;
 
@@ -38,7 +40,7 @@ namespace FASTER.libdpr
         /// <param name="ip">ip address of server</param>
         /// <param name="port">port to listen on the server</param>
         /// <param name="backend">backend of the server</param>
-        public SimpleDprFinderServer(string ip, int port, SimpleDprFinderBackend backend)
+        public GraphDprFinderServer(string ip, int port, GraphDprFinderBackend backend)
         {
             this.ip = ip;
             this.port = port;

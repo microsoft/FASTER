@@ -31,12 +31,12 @@ namespace FASTER.libdpr
     }
 
     /// <summary>
-    /// DprFinder implementation backed by a simple server component <see cref="SimpleDprFinderServer"/>
+    /// DprFinder implementation backed by a simple server component <see cref="GraphDprFinderServer"/>
     /// The server needs to be provisioned, deployed, and kept alive separately for the DprFinder to work.
     /// </summary>
-    public class SimpleDprFinder : IDprFinder
+    public class GraphDprFinder : IDprFinder
     {
-        private SimpleDprFinderBackend.State lastKnownState;
+        private GraphDprFinderBackend.State lastKnownState;
         private long maxVersion;
 
         private Socket dprFinderConn;
@@ -49,7 +49,7 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="dprFinderConn"> a (connected) socket to the DPR finder backend </param>
         // TODO(Tianyu): Handle possible reconnect due to dpr finder restarts 
-        public SimpleDprFinder(Socket dprFinderConn)
+        public GraphDprFinder(Socket dprFinderConn)
         {
             this.dprFinderConn = dprFinderConn;
         }
@@ -97,7 +97,7 @@ namespace FASTER.libdpr
                 dprFinderConn.SendSyncCommand();
                 ProcessSyncResponse();
                 maxVersion = BitConverter.ToInt64(recvBuffer, parser.stringStart);
-                var newState = new SimpleDprFinderBackend.State(recvBuffer, parser.stringStart + sizeof(long));
+                var newState = new GraphDprFinderBackend.State(recvBuffer, parser.stringStart + sizeof(long));
                 Interlocked.Exchange(ref lastKnownState, newState);
             }
 

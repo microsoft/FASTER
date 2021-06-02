@@ -8,25 +8,35 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    public class SimpleDprFinderBackend : IDisposable
+    public class GraphDprFinderBackend : IDisposable
     {
+        /// <summary>
+        ///  Encapsulates the persistent state of GraphDprFinderBackend
+        /// </summary>
         public class State
         {
+            // Accesses to these are single-threaded
             private Dictionary<Worker, long> worldLines;
-
-            // Updates to cut is issued single-threadedly
-            // TODO(Tianyu): also, need to add workers to it as it is the source of truth for cluster membership
             private Dictionary<Worker, long> cut;
 
             // Dirty bit to signal that the state has been changed
             internal bool hasUpdates;
 
+            /// <summary>
+            /// Constructs a new GraphDprFinderBackend.State object that's empty
+            /// </summary>
             public State()
             {
                 worldLines = new Dictionary<Worker, long>();
                 cut = new Dictionary<Worker, long>();
+                worldLines[Worker.CLUSTER_MANAGER] = 0;
             }
 
+            /// <summary>
+            /// Constructs a new GraphDprFinderBackend.State from serialized bytes on the given buffer
+            /// </summary>
+            /// <param name="buf">buffer holding serialized bytes</param>
+            /// <param name="offset">offset within buffer to start reading from</param>
             public State(byte[] buf, int offset)
             {
                 var head = offset;
@@ -36,22 +46,30 @@ namespace FASTER.libdpr
                 ReadDictionaryFromBytes(buf, head, worldLines);
             }
 
+            /// <summary>
+            /// Constructs a new GraphDprFinderBackend.State as the copy of another State object.
+            /// </summary>
+            /// <param name="other">State object to copy from</param>
             public State(State other)
             {
                 worldLines = new Dictionary<Worker, long>(other.worldLines);
                 cut = new Dictionary<Worker, long>(other.cut);
             }
 
+            /// <summary></summary>
+            /// <returns>The DPR cut</returns>
             public Dictionary<Worker, long> GetCurrentCut()
             {
                 return cut;
             }
 
+            /// <summary></summary>
+            /// <returns>A mapping from workers to their current world-line</returns>
             public Dictionary<Worker, long> GetCurrentWorldLines()
             {
                 return worldLines;
             }
-
+            
             internal bool Serialize(byte[] buf, out int size)
             {
                 var head = 0;
@@ -117,7 +135,7 @@ namespace FASTER.libdpr
         // schedule.
         private long maxVersion = 0;
 
-        // State that is being updated on the fly (single-threadedly). Not visible to the outside world until 
+        // State that is being updated on the fly (single-threaded). Not visible to the outside world until 
         // persistent. A thread periodically reads a copy of the volatile state to flush to persistent storage and 
         // cache the snapshot to make available to workers.
         private State volatileState;
@@ -149,7 +167,11 @@ namespace FASTER.libdpr
         // Start out at some arbitrary size --- the code resizes this buffer to fit
         private byte[] serializationBuffer = new byte[1 << 20];
 
-        public SimpleDprFinderBackend(PingPongDevice persistentStorage)
+        /// <summary>
+        /// Creates a new GraphDprFinderBackend that persists to the given backend
+        /// </summary>
+        /// <param name="persistentStorage">backend persistent storage device</param>
+        public GraphDprFinderBackend(PingPongDevice persistentStorage)
         {
             this.persistentStorage = persistentStorage;
             if (persistentStorage.ReadLatestCompleteWrite(out serializedPersistentState))
@@ -182,6 +204,7 @@ namespace FASTER.libdpr
             }
 
             visited.Clear();
+            frontier.Clear();
             frontier.Enqueue(wv);
             while (frontier.Count != 0)
             {
@@ -208,11 +231,12 @@ namespace FASTER.libdpr
 
             return true;
         }
-
-        public State GetVolatileState() => volatileState;
-
+        
         public void TryFindDprCut()
         {
+            if (versionTable.IsEmpty)
+                return;
+            
             lock (volatileState)
             {
                 // Apply any recovery-related updates
@@ -225,19 +249,20 @@ namespace FASTER.libdpr
                         if (precedenceGraph.TryRemove(new WorkerVersion(entry.Item1.Worker, v), out var list))
                             objectPool.Return(list);
                     }
-                    callbacks.Add(entry.Item3);
+                    if (entry.Item3 != null)
+                        callbacks.Add(entry.Item3);
                 }
-
+            
                 // No guarantees if recovery is in progress
                 if (volatileState.GetCurrentWorldLines().Any(pair =>
                     pair.Value != volatileState.GetCurrentWorldLines()[Worker.CLUSTER_MANAGER]))
                     return;
             }
-
+            
             lock (volatileState)
             {
                 // Use min to quickly prune outdated vertices
-                var minVersion = versionTable.Count == 0 ? 0 : versionTable.Min(pair => pair.Value);
+                var minVersion = versionTable.Min(pair => pair.Value);
                 // Update entries in the cut to be at least the min. No need to prune the graph as later traversals will take
                 // care of that
                 foreach (var (worker, version) in volatileState.GetCurrentCut().ToList())
@@ -307,19 +332,14 @@ namespace FASTER.libdpr
         {
             var list = objectPool.Checkout();
             list.Clear();
-            list.Add(new WorkerVersion(wv.Worker, wv.Version - 1));
-            foreach (var dep in deps)
-            {
-                list.Add(dep);
-                // If dep wasn't known by the cluster, add an entry so global min calculation does not skip it.
-                // TODO(Tianyu): XOXO Does not work.
-                // versionTable.TryAdd(dep.Worker, 0);
-            }
-            
+            var prev = versionTable[wv.Worker];
+            list.Add(new WorkerVersion(wv.Worker, prev));
+            Debug.Assert(deps.Select(d => d.Worker).All(versionTable.ContainsKey));
+            list.AddRange(deps);
             maxVersion = Math.Max(wv.Version, maxVersion);
             precedenceGraph.TryAdd(wv, list);
             outstandingWvs.Enqueue(wv);
-            // versionTable.AddOrUpdate(wv.Worker, wv.Version, (worker, l) => Math.Max(l, wv.Version));
+            versionTable.TryUpdate(wv.Worker, wv.Version, prev);
         }
 
         /// <summary>
@@ -328,9 +348,38 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="wv">worker version that is recovered, or (CLUSTER_MANAGER, 0) if triggering recovery for the cluster</param>
         /// <param name="worldLine"> the new worldline the worker is on</param>
+        /// <param name="callback"> the function to trigger when the recovery update is persistent on disk. If null or not supplied, the function blocks until persistence.</param>
         public void ReportRecovery(WorkerVersion wv, long worldLine, Action callback)
         {
             recoveryReports.Enqueue(ValueTuple.Create(wv, worldLine, callback));
+        }
+
+
+        public void AddWorker(Worker worker, Action callback)
+        {
+            versionTable.TryAdd(worker, 0);
+            lock (volatileState)
+            {
+                volatileState.GetCurrentCut().TryAdd(worker, 0);
+                var currentWorldLines = volatileState.GetCurrentWorldLines();
+                currentWorldLines.TryAdd(worker, currentWorldLines[Worker.CLUSTER_MANAGER]);
+                volatileState.hasUpdates = true;
+                if (callback != null)
+                    callbacks.Add(callback);
+            }
+        }
+
+        public void RemoveWorker(Worker worker, Action callback)
+        {
+            lock (volatileState)
+            {
+                volatileState.GetCurrentCut().Remove(worker);
+                volatileState.GetCurrentWorldLines().Remove(worker);
+                volatileState.hasUpdates = true;
+                versionTable.TryRemove(worker, out _);
+                if (callback != null)
+                    callbacks.Add(callback);
+            }
         }
 
         public (byte[], int) GetPersistentState()
