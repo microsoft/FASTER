@@ -126,6 +126,8 @@ namespace FASTER.libdpr
             failOver.Join();
             compute.Join();
             persist.Join();
+            frontDevice.Dispose();
+            backDevice.Dispose();
         }
 
         public void StartSimulation(double failureProb)
