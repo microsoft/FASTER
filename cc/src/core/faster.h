@@ -96,6 +96,7 @@ class FasterKv {
   typedef AsyncPendingUpsertContext<key_t> async_pending_upsert_context_t;
   typedef AsyncPendingRmwContext<key_t> async_pending_rmw_context_t;
   typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
+  typedef AsyncPendingExistsContext<key_t> async_pending_exists_context_t;
 
   FasterKv(uint64_t table_size, uint64_t log_size, const std::string& filename,
            double log_mutable_fraction = 0.9, bool pre_allocate_log = false,
@@ -194,6 +195,8 @@ class FasterKv {
       AsyncIOContext& io_context);
   OperationStatus InternalContinuePendingRmw(ExecutionContext& ctx,
       AsyncIOContext& io_context);
+  OperationStatus InternalContinuePendingExists(ExecutionContext& ctx,
+      AsyncIOContext& io_context);
 
   // Find the hash bucket entry, if any, corresponding to the specified hash.
   // The caller can use the "expected_entry" to CAS its desired address into the entry.
@@ -240,6 +243,9 @@ class FasterKv {
   void CompleteRetryRequests(ExecutionContext& context);
 
   void InitializeCheckpointLocks();
+
+  template <class EC>
+  inline Status RecordExists(EC& context, AsyncCallback callback, Address begin_address) const;
 
   /// Checkpoint/recovery methods.
   void HandleSpecialPhases();
@@ -703,10 +709,13 @@ inline void FasterKv<K, V, D>::CompleteIoPendingRequests(ExecutionContext& conte
     OperationStatus internal_status;
     if(pending_context->type == OperationType::Read) {
       internal_status = InternalContinuePendingRead(context, *io_context.get());
-    } else {
-      assert(pending_context->type == OperationType::RMW);
+    } else if (pending_context->type == OperationType::RMW) {
       internal_status = InternalContinuePendingRmw(context, *io_context.get());
+    } else{
+      assert(pending_context->type == OperationType::Exists);
+      internal_status = InternalContinuePendingExists(context, *io_context.get());
     }
+
     Status result;
     if(internal_status == OperationStatus::SUCCESS) {
       result = Status::Ok;
@@ -1399,7 +1408,7 @@ inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
     }
     return RetryLater(ctx, pending_context, async);
   case OperationStatus::RECORD_ON_DISK:
-    if(thread_ctx().phase == Phase::PREPARE) {
+    if(thread_ctx().phase == Phase::PREPARE && pending_context.type != OperationType::Exists) {
       assert(pending_context.type == OperationType::Read ||
              pending_context.type == OperationType::RMW);
       // Can I be marking an operation again and again?
@@ -1577,6 +1586,26 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRead(ExecutionContext&
            OperationStatus::NOT_FOUND;
   }
 }
+
+template <class K, class V, class D>
+OperationStatus FasterKv<K, V, D>::InternalContinuePendingExists(ExecutionContext& context,
+    AsyncIOContext& io_context) {
+
+  async_pending_exists_context_t* pending_context = static_cast<async_pending_exists_context_t*>(
+        io_context.caller_context);
+
+  if(io_context.address >= pending_context->begin_address) {
+    record_t* record = reinterpret_cast<record_t*>(io_context.record.GetValidPointer());
+    if(record->header.tombstone) {
+      return OperationStatus::NOT_FOUND;
+    }
+    //pending_context->Get(record);
+    return OperationStatus::SUCCESS;
+  } else {
+    return OperationStatus::NOT_FOUND;
+  }
+}
+
 
 template <class K, class V, class D>
 OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& context,
@@ -2916,6 +2945,54 @@ inline std::ostream& operator << (std::ostream& out, const Guid guid) {
 
 inline std::ostream& operator << (std::ostream& out, const FixedPageAddress address) {
   return out << address.control();
+}
+
+template <class K, class V, class D>
+template <class EC>
+inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callback, Address begin_address) const {
+  typedef PendingExistsContext<EC> pending_exists_context_t;
+  pending_exists_context_t pending_context {context, callback, begin_address};
+
+  if(thread_ctx().phase != Phase::REST) {
+    const_cast<faster_t*>(this)->HeavyEnter();
+  }
+
+  KeyHash hash = pending_context.get_key_hash();
+  HashBucketEntry entry;
+  const AtomicHashBucketEntry* atomic_entry = FindEntry(hash, entry);
+  if(!atomic_entry) {
+    // no record found
+    return Status::NotFound;
+  }
+
+  Address address = entry.address();
+  Address head_address = hlog.head_address.load();
+
+  if(address >= head_address) {
+    // Look through the in-memory portion of the log, to find the first record (if any) whose key
+    // matches.
+    const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
+    if(!pending_context.is_key_equal(record->key())) {
+      address = TraceBackForKeyMatchCtxt(pending_context, record->header.previous_address(), head_address);
+    }
+  }
+
+  if(address >= head_address) {
+    // Mutable, fuzzy or immutable region [in-memory]
+    return Status::Ok;
+  }
+  else if(address >= begin_address) {
+    // Record not available in-memory -- issue disk I/O request
+    pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, entry);
+    bool async;
+    assert( HandleOperationStatus(thread_ctx(), pending_context,
+                                  OperationStatus::RECORD_ON_DISK, async) == Status::Pending);
+    return Status::Pending;
+  }
+  else {
+    // not reachable
+    assert(false);
+  }
 }
 
 /// When invoked, compacts the hybrid-log between the begin address and a
