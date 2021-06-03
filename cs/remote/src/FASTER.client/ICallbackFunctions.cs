@@ -48,5 +48,15 @@ namespace FASTER.client
         /// <param name="key"></param>
         /// <param name="ctx"></param>
         void DeleteCompletionCallback(ref Key key, Context ctx);
+
+        /// <summary>
+        /// Subscribe KV callback
+        /// </summary>
+        /// <param name="key"></param>
+        ///  /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="ctx"></param>
+        /// <param name="status"></param>
+        void SubscribeKVCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status);
     }
 }

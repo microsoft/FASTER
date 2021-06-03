@@ -179,6 +179,17 @@ namespace FASTER.client
             => InternalDelete(MessageType.Delete, ref key, userContext, serialNo);
 
         /// <summary>
+        /// SubscribeKV operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public void SubscribeKV(Key key, Input input = default, Context userContext = default, long serialNo = 0)
+            => InternalSubscribeKV(MessageType.SubscribeKV, ref key, ref input, userContext, serialNo);
+
+        /// <summary>
         /// Flush current buffer of outgoing messages. Does not wait for responses.
         /// </summary>
         public void Flush()
@@ -359,6 +370,20 @@ namespace FASTER.client
                                 tcs.SetResult((status, default));
                                 break;
                             }
+                        case MessageType.SubscribeKV:
+                            {
+                                var status = ReadStatus(ref src);
+                                var result = readrmwQueue.Dequeue();
+                                if (status == Status.PENDING)
+                                {
+                                    var p = hrw.ReadPendingSeqNo(ref src);
+                                    readRmwPendingContext.Add(p, result);
+                                }
+                                else
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, Status.ERROR);
+
+                                break;
+                            }
                         case MessageType.PendingResult:
                             {
                                 HandlePending(ref src);
@@ -440,6 +465,24 @@ namespace FASTER.client
                         result.SetResult((status, default));
                         break;
                     }
+                case MessageType.SubscribeKV:
+                    {
+                        var status = ReadStatus(ref src);
+                        if (!readRmwPendingContext.TryGetValue(p, out var result))
+                        {
+                            Debug.WriteLine("Received unexpected subsription key");
+                            break;
+                        }
+
+                        if (status == Status.OK)
+                        {
+                            result.Item3 = serializer.ReadOutput(ref src);
+                            functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
+                        }
+                        else
+                            functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
+                        break;
+                    }
                 default:
                     {
                         throw new NotImplementedException();
@@ -499,6 +542,26 @@ namespace FASTER.client
                             numMessages++;
                             offset = curr;
                             readrmwQueue.Enqueue((key, input, output, userContext));
+                            return Status.PENDING;
+                        }
+                Flush();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe Status InternalSubscribeKV(MessageType messageType, ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
+        {
+            while (true)
+            {
+                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* curr = offset;
+                if (hrw.Write(messageType, ref curr, (int)(end - curr)))
+                    if (serializer.Write(ref key, ref curr, (int)(end - curr)))
+                        if (serializer.Write(ref input, ref curr, (int)(end - curr)))
+                        {
+                            numMessages++;
+                            offset = curr;
+                            readrmwQueue.Enqueue((key, input, default, userContext));
                             return Status.PENDING;
                         }
                 Flush();
