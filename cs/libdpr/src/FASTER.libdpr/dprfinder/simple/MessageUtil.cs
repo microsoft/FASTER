@@ -237,6 +237,26 @@ namespace FASTER.libdpr
             }
         }
 
+        internal static void SendAddWorkerCommand(this Socket socket, Worker worker)
+        {
+            var buf = reusableMessageBuffers.Checkout();
+            var head = WriteRedisArrayHeader(2, buf, 0);
+            head += WriteRedisBulkString("AddWorker", buf, head);
+            head += WriteRedisBulkString(worker.guid, buf, head);
+            socket.Send(new Span<byte>(buf, 0, head));
+            reusableMessageBuffers.Return(buf);
+        }
+        
+        internal static void SendDeleteWorkerCommand(this Socket socket, Worker worker)
+        {
+            var buf = reusableMessageBuffers.Checkout();
+            var head = WriteRedisArrayHeader(2, buf, 0);
+            head += WriteRedisBulkString("DeleteWorker", buf, head);
+            head += WriteRedisBulkString(worker.guid, buf, head);
+            socket.Send(new Span<byte>(buf, 0, head));
+            reusableMessageBuffers.Return(buf);
+        }
+
         internal static void SendNewCheckpointCommand(this Socket socket, WorkerVersion checkpointed,
             IEnumerable<WorkerVersion> deps)
         {

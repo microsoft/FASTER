@@ -342,6 +342,7 @@ namespace FASTER.libdpr
             versionTable.TryUpdate(wv.Worker, wv.Version, prev);
         }
 
+        // TODO(Tianyu): Need to rewrite recovery trigger logic
         /// <summary>
         /// Report a new recovery of a worker version. If the given worker is the special value of CLUSTER_MANAGER,
         /// this is treated as an external signal to start a recovery process. 
@@ -355,6 +356,11 @@ namespace FASTER.libdpr
         }
 
 
+        /// <summary>
+        /// Adds a new worker to the system to be tracked. 
+        /// </summary>
+        /// <param name="worker">the worker to add</param>
+        /// <param name="callback">callback to invoke when the add is persistent</param>
         public void AddWorker(Worker worker, Action callback)
         {
             versionTable.TryAdd(worker, 0);
@@ -369,7 +375,13 @@ namespace FASTER.libdpr
             }
         }
 
-        public void RemoveWorker(Worker worker, Action callback)
+        /// <summary>
+        /// Remove a worker from the system for tracking. It is up to the caller to ensure that removal is safe (i.e.,
+        /// all dependencies on the removed worker are resolved)
+        /// </summary>
+        /// <param name="worker">the worker to remove</param>
+        /// <param name="callback">callback to invoke when the removal is persistent</param>
+        public void DeleteWorker(Worker worker, Action callback)
         {
             lock (volatileState)
             {

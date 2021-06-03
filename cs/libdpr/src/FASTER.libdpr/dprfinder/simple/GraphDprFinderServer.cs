@@ -140,6 +140,12 @@ namespace FASTER.libdpr
                 case DprFinderCommand.Type.SYNC:
                     socket.SendSyncResponse(backend.MaxVersion(), backend.GetPersistentState());
                     break;
+                case DprFinderCommand.Type.ADD_WORKER:
+                    backend.AddWorker(command.w, () => socket.Send(OkResponse));
+                    break;
+                case DprFinderCommand.Type.DELETE_WORKER:
+                    backend.DeleteWorker(command.w, () => socket.Send(OkResponse));
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException();
             }

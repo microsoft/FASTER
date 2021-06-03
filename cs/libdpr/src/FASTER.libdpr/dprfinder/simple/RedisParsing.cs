@@ -45,11 +45,14 @@ namespace FASTER.libdpr
         {
             NEW_CHECKPOINT,
             REPORT_RECOVERY,
+            ADD_WORKER,
+            DELETE_WORKER,
             SYNC
         }
 
         internal Type commandType;
         internal WorkerVersion wv;
+        internal Worker w;
         internal long worldLine;
         internal List<WorkerVersion> deps;
     }
@@ -59,6 +62,7 @@ namespace FASTER.libdpr
         NONE,
         NUM_ARGS,
         COMMAND_TYPE,
+        ARG_W,
         ARG_WV,
         ARG_WL,
         ARG_DEPS,
@@ -136,48 +140,64 @@ namespace FASTER.libdpr
                 case CommandParserState.NUM_ARGS:
                 {
                     if (ProcessRedisInt(readHead, buf, out var size))
-                    {
-                        Debug.Assert(size == 1 || size == 3);
                         commandParserState = CommandParserState.COMMAND_TYPE;
-                    }
-
                     return false;
                 }
                 case CommandParserState.COMMAND_TYPE:
                     if (ProcessRedisBulkString(readHead, buf))
                     {
-                        if (buf[stringStart] == 'N')
+                        switch ((char) buf[stringStart])
                         {
-                            Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
-                                .Equals("NewCheckpoint"));
-                            currentCommand.commandType = DprFinderCommand.Type.NEW_CHECKPOINT;
-                            commandParserState = CommandParserState.ARG_WV;
-                        }
-                        else if (buf[stringStart] == 'R')
-                        {
-                            Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
-                                .Equals("ReportRecovery"));
-                            currentCommand.commandType = DprFinderCommand.Type.REPORT_RECOVERY;
-                            commandParserState = CommandParserState.ARG_WV;
-                        }
-                        else if (buf[stringStart] == 'S')
-                        {
-                            Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size).Equals("Sync"));
-                            currentCommand.commandType = DprFinderCommand.Type.SYNC;
-                            commandParserState = CommandParserState.NONE;
-                            return true;
+                            case 'N':
+                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
+                                    .Equals("NewCheckpoint"));
+                                currentCommand.commandType = DprFinderCommand.Type.NEW_CHECKPOINT;
+                                commandParserState = CommandParserState.ARG_WV;
+                                break;
+                            case 'R':
+                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
+                                    .Equals("ReportRecovery"));
+                                currentCommand.commandType = DprFinderCommand.Type.REPORT_RECOVERY;
+                                commandParserState = CommandParserState.ARG_WV;
+                                break;
+                            case 'A':
+                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
+                                    .Equals("AddWorker"));
+                                currentCommand.commandType = DprFinderCommand.Type.ADD_WORKER;
+                                commandParserState = CommandParserState.ARG_W;
+                                break;
+                            case 'D':
+                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
+                                    .Equals("DeleteWorker"));
+                                currentCommand.commandType = DprFinderCommand.Type.DELETE_WORKER;
+                                commandParserState = CommandParserState.ARG_W;
+                                break;
+                            case 'S':
+                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size).Equals("Sync"));
+                                currentCommand.commandType = DprFinderCommand.Type.SYNC;
+                                commandParserState = CommandParserState.NONE;
+                                return true;
+                            default:
+                                throw new NotImplementedException("Unrecognized command type");
                         }
                     }
-
                     return false;
-                case CommandParserState.ARG_WV:
-                    // TODO(Tianyu): change WorkerVersion to 8 bytes.
+                case CommandParserState.ARG_W:
                     if (ProcessRedisBulkString(readHead, buf))
                     {
+                        var workerId = BitConverter.ToInt64(buf, stringStart);
+                        currentCommand.w = new Worker(workerId);
+                        commandParserState = CommandParserState.NONE;
+                        return true;
+                    }
+                    return false;
+                case CommandParserState.ARG_WV:
+                    if (ProcessRedisBulkString(readHead, buf))
+                    {
+                        // TODO(Tianyu): Call WorkerVersion relevant methods instead of hard-coded deserialization
                         Debug.Assert(size == sizeof(WorkerVersion));
-                        // TODO(Tianyu): Call WorkerVersion relevant methods
-                        var workerId = BitConverter.ToInt32(buf, stringStart);
-                        var version = BitConverter.ToInt32(buf, stringStart + sizeof(int));
+                        var workerId = BitConverter.ToInt64(buf, stringStart);
+                        var version = BitConverter.ToInt64(buf, stringStart + sizeof(int));
                         currentCommand.wv = new WorkerVersion(workerId, version);
                         if (currentCommand.commandType == DprFinderCommand.Type.NEW_CHECKPOINT)
                         {
@@ -192,14 +212,13 @@ namespace FASTER.libdpr
                             Debug.Assert(false);
                         }
                     }
-
                     return false;
                 case CommandParserState.ARG_WL:
                     if (ProcessRedisBulkString(readHead, buf))
                     {
                         Debug.Assert(size == sizeof(long));
                         Debug.Assert(currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY);
-                        currentCommand.worldLine = BitConverter.ToInt32(buf, stringStart);
+                        currentCommand.worldLine = BitConverter.ToInt64(buf, stringStart);
                         commandParserState = CommandParserState.NONE;
                         return true;
                     }
