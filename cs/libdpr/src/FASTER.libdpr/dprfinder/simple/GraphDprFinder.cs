@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -69,7 +70,7 @@ namespace FASTER.libdpr
         /// <inheritdoc/>
         public long SystemWorldLine()
         {
-            return lastKnownState.GetCurrentWorldLines()[Worker.CLUSTER_MANAGER];
+            return lastKnownState.GetCurrentWorldLines().Select(e => e.Value).Max();
         }
 
         /// <inheritdoc/>

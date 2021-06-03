@@ -29,7 +29,6 @@ namespace FASTER.libdpr
             {
                 worldLines = new Dictionary<Worker, long>();
                 cut = new Dictionary<Worker, long>();
-                worldLines[Worker.CLUSTER_MANAGER] = 0;
             }
 
             /// <summary>
@@ -231,6 +230,18 @@ namespace FASTER.libdpr
 
             return true;
         }
+
+
+        private void ApplyRollback(long worldLine, Worker worker, long survivingVersion)
+        {
+            volatileState.GetCurrentWorldLines()[worker] = worldLine;
+            // Remove any rolled back version to avoid accidentally including them in a cut.
+            for (var v = survivingVersion + 1; v <= maxVersion; v++)
+            {
+                if (precedenceGraph.TryRemove(new WorkerVersion(worker, v), out var list))
+                    objectPool.Return(list);
+            }
+        }
         
         public void TryFindDprCut()
         {
@@ -242,21 +253,21 @@ namespace FASTER.libdpr
                 // Apply any recovery-related updates
                 while (recoveryReports.TryDequeue(out var entry))
                 {
-                    volatileState.GetCurrentWorldLines()[entry.Item1.Worker] = entry.Item2;
-                    // Remove any rolled back version to avoid accidentally including them in a cut.
-                    for (var v = entry.Item1.Version + 1; v <= maxVersion; v++)
-                    {
-                        if (precedenceGraph.TryRemove(new WorkerVersion(entry.Item1.Worker, v), out var list))
-                            objectPool.Return(list);
-                    }
+                    ApplyRollback(entry.Item2, entry.Item1.Worker, entry.Item1.Version);
                     if (entry.Item3 != null)
                         callbacks.Add(entry.Item3);
                 }
             
-                // No guarantees if recovery is in progress
-                if (volatileState.GetCurrentWorldLines().Any(pair =>
-                    pair.Value != volatileState.GetCurrentWorldLines()[Worker.CLUSTER_MANAGER]))
-                    return;
+                // Check if all workers are on the same worldline. If not, there's an in-progress recovery. No
+                // guarantees if recovery is in progress
+                long worldLine = -1;
+                foreach (var entry in volatileState.GetCurrentWorldLines())
+                {
+                    if (worldLine == -1)
+                        worldLine = entry.Value;
+                    if (worldLine != entry.Value) return;
+
+                }
             }
             
             lock (volatileState)
@@ -361,17 +372,34 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="worker">the worker to add</param>
         /// <param name="callback">callback to invoke when the add is persistent</param>
-        public void AddWorker(Worker worker, Action callback)
+        /// <returns> (world-line, version) that the new worker should start at </returns>>
+        public (long, long) AddWorker(Worker worker, Action callback)
         {
-            versionTable.TryAdd(worker, 0);
+            var minVer = versionTable.Select(e => e.Value).Min();
+            versionTable.TryAdd(worker, minVer);
             lock (volatileState)
             {
-                volatileState.GetCurrentCut().TryAdd(worker, 0);
                 var currentWorldLines = volatileState.GetCurrentWorldLines();
-                currentWorldLines.TryAdd(worker, currentWorldLines[Worker.CLUSTER_MANAGER]);
-                volatileState.hasUpdates = true;
-                if (callback != null)
-                    callbacks.Add(callback);
+                var latestWorldLine = currentWorldLines.Select(e => e.Value).Max();
+                // First time we have seen this worker --- start them at the global min version and current cluster
+                // world-line and add to tracking
+                if (volatileState.GetCurrentCut().TryAdd(worker, 0))
+                {
+                    currentWorldLines.TryAdd(worker, latestWorldLine);
+                    volatileState.hasUpdates = true;
+                    if (callback != null)
+                        callbacks.Add(callback);
+                    return ValueTuple.Create(latestWorldLine, minVer);
+                }
+                // Otherwise, this worker thinks it's booting up for a second time, which means there was a restart.
+                // We count this as a failure. Advance the cluster world-line
+                var newWorldLine = currentWorldLines[worker] = latestWorldLine + 1;
+                // Cannot assume anything later than the persisted cut survived the crash
+                var survivingVersion = volatileState.GetCurrentCut()[worker];
+                ApplyRollback(newWorldLine, worker, survivingVersion);
+                return ValueTuple.Create(newWorldLine, survivingVersion);
+                // TODO(Tianyu): Finish by adding appropriate calls to add worker on DprFinder bootup, and proper handling of return value.
+                // Also, just convey this back to the client in Redis response message
             }
         }
 

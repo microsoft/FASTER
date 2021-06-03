@@ -106,8 +106,7 @@ namespace FASTER.libdpr
             // Set up listening events
             var saea = new SocketAsyncEventArgs();
             saea.SetBuffer(new byte[BatchInfo.MaxHeaderSize], 0, BatchInfo.MaxHeaderSize);
-            // TODO(Tianyu): Fill in
-            saea.UserToken = new MessageUtil.DprFinderRedisProtocolConnState(e.AcceptSocket, (c, s) => { });
+            saea.UserToken = new MessageUtil.DprFinderRedisProtocolConnState(e.AcceptSocket, HandleClientCommand);
             saea.Completed += MessageUtil.DprFinderRedisProtocolConnState.RecvEventArg_Completed;
             // If the client already have packets, avoid handling it here on the handler thread so we don't block future accepts.
             if (!e.AcceptSocket.ReceiveAsync(saea))
