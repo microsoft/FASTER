@@ -155,6 +155,7 @@ class FasterKv {
 
   /// Log compaction entry method.
   bool Compact(uint64_t untilAddress);
+  bool CompactWithLookup(uint64_t until_address);
 
   /// Truncating the head of the log.
   bool ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
@@ -246,6 +247,9 @@ class FasterKv {
 
   template <class EC>
   inline Status RecordExists(EC& context, AsyncCallback callback, Address begin_address) const;
+
+  template <class UC>
+  inline Status ConditionalCopyToTail(UC& context, AsyncCallback callback, HashBucketEntry expected_entry);
 
   /// Checkpoint/recovery methods.
   void HandleSpecialPhases();
@@ -2947,6 +2951,116 @@ inline std::ostream& operator << (std::ostream& out, const FixedPageAddress addr
   return out << address.control();
 }
 
+/// Compacts the hybrid log between the begin address and the specified
+/// address, moving active records to the tail of log.
+///
+/// It identifies live records by looking up the in-memory hash index
+/// and by potentially going through the hash chains, rather than
+/// scanning the entire log from head to tail.
+template<class K, class V, class D>
+bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address) {
+  constexpr int io_check_freq = 20;
+
+  typedef std::unordered_map<Address, CompactionPendingRecordEntry<K, V>> compaction_records_info_t;
+  typedef std::deque<CompactionPendingRecordEntry<K, V>> compaction_records_queue_t;
+  typedef compaction_records_info_t CRI;
+  typedef compaction_records_queue_t CRQ;
+
+  typedef PendingExistsContext<CompactionExists<K, V, CRI, CRQ>> pending_exists_context_t;
+
+  // TODO: maybe switch to an initial phase for GC to avoid concurrent actions (e.g. checkpoint, grow index, etc.)
+
+  if (until_address > hlog.safe_read_only_address.load()) {
+    throw std::invalid_argument("Can compact only until hlog.safe_read_only_address");
+  }
+
+  compaction_records_info_t pending_records_info;
+  compaction_records_queue_t pending_records_queue;
+  Address record_address;
+  int processed_records = 0;
+
+  Address begin_address = hlog.begin_address.load();
+  ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE,
+                              begin_address, Address(until_address), &disk);
+  while (true) {
+    const record_t* record = iter.GetNext(record_address);
+    if (record == nullptr) break;
+    ++processed_records;
+
+    if (record->header->tombstone) {
+      // no need to copy to tail
+      continue;
+    }
+
+    CompactionExists<K, V, CRI, CRQ> context(record, record_address,
+                                            &pending_records_info, &pending_records_queue);
+    // find and store the hash bucket of record
+    // NOTE: a hash bucket *must* exist, since the record exists in the hybrid log
+    pending_exists_context_t pending_context{context, nullptr};
+    KeyHash hash = pending_context.get_key_hash();
+    HashBucketEntry expected_entry;
+    assert( FindEntry(hash, expected_entry) != nullptr );
+
+    // store record info
+    CompactionPendingRecordEntry<K, V> record_info (expected_entry, Status::Pending);
+    pending_records_info.insert({ record_address, record_info });
+
+    // Prepare for read request
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      CallbackContext<CompactionExists<K, V, CRI, CRQ>> context(ctxt);
+      assert(result == Status::Ok || result == Status::NotFound);
+
+      Address address = context->record_address();
+      if (result == Status::NotFound) {
+        // retrieve record info
+        auto record_info = context->records_info().find(address);
+        assert(record_info != context->records_info().end());
+        // push record info to pending records queue
+        context->records_queue().push_back(record_info->second);
+      }
+      // remove info for this record, since it has been processed
+      context->records_info().erase(address);
+    };
+
+    // Try to find a most recent record in the (recordAddress, tailAddress] range
+    Status status = RecordExists(record->key(), callback, record_address + 1);
+    assert(status == Status::Ok || status == Status::NotFound || status == Status::Pending);
+
+    if (status != Status::Pending) {
+      // clear info and add to queue (if should copy)
+      pending_records_info.erase(record_address);
+      if (status == Status::NotFound) {
+        pending_records_queue.push_back({ record, expected_entry });
+      }
+    }
+
+    if (processed_records % io_check_freq == 0) {
+      CompletePending(false);
+    }
+    //
+    for (auto pending_record : pending_records_queue) {
+      // Copy to tail if no other entry with same key exists
+      CompactionUpsert<K, V> upsert_context(pending_record->record);
+      Status status_ = ConditionalCopyToTail(upsert_context, nullptr, pending_record->expected_entry);
+      assert(status_ == Status::Ok || status_ == Status::Aborted);
+    }
+    pending_records_queue.clear();
+  }
+
+  while( !pending_records_info.empty() || !pending_records_queue.empty() ) {
+    CompletePending(false);
+    std::this_thread::yield();
+
+    for (auto pending_record : pending_records_queue) {
+      // Copy to tail if no other entry with same key exists
+      CompactionUpsert<K, V> upsert_context(pending_record->record);
+      Status status_ = ConditionalCopyToTail(upsert_context, nullptr, pending_record->expected_entry);
+      assert(status_ == Status::Ok || status_ == Status::Aborted);
+    }
+    pending_records_queue.clear();
+  }
+}
+
 template <class K, class V, class D>
 template <class EC>
 inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callback, Address begin_address) const {
@@ -2993,6 +3107,63 @@ inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callbac
     // not reachable
     assert(false);
   }
+}
+
+template <class K, class V, class D>
+template <class UC>
+inline Status FasterKv<K, V, D>::ConditionalCopyToTail(UC& context, AsyncCallback callback, HashBucketEntry expected_entry) {
+  typedef PendingUpsertContext<UC> pending_upsert_context_t;
+  pending_upsert_context_t pending_context { context, callback };
+
+  do {
+    assert( thread_ctx().phase == Phase::REST);
+
+    KeyHash hash = pending_context.get_key_hash();
+    HashBucketEntry entry;
+    AtomicHashBucketEntry* atomic_entry = FindEntry(hash, entry);
+    assert(atomic_entry != nullptr);
+
+    if (entry != expected_entry) {
+      // Hash-chain changed since last time
+      // Check if an entry with same key was inserted during this time
+      assert(expected_entry.address() >= hlog.head_address);
+
+      Address address = entry.address();
+      record_t* record = reinterpret_cast<record_t*>(hlog.get(address));
+      if(!pending_context.is_key_equal(record->key())) {
+        address = TraceBackForKeyMatchCtxt(pending_context, record->header.previous_address(), expected_entry.address() + 1);
+      }
+
+      if (address > expected_entry.address()) {
+        // Some other entry with same key was inserted -- abort insert
+        return Status::Aborted;
+      }
+      assert(address == expected_entry.address());
+      // Update expected entry to reflect new hash chain
+      expected_entry = entry;
+    }
+
+    // Append entry to the log
+    uint32_t record_size = record_t::size(pending_context.key_size(), pending_context.value_size());
+    Address new_address = BlockAllocate(record_size);
+    record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+    new(record) record_t{
+      RecordInfo{
+        static_cast<uint16_t>(thread_ctx().version), true, false, false, expected_entry.address() }
+    };
+    pending_context.write_deep_key_at(const_cast<key_t*>(&record->key()));
+    pending_context.Put(record);
+
+    // Try to update hash bucket address
+    HashBucketEntry updated_entry{ new_address, hash.tag(), false };
+    if(atomic_entry->compare_exchange_strong(expected_entry, updated_entry)) {
+      // Installed the new record in the hash table.
+      return Status::Ok;
+    }
+
+    // Hash-chain changed since last time -- retry
+    record->header.invalid = true;
+  } while (true);
 }
 
 /// When invoked, compacts the hybrid-log between the begin address and a
