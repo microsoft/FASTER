@@ -13,13 +13,24 @@ namespace core {
 
 template<class K, class V>
 struct CompactionPendingRecordEntry {
+  typedef K key_t;
+  typedef V value_t;
 
-  CompactionPendingRecordEntry(Record<K, V> record_, HashBucketEntry expected_entry_)
-    : record(record_)
+  CompactionPendingRecordEntry(const Record<K, V>* record_, HashBucketEntry expected_entry_)
+    : key(record_->key())
+    , value(record_->value())
     , expected_entry(expected_entry_)
     {}
 
-  Record<K, V> record;
+  CompactionPendingRecordEntry(const CompactionPendingRecordEntry& from)
+    : key(from.key)
+    , value(from.value)
+    , expected_entry(from.expected_entry)
+    {}
+
+  K key;
+  V value;
+
   HashBucketEntry expected_entry;
 };
 
@@ -29,7 +40,7 @@ struct CompactionPendingRecordEntry {
 /// The following are template arguments.
 ///    K: The type on the key of each record.
 ///    V: The type on the value stored inside FASTER.
-template <class K, class V, class CRI, class CRQ>
+template <class K, class V>
 class CompactionExists : public IAsyncContext {
  public:
   // Typedefs on the key and value required internally by FASTER.
@@ -41,8 +52,8 @@ class CompactionExists : public IAsyncContext {
 
 
   /// Constructs and returns a context given a pointer to a record.
-  CompactionExists(record_t* record, Address record_address,
-          CRI* records_info, CRQ* records_queue)
+  CompactionExists(const record_t* record, Address record_address,
+          void* records_info, void* records_queue)
    : key_(record->key())
    , value_(record->value())
    , address_(record_address)
@@ -55,9 +66,9 @@ class CompactionExists : public IAsyncContext {
   CompactionExists(const CompactionExists& from)
    : key_(from.key_)
    , value_(from.value_)
-   , address_(from.record_address)
-   , records_info_(from.records_info)
-   , records_queue_(from.records_queue)
+   , address_(from.address_)
+   , records_info_(from.records_info_)
+   , records_queue_(from.records_queue_)
   {}
 
   /// Accessor for the key. Invoked from within FASTER.
@@ -76,11 +87,11 @@ class CompactionExists : public IAsyncContext {
     return address_;
   }
 
-  inline CRI * records_info() const {
+  inline void* records_info() const {
     return records_info_;
   }
 
-  inline CRQ * records_queue() const {
+  inline void * records_queue() const {
     return records_queue_;
   }
 
@@ -115,10 +126,10 @@ class CompactionExists : public IAsyncContext {
   Address address_;
 
   /// Pointer to the records info map (stored in Compact method)
-  CRI* records_info_;
+  void* records_info_;
 
   /// Pointer to the pedning records queue (stored in Compact method)
-  CRQ* records_queue_;
+  void* records_queue_;
 };
 
 
@@ -141,6 +152,11 @@ class CompactionUpsert : public IAsyncContext {
   CompactionUpsert(record_t* record)
    : key_(record->key())
    , value_(record->value())
+  {}
+
+  CompactionUpsert(key_t key, value_t value)
+   : key_(key)
+   , value_(value)
   {}
 
   /// Copy constructor. Required for when an Upsert operation goes async
