@@ -494,7 +494,6 @@ class AsyncPendingExistsContext : public PendingContext<K> {
   Address begin_address;
 };
 
-
 /// A synchronous RecordExists() context preserves its type information.
 template <class MC>
 class PendingExistsContext : public AsyncPendingExistsContext<typename MC::key_t> {
@@ -506,8 +505,8 @@ class PendingExistsContext : public AsyncPendingExistsContext<typename MC::key_t
   typedef Record<key_t, value_t> record_t;
   constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
-  PendingExistsContext(exists_context_t& caller_context_, AsyncCallback caller_callback_)
-    : AsyncPendingExistsContext<key_t>(caller_context_, caller_callback_) {
+  PendingExistsContext(exists_context_t& caller_context_, AsyncCallback caller_callback_, Address begin_address_)
+    : AsyncPendingExistsContext<key_t>(caller_context_, caller_callback_, begin_address_) {
   }
   /// The deep copy constructor.
   PendingExistsContext(PendingExistsContext& other, IAsyncContext* caller_context_)
@@ -532,6 +531,9 @@ class PendingExistsContext : public AsyncPendingExistsContext<typename MC::key_t
   }
   inline uint32_t key_size() const final {
     return exists_context().key().size();
+  }
+  inline void write_deep_key_at(key_t* dst) const final {
+    write_deep_key_at_helper<kIsShallowKey>::execute(exists_context().key(), dst);
   }
   inline KeyHash get_key_hash() const final {
     return exists_context().key().GetHash();

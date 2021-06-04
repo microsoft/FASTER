@@ -155,7 +155,7 @@ class FasterKv {
 
   /// Log compaction entry method.
   bool Compact(uint64_t untilAddress);
-  bool CompactWithLookup(uint64_t until_address);
+  void CompactWithLookup(uint64_t until_address);
 
   /// Truncating the head of the log.
   bool ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
@@ -246,7 +246,7 @@ class FasterKv {
   void InitializeCheckpointLocks();
 
   template <class EC>
-  inline Status RecordExists(EC& context, AsyncCallback callback, Address begin_address) const;
+  inline Status RecordExists(EC& context, AsyncCallback callback, Address begin_address);
 
   template <class UC>
   inline Status ConditionalCopyToTail(UC& context, AsyncCallback callback, HashBucketEntry expected_entry);
@@ -1603,7 +1603,6 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingExists(ExecutionContex
     if(record->header.tombstone) {
       return OperationStatus::NOT_FOUND;
     }
-    //pending_context->Get(record);
     return OperationStatus::SUCCESS;
   } else {
     return OperationStatus::NOT_FOUND;
@@ -2958,19 +2957,15 @@ inline std::ostream& operator << (std::ostream& out, const FixedPageAddress addr
 /// and by potentially going through the hash chains, rather than
 /// scanning the entire log from head to tail.
 template<class K, class V, class D>
-bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address) {
+void FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address) {
   constexpr int io_check_freq = 20;
 
-  typedef std::unordered_map<Address, CompactionPendingRecordEntry<K, V>> compaction_records_info_t;
+  typedef std::unordered_map<uint64_t, CompactionPendingRecordEntry<K, V>> compaction_records_info_t;
   typedef std::deque<CompactionPendingRecordEntry<K, V>> compaction_records_queue_t;
-  typedef compaction_records_info_t CRI;
-  typedef compaction_records_queue_t CRQ;
-
-  typedef PendingExistsContext<CompactionExists<K, V, CRI, CRQ>> pending_exists_context_t;
 
   // TODO: maybe switch to an initial phase for GC to avoid concurrent actions (e.g. checkpoint, grow index, etc.)
 
-  if (until_address > hlog.safe_read_only_address.load()) {
+  if (until_address > hlog.safe_read_only_address.control()) {
     throw std::invalid_argument("Can compact only until hlog.safe_read_only_address");
   }
 
@@ -2987,48 +2982,54 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address) {
     if (record == nullptr) break;
     ++processed_records;
 
-    if (record->header->tombstone) {
+    if (record->header.tombstone) {
       // no need to copy to tail
       continue;
     }
 
-    CompactionExists<K, V, CRI, CRQ> context(record, record_address,
-                                            &pending_records_info, &pending_records_queue);
     // find and store the hash bucket of record
     // NOTE: a hash bucket *must* exist, since the record exists in the hybrid log
-    pending_exists_context_t pending_context{context, nullptr};
-    KeyHash hash = pending_context.get_key_hash();
+    KeyHash hash = record->key().GetHash();
     HashBucketEntry expected_entry;
     assert( FindEntry(hash, expected_entry) != nullptr );
 
     // store record info
-    CompactionPendingRecordEntry<K, V> record_info (expected_entry, Status::Pending);
-    pending_records_info.insert({ record_address, record_info });
+    CompactionPendingRecordEntry<K, V> record_info (record, expected_entry);
+    pending_records_info.insert({ record_address.control(), record_info });
 
     // Prepare for read request
     auto callback = [](IAsyncContext* ctxt, Status result) {
-      CallbackContext<CompactionExists<K, V, CRI, CRQ>> context(ctxt);
+      CallbackContext<CompactionExists<K, V>> context(ctxt);
       assert(result == Status::Ok || result == Status::NotFound);
 
-      Address address = context->record_address();
+      uint64_t address = context->record_address().control();
+      auto records_info = static_cast<compaction_records_info_t*>(context->records_info());
+      auto records_queue = static_cast<compaction_records_queue_t*>(context->records_queue());
+
       if (result == Status::NotFound) {
         // retrieve record info
-        auto record_info = context->records_info().find(address);
-        assert(record_info != context->records_info().end());
+        //auto record_info = context->records_info().find(address);
+        auto record_info = records_info->find(address);
+        //assert(record_info != context->records_info().end());
+        assert(record_info != records_info->end());
         // push record info to pending records queue
-        context->records_queue().push_back(record_info->second);
+        //context->records_queue().push_back(record_info->second);
+        records_queue->push_back(record_info->second);
       }
       // remove info for this record, since it has been processed
-      context->records_info().erase(address);
+      //context->records_info().erase(address);
+      records_info->erase(address);
     };
 
     // Try to find a most recent record in the (recordAddress, tailAddress] range
-    Status status = RecordExists(record->key(), callback, record_address + 1);
+    CompactionExists<K, V> context(record, record_address,
+                                            &pending_records_info, &pending_records_queue);
+    Status status = RecordExists(context, callback, record_address + 1);
     assert(status == Status::Ok || status == Status::NotFound || status == Status::Pending);
 
     if (status != Status::Pending) {
       // clear info and add to queue (if should copy)
-      pending_records_info.erase(record_address);
+      pending_records_info.erase(record_address.control());
       if (status == Status::NotFound) {
         pending_records_queue.push_back({ record, expected_entry });
       }
@@ -3038,10 +3039,10 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address) {
       CompletePending(false);
     }
     //
-    for (auto pending_record : pending_records_queue) {
+    for (auto const & pending_record : pending_records_queue) {
       // Copy to tail if no other entry with same key exists
-      CompactionUpsert<K, V> upsert_context(pending_record->record);
-      Status status_ = ConditionalCopyToTail(upsert_context, nullptr, pending_record->expected_entry);
+      CompactionUpsert<K, V> upsert_context(pending_record.key, pending_record.value);
+      Status status_ = ConditionalCopyToTail(upsert_context, nullptr, pending_record.expected_entry);
       assert(status_ == Status::Ok || status_ == Status::Aborted);
     }
     pending_records_queue.clear();
@@ -3051,10 +3052,10 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address) {
     CompletePending(false);
     std::this_thread::yield();
 
-    for (auto pending_record : pending_records_queue) {
+    for (auto const & pending_record : pending_records_queue) {
       // Copy to tail if no other entry with same key exists
-      CompactionUpsert<K, V> upsert_context(pending_record->record);
-      Status status_ = ConditionalCopyToTail(upsert_context, nullptr, pending_record->expected_entry);
+      CompactionUpsert<K, V> upsert_context(pending_record.key, pending_record.value);
+      Status status_ = ConditionalCopyToTail(upsert_context, nullptr, pending_record.expected_entry);
       assert(status_ == Status::Ok || status_ == Status::Aborted);
     }
     pending_records_queue.clear();
@@ -3063,7 +3064,7 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address) {
 
 template <class K, class V, class D>
 template <class EC>
-inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callback, Address begin_address) const {
+inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callback, Address begin_address) {
   typedef PendingExistsContext<EC> pending_exists_context_t;
   pending_exists_context_t pending_context {context, callback, begin_address};
 
@@ -3120,16 +3121,17 @@ inline Status FasterKv<K, V, D>::ConditionalCopyToTail(UC& context, AsyncCallbac
 
     KeyHash hash = pending_context.get_key_hash();
     HashBucketEntry entry;
-    AtomicHashBucketEntry* atomic_entry = FindEntry(hash, entry);
+    AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, entry);
     assert(atomic_entry != nullptr);
+    assert(atomic_entry->load().address() != Address::kInvalidAddress);
 
     if (entry != expected_entry) {
       // Hash-chain changed since last time
       // Check if an entry with same key was inserted during this time
-      assert(expected_entry.address() >= hlog.head_address);
+      assert(expected_entry.address() >= hlog.head_address.load());
 
       Address address = entry.address();
-      record_t* record = reinterpret_cast<record_t*>(hlog.get(address));
+      record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
       if(!pending_context.is_key_equal(record->key())) {
         address = TraceBackForKeyMatchCtxt(pending_context, record->header.previous_address(), expected_entry.address() + 1);
       }
