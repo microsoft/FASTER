@@ -170,27 +170,27 @@ jobs:
   displayName: 'C# (Linux)'
 
   steps:
-  - task: NuGetToolInstaller@1
-    inputs:
-      versionSpec: '5.5.0'
-
-  - task: NuGetCommand@2
-    inputs:
-      restoreSolution: '$(solution)'
-
   - task: UseDotNet@2
+    displayName: 'Install .NET 5.0 SDK'
     inputs:
       packageType: 'sdk'
       version: '5.0.300'
 
-  - script: |
-      mono --version
-      msbuild /version
-      msbuild /t:restore $(solution)
-      msbuild /p:Configuration=Release $(solution)
-    displayName: 'Build'
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet restore'
+    inputs:
+      command: 'restore'
+      projects: '**/*.csproj'
+      
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build $(buildConfiguration)'
+    inputs:
+      command: 'build'
+      projects: '**/test/*.csproj'
+      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1 -l "console;verbosity=detailed"'
 
   - task: DotNetCoreCLI@2
+    displayName: 'dotnet test $(buildConfiguration)'
     inputs:
       command: test
       projects: '**/test/*.csproj'
