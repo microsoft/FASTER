@@ -6,7 +6,6 @@
     <Platforms>AnyCPU;x64</Platforms>
     <LangVersion>latest</LangVersion>
     <HighEntropyVA>true</HighEntropyVA>
-    <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
   <PropertyGroup>
