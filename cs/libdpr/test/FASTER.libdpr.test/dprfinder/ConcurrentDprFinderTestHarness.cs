@@ -56,7 +56,7 @@ namespace FASTER.libdpr
                         version = worker.version;
                         return;
                     }
-                    deps.Add(new WorkerVersion(new Worker(i), depVersion));
+                    deps.Add(new WorkerVersion(worker.me, depVersion));
                 }
             }
             backend().NewCheckpoint(wv, deps);

@@ -375,12 +375,12 @@ namespace FASTER.libdpr
         /// <returns> (world-line, version) that the new worker should start at </returns>>
         public (long, long) AddWorker(Worker worker, Action callback)
         {
-            var minVer = versionTable.Select(e => e.Value).Min();
+            var minVer = versionTable.IsEmpty ? 0 : versionTable.Select(e => e.Value).Min();
             versionTable.TryAdd(worker, minVer);
             lock (volatileState)
             {
                 var currentWorldLines = volatileState.GetCurrentWorldLines();
-                var latestWorldLine = currentWorldLines.Select(e => e.Value).Max();
+                var latestWorldLine = currentWorldLines.Count == 0 ? 0 : currentWorldLines.Select(e => e.Value).Max();
                 // First time we have seen this worker --- start them at the global min version and current cluster
                 // world-line and add to tracking
                 if (volatileState.GetCurrentCut().TryAdd(worker, 0))
