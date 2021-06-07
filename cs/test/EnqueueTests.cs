@@ -182,8 +182,6 @@ namespace FASTER.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
 
-            // Issue with test and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
-            //*#*#* Might be a bug here as it is locking up in CommitAsync when usually doesn't *#*##
 #if WINDOWS
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
