@@ -27,28 +27,6 @@ jobs:
         buildConfiguration: 'Release'
 
   steps:
-  - task: NuGetToolInstaller@1
-
-  - task: NuGetCommand@2
-    inputs:
-      restoreSolution: '$(solution)'
-
-  - task: VSBuild@1
-    inputs:
-      solution: '$(solution)'
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-
-  - task: NuGetCommand@2
-    inputs:
-      restoreSolution: '$(solutionRemote)'
-
-  - task: VSBuild@1
-    inputs:
-      solution: '$(solutionRemote)'
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-
   - powershell: 'Invoke-WebRequest -OutFile azure-storage-emulator.msi -Uri "https://go.microsoft.com/fwlink/?LinkId=717179&clcid=0x409"'
     displayName: 'Download Azure Storage Emulator'
 
@@ -61,55 +39,36 @@ jobs:
   - script: '"C:\storage-emulator\root\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
     displayName: 'Start Storage Emulator'
 
-  - task: VSTest@2
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build core $(buildConfiguration)'
     inputs:
-      testAssemblyVer2: |
-       **\$(BuildConfiguration)\net46*\*test.dll
-       **\$(BuildConfiguration)\**\net46*\*test.dll
-       !**\*Microsoft.VisualStudio.TestPlatform*
-       !**\obj\**
-       !**\*TestAdapter.dll
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0'
+      command: 'build'
+      projects: '**/test/*.csproj'
+      arguments: '--configuration $(buildConfiguration)'
 
-  - task: VSTest@2
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build remote $(buildConfiguration)'
     inputs:
-      testAssemblyVer2: |
-       **\$(BuildConfiguration)\netcoreapp2*\*test.dll
-       **\$(BuildConfiguration)\**\netcoreapp2*\*test.dll
-       !**\*Microsoft.VisualStudio.TestPlatform*
-       !**\obj\**
-       !**\*TestAdapter.dll
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.2'
+      command: 'build'
+      projects: '**/remote/*.test.csproj'
+      arguments: '--configuration $(buildConfiguration)'
 
-  - task: VSTest@2
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet test core $(buildConfiguration)'
     inputs:
-      testAssemblyVer2: |
-       **\$(BuildConfiguration)\netcoreapp3*\*test.dll
-       **\$(BuildConfiguration)\**\netcoreapp3*\*test.dll
-       !**\*Microsoft.VisualStudio.TestPlatform*
-       !**\obj\**
-       !**\*TestAdapter.dll
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v3.1'
-
-  - task: VSTest@2
+      command: test
+      projects: '**/test/*.csproj'
+      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
+      
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet test remote $(buildConfiguration)'
     inputs:
-      testAssemblyVer2: |
-       **\$(BuildConfiguration)\net5.0\*test.dll
-       **\$(BuildConfiguration)\**\net5.0\*test.dll
-       !**\*Microsoft.VisualStudio.TestPlatform*
-       !**\obj\**
-       !**\*TestAdapter.dll
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:net5.0'
-
+      command: test
+      projects: '**/remote/*.test.csproj'
+      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
+      
   - task: PublishTestResults@2
+    displayName: 'Publish Test Results'
     inputs:
       testRunner: VSTest
       testResultsFiles: '**/*.trx'
@@ -193,17 +152,31 @@ jobs:
 
   steps:
   - task: DotNetCoreCLI@2
-    displayName: 'dotnet build $(buildConfiguration)'
+    displayName: 'dotnet build core $(buildConfiguration)'
     inputs:
       command: 'build'
       projects: '**/test/*.csproj'
       arguments: '--configuration $(buildConfiguration)'
 
   - task: DotNetCoreCLI@2
-    displayName: 'dotnet test $(buildConfiguration)'
+    displayName: 'dotnet build remote $(buildConfiguration)'
+    inputs:
+      command: 'build'
+      projects: '**/remote/*.test.csproj'
+      arguments: '--configuration $(buildConfiguration)'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet test core $(buildConfiguration)'
     inputs:
       command: test
       projects: '**/test/*.csproj'
+      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
+      
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet test remote $(buildConfiguration)'
+    inputs:
+      command: test
+      projects: '**/remote/*.test.csproj'
       arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
       
   - task: PublishTestResults@2
