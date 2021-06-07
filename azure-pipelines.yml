@@ -40,31 +40,17 @@ jobs:
     displayName: 'Start Storage Emulator'
 
   - task: DotNetCoreCLI@2
-    displayName: 'dotnet build core $(buildConfiguration)'
+    displayName: 'dotnet build $(buildConfiguration)'
     inputs:
       command: 'build'
-      projects: '**/test/*.csproj'
+      projects: '**/*.test.csproj'
       arguments: '--configuration $(buildConfiguration)'
 
   - task: DotNetCoreCLI@2
-    displayName: 'dotnet build remote $(buildConfiguration)'
-    inputs:
-      command: 'build'
-      projects: '**/remote/*.test.csproj'
-      arguments: '--configuration $(buildConfiguration)'
-
-  - task: DotNetCoreCLI@2
-    displayName: 'dotnet test core $(buildConfiguration)'
+    displayName: 'dotnet test $(buildConfiguration)'
     inputs:
       command: test
-      projects: '**/test/*.csproj'
-      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
-      
-  - task: DotNetCoreCLI@2
-    displayName: 'dotnet test remote $(buildConfiguration)'
-    inputs:
-      command: test
-      projects: '**/remote/*.test.csproj'
+      projects: '**/*.test.csproj'
       arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
       
   - task: PublishTestResults@2
@@ -152,31 +138,17 @@ jobs:
 
   steps:
   - task: DotNetCoreCLI@2
-    displayName: 'dotnet build core $(buildConfiguration)'
+    displayName: 'dotnet build $(buildConfiguration)'
     inputs:
       command: 'build'
-      projects: '**/test/*.csproj'
+      projects: '**/*.test.csproj'
       arguments: '--configuration $(buildConfiguration)'
 
   - task: DotNetCoreCLI@2
-    displayName: 'dotnet build remote $(buildConfiguration)'
-    inputs:
-      command: 'build'
-      projects: '**/remote/*.test.csproj'
-      arguments: '--configuration $(buildConfiguration)'
-
-  - task: DotNetCoreCLI@2
-    displayName: 'dotnet test core $(buildConfiguration)'
+    displayName: 'dotnet test $(buildConfiguration)'
     inputs:
       command: test
-      projects: '**/test/*.csproj'
-      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
-      
-  - task: DotNetCoreCLI@2
-    displayName: 'dotnet test remote $(buildConfiguration)'
-    inputs:
-      command: test
-      projects: '**/remote/*.test.csproj'
+      projects: '**/*.test.csproj'
       arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
       
   - task: PublishTestResults@2
