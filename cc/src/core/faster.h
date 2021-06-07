@@ -1600,9 +1600,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingExists(ExecutionContex
 
   if(io_context.address >= pending_context->begin_address) {
     record_t* record = reinterpret_cast<record_t*>(io_context.record.GetValidPointer());
-    if(record->header.tombstone) {
-      return OperationStatus::NOT_FOUND;
-    }
+    // irrespective of whether the record is valid or tombstone, the record exists!
     return OperationStatus::SUCCESS;
   } else {
     return OperationStatus::NOT_FOUND;
@@ -2965,14 +2963,10 @@ void FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address) {
 
   // TODO: maybe switch to an initial phase for GC to avoid concurrent actions (e.g. checkpoint, grow index, etc.)
 
-  if (until_address > hlog.safe_read_only_address.control()) {
-    throw std::invalid_argument("Can compact only until hlog.safe_read_only_address");
-  }
-
   compaction_records_info_t pending_records_info;
   compaction_records_queue_t pending_records_queue;
   Address record_address;
-  int processed_records = 0;
+  size_t processed_records = 0;
 
   Address begin_address = hlog.begin_address.load();
   ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE,
@@ -2984,61 +2978,59 @@ void FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address) {
 
     if (record->header.tombstone) {
       // no need to copy to tail
-      continue;
+      goto complete_pending;
     }
 
-    // find and store the hash bucket of record
-    // NOTE: a hash bucket *must* exist, since the record exists in the hybrid log
-    KeyHash hash = record->key().GetHash();
-    HashBucketEntry expected_entry;
-    assert( FindEntry(hash, expected_entry) != nullptr );
+    {
+      // find and store the hash bucket of record
+      // NOTE: a hash bucket *must* exist, since the record exists in the hybrid log
+      KeyHash hash = record->key().GetHash();
+      HashBucketEntry expected_entry;
+      assert( FindEntry(hash, expected_entry) != nullptr );
 
-    // store record info
-    CompactionPendingRecordEntry<K, V> record_info (record, expected_entry);
-    pending_records_info.insert({ record_address.control(), record_info });
+      // store record info
+      CompactionPendingRecordEntry<K, V> record_info (record, expected_entry);
+      pending_records_info.insert({ record_address.control(), record_info });
 
-    // Prepare for read request
-    auto callback = [](IAsyncContext* ctxt, Status result) {
-      CallbackContext<CompactionExists<K, V>> context(ctxt);
-      assert(result == Status::Ok || result == Status::NotFound);
+      // Prepare for read request
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<CompactionExists<K, V>> context(ctxt);
+        assert(result == Status::Ok || result == Status::NotFound);
 
-      uint64_t address = context->record_address().control();
-      auto records_info = static_cast<compaction_records_info_t*>(context->records_info());
-      auto records_queue = static_cast<compaction_records_queue_t*>(context->records_queue());
+        uint64_t address = context->record_address().control();
+        auto records_info = static_cast<compaction_records_info_t*>(context->records_info());
+        auto records_queue = static_cast<compaction_records_queue_t*>(context->records_queue());
 
-      if (result == Status::NotFound) {
-        // retrieve record info
-        //auto record_info = context->records_info().find(address);
-        auto record_info = records_info->find(address);
-        //assert(record_info != context->records_info().end());
-        assert(record_info != records_info->end());
-        // push record info to pending records queue
-        //context->records_queue().push_back(record_info->second);
-        records_queue->push_back(record_info->second);
-      }
-      // remove info for this record, since it has been processed
-      //context->records_info().erase(address);
-      records_info->erase(address);
-    };
+        if (result == Status::NotFound) {
+          // retrieve record info
+          auto record_info = records_info->find(address);
+          assert(record_info != records_info->end());
+          // push record info to pending records queue
+          records_queue->push_back(record_info->second);
+        }
+        // remove info for this record, since it has been processed
+        records_info->erase(address);
+      };
 
-    // Try to find a most recent record in the (recordAddress, tailAddress] range
-    CompactionExists<K, V> context(record, record_address,
-                                            &pending_records_info, &pending_records_queue);
-    Status status = RecordExists(context, callback, record_address + 1);
-    assert(status == Status::Ok || status == Status::NotFound || status == Status::Pending);
+      // Try to find a more recent record in the (recordAddress, tailAddress] range
+      CompactionExists<K, V> context(record, record_address,
+                                              &pending_records_info, &pending_records_queue);
+      Status status = RecordExists(context, callback, record_address + 1);
+      assert(status == Status::Ok || status == Status::NotFound || status == Status::Pending);
 
-    if (status != Status::Pending) {
-      // clear info and add to queue (if should copy)
-      pending_records_info.erase(record_address.control());
-      if (status == Status::NotFound) {
-        pending_records_queue.push_back({ record, expected_entry });
+      if (status != Status::Pending) {
+        // clear info and add to queue (if should copy)
+        pending_records_info.erase(record_address.control());
+        if (status == Status::NotFound) {
+          pending_records_queue.push_back({ record, expected_entry });
+        }
       }
     }
 
+complete_pending:
     if (processed_records % io_check_freq == 0) {
       CompletePending(false);
     }
-    //
     for (auto const & pending_record : pending_records_queue) {
       // Copy to tail if no other entry with same key exists
       CompactionUpsert<K, V> upsert_context(pending_record.key, pending_record.value);
@@ -3048,6 +3040,7 @@ void FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address) {
     pending_records_queue.clear();
   }
 
+  // wait until pending requests / callbacks are handled
   while( !pending_records_info.empty() || !pending_records_queue.empty() ) {
     CompletePending(false);
     std::this_thread::yield();
