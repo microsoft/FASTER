@@ -52,6 +52,10 @@ class SimpleAtomicValue {
     : value{ other.value }
   {}
 
+  void operator=(const SimpleAtomicValue &other) {
+    value = other.value;
+  }
+
   inline static constexpr uint32_t size() {
     return static_cast<uint32_t>(sizeof(SimpleAtomicValue));
   }
@@ -60,6 +64,39 @@ class SimpleAtomicValue {
     T value;
     std::atomic<T> atomic_value;
   };
+};
+
+// For 8-byte T (i.e. uint64_t), its size would be ~8KB
+// NOTE: need to keep size less than max file segment (e.g. 8000 in Linux)
+template<class T>
+class SimpleAtomicLargeValue {
+ public:
+  SimpleAtomicLargeValue()
+    : value{}
+  {}
+
+  SimpleAtomicLargeValue(T value_)
+    : value(value_)
+  {}
+  SimpleAtomicLargeValue(const SimpleAtomicLargeValue& other)
+    : value(other.value)
+  {}
+
+  void operator=(const SimpleAtomicLargeValue &other) {
+    value = other.value;
+  }
+
+  inline static constexpr uint32_t size() {
+    return static_cast<uint32_t>(sizeof(SimpleAtomicLargeValue));
+  }
+
+  union {
+    T value;
+    std::atomic<T> atomic_value;
+  };
+
+ private:
+  T extra[992];
 };
 
 class NonCopyable
