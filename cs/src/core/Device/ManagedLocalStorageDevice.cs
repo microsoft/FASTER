@@ -114,7 +114,7 @@ namespace FASTER.core
             bool gotHandle;
             int numBytes = 0;
 
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
             UnmanagedMemoryManager<byte> umm = default;
 #else
             SectorAlignedMemory memory = default;
@@ -128,7 +128,7 @@ namespace FASTER.core
                 if (gotHandle)
                 {
                     logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
                     unsafe
                     {
                         umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
@@ -154,7 +154,7 @@ namespace FASTER.core
                 Interlocked.Decrement(ref numPending);
 
                 // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                 memory?.Return();
 #endif
                 if (logReadHandle != null) streampool?.Return(logReadHandle);
@@ -172,7 +172,7 @@ namespace FASTER.core
                     {
                         logReadHandle = await streampool.GetAsync().ConfigureAwait(false);
                         logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
                         unsafe
                         {
                             umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
@@ -197,7 +197,7 @@ namespace FASTER.core
                         Interlocked.Decrement(ref numPending);
 
                         // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                         memory?.Return();
 #endif
                         if (logReadHandle != null) streampool?.Return(logReadHandle);
@@ -212,7 +212,7 @@ namespace FASTER.core
                 {
                     numBytes = await readTask.ConfigureAwait(false);
 
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                     unsafe
                     {
                         fixed (void* source = memory.buffer)
@@ -233,7 +233,7 @@ namespace FASTER.core
                     Interlocked.Decrement(ref numPending);
 
                     // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                     memory?.Return();
 #endif
                     // Sequentialize all reads from same handle
@@ -267,7 +267,7 @@ namespace FASTER.core
             Task writeTask = default;
             bool gotHandle;
 
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
             UnmanagedMemoryManager<byte> umm = default;
 #else
             SectorAlignedMemory memory = default;
@@ -283,7 +283,7 @@ namespace FASTER.core
                 if (gotHandle)
                 {
                     logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
                     unsafe
                     {
                         umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
@@ -316,7 +316,7 @@ namespace FASTER.core
                 Interlocked.Decrement(ref numPending);
 
                 // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                 memory?.Return();
 #endif
                 if (logWriteHandle != null) streampool?.Return(logWriteHandle);
@@ -334,7 +334,7 @@ namespace FASTER.core
                     {
                         logWriteHandle = await streampool.GetAsync().ConfigureAwait(false);
                         logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
                         unsafe
                         {
                             umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
@@ -366,7 +366,7 @@ namespace FASTER.core
                         Interlocked.Decrement(ref numPending);
 
                         // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                         memory?.Return();
 #endif
                         if (logWriteHandle != null) streampool?.Return(logWriteHandle);
@@ -394,7 +394,7 @@ namespace FASTER.core
                     Interlocked.Decrement(ref numPending);
 
                     // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                     memory?.Return();
 #endif
                     // Sequentialize all writes to same handle
@@ -471,7 +471,7 @@ namespace FASTER.core
 
         private static uint GetSectorSize(string filename)
         {
-#if NETSTANDARD
+#if NETSTANDARD || NET
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 Debug.WriteLine("Assuming 512 byte sector alignment for disk with file " + filename);

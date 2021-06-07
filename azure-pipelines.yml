@@ -168,8 +168,16 @@ jobs:
   pool:
     vmImage: ubuntu-18.04
   displayName: 'C# (Linux)'
-  variables:
-    buildConfiguration: 'Release'
+
+  strategy:
+    maxParallel: 2
+    matrix:
+      AnyCPU-Debug:
+        buildPlatform: 'Any CPU'
+        buildConfiguration: 'Debug'
+      AnyCPU-Release:
+        buildPlatform: 'Any CPU'
+        buildConfiguration: 'Release'
 
   steps:
   - task: DotNetCoreCLI@2
@@ -177,14 +185,14 @@ jobs:
     inputs:
       command: 'build'
       projects: '**/test/*.csproj'
-      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1'
+      arguments: '--configuration $(buildConfiguration)'
 
   - task: DotNetCoreCLI@2
     displayName: 'dotnet test $(buildConfiguration)'
     inputs:
       command: test
       projects: '**/test/*.csproj'
-      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1 -l "console;verbosity=detailed"'
+      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
       
   - task: PublishTestResults@2
     displayName: 'Publish Test Results'
