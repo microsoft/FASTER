@@ -6,7 +6,7 @@ using NUnit.Framework;
 namespace FASTER.libdpr
 {
     [TestFixture]
-    public class SimpleDprFinderTest
+    public class GraphDprFinderTest
     {
         private static void CheckPersistedDprCut(GraphDprFinderBackend backend, Dictionary<Worker, long> expectedCut)
         {
@@ -91,6 +91,9 @@ namespace FASTER.libdpr
                 {B, 2},
                 {C, 2}
             });
+            
+            localDevice1.Dispose();
+            localDevice2.Dispose();
         }
 
          [Test]
@@ -197,6 +200,8 @@ namespace FASTER.libdpr
                 {B, 2},
                 {C, 2}
             });
+            localDevice1.Dispose();
+            localDevice2.Dispose();
         }
     }
 }

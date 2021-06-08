@@ -85,27 +85,24 @@ namespace FASTER.libdpr
         }
         
 
-        public void Simulate(long timeMilli)
+        public void Simulate(ManualResetEventSlim termination)
         {
-            var sw = Stopwatch.StartNew();
-            while (sw.ElapsedMilliseconds < timeMilli)
+            while (!termination.IsSet)
             {
                 SimulateOneVersion();
                 CheckInvariants();
             }
-
             finished = true;
             var lastVersion = version;
             SimulateOneVersion(false);
-            
             while (lastChecked < lastVersion)
                 CheckInvariants();
+
         }
     }
 
     internal class SimulatedDprFinder
     {
-        private ManualResetEventSlim termination;
         private IDevice frontDevice, backDevice;
         // Randomly reset to simulate DprFinder failure
         private volatile GraphDprFinderBackend backend;
@@ -122,21 +119,20 @@ namespace FASTER.libdpr
 
         public void FinishSimulation()
         {
-            termination.Set();
-            failOver.Join();
-            compute.Join();
-            persist.Join();
-            frontDevice.Dispose();
-            backDevice.Dispose();
+
         }
 
-        public void StartSimulation(double failureProb)
+        public void Simulate(double failureProb, int simulationTimeMilli, IEnumerable<SimulatedWorker> cluster)
         {
-            termination = new ManualResetEventSlim();
+            var failOverTermination = new ManualResetEventSlim();
+            var workerTermination = new ManualResetEventSlim();
+            var backendTermination = new ManualResetEventSlim();
             failOver = new Thread(() =>
             {
-                var rand = new Random();   
-                while (!termination.IsSet)
+                var rand = new Random();
+                // failure simulator terminate before worker threads are joined so they can at least have one failure-free
+                // version to ensure we make progress
+                while (!failOverTermination.IsSet)
                 {
                     Thread.Sleep(10);
                     if (rand.NextDouble() < failureProb)
@@ -145,19 +141,41 @@ namespace FASTER.libdpr
             });
             compute = new Thread(() =>
             {
-                while (!termination.IsSet)
+                while (!backendTermination.IsSet)
                     backend.TryFindDprCut();
             });
         
             persist = new Thread(() =>
             {
-                while (!termination.IsSet)
+                while (!backendTermination.IsSet)
                     backend.PersistState();
             });
 
             persist.Start();
             compute.Start();
             failOver.Start();
+            
+            var threads = new List<Thread>();
+            foreach (var worker in cluster)
+            {
+                var t = new Thread(() => worker.Simulate(workerTermination));
+                threads.Add(t);
+                t.Start();
+            }
+
+            Thread.Sleep(simulationTimeMilli);
+            failOverTermination.Set();
+            failOver.Join();
+            
+            workerTermination.Set();
+            foreach (var t in threads)
+                t.Join();
+
+            backendTermination.Set();
+            compute.Join();
+            persist.Join();
+            frontDevice.Dispose();
+            backDevice.Dispose();
         }
     }
 }

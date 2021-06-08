@@ -7,7 +7,7 @@ namespace FASTER.libdpr
 {
 
     [TestFixture]
-    public class SimpleDprFinderConcurrentTest
+    public class GraphDprFinderConcurrentTest
     {
         [Test]
         public void ConcurrentTestDprFinderSmallNoFailure()
@@ -19,20 +19,7 @@ namespace FASTER.libdpr
             for (var i = 0; i < 3; i++)
                 cluster.Add(new SimulatedWorker(new Worker(i), cluster, tested.GetDprFinder, 0.5));
             tested.GetDprFinder().PersistState();
-
-            tested.StartSimulation(0.0);
-            var threads = new List<Thread>();
-            foreach (var worker in cluster)
-            {
-                var t = new Thread(() => worker.Simulate(1000));
-                threads.Add(t);
-                t.Start();
-            }
-
-            foreach (var t in threads)
-                t.Join();
-
-            tested.FinishSimulation();
+            tested.Simulate(0.0, 1000, cluster);
         }
         
         [Test]
@@ -45,20 +32,7 @@ namespace FASTER.libdpr
             for (var i = 0; i < 30; i++)
                 cluster.Add(new SimulatedWorker(new Worker(i), cluster, tested.GetDprFinder, 0.75));
             tested.GetDprFinder().PersistState();
-
-            tested.StartSimulation(0.0);
-            var threads = new List<Thread>();
-            foreach (var worker in cluster)
-            {
-                var t = new Thread(() => worker.Simulate(30000));
-                threads.Add(t);
-                t.Start();
-            }
-
-            foreach (var t in threads)
-                t.Join();
-
-            tested.FinishSimulation();
+            tested.Simulate(0.0, 30000, cluster);
         }
         
         [Test]
@@ -71,21 +45,7 @@ namespace FASTER.libdpr
             for (var i = 0; i < 10; i++)
                 cluster.Add(new SimulatedWorker(new Worker(i), cluster, tested.GetDprFinder, 0.75));
             tested.GetDprFinder().PersistState();
-
-
-            tested.StartSimulation(0.05);
-            var threads = new List<Thread>();
-            foreach (var worker in cluster)
-            {
-                var t = new Thread(() => worker.Simulate(1000));
-                threads.Add(t);
-                t.Start();
-            }
-
-            foreach (var t in threads)
-                t.Join();
-
-            tested.FinishSimulation();
+            tested.Simulate(0.05, 1000, cluster);
         }
     }
 }
