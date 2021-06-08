@@ -28,5 +28,9 @@ namespace FixedLenClient
                 throw new Exception("Unexpected user context");
             }
         }
+
+        public override void SubscribeKVCallback(ref long key, ref long input, ref long output, byte ctx, Status status)
+        {
+        }
     }
 }

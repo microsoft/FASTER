@@ -373,15 +373,27 @@ namespace FASTER.client
                         case MessageType.SubscribeKV:
                             {
                                 var status = ReadStatus(ref src);
-                                var result = readrmwQueue.Dequeue();
-                                if (status == Status.PENDING)
+                                var p = hrw.ReadPendingSeqNo(ref src);
+                                if (status == Status.OK)
                                 {
-                                    var p = hrw.ReadPendingSeqNo(ref src);
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, Status.OK);
+                                }
+                                else if (status == Status.NOTFOUND)
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, Status.OK);
+                                }
+                                else if (status == Status.PENDING)
+                                {
+                                    var result = readrmwQueue.Dequeue();
                                     readRmwPendingContext.Add(p, result);
                                 }
                                 else
-                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, Status.ERROR);
-
+                                {
+                                    throw new Exception("Unexpected status of SubscribeKV");
+                                }
                                 break;
                             }
                         case MessageType.PendingResult:

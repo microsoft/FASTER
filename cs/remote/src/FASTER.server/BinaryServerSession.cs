@@ -20,9 +20,13 @@ namespace FASTER.server
         int seqNo, pendingSeqNo, msgnum, start;
         byte* dcurr;
 
-        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
+        readonly SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeKVBroker;
+
+        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeKVBroker)
             : base(socket, store, functions, serializer, maxSizeSettings)
         {
+            this.subscribeKVBroker = subscribeKVBroker;
+
             readHead = 0;
 
             // Reserve minimum 4 bytes to send pending sequence number as output
@@ -129,9 +133,12 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
+                            var keyptr = src;
                             status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src));
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
+
+                            subscribeKVBroker.Publish(keyptr);
                             break;
 
                         case MessageType.Read:
@@ -176,6 +183,17 @@ namespace FASTER.server
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
                             break;
 
+                        case MessageType.SubscribeKV:
+                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                                SendAndReset(ref d, ref dend);
+
+                            int sid = subscribeKVBroker.Subscribe(ref src, this);
+                            status = Status.PENDING;
+                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                            Write(ref status, ref dcurr, (int)(dend - dcurr));
+                            Write(sid, ref dcurr, (int)(dend - dcurr));
+                            break;
+
                         default:
                             throw new NotImplementedException();
                     }
@@ -190,6 +208,46 @@ namespace FASTER.server
                 else
                     responseObject.Dispose();
             }
+        }
+
+        public void Publish(ref Key key, ref Input input, int sid)
+        {
+            MessageType message = MessageType.SubscribeKV;
+
+            GetResponseObject();
+            byte* d = responseObject.obj.bufferPtr;
+            var dend = d + responseObject.obj.buffer.Length;
+            dcurr = d + sizeof(int); // reserve space for size
+
+            dcurr += BatchHeader.Size;
+            start = 0;
+            msgnum = 0;
+
+            if ((int)(dend - dcurr) < 6 + maxSizeSettings.MaxOutputSize)
+                SendAndReset(ref d, ref dend);
+
+            long ctx = ((long)message << 32) | (long)sid;
+            var status = session.Read(ref key, ref input, ref serializer.AsRefOutput(dcurr + 6, (int)(dend - dcurr)), ctx, 0);
+            msgnum++;
+
+            if (status != Status.PENDING)
+            {
+                // Write six bytes (message | status | sid)
+                hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                Write(ref status, ref dcurr, (int)(dend - dcurr));
+                Write(sid, ref dcurr, (int)(dend - dcurr));
+
+                if (status == Status.OK)
+                    serializer.SkipOutput(ref dcurr);
+            }
+            else
+                session.CompletePending(true);
+
+            // Send replies
+            if (msgnum - start > 0)
+                Send(d);
+            else
+                responseObject.Dispose();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

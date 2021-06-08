@@ -24,6 +24,8 @@ namespace FASTER.server
         readonly Socket servSocket;
         readonly MaxSizeSettings maxSizeSettings;
         readonly ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte> activeSessions;
+        readonly SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeKVBroker;
+
         int activeSessionCount;
         bool disposed;
 
@@ -38,6 +40,7 @@ namespace FASTER.server
         /// <param name="maxSizeSettings">Max size settings</param>
         public FasterKVServer(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, string address, int port, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default) : base()
         {
+            subscribeKVBroker = new SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer>(serializer);
             activeSessions = new ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte>();
             activeSessionCount = 0;
             disposed = false;
@@ -172,7 +175,7 @@ namespace FASTER.server
 
             if (e.Buffer[3] > 127)
             {
-                connArgs.session = new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(connArgs.socket, connArgs.store, connArgs.functionsGen(WireFormat.Binary), connArgs.serializer, connArgs.maxSizeSettings);
+                connArgs.session = new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(connArgs.socket, connArgs.store, connArgs.functionsGen(WireFormat.Binary), connArgs.serializer, connArgs.maxSizeSettings, subscribeKVBroker);
             }
             else
                 throw new FasterException("Unexpected wire format");
