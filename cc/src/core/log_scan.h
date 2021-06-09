@@ -148,7 +148,6 @@ class ScanIterator {
   /// Returns a pointer to the next record, along with its (logical) address
   record_t* GetNext(Address& address) {
     record_t* record = GetNext();
-    assert(record_address != Address::kInvalidAddress);
     address = record_address;
     return record;
   }
