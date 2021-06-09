@@ -67,7 +67,7 @@ class Address {
     return *this;
   }
   inline Address operator+(const uint64_t delta) {
-    Address addr;
+    Address addr (*this);
     addr += delta;
     return addr;
   }
