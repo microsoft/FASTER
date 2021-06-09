@@ -16,21 +16,30 @@ struct CompactionPendingRecordEntry {
   typedef K key_t;
   typedef V value_t;
 
-  CompactionPendingRecordEntry(const Record<K, V>* record_, HashBucketEntry expected_entry_)
+  CompactionPendingRecordEntry(const Record<K, V>* record_, const Address address_, HashBucketEntry expected_entry_)
     : key(record_->key())
     , value(record_->value())
+    , address(address_)
+    , expected_entry(expected_entry_)
+    {}
+
+  CompactionPendingRecordEntry(const K key_, const V value_, const Address address_, HashBucketEntry expected_entry_)
+    : key(key_)
+    , value(value_)
+    , address(address_)
     , expected_entry(expected_entry_)
     {}
 
   CompactionPendingRecordEntry(const CompactionPendingRecordEntry& from)
     : key(from.key)
     , value(from.value)
+    , address(from.address)
     , expected_entry(from.expected_entry)
     {}
 
   K key;
   V value;
-
+  Address address;
   HashBucketEntry expected_entry;
 };
 
@@ -56,6 +65,16 @@ class CompactionExists : public IAsyncContext {
           void* records_info, void* records_queue)
    : key_(record->key())
    , value_(record->value())
+   , address_(record_address)
+   , records_info_(records_info)
+   , records_queue_(records_queue)
+  {}
+
+  /// Constructs and returns a context given key-value fields
+  CompactionExists(K key, V value, Address record_address,
+          void* records_info, void* records_queue)
+   : key_(key)
+   , value_(value)
    , address_(record_address)
    , records_info_(records_info)
    , records_queue_(records_queue)
