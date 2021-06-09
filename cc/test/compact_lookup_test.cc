@@ -674,7 +674,7 @@ TEST_P(CompactLookupParametrizedTestFixture, ConcurrentOps) {
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
-  constexpr int numRecords = 50000;
+  static constexpr int numRecords = 50000;
 
   store.StartSession();
   // Populate initial keys
