@@ -66,6 +66,39 @@ class SimpleAtomicValue {
   };
 };
 
+// For 8-byte T (i.e. uint64_t), its size would be ~1KB
+template<class T>
+class SimpleAtomicMediumValue {
+ public:
+  SimpleAtomicMediumValue()
+    : value{}
+  {}
+
+  SimpleAtomicMediumValue(T value_)
+    : value(value_)
+  {}
+  SimpleAtomicMediumValue(const SimpleAtomicMediumValue& other)
+    : value(other.value)
+  {}
+
+  void operator=(const SimpleAtomicMediumValue &other) {
+    value = other.value;
+  }
+
+  inline static constexpr uint32_t size() {
+    return static_cast<uint32_t>(sizeof(SimpleAtomicMediumValue));
+  }
+
+  union {
+    T value;
+    std::atomic<T> atomic_value;
+  };
+
+ private:
+  T extra[126];
+};
+
+
 // For 8-byte T (i.e. uint64_t), its size would be ~8KB
 // NOTE: need to keep size less than max file segment (e.g. 8000 in Linux)
 template<class T>
