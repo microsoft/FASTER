@@ -71,8 +71,19 @@ namespace FASTER.test.recovery.sumstore
 
         [Test]
         [Category("FasterKV")]
-        public async ValueTask RecoveryTestFullCheckpoint([Values] bool isAsync)
+        [Category("Smoke")]
+        public async ValueTask RecoveryTestFullCheckpoint([Values] bool isAsync, [Values] TestUtils.DeviceType deviceType)
         {
+
+            // Reset all the log and fht values since using all deviceType
+            log = TestUtils.CreateTestDevice(deviceType, test_path + "/FullRecoveryTests.log");
+            fht = new FasterKV<AdId, NumClicks>
+            (keySpace,
+                //new LogSettings { LogDevice = log, MemorySizeBits = 14, PageSizeBits = 9 },  // locks ups at session.RMW line in Populate() for Local Memory
+                new LogSettings { LogDevice = log, SegmentSizeBits = 25 },
+                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot }
+            );
+
             Populate(FullCheckpointAction);
 
             foreach (var token in logTokens)
@@ -189,7 +200,7 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < numUniqueKeys; i++)
             {
                 var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(status == Status.OK,"Expected status=OK but found:"+status.ToString()+ " at index:" + i.ToString());
                 inputArray[i].numClicks = output.value;
             }
 

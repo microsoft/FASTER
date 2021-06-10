@@ -119,7 +119,7 @@ namespace FASTER.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = commitPath + "LogScanDefault" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
@@ -170,7 +170,7 @@ namespace FASTER.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = commitPath + "LogScanNoDefault" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
@@ -218,7 +218,7 @@ namespace FASTER.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = commitPath + "LogScanByName" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
@@ -266,7 +266,7 @@ namespace FASTER.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = commitPath + "LogScanWithoutRecover" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
@@ -314,7 +314,7 @@ namespace FASTER.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = commitPath + "LogScanDoublePage" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
@@ -361,7 +361,7 @@ namespace FASTER.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = commitPath + "LogScanSinglePage" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
@@ -407,7 +407,7 @@ namespace FASTER.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = commitPath + "LogScan" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing

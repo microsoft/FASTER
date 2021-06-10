@@ -19,13 +19,17 @@ namespace FASTER.test
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
+        private string commitPath;
+
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BlittableIterationTests.log", deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
+            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            if (Directory.Exists(commitPath))
+                Directory.Delete(commitPath, true);
         }
 
         [TearDown]
@@ -34,15 +38,27 @@ namespace FASTER.test
             fht.Dispose();
             fht = null;
             log.Dispose();
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            if (Directory.Exists(commitPath))
+                Directory.Delete(commitPath, true);
         }
 
         [Test]
         [Category("FasterKV")]
-        public void BlittableIterationTest1()
+        [Category("Smoke")]
+
+        public void BlittableIterationTest1([Values] TestUtils.DeviceType deviceType)
         {
+
+            string filename = commitPath + "BlittableIterationTest1" + deviceType.ToString() + ".log";
+            log = TestUtils.CreateTestDevice(deviceType, filename);
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
+
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
-            const int totalRecords = 2000;
+            const int totalRecords = 500;
             var start = fht.Log.TailAddress;
 
             for (int i = 0; i < totalRecords; i++)

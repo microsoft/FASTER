@@ -74,7 +74,7 @@ namespace FASTER.test
             // Create devices \ log for test
             string filename = commitPath + "TryEnqueue" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing

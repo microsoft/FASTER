@@ -49,8 +49,8 @@ namespace FASTER.test
             LSD,
             EmulatedAzure,
 #endif
-            MLSD
-            //LocalMemory
+            MLSD,
+            LocalMemory
         }
 
 
@@ -62,7 +62,7 @@ namespace FASTER.test
             {
 #if WINDOWS
                 case DeviceType.LSD:
-                    device = new LocalStorageDevice(filename, true, deleteOnClose: true, true, -1, false, false);
+                    device = new LocalStorageDevice(filename, false, deleteOnClose: true, true, -1, false, false);
                     break;
                 case DeviceType.EmulatedAzure:
                     string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
@@ -73,12 +73,10 @@ namespace FASTER.test
                 case DeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, deleteOnClose: true);
                     break;
-/* Best to not have every test run this - have specific tests that are for latency testing - difficult to have stable tests in such mixed environment.
                 // Emulated higher latency storage device - takes a disk latency arg (latencyMs) and emulates an IDevice using main memory, serving data at specified latency
                 case DeviceType.LocalMemory:  
-                    device = new LocalMemoryDevice(1L << 30, 1L << 25, 2, latencyMs: latencyMs);
+                    device = new LocalMemoryDevice(1L << 26, 1L << 22, 2, latencyMs: latencyMs);  // 64 MB (1L << 26) is enough for our test cases
                     break;
-*/
             }
 
             return device;

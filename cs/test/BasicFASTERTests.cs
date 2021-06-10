@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using FASTER.core;
 using NUnit.Framework;
+using System.IO;
 
 namespace FASTER.test
 {
@@ -18,6 +19,7 @@ namespace FASTER.test
         private FasterKV<KeyStruct, ValueStruct> fht;
         private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> session;
         private IDevice log;
+        private string commitPath;
 
         [SetUp]
         public void Setup()
@@ -26,6 +28,13 @@ namespace FASTER.test
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
             session = fht.For(new Functions()).NewSession<Functions>();
+
+            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            if (Directory.Exists(commitPath))
+                Directory.Delete(commitPath, true);
+
         }
 
         [TearDown]
@@ -39,8 +48,16 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void NativeInMemWriteRead()
+        [Category("Smoke")]
+        public void NativeInMemWriteRead([Values] TestUtils.DeviceType deviceType)
         {
+            // Reset all the log and fht values since using all deviceType
+            string filename = commitPath + "NativeInMemWriteRead" + deviceType.ToString() + ".log";
+            log = TestUtils.CreateTestDevice(deviceType, filename);
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                (128, new LogSettings { LogDevice = log, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 });
+            session = fht.For(new Functions()).NewSession<Functions>();
+
             InputStruct input = default;
             OutputStruct output = default;
 

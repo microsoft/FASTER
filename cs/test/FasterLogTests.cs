@@ -272,7 +272,7 @@ namespace FASTER.test
             string filename = commitPath + "TryEnqueue2" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
 
-            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
+            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22 };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             const int dataLength = 10000;
@@ -335,7 +335,7 @@ namespace FASTER.test
             string filename = commitPath + "TruncateUntilBasic" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
 
-            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
+            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22 };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             byte[] data1 = new byte[100];
@@ -382,7 +382,7 @@ namespace FASTER.test
 
             string filename = commitPath + "EnqueueAndWaitForCommitAsyncBasicTest" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22 });
 
             int headerSize = logChecksum == LogChecksumType.None ? 4 : 12;
             bool _disposed = false;
@@ -559,7 +559,7 @@ namespace FASTER.test
         {
             string filename = commitPath + "CommitNoSpinWait" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 });
 
             int commitFalseEntries = 100;
 
@@ -620,7 +620,7 @@ namespace FASTER.test
 
             string filename = commitPath + "CommitAsyncPrevTask" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager };
+            var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 };
             log = await FasterLog.CreateAsync(logSettings);
 
 
@@ -709,7 +709,7 @@ namespace FASTER.test
             string filename = commitPath + "RefreshUncommittedAsyncTest" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
 
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogCommitManager = manager });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogCommitManager = manager, SegmentSizeBits = 22 });
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 

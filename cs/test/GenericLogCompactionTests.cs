@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using NUnit.Framework;
+using System.IO;
 
 namespace FASTER.test
 {
@@ -14,6 +15,8 @@ namespace FASTER.test
         private FasterKV<MyKey, MyValue> fht;
         private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
         private IDevice log, objlog;
+        private string commitPath;
+
 
         [SetUp]
         public void Setup()
@@ -28,6 +31,12 @@ namespace FASTER.test
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
             session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
+
+            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            if (Directory.Exists(commitPath))
+                Directory.Delete(commitPath, true);
         }
 
         [TearDown]
@@ -43,16 +52,35 @@ namespace FASTER.test
         // Basic test that where shift begin address to untilAddress after compact
         [Test]
         [Category("FasterKV")]
-        public void LogCompactBasicTest()
+        [Category("Smoke")]
+        public void LogCompactBasicTest([Values] TestUtils.DeviceType deviceType)
         {
+
+            // Reset all the log and fht values since using all deviceType
+            string filename = commitPath + "LogCompactBasicTest" + deviceType.ToString() + ".log";
+            string objfilename = commitPath + "LogCompactBasicTest_obj" + deviceType.ToString() + ".log";
+
+            log = TestUtils.CreateTestDevice(deviceType, filename);
+            objlog = TestUtils.CreateTestDevice(deviceType, objfilename);
+
+            fht = new FasterKV<MyKey, MyValue>
+                (128,
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9, SegmentSizeBits = 22 },  
+                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
+                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
+                );
+
+            session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
+
+
             MyInput input = new MyInput();
 
-            const int totalRecords = 2000;
+            const int totalRecords = 500;
             long compactUntil = 0;
 
             for (int i = 0; i < totalRecords; i++)
             {
-                if (i == 1000)
+                if (i == 250)
                     compactUntil = fht.Log.TailAddress;
 
                 var key1 = new MyKey { key = i };
@@ -63,7 +91,7 @@ namespace FASTER.test
             compactUntil = session.Compact(compactUntil, true);
             Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
 
-            // Read 2000 keys - all should be present
+            // Read all keys - all should be present
             for (int i = 0; i < totalRecords; i++)
             {
                 MyOutput output = new MyOutput();
@@ -76,8 +104,8 @@ namespace FASTER.test
                     session.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.value.value == value.value);
+                    Assert.IsTrue(status == Status.OK,"Found status:"+status.ToString());
+                    Assert.IsTrue(output.value.value == value.value, "output value:"+output.value.value.ToString()+" value:"+value.value.ToString());
                 }
             }
         }

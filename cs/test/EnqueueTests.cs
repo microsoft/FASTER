@@ -72,12 +72,12 @@ namespace FASTER.test
         public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
             int entryLength = 20;
-            int numEntries = 1000;
+            int numEntries = 500;
             int entryFlag = 9999;
 
             string filename = commitPath+ "Enqueue"+deviceType.ToString()+".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 }); // Needs to match what is set in TestUtils.CreateTestDevice 
 
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
@@ -90,7 +90,7 @@ namespace FASTER.test
             if (iteratorType == EnqueueIteratorType.SpanBatch)
             {
                 entryLength = 10;
-                numEntries = 500;
+                numEntries = 300;
             }
 
             // Set Default entry data
@@ -180,7 +180,7 @@ namespace FASTER.test
             bool datacheckrun = false;
             string filename = commitPath + "EnqueueAsyncBasic" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device,SegmentSizeBits = 22 });
 
 #if WINDOWS
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)

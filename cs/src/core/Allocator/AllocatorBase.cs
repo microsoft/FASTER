@@ -709,7 +709,7 @@ namespace FASTER.core
             SegmentBufferSize = 1 + (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             if (SegmentSize < PageSize)
-                throw new FasterException("Segment must be at least of page size");
+                throw new FasterException("Segment ("+ SegmentSize.ToString()+ ") must be at least of page size ("+ PageSize.ToString()+ ")");
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
 
