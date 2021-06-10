@@ -3,6 +3,8 @@
 
 #pragma warning disable 0162
 
+using System;
+
 namespace FASTER.core
 {
     /// <summary>
@@ -56,15 +58,14 @@ namespace FASTER.core
         public int SegmentSizeBits = 30;
 
         /// <summary>
-        /// Log commit manager
+        /// Log commit manager - if you want to override the default implementation of commit.
         /// </summary>
         public ILogCommitManager LogCommitManager = null;
 
         /// <summary>
         /// Use specified directory for storing and retrieving checkpoints
-        /// This is a shortcut to providing the following:
-        ///   FasterLogSettings.LogCommitManager = new LocalLogCommitManager(LogCommitFile)
         /// </summary>
+        [Obsolete("This field is obsolete. The default log commit manager uses its own naming system. To use the old commit manager, set FasterLogSettings.LogCommitManager = new LocalLogCommitManager(LogCommitFile).", false)]
         public string LogCommitFile = null;
 
         /// <summary>
