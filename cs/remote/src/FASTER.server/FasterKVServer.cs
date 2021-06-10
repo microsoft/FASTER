@@ -9,7 +9,6 @@ using FASTER.common;
 using System;
 using System.Runtime.CompilerServices;
 using System.Collections.Concurrent;
-using System.Runtime.Remoting.Channels;
 using System.Threading;
 
 namespace FASTER.server
@@ -165,14 +164,15 @@ namespace FASTER.server
 
             if (e.BytesTransferred < 4) return false;
 
+            // FASTER's protocol family is identified by inverted size field in the start of a packet
             if (e.Buffer[3] <= 127)
                 throw new FasterException("Unexpected wire format");
 
             if (e.BytesTransferred < 4 + BatchHeader.Size) return false;
 
-            fixed (BatchHeader* bh = &e.Buffer[4])
+            fixed (void* bh = &e.Buffer[4])
             {
-                switch (bh->GetProtocol())
+                switch (((BatchHeader *) bh)->GetProtocol())
                 {
                     case WireFormat.Binary:
                         var backend = connArgs.provider.GetBackendForProtocol<FasterKVBackend<Key, Value, Functions, ParameterSerializer>>(WireFormat.Binary);

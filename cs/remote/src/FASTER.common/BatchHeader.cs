@@ -16,7 +16,7 @@ namespace FASTER.common
         public BatchHeader(int seqNo, int numMessages, WireFormat protocol)
         {
             this.seqNo = seqNo;
-            numMessagesAndProtocolType = (numMessages << sizeof(byte)) | (byte) protocol;
+            numMessagesAndProtocolType = (numMessages << 8) | (byte) protocol;
         }
         
         /// <summary>
@@ -34,7 +34,7 @@ namespace FASTER.common
         /// Number of messsages packed in batch
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetNumMessages() => numMessagesAndProtocolType >> sizeof(byte);
+        public int GetNumMessages() => (int) ((uint) numMessagesAndProtocolType >> 8);
         
         /// <summary>
         /// Byte value that denotes the wire protocol this batch is written in. 

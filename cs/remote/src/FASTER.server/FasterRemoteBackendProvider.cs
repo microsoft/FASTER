@@ -4,8 +4,19 @@ using FASTER.core;
 
 namespace FASTER.server
 {
+    /// <summary>
+    /// Provides backend store (e.g., FasterLog, FasterKV) of the Faster Server
+    /// </summary>
     public interface IFasterRemoteBackendProvider : IDisposable
     {
+        /// <summary>
+        /// Given messages of wire format type, returns the backend object for that type. If no backend is configured
+        /// for the given type or if the supplied BackendType does not match the type of object configured, will
+        /// throw an exception 
+        /// </summary>
+        /// <param name="type"> the wire format type</param>
+        /// <typeparam name="BackendType">object type of the configured backend for given type</typeparam>
+        /// <returns>configured backend object</returns>
         BackendType GetBackendForProtocol<BackendType>(WireFormat type);
     }
 
