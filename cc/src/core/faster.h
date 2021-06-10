@@ -3138,23 +3138,23 @@ inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callbac
     }
   }
 
+  Status status;
   if(address >= head_address) {
     // Mutable, fuzzy or immutable region [in-memory]
-    return (address >= min_offset) ? Status::Ok : Status::NotFound;
+    status = (address >= min_offset) ? Status::Ok : Status::NotFound;
   }
   else if(address >= begin_address) {
     // Record not available in-memory -- issue disk I/O request
     pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, entry);
     bool async;
-    assert( HandleOperationStatus(thread_ctx(), pending_context,
-                                  OperationStatus::RECORD_ON_DISK, async) == Status::Pending);
-    return Status::Pending;
+    status = HandleOperationStatus(thread_ctx(), pending_context, OperationStatus::RECORD_ON_DISK, async);
+    assert(status == Status::Pending);
   }
   else {
-    // not reachable
-    assert(false);
+    // Invalid address
+    status = Status::IOError;
   }
-  return Status::IOError;
+  return status;
 }
 
 template <class K, class V, class D>
