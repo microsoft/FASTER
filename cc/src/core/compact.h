@@ -16,18 +16,22 @@ struct CompactionPendingRecordEntry {
   typedef K key_t;
   typedef V value_t;
 
-  CompactionPendingRecordEntry(const Record<K, V>* record_, const Address address_, HashBucketEntry expected_entry_)
+  CompactionPendingRecordEntry(const Record<K, V>* record_, const Address address_,
+                              HashBucketEntry expected_entry_, Address search_min_offset_)
     : key(record_->key())
     , value(record_->value())
     , address(address_)
     , expected_entry(expected_entry_)
+    , search_min_offset(search_min_offset_)
     {}
 
-  CompactionPendingRecordEntry(const K key_, const V value_, const Address address_, HashBucketEntry expected_entry_)
+  CompactionPendingRecordEntry(const K key_, const V value_, const Address address_,
+                              HashBucketEntry expected_entry_, Address search_min_offset_)
     : key(key_)
     , value(value_)
     , address(address_)
     , expected_entry(expected_entry_)
+    , search_min_offset(search_min_offset_)
     {}
 
   CompactionPendingRecordEntry(const CompactionPendingRecordEntry& from)
@@ -35,12 +39,19 @@ struct CompactionPendingRecordEntry {
     , value(from.value)
     , address(from.address)
     , expected_entry(from.expected_entry)
+    , search_min_offset(from.search_min_offset)
     {}
 
+  // Key of the record
   K key;
+  // Value of the record
   V value;
+  // Logical address in the hybrid log
   Address address;
+  // Hash bucket entry expect to see when CAS the hash bucket address
   HashBucketEntry expected_entry;
+  // Lowest hybrid log address to check when traversing hash chain
+  Address search_min_offset;
 };
 
 
