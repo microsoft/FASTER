@@ -1598,7 +1598,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingExists(ExecutionContex
   async_pending_exists_context_t* pending_context = static_cast<async_pending_exists_context_t*>(
         io_context.caller_context);
 
-  if(io_context.address >= pending_context->begin_address) {
+  if(io_context.address >= pending_context->min_offset) {
     record_t* record = reinterpret_cast<record_t*>(io_context.record.GetValidPointer());
     // irrespective of whether the record is valid or tombstone, the record exists!
     return OperationStatus::SUCCESS;
@@ -3111,14 +3111,13 @@ complete_pending:
 
 template <class K, class V, class D>
 template <class EC>
-inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callback, Address begin_address) {
+inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callback, Address min_offset) {
   typedef PendingExistsContext<EC> pending_exists_context_t;
-  pending_exists_context_t pending_context {context, callback, begin_address};
+  pending_exists_context_t pending_context {context, callback, min_offset};
 
   if(thread_ctx().phase != Phase::REST) {
     const_cast<faster_t*>(this)->HeavyEnter();
   }
-
   // Retrieve hash index bucket for this entry
   KeyHash hash = pending_context.get_key_hash();
   HashBucketEntry entry;
@@ -3130,8 +3129,7 @@ inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callbac
 
   Address address = entry.address();
   Address head_address = hlog.head_address.load();
-  Address hlog_begin_address = hlog.begin_address.load();
-
+  Address begin_address = hlog.begin_address.load();
   if(address >= head_address) {
     // Look through the in-memory portion of the log, to find the first record (if any) whose key matches.
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
@@ -3142,9 +3140,9 @@ inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callbac
 
   if(address >= head_address) {
     // Mutable, fuzzy or immutable region [in-memory]
-    return (address >= begin_address) ? Status::Ok : Status::NotFound;
+    return (address >= min_offset) ? Status::Ok : Status::NotFound;
   }
-  else if(address >= hlog_begin_address) {
+  else if(address >= begin_address) {
     // Record not available in-memory -- issue disk I/O request
     pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, entry);
     bool async;
@@ -3156,6 +3154,7 @@ inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callbac
     // not reachable
     assert(false);
   }
+  return Status::IOError;
 }
 
 template <class K, class V, class D>

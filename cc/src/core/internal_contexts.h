@@ -481,17 +481,17 @@ class AsyncPendingExistsContext : public PendingContext<K> {
  public:
   typedef K key_t;
  protected:
-  AsyncPendingExistsContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_, Address begin_address_)
+  AsyncPendingExistsContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_, Address min_offset_)
     : PendingContext<key_t>(OperationType::Exists, caller_context_, caller_callback_)
-    , begin_address(begin_address_) {
+    , min_offset(min_offset_) {
   }
   /// The deep copy constructor.
   AsyncPendingExistsContext(AsyncPendingExistsContext& other, IAsyncContext* caller_context)
     : PendingContext<key_t>(other, caller_context)
-    , begin_address(other.begin_address) {
+    , min_offset(other.min_offset) {
   }
  public:
-  Address begin_address;
+  Address min_offset;
 };
 
 /// A synchronous RecordExists() context preserves its type information.
@@ -505,8 +505,8 @@ class PendingExistsContext : public AsyncPendingExistsContext<typename MC::key_t
   typedef Record<key_t, value_t> record_t;
   constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
-  PendingExistsContext(exists_context_t& caller_context_, AsyncCallback caller_callback_, Address begin_address_)
-    : AsyncPendingExistsContext<key_t>(caller_context_, caller_callback_, begin_address_) {
+  PendingExistsContext(exists_context_t& caller_context_, AsyncCallback caller_callback_, Address min_offset_)
+    : AsyncPendingExistsContext<key_t>(caller_context_, caller_callback_, min_offset_) {
   }
   /// The deep copy constructor.
   PendingExistsContext(PendingExistsContext& other, IAsyncContext* caller_context_)
