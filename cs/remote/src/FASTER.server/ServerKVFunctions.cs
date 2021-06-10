@@ -6,16 +6,16 @@ using FASTER.common;
 
 namespace FASTER.server
 {
-    internal struct ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer> : IFunctions<Key, Value, Input, Output, long>
+    internal struct ServerKVFunctions<Key, Value, Input, Output, Functions, ParameterSerializer> : IFunctions<Key, Value, Input, Output, long>
         where Functions : IFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         private readonly Functions functions;
-        private readonly ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> serverNetworkSession;
+        private readonly FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> serverNetworkSession;
 
         public bool SupportsLocking => functions.SupportsLocking;
 
-        public ServerFunctions(Functions functions, ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> serverNetworkSession)
+        public ServerKVFunctions(Functions functions, FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> serverNetworkSession)
         {
             this.functions = functions;
             this.serverNetworkSession = serverNetworkSession;

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.InteropServices.ComTypes;
 using System.Threading;
 using ServerOptions;
 using CommandLine;
@@ -36,10 +37,12 @@ namespace FixedLenServer
             var store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
+            var serverBackend =
+                new FasterKVBackendProvider<Key, Value, Functions, FixedLenSerializer<Key, Value, Input, Output>>(store, e => new Functions());
             // We specify FixedLenSerializer as our in-built serializer for blittable (fixed length) types
             // This server can be used with compatible clients such as FixedLenClient and FASTER.benchmark
             var server = new FasterKVServer<Key, Value, Input, Output, Functions, FixedLenSerializer<Key, Value, Input, Output>>
-                (store, e => new Functions(), opts.Address, opts.Port);
+                (serverBackend, opts.Address, opts.Port);
             server.Start();
             Thread.Sleep(Timeout.Infinite);
         }

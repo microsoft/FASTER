@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.common;
+using FASTER.server;
 
 namespace FASTER.client
 {
@@ -186,7 +187,9 @@ namespace FASTER.client
             if (offset > sendObject.obj.bufferPtr + sizeof(int) + BatchHeader.Size)
             {
                 int payloadSize = (int)(offset - sendObject.obj.bufferPtr);
-                ((BatchHeader*)(sendObject.obj.bufferPtr + sizeof(int)))->numMessages = numMessages;
+
+                *((BatchHeader*) (sendObject.obj.bufferPtr + sizeof(int))) =
+                    new BatchHeader(0, numMessages, WireFormat.Binary);
                 Interlocked.Increment(ref numPendingBatches);
 
                 // Set packet size in header
@@ -255,8 +258,8 @@ namespace FASTER.client
             fixed (byte* b = &buf[offset])
             {
                 var src = b;
-                var seqNo = ((BatchHeader*)src)->seqNo;
-                var count = ((BatchHeader*)src)->numMessages;
+                var seqNo = ((BatchHeader*)src)->GetSeqNo();
+                var count = ((BatchHeader*)src)->GetNumMessages();
                 if (seqNo != lastSeqNo + 1)
                     throw new Exception("Out of order message within session");
                 lastSeqNo = seqNo;

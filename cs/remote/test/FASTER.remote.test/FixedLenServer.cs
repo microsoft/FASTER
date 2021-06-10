@@ -2,6 +2,7 @@
 using FASTER.server;
 using System;
 using System.IO;
+using System.Security.Cryptography;
 
 namespace FASTER.remote.test
 {
@@ -21,10 +22,14 @@ namespace FASTER.remote.test
             // We use blittable structs Key and Value to construct a costomized server for fixed-length types
             store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
 
+            var provider =
+                new FasterKVBackendProvider<Key, Value, FixedLenServerFunctions<Key, Value>,
+                    FixedLenSerializer<Key, Value, Value, Value>>(
+                    store, e => new FixedLenServerFunctions<Key, Value>(merger));
             // We specify FixedLenSerializer as our in-built serializer for blittable (fixed length) types
             // This server can be used with compatible clients such as FixedLenClient and FASTER.benchmark
             server = new FasterKVServer<Key, Value, Value, Value, FixedLenServerFunctions<Key, Value>, FixedLenSerializer<Key, Value, Value, Value>>
-                (store, e => new FixedLenServerFunctions<Key, Value>(merger), address, port);
+                (provider, address, port);
             server.Start();
         }
 

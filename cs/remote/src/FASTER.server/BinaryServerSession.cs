@@ -10,7 +10,7 @@ using FASTER.core;
 namespace FASTER.server
 {
     internal unsafe sealed class BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-        : ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>
+        : FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>
         where Functions : IFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
@@ -119,7 +119,7 @@ namespace FASTER.server
                 dcurr += BatchHeader.Size;
                 start = 0;
                 msgnum = 0;
-                for (msgnum = 0; msgnum < header.numMessages; msgnum++)
+                for (msgnum = 0; msgnum < header.GetNumMessages(); msgnum++)
                 {
                     var message = (MessageType)(*src++);
                     switch (message)
@@ -224,8 +224,7 @@ namespace FASTER.server
         private void Send(byte* d)
         {
             var dstart = d + sizeof(int);
-            Unsafe.AsRef<BatchHeader>(dstart).numMessages = msgnum - start;
-            Unsafe.AsRef<BatchHeader>(dstart).seqNo = seqNo++;
+            Unsafe.AsRef<BatchHeader>(dstart) = new BatchHeader(seqNo++, msgnum - start, WireFormat.Binary);
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header
             *(int*)responseObject.obj.bufferPtr = -(payloadSize - sizeof(int));

@@ -6,7 +6,7 @@ namespace FASTER.server
     /// <summary>
     /// Wire format
     /// </summary>
-    public enum WireFormat
+    public enum WireFormat : byte
     {
         /// <summary>
         /// Custom binary format
