@@ -105,5 +105,19 @@ namespace FASTER.server
 
         /// <inheritdoc />
         public int GetLength(ref SpanByteAndMemory o) => o.Length;
+
+        /// <inheritdoc />
+        public bool Match(ref SpanByte k, ref SpanByte pattern)
+        {
+            if (pattern.Length > k.Length)
+                return false;
+
+            Span<byte> keySpan = k.AsSpan();
+            ReadOnlySpan<byte> patternSpan = pattern.AsReadOnlySpan();
+            if (keySpan.StartsWith(patternSpan))
+                return true;
+
+            return false;            
+        }
     }
 }

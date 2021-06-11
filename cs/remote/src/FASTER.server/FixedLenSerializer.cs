@@ -100,5 +100,14 @@ namespace FASTER.server
             }
             return true;
         }
+
+        /// <inheritdoc />
+        public bool Match(ref Key k, ref Key pattern)
+        {
+            if (k.Equals(pattern))
+                return true;
+
+            return false;
+        }
     }
 }

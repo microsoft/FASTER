@@ -19,7 +19,7 @@ namespace FASTER.server
         private BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeServerSession;
         private int sid = 0;
         private ConcurrentDictionary<byte[], (int, HashSet<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>>)> subscriptions;
-        private AsyncQueue<(Key, byte[])> publishQueue;
+        private AsyncQueue<(Key, byte[])> publishQueue;        
 
         public void removeSubscription(ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> session)
         {
@@ -87,9 +87,18 @@ namespace FASTER.server
             var start = key;
             ref Key k = ref serializer.ReadKeyByRef(ref key);
             var subscriptionsKey = new Span<byte>(start, (int)(key - start)).ToArray();
-            //subscriptions.TryGetValue(subscriptionsKey, out var value);
-            publishQueue.Enqueue((k, subscriptionsKey));
-            //Start();
+
+            foreach (var subscribedKeyBytes in subscriptions.Keys)
+            {
+                fixed (byte* subscribedKeyPtr = &subscribedKeyBytes[0])
+                {
+                    byte* src = subscribedKeyPtr;
+                    ref Key subscribedKeyTyped = ref serializer.ReadKeyByRef(ref src);
+                    if (serializer.Match(ref k, ref subscribedKeyTyped) == true)
+                        publishQueue.Enqueue((k, subscriptionsKey));
+                }
+            }
+            //publishQueue.Enqueue((k, subscriptionsKey));
             // Add to async queue and return
         }
     }
