@@ -32,6 +32,10 @@ namespace FASTER.benchmark
         internal KeySpanByte[] init_span_keys = default;
         internal KeySpanByte[] txn_span_keys = default;
 
+        internal long InitCount;
+        internal long TxnCount;
+        internal int MaxKey;
+
         internal bool Parse(string[] args)
         {
             ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
@@ -72,6 +76,10 @@ namespace FASTER.benchmark
             if (!verifyOption(this.Options.RunSeconds >= 0, "RunSeconds"))
                 return false;
 
+            this.InitCount = this.Options.UseSmallData ? 2500480 : 250000000;
+            this.TxnCount = this.Options.UseSmallData ? 10000000 : 1000000000;
+            this.MaxKey = this.Options.UseSmallData ? 1 << 22 : 1 << 28;
+
             return true;
         }
 
@@ -89,15 +97,15 @@ namespace FASTER.benchmark
             switch (this.BenchmarkType)
             {
                 case BenchmarkType.Ycsb:
-                    FASTER_YcsbBenchmark.CreateKeyVectors(out this.init_keys, out this.txn_keys);
+                    FASTER_YcsbBenchmark.CreateKeyVectors(this, out this.init_keys, out this.txn_keys);
                     LoadData(this, this.init_keys, this.txn_keys, new FASTER_YcsbBenchmark.KeySetter());
                     break;
                 case BenchmarkType.SpanByte:
-                    FasterSpanByteYcsbBenchmark.CreateKeyVectors(out this.init_span_keys, out this.txn_span_keys);
+                    FasterSpanByteYcsbBenchmark.CreateKeyVectors(this, out this.init_span_keys, out this.txn_span_keys);
                     LoadData(this, this.init_span_keys, this.txn_span_keys, new FasterSpanByteYcsbBenchmark.KeySetter());
                     break;
                 case BenchmarkType.ConcurrentDictionaryYcsb:
-                    ConcurrentDictionary_YcsbBenchmark.CreateKeyVectors(out this.init_keys, out this.txn_keys);
+                    ConcurrentDictionary_YcsbBenchmark.CreateKeyVectors(this, out this.init_keys, out this.txn_keys);
                     LoadData(this, this.init_keys, this.txn_keys, new ConcurrentDictionary_YcsbBenchmark.KeySetter());
                     break;
                 default:
@@ -105,7 +113,7 @@ namespace FASTER.benchmark
             }
         }
 
-        private static void LoadData<TKey, TKeySetter>(TestLoader testLoader, TKey[] init_keys, TKey[] txn_keys, TKeySetter keySetter)
+        private void LoadData<TKey, TKeySetter>(TestLoader testLoader, TKey[] init_keys, TKey[] txn_keys, TKeySetter keySetter)
             where TKeySetter : IKeySetter<TKey>
         {
             if (testLoader.Options.UseSyntheticData)
@@ -136,16 +144,15 @@ namespace FASTER.benchmark
             }
         }
 
-        private static unsafe void LoadDataFromFile<TKey, TKeySetter>(string filePath, string distribution, TKey[] init_keys, TKey[] txn_keys, TKeySetter keySetter)
+        private unsafe void LoadDataFromFile<TKey, TKeySetter>(string filePath, string distribution, TKey[] init_keys, TKey[] txn_keys, TKeySetter keySetter)
             where TKeySetter : IKeySetter<TKey>
         {
             string init_filename = filePath + "/load_" + distribution + "_250M_raw.dat";
             string txn_filename = filePath + "/run_" + distribution + "_250M_1000M_raw.dat";
 
-            Console.WriteLine($"loading all keys from {init_filename} into memory...");
             var sw = Stopwatch.StartNew();
 
-            if (YcsbConstants.kUseSmallData)
+            if (this.Options.UseSmallData)
             {
                 Console.WriteLine($"loading subset of keys and txns from {txn_filename} into memory...");
                 using FileStream stream = File.Open(txn_filename, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -153,7 +160,7 @@ namespace FASTER.benchmark
                 GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
                 byte* chunk_ptr = (byte*)chunk_handle.AddrOfPinnedObject();
 
-                var initValueSet = new HashSet<long>();
+                var initValueSet = new HashSet<long>(init_keys.Length);
 
                 long init_count = 0;
                 long txn_count = 0;
@@ -208,6 +215,7 @@ namespace FASTER.benchmark
                 return;
             }
 
+            Console.WriteLine($"loading all keys from {init_filename} into memory...");
             long count = 0;
 
             using (FileStream stream = File.Open(init_filename, FileMode.Open, FileAccess.Read,
@@ -323,14 +331,14 @@ namespace FASTER.benchmark
         
         internal static string DevicePath => $"{DataPath}/hlog";
 
-        internal string BackupPath => $"{DataPath}/{this.Distribution}_{(this.Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(YcsbConstants.kUseSmallData ? "2.5M_10M" : "250M_1000M")}";
+        internal string BackupPath => $"{DataPath}/{this.Distribution}_{(this.Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(this.Options.UseSmallData ? "2.5M_10M" : "250M_1000M")}";
 
         internal bool MaybeRecoverStore<K, V>(FasterKV<K, V> store)
         {
             // Recover database for fast benchmark repeat runs.
-            if (this.Options.BackupAndRestore && YcsbConstants.kPeriodicCheckpointMilliseconds <= 0)
+            if (this.Options.BackupAndRestore && this.Options.PeriodicCheckpointMilliseconds <= 0)
             {
-                if (YcsbConstants.kUseSmallData)
+                if (this.Options.UseSmallData)
                 {
                     Console.WriteLine("Skipping Recover() for kSmallData");
                     return false;
@@ -357,7 +365,7 @@ namespace FASTER.benchmark
         internal void MaybeCheckpointStore<K, V>(FasterKV<K, V> store)
         {
             // Checkpoint database for fast benchmark repeat runs.
-            if (this.Options.BackupAndRestore && YcsbConstants.kPeriodicCheckpointMilliseconds <= 0)
+            if (this.Options.BackupAndRestore && this.Options.PeriodicCheckpointMilliseconds <= 0)
             {
                 Console.WriteLine($"Checkpointing FasterKV to {this.BackupPath} for fast restart");
                 Stopwatch sw = Stopwatch.StartNew();
