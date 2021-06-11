@@ -51,6 +51,7 @@ namespace FASTER.server
             servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             servSocket.Bind(endPoint);
             servSocket.Listen(512);
+            subscribeKVBroker.assignSubscriptionSession(new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(servSocket, store, functionsGen(WireFormat.Binary), serializer, this.maxSizeSettings, subscribeKVBroker));
             acceptEventArg = new SocketAsyncEventArgs
             {
                 UserToken = (store, functionsGen, serializer)
@@ -190,6 +191,8 @@ namespace FASTER.server
                 DisposeConnectionSession(e);
                 return false;
             }
+
+            
             return true;
         }
 
@@ -203,6 +206,7 @@ namespace FASTER.server
             {
                 if (activeSessions.TryRemove(_session, out _))
                 {
+                    subscribeKVBroker.removeSubscription(_session);
                     _session.Dispose();
                     Interlocked.Decrement(ref activeSessionCount);
                 }

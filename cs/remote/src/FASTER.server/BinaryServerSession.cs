@@ -164,6 +164,7 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
+                            keyptr = src;
                             ctx = ((long)message << 32) | (long)pendingSeqNo;
                             status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src), ctx);
 
@@ -171,6 +172,8 @@ namespace FASTER.server
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
                             if (status == core.Status.PENDING)
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
+
+                            subscribeKVBroker.Publish(keyptr);
                             break;
 
                         case MessageType.Delete:
@@ -210,14 +213,28 @@ namespace FASTER.server
             }
         }
 
-        public void Publish(ref Key key, ref Input input, int sid)
+        public Status ReadBeforePublish(ref Key key, ref Input input, ref Output output, int sid)
         {
             MessageType message = MessageType.SubscribeKV;
 
+            long ctx = ((long)message << 32) | (long)sid;
+            var status = session.Read(ref key, ref input, ref output, ctx, 0);
+            if (status == Status.PENDING)
+                session.CompletePending(true);
+
+            return status;
+        }
+
+        public void Publish(ref Key key, ref Input input, int sid, Status status, ref Output output)
+        {
+            MessageType message = MessageType.SubscribeKV;
             GetResponseObject();
+
             byte* d = responseObject.obj.bufferPtr;
             var dend = d + responseObject.obj.buffer.Length;
             dcurr = d + sizeof(int); // reserve space for size
+            var doutput = dcurr + 6;
+            bool outputCopy = false;
 
             dcurr += BatchHeader.Size;
             start = 0;
@@ -226,8 +243,8 @@ namespace FASTER.server
             if ((int)(dend - dcurr) < 6 + maxSizeSettings.MaxOutputSize)
                 SendAndReset(ref d, ref dend);
 
-            long ctx = ((long)message << 32) | (long)sid;
-            var status = session.Read(ref key, ref input, ref serializer.AsRefOutput(dcurr + 6, (int)(dend - dcurr)), ctx, 0);
+            //long ctx = ((long)message << 32) | (long)sid;
+            //var status = subscribeKVSession.Read(ref key, ref input, ref serializer.AsRefOutput(dcurr + 6, (int)(dend - dcurr)), ctx, 0);
             msgnum++;
 
             if (status != Status.PENDING)
@@ -236,12 +253,11 @@ namespace FASTER.server
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                 Write(sid, ref dcurr, (int)(dend - dcurr));
+                outputCopy = serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
 
                 if (status == Status.OK)
                     serializer.SkipOutput(ref dcurr);
             }
-            else
-                session.CompletePending(true);
 
             // Send replies
             if (msgnum - start > 0)

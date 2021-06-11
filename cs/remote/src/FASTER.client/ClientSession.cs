@@ -34,6 +34,7 @@ namespace FASTER.client
         readonly HeaderReaderWriter hrw;
         readonly int bufferSize;
         readonly MaxSizeSettings maxSizeSettings;
+        private bool subscriptionSession;
 
         bool disposed;
         ReusableObject<SeaaBuffer> sendObject;
@@ -61,6 +62,7 @@ namespace FASTER.client
             this.bufferSize = BufferSizeUtils.ClientBufferSize(this.maxSizeSettings);
             this.messageManager = new NetworkSender(bufferSize);
             this.disposed = false;
+            this.subscriptionSession = false;
 
             upsertQueue = new ElasticCircularBuffer<(Key, Value, Context)>();
             readrmwQueue = new ElasticCircularBuffer<(Key, Input, Output, Context)>();
@@ -543,6 +545,9 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalRead(MessageType messageType, ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
+            if (subscriptionSession == true)
+                return Status.ERROR;
+
             while (true)
             {
                 byte* end = sendObject.obj.bufferPtr + bufferSize;
@@ -563,6 +568,8 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalSubscribeKV(MessageType messageType, ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
         {
+            subscriptionSession = true;
+
             while (true)
             {
                 byte* end = sendObject.obj.bufferPtr + bufferSize;
@@ -583,6 +590,9 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalUpsert(MessageType messageType, ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0)
         {
+            if (subscriptionSession == true)
+                return Status.ERROR;
+
             while (true)
             {
                 byte* end = sendObject.obj.bufferPtr + bufferSize;
@@ -603,6 +613,9 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalRMW(MessageType messageType, ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
         {
+            if (subscriptionSession == true)
+                return Status.ERROR;
+
             while (true)
             {
                 byte* end = sendObject.obj.bufferPtr + bufferSize;
@@ -623,6 +636,9 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalDelete(MessageType messageType, ref Key key, Context userContext = default, long serialNo = 0)
         {
+            if (subscriptionSession == true)
+                return Status.ERROR;
+
             while (true)
             {
                 byte* end = sendObject.obj.bufferPtr + bufferSize;
