@@ -19,17 +19,27 @@ namespace FASTER.server
         private BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeServerSession;
         private int sid = 0;
         private ConcurrentDictionary<byte[], (int, HashSet<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>>)> subscriptions;
+        //private Trie<byte[], (int, HashSet<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>>)> subscriptionsTrie;
         private AsyncQueue<(Key, byte[])> publishQueue;        
-
-        public void removeSubscription(ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> session)
-        {
-            foreach (var key in subscriptions.Keys)
-                subscriptions[key].Item2.Remove((BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>)session);
-        }
 
         public SubscribeKVBroker(ParameterSerializer serializer)
         {
             this.serializer = serializer;
+        }
+
+        public void removeSubscription(ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> session)
+        {
+            if (subscriptions == null)
+                return;
+
+            foreach (var key in subscriptions.Keys)
+            {
+                subscriptions[key].Item2.Remove((BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>)session);
+
+            }
+
+            //foreach (var key in subscriptionsTrie.Keys)
+            //    subscriptionsTrie[key].Item2.Remove((BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>)session);
         }
 
         public void assignSubscriptionSession(BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeServerSession)
@@ -68,7 +78,10 @@ namespace FASTER.server
             serializer.ReadKeyByRef(ref key);
             var id = Interlocked.Increment(ref sid);
             if (subscriptions == null)
+            {
                 Interlocked.CompareExchange(ref subscriptions, new ConcurrentDictionary<byte[], (int, HashSet<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>>)>(new ByteArrayComparer()), null);
+                //Interlocked.CompareExchange(ref subscriptionsTrie, new Trie<byte[], (int, HashSet<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>>) > (new ByteArrayComparer()), null);
+            }
             if (publishQueue == null)
             {
                 Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(Key, byte[])>(), null);
@@ -77,8 +90,23 @@ namespace FASTER.server
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             subscriptions.TryAdd(subscriptionKey, (id, new HashSet<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>>()));
             subscriptions[subscriptionKey].Item2.Add(session);
+
+            //IEnumerator<byte[]> subscriptionKeyEnumerator = (IEnumerator<byte[]>)subscriptionKey.GetEnumerator();
+            //subscriptionsTrie.Add((IEnumerable<byte[]>)subscriptionKeyEnumerator, (id, new HashSet<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>>()));
+            //subscriptionsTrie[(IEnumerable<byte[]>)subscriptionKeyEnumerator].Item2.Add(session);
+
             return id;
         }
+
+        //private IEnumerable<byte[]> getAllPrefixes(byte[] key)
+        //{
+        //    for (int i = 0; i < key.Length; i++)
+        //    {
+        //        int prefixLen = i + 1;
+        //        byte[] prefix = key[..prefixLen];
+        //        yield return prefix;
+        //    }
+        //}
 
         public unsafe void Publish(byte* key)
         {
@@ -87,6 +115,13 @@ namespace FASTER.server
             var start = key;
             ref Key k = ref serializer.ReadKeyByRef(ref key);
             var subscriptionsKey = new Span<byte>(start, (int)(key - start)).ToArray();
+
+            //IEnumerable<byte[]> prefixes = getAllPrefixes(subscriptionsKey);
+            
+            //foreach (var prefix in prefixes)
+            //{
+            //    subscriptionsTrie.GetByPrefix((IEnumerable<byte[]>)prefix.GetEnumerator());
+            //}
 
             foreach (var subscribedKeyBytes in subscriptions.Keys)
             {
