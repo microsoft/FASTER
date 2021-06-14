@@ -12,13 +12,8 @@ namespace FASTER.libdpr
     /// <summary>
     /// Per-version information needed by DPR
     /// </summary>
-    /// <typeparam name="TToken">Type of token checkpoints generate</typeparam>
-    internal class VersionHandle<TToken>
+    internal class VersionHandle
     {
-        /// <summary>
-        /// The token that uniquely identifies the checkpoint associated with this version.
-        /// </summary>
-        public TToken token;
         /// <summary>
         /// The set of dependencies of a version
         /// </summary>
@@ -32,21 +27,21 @@ namespace FASTER.libdpr
     /// the IStateObject generic type argument to DprWorkerCallback.
     /// </summary>
     /// <typeparam name="TToken">Type of token checkpoints generate</typeparam>
-    internal class DprWorkerState<TToken>
+    internal class DprWorkerState
     {
         internal DprWorkerState(IDprFinder dprFinder, Worker me)
         {
             this.dprFinder = dprFinder;
             this.me = me;
             worldlineTracker = new SimpleVersionScheme();
-            versions = new ConcurrentDictionary<long, VersionHandle<TToken>>();
+            versions = new ConcurrentDictionary<long, VersionHandle>();
         }
         
         internal readonly IDprFinder dprFinder;
 
         internal readonly SimpleVersionScheme worldlineTracker;
         internal ManualResetEventSlim rollbackProgress;
-        internal readonly ConcurrentDictionary<long, VersionHandle<TToken>> versions;
+        internal readonly ConcurrentDictionary<long, VersionHandle> versions;
         internal readonly Worker me;
         
         internal Stopwatch sw = Stopwatch.StartNew();
@@ -59,20 +54,20 @@ namespace FASTER.libdpr
     /// </summary>
     /// <typeparam name="TStateObject"></typeparam>
     /// <typeparam name="TToken"></typeparam>
-    public class DprServer<TStateObject, TToken>
-        where TStateObject : IStateObject<TToken>
+    public class DprServer<TStateObject>
+        where TStateObject : IStateObject
     {
-        private readonly DprWorkerState<TToken> state;
+        private readonly DprWorkerState state;
         private readonly TStateObject stateObject;
         private SimpleObjectPool<DprBatchVersionTracker> trackers;
         
         public DprServer(IDprFinder dprFinder, Worker me, TStateObject stateObject)
         {
          
-            state = new DprWorkerState<TToken>(dprFinder, me);
+            state = new DprWorkerState(dprFinder, me);
             this.stateObject = stateObject;
             trackers = new SimpleObjectPool<DprBatchVersionTracker>(() => new DprBatchVersionTracker());
-            stateObject.Register(new DprWorkerCallbacks<TToken>(state));
+            stateObject.Register(new DprWorkerCallbacks(state));
         }
 
         public TStateObject StateObject() => stateObject;
@@ -101,7 +96,7 @@ namespace FASTER.libdpr
                 state.worldlineTracker.AdvanceVersion(_ =>
                 {
                     state.rollbackProgress = new ManualResetEventSlim();
-                    stateObject.BeginRestore(state.versions[state.dprFinder.SafeVersion(state.me)].token);
+                    stateObject.BeginRestore(state.dprFinder.SafeVersion(state.me));
                     // Wait for user to signal end of restore;
                     state.rollbackProgress.Wait();
                 });
@@ -119,7 +114,7 @@ namespace FASTER.libdpr
         /// <param name="response">Dpr response message that will be returned to user</param>
         /// <param name="tracker">Tracker to use for batch execution</param>
         /// <returns>Whether the batch can be executed</returns>
-        public unsafe bool RequestBatchBegin(ReadOnlySpan<byte> request, Span<byte> response, out DprBatchVersionTracker tracker)
+        public unsafe bool RequestBatchBegin(ReadOnlySpan<byte> request, Span<byte> response, out DprBatchVersionTracker tracker, out int headerSize)
         {
             ref var dprRequest = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(request));
             // Wait for worker version to catch up to largest in batch (minimum version where all operations
@@ -133,7 +128,6 @@ namespace FASTER.libdpr
             // Enter protected region for world-lines. Because we validate requests batch-at-a-time, the world-line
             // must not shift while a batch is being processed, otherwise a message from an older world-line may be
             // processed in a new one. 
-            // state.epoch.Resume();
             state.worldlineTracker.Enter();
             // If the worker world-line is behind, wait for worker to recover up to the same point as the client,
             // so client operation is not lost in a rollback that the client has already observed.
@@ -141,7 +135,6 @@ namespace FASTER.libdpr
             {
                 state.worldlineTracker.Leave();
                 TryAdvanceWorldLineTo(dprRequest.worldLine);
-                // state.epoch.ProtectAndDrain();
                 state.worldlineTracker.Enter();
             }
             
@@ -156,8 +149,8 @@ namespace FASTER.libdpr
                 dprResponse.worldLine = -state.dprFinder.SystemWorldLine();
                 dprResponse.batchId = dprRequest.batchId;
                 state.worldlineTracker.Leave();
-                // state.epoch.Suspend();
                 tracker = default;
+                headerSize = sizeof(DprBatchResponseHeader);
                 return false;
             }
 
@@ -169,7 +162,7 @@ namespace FASTER.libdpr
             // Update batch dependencies to the current worker-version. This is an over-approximation, as the batch
             // could get processed at a future version instead due to thread timing. However, this is not a correctness
             // issue, nor do we lose precision as batch-level dependency tracking is already an approximation.
-            var versionHandle = state.versions.GetOrAdd(stateObject.Version(), version => new VersionHandle<TToken>());
+            var versionHandle = state.versions.GetOrAdd(stateObject.Version(), version => new VersionHandle());
             fixed (byte* depValues = dprRequest.deps)
             {
                 for (var i = 0; i < dprRequest.numDeps; i++)
@@ -179,6 +172,7 @@ namespace FASTER.libdpr
                 }
             }
             // Exit without releasing epoch, as protection is supposed to extend until end of batch.
+            headerSize = default;
             return true;
         }
 
@@ -190,17 +184,16 @@ namespace FASTER.libdpr
         /// <param name="request">Dpr request message from user</param>
         /// <param name="response">Dpr response message that will be returned to user</param>
         /// <param name="tracker">Tracker used in batch processing</param>
-        /// <returns> 0 if successful, size required to hold return if supplied byte span is too small</returns>
+        /// <returns> size of header if successful, negative size required to hold return if supplied byte span is too small</returns>
         public int SignalBatchFinish(ReadOnlySpan<byte> request, Span<byte> response, DprBatchVersionTracker tracker)
         {
             ref var dprRequest = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(request));
             ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
             var responseSize = DprBatchResponseHeader.HeaderSize + tracker.EncodingSize();
-            if (response.Length < responseSize) return responseSize;
+            if (response.Length < responseSize) return -responseSize;
             
             // Signal batch finished so world-lines can advance. Need to make sure not double-invoked, therefore only
             // called after size validation.
-            // state.epoch.Suspend();
             state.worldlineTracker.Leave();
             
             // Populate response
@@ -211,7 +204,7 @@ namespace FASTER.libdpr
             tracker.AppendOntoResponse(ref dprResponse);
             
             trackers.Return(tracker);
-            return 0;
+            return responseSize;
         }
 
         /// <summary>

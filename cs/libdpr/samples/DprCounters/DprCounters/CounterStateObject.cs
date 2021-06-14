@@ -4,38 +4,35 @@ using FASTER.libdpr;
 
 namespace DprCounters
 {
-    public class CounterStateObject : SimpleStateObject<string>
+    public sealed class CounterStateObject : SimpleStateObject
     {
         private string checkpointDirectory;
-        private int checkpointNum;
         public long value;
 
-        public CounterStateObject(string checkpointDirectory)
+        public CounterStateObject(string checkpointDirectory, long version)
         {
             
             this.checkpointDirectory = checkpointDirectory;
-            foreach (var file in Directory.GetFiles(checkpointDirectory))
-            {
-                
-            }
+            if (version != 0)
+                RestoreCheckpoint(version);
         }
         
-        protected override void PerformCheckpoint(Action<string> onPersist)
+        protected override void PerformCheckpoint(long version, Action onPersist)
         {
-            checkpointNum++;
-            var fileName = Path.Join(checkpointDirectory, checkpointNum.ToString());
+            var fileName = Path.Join(checkpointDirectory, version.ToString());
             using (var fs = File.Open(fileName,
                 FileMode.OpenOrCreate, FileAccess.Write, FileShare.None))
             {
                 fs.Write(BitConverter.GetBytes(value), 0, sizeof(long));
             }
 
-            onPersist(fileName);
+            onPersist();
         }
 
-        protected override void RestoreCheckpoint(string token)
+        protected override void RestoreCheckpoint(long version)
         {
-            using (var fs = File.Open(token,
+            var fileName = Path.Join(checkpointDirectory, version.ToString());
+            using (var fs = File.Open(fileName,
                 FileMode.Open, FileAccess.Read, FileShare.None))
             {
                 var byteBuffer = new byte[8];

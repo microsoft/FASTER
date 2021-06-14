@@ -7,9 +7,9 @@ namespace FASTER.libdpr
     /// simpler API than IStateObject and can accomodate a wider range of state-stores.
     /// </summary>
     /// <typeparam name="TToken">Type of token that uniquely identifies a checkpoint</typeparam>
-    public abstract class SimpleStateObject<TToken> : IStateObject<TToken>
+    public abstract class SimpleStateObject : IStateObject
     {
-        private DprWorkerCallbacks<TToken> callbacks;
+        private DprWorkerCallbacks callbacks;
         private readonly SimpleVersionScheme versionScheme = new SimpleVersionScheme();
 
         /// <summary>
@@ -25,7 +25,7 @@ namespace FASTER.libdpr
         /// checkpoint requests, or restore requests with this function. 
         /// </summary>
         /// <param name="onPersist">Callback to invoke when checkpoint is recoverable</param>
-        protected abstract void PerformCheckpoint(Action<TToken> onPersist);
+        protected abstract void PerformCheckpoint(long version, Action onPersist);
 
         /// <summary>
         /// Blockingly recovers to a previous checkpoint as identified by the token. The function returns only after
@@ -33,10 +33,10 @@ namespace FASTER.libdpr
         /// checkpoint requests, or restore requests with this function.
         /// </summary>
         /// <param name="token">Checkpoint to recover to</param>
-        protected abstract void RestoreCheckpoint(TToken token);
+        protected abstract void RestoreCheckpoint(long version);
         
         /// <inheritdoc/>
-        public void Register(DprWorkerCallbacks<TToken> callbacks)
+        public void Register(DprWorkerCallbacks callbacks)
         {
             this.callbacks = callbacks;
         }
@@ -52,21 +52,21 @@ namespace FASTER.libdpr
         {
             versionScheme.AdvanceVersion(v =>
             {
-                PerformCheckpoint(token =>
+                PerformCheckpoint(v, () =>
                 {
-                    callbacks.OnVersionEnd(v, token);
-                    callbacks.OnVersionPersistent(v, token);
+                    callbacks.OnVersionEnd(v);
+                    callbacks.OnVersionPersistent(v);
                 });
             }, targetVersion);
             
         }
         
         /// <inheritdoc/>
-        public void BeginRestore(TToken token)
+        public void BeginRestore(long version)
         {
-            versionScheme.AdvanceVersion(v =>
+            versionScheme.AdvanceVersion(_ =>
             {
-                RestoreCheckpoint(token);
+                RestoreCheckpoint(version);
                 callbacks.OnRollbackComplete();
             });
         }

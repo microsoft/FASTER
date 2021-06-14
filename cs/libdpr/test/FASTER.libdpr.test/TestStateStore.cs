@@ -5,11 +5,12 @@ using System.Threading;
 namespace FASTER.libdpr
 {
     // Basic test object
-    public class TestStateObject : SimpleStateObject<int>
+    public class TestStateObject : SimpleStateObject
     {
         private List<(int, int)> opLog = new List<(int, int)>();
         // exclusive
         private int persistedPrefix = 0;
+        private Dictionary<long, int> prefixes = new Dictionary<long, int>();
 
         public void DoStuff((int, int) opId)
         {
@@ -19,7 +20,7 @@ namespace FASTER.libdpr
             }
         }
         
-        protected override void PerformCheckpoint(Action<int> onPersist)
+        protected override void PerformCheckpoint(long version, Action onPersist)
         {
             int prefix;
             lock (opLog)
@@ -30,15 +31,15 @@ namespace FASTER.libdpr
             // Simulate I/O by sleeping
             Thread.Sleep(5);
 
-            persistedPrefix = prefix;
-            onPersist.Invoke(prefix);
+            prefixes[version] = persistedPrefix = prefix;
+            onPersist.Invoke();
         }
 
-        protected override void RestoreCheckpoint(int token)
+        protected override void RestoreCheckpoint(long version)
         {
             lock (opLog)
             {
-                opLog.RemoveRange(token, opLog.Count - token);
+                opLog.RemoveRange(prefixes[version], opLog.Count - prefixes[version]);
             }
         }
 
@@ -53,18 +54,18 @@ namespace FASTER.libdpr
     
     public class TestStateStore
     {
-        public DprServer<TestStateObject, int> dprServer;
+        public DprServer<TestStateObject> dprServer;
         public TestStateObject stateObject;
 
         public TestStateStore(Worker me, IDprFinder finder)
         {
             stateObject = new TestStateObject();
-            dprServer = new DprServer<TestStateObject, int>(finder, me, stateObject);
+            dprServer = new DprServer<TestStateObject>(finder, me, stateObject);
         }
         
         public void Process(Span<byte> dprHeader, Span<byte> response, (int, int) op)
         {
-            if (dprServer.RequestBatchBegin(dprHeader, response, out var tracker))
+            if (dprServer.RequestBatchBegin(dprHeader, response, out var tracker, out _))
             {
                 var v = stateObject.VersionScheme().Enter();
                 stateObject.DoStuff(op);

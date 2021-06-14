@@ -6,11 +6,11 @@ namespace FASTER.libdpr
     /// the checkpoint/recovery process. 
     /// </summary>
     /// <typeparam name="TToken">Type of token that uniquely identifies a checkpoint</typeparam>
-    public class DprWorkerCallbacks<TToken>
+    public class DprWorkerCallbacks
     {
-        private readonly DprWorkerState<TToken> state;
+        private readonly DprWorkerState state;
 
-        internal DprWorkerCallbacks(DprWorkerState<TToken> state)
+        internal DprWorkerCallbacks(DprWorkerState state)
         {
             this.state = state;
         }
@@ -20,12 +20,11 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="version">Version number of the finished version</param>
         /// <param name="token">unique token that identifies the checkpoint associated with the version</param>
-        public void OnVersionEnd(long oldVersion, TToken token)
+        public void OnVersionEnd(long oldVersion)
         {
             // Get or Add as some operations may have executed early in the next version, which would lead to a created
             // entry for the version without a token.
-            var versionHandle = state.versions.GetOrAdd(oldVersion, v => new VersionHandle<TToken>());
-            versionHandle.token = token;
+            var versionHandle = state.versions.GetOrAdd(oldVersion, v => new VersionHandle());
         }
 
         /// <summary>
@@ -33,10 +32,9 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="version">Version number of the finished version</param>
         /// <param name="token">unique token that identifies the checkpoint associated with the version</param>
-        public void OnVersionPersistent(long version, TToken token)
+        public void OnVersionPersistent(long version)
         {
             var versionObject = state.versions[version];
-            versionObject.token = token;
             var workerVersion = new WorkerVersion(state.me, version);
             // TODO(Tianyu): For performance, change IDprFinder code to only buffer this write and invoke expensive
             // writes on refreshes.
