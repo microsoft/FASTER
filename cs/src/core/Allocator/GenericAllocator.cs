@@ -395,7 +395,7 @@ namespace FASTER.core
             List<long> addr = new List<long>();
             asyncResult.freeBuffer1 = buffer;
 
-            MemoryStream ms = new MemoryStream();
+            MemoryStream ms = new();
             IObjectSerializer<Key> keySerializer = null;
             IObjectSerializer<Value> valueSerializer = null;
 
@@ -593,7 +593,7 @@ namespace FASTER.core
             // Deserialize all objects until untilptr
             if (result.resumePtr < result.untilPtr)
             {
-                MemoryStream ms = new MemoryStream(result.freeBuffer2.buffer);
+                MemoryStream ms = new(result.freeBuffer2.buffer);
                 ms.Seek(result.freeBuffer2.offset, SeekOrigin.Begin);
                 Deserialize(result.freeBuffer1.GetValidPointer(), result.resumePtr, result.untilPtr, src, ms);
                 ms.Dispose();

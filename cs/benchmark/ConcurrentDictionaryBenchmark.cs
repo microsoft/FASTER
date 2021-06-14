@@ -69,7 +69,7 @@ namespace FASTER.benchmark
             for (int i = 0; i < 8; i++)
                 input_[i].value = i;
 
-            store = new ConcurrentDictionary<Key, Value>(testLoader.Options.ThreadCount, testLoader.MaxKey, new KeyComparer());
+            store = new (testLoader.Options.ThreadCount, testLoader.MaxKey, new KeyComparer());
         }
 
         internal void Dispose()
@@ -79,15 +79,14 @@ namespace FASTER.benchmark
 
         private void RunYcsb(int thread_idx)
         {
-            RandomGenerator rng = new RandomGenerator((uint)(1 + thread_idx));
+            RandomGenerator rng = new ((uint)(1 + thread_idx));
 
             if (numaStyle == 0)
                 Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
             else
                 Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
+            var sw = Stopwatch.StartNew();
 
             Value value = default;
             long reads_done = 0;
@@ -174,7 +173,7 @@ namespace FASTER.benchmark
 
         internal unsafe (double, double) Run(TestLoader testLoader)
         {
-            RandomGenerator rng = new RandomGenerator();
+            RandomGenerator rng = new ();
 
             GCHandle handle = GCHandle.Alloc(input_, GCHandleType.Pinned);
             input_ptr = (Input*)handle.AddrOfPinnedObject();
@@ -194,8 +193,7 @@ namespace FASTER.benchmark
                 int x = idx;
                 workers[idx] = new Thread(() => SetupYcsb(x));
             }
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
+            var sw = Stopwatch.StartNew();
             // Start threads.
             foreach (Thread worker in workers)
             {
@@ -226,8 +224,7 @@ namespace FASTER.benchmark
                 worker.Start();
             }
 
-            Stopwatch swatch = new Stopwatch();
-            swatch.Start();
+            var swatch = Stopwatch.StartNew();
 
             if (testLoader.Options.PeriodicCheckpointMilliseconds <= 0)
             {

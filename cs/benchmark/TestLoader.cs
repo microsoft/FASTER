@@ -85,7 +85,7 @@ namespace FASTER.benchmark
 
         internal void LoadData()
         {
-            var worker = new Thread(LoadDataThreadProc);
+            Thread worker = new(LoadDataThreadProc);
             worker.Start();
             worker.Join();
         }
@@ -218,8 +218,7 @@ namespace FASTER.benchmark
             Console.WriteLine($"loading all keys from {init_filename} into memory...");
             long count = 0;
 
-            using (FileStream stream = File.Open(init_filename, FileMode.Open, FileAccess.Read,
-                FileShare.Read))
+            using (FileStream stream = File.Open(init_filename, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
                 byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
                 GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
@@ -313,8 +312,8 @@ namespace FASTER.benchmark
             sw.Stop();
             Console.WriteLine($"loaded {init_keys.Length:N0} keys in {(double)sw.ElapsedMilliseconds / 1000:N3} seconds");
 
-            RandomGenerator generator = new RandomGenerator(seed);
-            var zipf = new ZipfGenerator(generator, (int)init_keys.Length, theta: YcsbConstants.SyntheticZipfTheta);
+            RandomGenerator generator = new(seed);
+            ZipfGenerator zipf = new(generator, (int)init_keys.Length, theta: YcsbConstants.SyntheticZipfTheta);
 
             sw.Restart();
             for (int idx = 0; idx < txn_keys.Length; idx++)
@@ -368,7 +367,7 @@ namespace FASTER.benchmark
             if (this.Options.BackupAndRestore && this.Options.PeriodicCheckpointMilliseconds <= 0)
             {
                 Console.WriteLine($"Checkpointing FasterKV to {this.BackupPath} for fast restart");
-                Stopwatch sw = Stopwatch.StartNew();
+                var sw = Stopwatch.StartNew();
                 store.TakeFullCheckpoint(out _, CheckpointType.Snapshot);
                 store.CompleteCheckpointAsync().GetAwaiter().GetResult();
                 sw.Stop();

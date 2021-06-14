@@ -102,7 +102,7 @@ namespace FASTER.test.readaddress
             // Track the recordInfo for its PreviousAddress.
             public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo)
             {
-                if (ctx is {})
+                if (ctx is not null)
                 {
                     ctx.output = output;
                     ctx.recordInfo = recordInfo;
@@ -112,7 +112,7 @@ namespace FASTER.test.readaddress
 
             public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status)
             {
-                if (ctx is {})
+                if (ctx is not null)
                 {
                     ctx.output = input;
                     ctx.recordInfo = default;

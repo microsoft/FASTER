@@ -32,8 +32,8 @@ namespace FASTER.devices
         private const string LeaseBlobName = "lease";
         private CloudBlockBlob leaseBlob;
 
-        static SemaphoreSlim AsynchronousStorageReadMaxConcurrency = new SemaphoreSlim(Environment.ProcessorCount * 25);
-        static SemaphoreSlim AsynchronousStorageWriteMaxConcurrency = new SemaphoreSlim(Environment.ProcessorCount * 25);
+        static readonly SemaphoreSlim AsynchronousStorageReadMaxConcurrency = new(Environment.ProcessorCount * 25);
+        static readonly SemaphoreSlim AsynchronousStorageWriteMaxConcurrency = new(Environment.ProcessorCount * 25);
 
         /// <summary>
         /// Create instance of blob manager

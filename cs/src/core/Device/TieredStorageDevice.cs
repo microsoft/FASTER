@@ -149,7 +149,7 @@ namespace FASTER.core
 
         private static string ComputeFileString(IList<IDevice> devices, int commitPoint)
         {
-            StringBuilder result = new StringBuilder();
+            StringBuilder result = new();
             foreach (IDevice device in devices)
             {
                 string formatString = "{0}, file name {1}, capacity {2} bytes;";
