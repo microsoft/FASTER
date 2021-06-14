@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <mutex>
 
 #include "alloc.h"
 #include "record.h"
@@ -63,7 +64,6 @@ class ScanIterator {
    , start(begin)
    , until(end)
    , current(start)
-   , record_address(Address::kInvalidAddress)
    , currentFrame(0)
    , completedIOs(0)
    , disk(disk)
@@ -106,13 +106,18 @@ class ScanIterator {
   ScanIterator& operator=(const ScanIterator& from) = delete;
 
   /// Returns a pointer to the next record.
-  record_t* GetNext() {
+  record_t* GetNext(Address& record_address) {
+    std::lock_guard<std::mutex> lock(mutex);
+
     for (int iters = 0; ; iters++) {
       // should not execute more than 2 iters
       if (iters == 2) assert(false);
       // We've exceeded the range over which we had to perform our scan.
       // No work to do over here other than returning a nullptr.
-      if (current >= until) return nullptr;
+      if (current >= until) {
+        record_address = Address::kInvalidAddress;
+        return nullptr;
+      }
 
       record_t * record;
       bool addr_in_memory = current >= hLog->head_address.load();
@@ -146,10 +151,9 @@ class ScanIterator {
   }
 
   /// Returns a pointer to the next record, along with its (logical) address
-  record_t* GetNext(Address& address) {
-    record_t* record = GetNext();
-    address = record_address;
-    return record;
+  record_t* GetNext() {
+    Address record_address;
+    return GetNext(record_address);
   }
 
  private:
@@ -225,9 +229,6 @@ class ScanIterator {
   /// Logical address within the log at which we are currently scanning.
   Address current;
 
-  /// Logical address of the last record we read
-  Address record_address;
-
   /// Current frame within the buffer we're scanning through for records
   /// on persistent storage.
   uint64_t currentFrame;
@@ -239,6 +240,9 @@ class ScanIterator {
   /// Pointer to the disk hLog was allocated under. Required so that we
   /// can make sure that reads issued to the persistent layer complete.
   disk_t* disk;
+
+  /// Mutex to protect concurrent threads accessing
+  std::mutex mutex;
 };
 
 } // namespace core

@@ -172,9 +172,10 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemAllLive) {
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
+  store.CompletePending(true);
 
   // perform compaction (with or without shift begin address)
-  uint64_t until_address = store.hlog.safe_read_only_address.control();
+    uint64_t until_address = store.hlog.safe_read_only_address.control();
   bool shift_begin_address = GetParam();
   ASSERT_TRUE(
     store.CompactWithLookup(until_address, shift_begin_address));
@@ -191,7 +192,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemAllLive) {
     ASSERT_EQ(Status::Ok, result);
     ASSERT_EQ(idx, context.output.value);
   }
-
+  store.CompletePending(true);
   store.StopSession();
 }
 
@@ -226,6 +227,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemHalfLive) {
     Status result = store.Delete(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
+  store.CompletePending(true);
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
@@ -247,7 +249,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemHalfLive) {
     ASSERT_EQ(expect, result);
     if (idx % 2 == 0) ASSERT_EQ(idx, context.output.value);
   }
-
+  store.CompletePending(true);
   store.StopSession();
 }
 
@@ -281,6 +283,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemAllLiveNewEntries) {
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
+  store.CompletePending(true);
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
@@ -304,7 +307,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemAllLiveNewEntries) {
                           : context.output.value / 2};
     ASSERT_EQ(idx, expected_key.key);
   }
-
+  store.CompletePending(true);
   store.StopSession();
 }
 
@@ -346,6 +349,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemConcurrentOps) {
         ASSERT_EQ(Status::Ok, result);
       }
     }
+    store.CompletePending(true);
     store.StopSession();
   };
 
@@ -362,6 +366,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemConcurrentOps) {
         Status result = store.Delete(context, callback, idx / 3);
         ASSERT_EQ(Status::Ok, result);
       }
+      store.CompletePending(true);
       store.StopSession();
     }
   };
@@ -404,44 +409,9 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemConcurrentOps) {
       ASSERT_EQ(idx, context.output.value);
     }
   }
+  store.CompletePending(true);
   store.StopSession();
 }
-
-/*TEST(CompactLookup, InMemAllLiveWithShiftAddress) {
-  // In memory hybrid log
-  typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
-  // 512 MB log size -- 64 MB mutable region (min possible)
-  faster_t store { 1024, (1 << 20) * 512, "", 0.125 };
-  int numRecords = 200000;
-
-  store.StartSession();
-  for (size_t idx = 1; idx <= numRecords; ++idx) {
-    auto callback = [](IAsyncContext* ctxt, Status result) {
-      // request will be sync -- callback won't be called
-      ASSERT_TRUE(false);
-    };
-    UpsertContext<Key, MediumValue> context{ Key(idx), MediumValue(idx) };
-    Status result = store.Upsert(context, callback, 1);
-    ASSERT_EQ(Status::Ok, result);
-  }
-
-  Address until_address = store.hlog.safe_read_only_address.control();
-  ASSERT_TRUE(
-    store.CompactWithLookup(until_address.control(), true));
-  ASSERT_EQ(until_address, store.hlog.begin_address.control());
-
-  for (size_t idx = 1; idx <= numRecords; ++idx) {
-    auto callback = [](IAsyncContext* ctxt, Status result) {
-      // request will be sync -- callback should won't be called
-      ASSERT_TRUE(false);
-    };
-    ReadContext<Key, MediumValue> context{ idx };
-    Status result = store.Read(context, callback, 1);
-    ASSERT_EQ(Status::Ok, result);
-    ASSERT_EQ(idx, context.output.value);
-  }
-  store.StopSession();
-}*/
 
 // ****************************************************************************
 // PERSISTENCE STORAGE TESTS
@@ -469,6 +439,7 @@ TEST_P(CompactLookupParametrizedTestFixture, AllLive) {
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
+  store.CompletePending(true);
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
@@ -478,6 +449,7 @@ TEST_P(CompactLookupParametrizedTestFixture, AllLive) {
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
+  // Check that all entries are present
   for (size_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_EQ(Status::Ok, result);
@@ -536,6 +508,7 @@ TEST_P(CompactLookupParametrizedTestFixture, HalfLive) {
     Status result = store.Delete(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
+  store.CompletePending(true);
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
@@ -579,9 +552,9 @@ TEST_P(CompactLookupParametrizedTestFixture, HalfLive) {
   std::experimental::filesystem::remove_all("tmp_store");
 }
 
-/// Inserts a bunch of records into a FASTER instance, updates half of them
-/// with new values, deletes the other half, and invokes the compaction algorithm.
-/// Checks that the updated ones have the new value, and the rest remain deleted.
+/// Inserts a bunch of records into a FASTER instance, deletes half of them,
+/// re-inserts them with new values, and invokes the compaction algorithm.
+/// Checks that the updated ones have the new value, and the rest remain unchanged.
 TEST_P(CompactLookupParametrizedTestFixture, AllLiveDeleteAndReInsert) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
@@ -622,6 +595,7 @@ TEST_P(CompactLookupParametrizedTestFixture, AllLiveDeleteAndReInsert) {
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
+  store.CompletePending(true);
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
@@ -778,46 +752,10 @@ TEST_P(CompactLookupParametrizedTestFixture, ConcurrentOps) {
     }
   }
   store.CompletePending(true);
+  store.StopSession();
 
   std::experimental::filesystem::remove_all("tmp_store");
 }
-
-/*TEST(CompactLookup, InMemAllLiveWithShiftAddress) {
-  // In memory hybrid log
-  typedef FasterKv<Key, Value, FASTER::device::NullDisk> faster_t;
-  // 1GB log size
-  faster_t store { 1024, (1 << 20) * 1024, "", 0.4 };
-  int numRecords = 100000;
-
-  store.StartSession();
-  for (size_t idx = 1; idx <= numRecords; ++idx) {
-    auto callback = [](IAsyncContext* ctxt, Status result) {
-      // request will be sync -- callback won't be called
-      ASSERT_TRUE(false);
-    };
-    UpsertContext<Key, Value> context{ Key(idx), Value(idx) };
-    Status result = store.Upsert(context, callback, 1);
-    ASSERT_EQ(Status::Ok, result);
-  }
-
-  Address until_address = store.hlog.GetTailAddress();
-  ASSERT_TRUE(
-    store.CompactWithLookup(until_address.control(), true));
-  ASSERT_EQ(until_address, store.hlog.begin_address.control());
-
-  for (size_t idx = 1; idx <= numRecords; ++idx) {
-    auto callback = [](IAsyncContext* ctxt, Status result) {
-      // request will be sync -- callback should won't be called
-      ASSERT_TRUE(false);
-    };
-    ReadContext<Key, Value> context{ idx };
-    Status result = store.Read(context, callback, 1);
-    ASSERT_EQ(Status::Ok, result);
-    ASSERT_EQ(idx, context.output.value);
-  }
-
-  store.StopSession();
-}*/
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);

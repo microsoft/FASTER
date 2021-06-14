@@ -155,7 +155,7 @@ class FasterKv {
 
   /// Log compaction entry method.
   bool Compact(uint64_t untilAddress);
-  bool CompactWithLookup(uint64_t until_address, bool shift_begin_address);
+  bool CompactWithLookup(uint64_t until_address, bool shift_begin_address, int n_threads = 8);
 
   /// Truncating the head of the log.
   bool ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
@@ -198,6 +198,9 @@ class FasterKv {
       AsyncIOContext& io_context);
   OperationStatus InternalContinuePendingExists(ExecutionContext& ctx,
       AsyncIOContext& io_context);
+
+  template<class F>
+  inline void InternalCompact(ScanIterator<F>* iter);
 
   // Find the hash bucket entry, if any, corresponding to the specified hash.
   // The caller can use the "expected_entry" to CAS its desired address into the entry.
@@ -2955,18 +2958,69 @@ inline std::ostream& operator << (std::ostream& out, const FixedPageAddress addr
 /// and by potentially going through the hash chains, rather than
 /// scanning the entire log from head to tail.
 template<class K, class V, class D>
-bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_begin_address) {
-  constexpr int io_check_freq = 20;
-
-  typedef std::unordered_map<uint64_t, CompactionPendingRecordEntry<K, V>> pending_records_info_t;
-  typedef std::deque<CompactionPendingRecordEntry<K, V>> pending_records_queue_t;
-  typedef std::deque<CompactionPendingRecordEntry<K, V>*> retry_records_queue_t;
-
+bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_begin_address, int n_threads) {
   // TODO: maybe switch to an initial phase for GC to avoid concurrent actions (e.g. checkpoint, grow index, etc.)
 
   if (until_address > hlog.safe_read_only_address.control()) {
     throw std::invalid_argument {"Can compact only until hlog.safe_read_only_address"};
   }
+  if (!epoch_.IsProtected() && shift_begin_address) {
+    throw std::runtime_error{ "Thread should have an active FASTER session for truncation to be performed"};
+  }
+
+  bool is_protected = epoch_.IsProtected();
+  if (is_protected) StopSession();
+
+  std::deque<std::thread> threads;
+  ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE,
+                          hlog.begin_address.load(), Address(until_address), &disk);
+
+  // Spawn threads
+  for (int i = 0; i < n_threads; ++i) {
+    threads.emplace_back(&FasterKv<K, V, D>::InternalCompact<faster_t>, this, &iter);
+  }
+  // Wait for threads
+  for (auto & thread : threads) {
+    thread.join();
+  }
+
+  if (is_protected) StartSession();
+
+  if (shift_begin_address) {
+    // Truncate log & update hash index
+    static std::atomic<bool> truncated (false);
+    static std::atomic<bool> completed (false);
+
+    GcState::truncate_callback_t truncate_callback = [](uint64_t offset) {
+      truncated = true;
+    };
+    GcState::complete_callback_t complete_callback = []() {
+      completed = true;
+    };
+    bool result = ShiftBeginAddress(Address(until_address), truncate_callback, complete_callback);
+    if (!result) return false;
+
+    // block until truncation & hash index update finishes
+    while(!truncated || !completed) {
+      CompletePending(false);
+      std::this_thread::yield();
+    }
+    CompletePending(true);
+    Refresh();
+  }
+
+  return true;
+}
+
+
+template<class K, class V, class D>
+template<class F>
+inline void FasterKv<K, V, D>::InternalCompact(ScanIterator<F>* iter) {
+  constexpr int io_check_freq = 20;
+
+  typedef std::unordered_map<uint64_t, CompactionPendingRecordEntry<K, V>> pending_records_info_t;
+  typedef std::deque<CompactionPendingRecordEntry<K, V>> pending_records_queue_t;
+  typedef std::deque<CompactionPendingRecordEntry<K, V>*> retry_records_queue_t;
 
   pending_records_info_t pending_records_info;
   pending_records_queue_t pending_records_queue;
@@ -3001,14 +3055,13 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
   CompactionPendingRecordEntry<K, V> * record_info;
   uint8_t pending_record_entry [sizeof(CompactionPendingRecordEntry<K, V>)];
 
-  ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE, hlog.begin_address.load(),
-                              Address(until_address), &disk);
+  StartSession();
   while(true) {
-
     if (retry_records_queue.empty()) {
       HashBucketEntry expected_entry;
       // get next record from hybrid log
-      record = iter.GetNext(record_address);
+      record = iter->GetNext(record_address);
+
       if (record == nullptr || record->header.tombstone)  {
         // if record is tombstone, no need to copy to tail
         goto complete_pending;
@@ -3053,6 +3106,7 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
 complete_pending:
     if ((num_iter % io_check_freq == 0) || record == nullptr) {
       CompletePending(false);
+      if (record == nullptr) std::this_thread::yield();
     }
     for (auto const & pending_record : pending_records_queue) {
       // Copy to tail if no other entry with same key exists
@@ -3063,7 +3117,7 @@ complete_pending:
 
       if (status == Status::Pending) {
         // could not determine if record is live -- push record to retry queue
-        fprintf(stderr, "Slowdown: retry compacting entry\n");
+        //fprintf(stderr, "Slowdown: retry compacting entry\n");
         // search only the newly introduced hash chain part
         auto record_info = new CompactionPendingRecordEntry<K, V>(pending_record.key, pending_record.value,
                                                                   pending_record.address, expected_entry,
@@ -3082,31 +3136,8 @@ complete_pending:
           break;
     }
   }
-
-  if (shift_begin_address) {
-    // Truncate log & update hash index
-    static std::atomic<bool> truncated (false);
-    static std::atomic<bool> completed (false);
-
-    GcState::truncate_callback_t truncate_callback = [](uint64_t offset) {
-      truncated = true;
-    };
-    GcState::complete_callback_t complete_callback = []() {
-      completed = true;
-    };
-    bool result = ShiftBeginAddress(Address(until_address), truncate_callback, complete_callback);
-    if (!result) return false;
-
-    // block until truncation & hash index update finishes
-    while(!truncated || !completed) {
-      CompletePending(false);
-      std::this_thread::yield();
-    }
-    CompletePending(true);
-    Refresh();
-  }
-
-  return true;
+  CompletePending(true);
+  StopSession();
 }
 
 template <class K, class V, class D>
