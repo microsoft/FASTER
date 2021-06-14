@@ -28,6 +28,10 @@
         <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.2" />
         <dependency id="Microsoft.FASTER.Core" version="$version$" />
       </group>
+      <group targetFramework="net5.0">
+        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.2" />
+        <dependency id="Microsoft.FASTER.Core" version="$version$" />
+      </group>
     </dependencies>
   </metadata>
   <files>
@@ -40,5 +44,8 @@
     <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.devices.AzureStorageDevice.dll" target="lib\netstandard2.1" />
     <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.devices.AzureStorageDevice.pdb" target="lib\netstandard2.1" />
     <file src="bin\AnyCPU\Release\netstandard2.1\FASTER.devices.AzureStorageDevice.xml" target="lib\netstandard2.1" />
+    <file src="bin\AnyCPU\Release\net5.0\FASTER.devices.AzureStorageDevice.dll" target="lib\net5.0" />
+    <file src="bin\AnyCPU\Release\net5.0\FASTER.devices.AzureStorageDevice.pdb" target="lib\net5.0" />
+    <file src="bin\AnyCPU\Release\net5.0\FASTER.devices.AzureStorageDevice.xml" target="lib\net5.0" />
   </files>
 </package>

@@ -44,7 +44,7 @@ namespace FASTER.core
 
         internal void Decrement()
         {
-            if (this.asyncTcs is {})
+            if (this.asyncTcs is not null)
             {
                 Debug.Assert(this.remaining > 0);
                 if (Interlocked.Decrement(ref this.remaining) == 0)

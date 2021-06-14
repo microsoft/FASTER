@@ -15,6 +15,9 @@ namespace FASTER.core
     /// <summary>
     /// Local storage device
     /// </summary>
+#if NET5_0
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+#endif
     public unsafe class LocalStorageDevice : StorageDeviceBase
     {
         /// <summary>
@@ -98,7 +101,7 @@ namespace FASTER.core
                                       bool useIoCompletionPort = true)
                 : base(filename, GetSectorSize(filename), capacity)
         {
-#if NETSTANDARD
+#if NETSTANDARD || NET
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 throw new FasterException("Cannot use LocalStorageDevice from non-Windows OS platform, use ManagedLocalStorageDevice instead.");
@@ -142,13 +145,13 @@ namespace FASTER.core
 
         private void RecoverFiles()
         {
-            FileInfo fi = new FileInfo(FileName); // may not exist
+            FileInfo fi = new(FileName); // may not exist
             DirectoryInfo di = fi.Directory;
             if (!di.Exists) return;
 
             string bareName = fi.Name;
 
-            List<int> segids = new List<int>();
+            List<int> segids = new();
             foreach (System.IO.FileInfo item in di.GetFiles(bareName + "*"))
             {
                 segids.Add(int.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
@@ -535,6 +538,9 @@ namespace FASTER.core
         public bool IsCompleted => throw new NotImplementedException();
     }
 
+#if NET5_0
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+#endif
     unsafe sealed class LocalStorageDeviceCompletionWorker
     {
         public void Start(IntPtr ioCompletionPort, IOCompletionCallback _callback)

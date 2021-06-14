@@ -11,7 +11,7 @@ namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        internal Dictionary<string, IClientSession> _activeSessions = new Dictionary<string, IClientSession>();
+        internal Dictionary<string, IClientSession> _activeSessions = new();
 
         /// <summary>
         /// Client session type helper

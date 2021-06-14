@@ -20,7 +20,7 @@ namespace FASTER.benchmark
         static long TxnCount;
 
         readonly TestLoader testLoader;
-        readonly ManualResetEventSlim waiter = new ManualResetEventSlim();
+        readonly ManualResetEventSlim waiter = new();
         readonly int numaStyle;
         readonly int readPercent;
         readonly FunctionsSB functions;
@@ -93,7 +93,7 @@ namespace FASTER.benchmark
 
         private void RunYcsb(int thread_idx)
         {
-            RandomGenerator rng = new RandomGenerator((uint)(1 + thread_idx));
+            RandomGenerator rng = new((uint)(1 + thread_idx));
 
             if (numaStyle == 0)
                 Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
@@ -102,8 +102,7 @@ namespace FASTER.benchmark
 
             waiter.Wait();
 
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
+            var sw = Stopwatch.StartNew();
 
             Span<byte> value = stackalloc byte[kValueSize];
             Span<byte> input = stackalloc byte[kValueSize];
@@ -282,8 +281,7 @@ namespace FASTER.benchmark
             }
 
             waiter.Set();
-            Stopwatch swatch = new Stopwatch();
-            swatch.Start();
+            var swatch = Stopwatch.StartNew();
 
             if (testLoader.Options.PeriodicCheckpointMilliseconds <= 0)
             {
