@@ -31,13 +31,13 @@ namespace FASTER.core
         public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata)
         {
             // Two phase to ensure we write metadata in single Write operation
-            using var ms = new MemoryStream();
-            using (var writer = new BinaryWriter(ms))
+            using MemoryStream ms = new();
+            using (BinaryWriter writer = new(ms))
             {
                 writer.Write(commitMetadata.Length);
                 writer.Write(commitMetadata);
             }
-            using (var writer = new BinaryWriter(new FileStream(commitFile, FileMode.OpenOrCreate)))
+            using (BinaryWriter writer = new(new FileStream(commitFile, FileMode.OpenOrCreate)))
             {
                 writer.Write(ms.ToArray());
                 writer.Flush();

@@ -133,12 +133,12 @@ namespace FASTER.core
         {
             var tempKeyContainer = keyContainer;
             keyContainer = default;
-            if (tempKeyContainer is { })
+            if (tempKeyContainer is not null)
                 tempKeyContainer.Dispose();
 
             var tempInputContainer = inputContainer;
             inputContainer = default;
-            if (tempInputContainer is { })
+            if (tempInputContainer is not null)
                 tempInputContainer.Dispose();
 
             Output = default;

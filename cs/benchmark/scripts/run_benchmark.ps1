@@ -41,6 +41,9 @@
 .PARAMETER CloneAndBuild
     Clone the repo and switch to the branches in ExeDirs, then build these.
 
+.PARAMETER NetCore31
+    Use the netcoreapp3.1 instead of net5.0 version of FASTER.benchmark.exe
+
 .EXAMPLE
     pwsh -c "./run_benchmark.ps1 './baseline','./refactor_FASTERImpl'"
 
@@ -63,6 +66,11 @@
     pwsh -c "./run_benchmark.ps1 master,branch_with_my_changes -CloneAndBuild <other args>"
 
     Clones the master branch to the .\master folder, the branch_with_my_changes to the branch_with_my_changes folder, and runs those with any <other args> specified.
+
+.EXAMPLE
+    pwsh -c "./run_benchmark.ps1 master,branch_with_my_changes -CloneAndBuild <other args>"
+
+    Clones the master branch to the .\master folder, the branch_with_my_changes to the branch_with_my_changes folder, and runs those with any <other args> specified.
 #>
 param (
   [Parameter(Mandatory=$true)] [string[]]$ExeDirs,
@@ -70,14 +78,16 @@ param (
   [Parameter(Mandatory=$false)] [int]$ThreadCount = -1,
   [Parameter(Mandatory=$false)] [int]$lockMode = -1,
   [Parameter(Mandatory=$false)] [switch]$UseRecover,
-  [Parameter(Mandatory=$false)] [switch]$CloneAndBuild
+  [Parameter(Mandatory=$false)] [switch]$CloneAndBuild.
+  [Parameter(Mandatory=$false)] [switch]$NetCore31
 )
 
 if (-not(Test-Path d:/data)) {
     throw "Cannot find d:/data"
 }
 
-$benchmarkExe = "netcoreapp3.1/win7-x64/FASTER.benchmark.exe"
+$framework = $NetCore31 ? "netcoreapp3.1" : "net5.0"
+$benchmarkExe = "$framework/FASTER.benchmark.exe"
 
 if ($CloneAndBuild) {
     $exeNames = [String[]]($ExeDirs | ForEach-Object{"$_/cs/benchmark/bin/x64/Release/$benchmarkExe"})
@@ -101,7 +111,7 @@ Foreach ($exeName in $exeNames) {
     throw "Cannot find: $exeName"
 }
 
-$resultDirs = [String[]]($ExeDirs | ForEach-Object{"./results/" + (Get-Item $_).Name})
+$resultDirs = [String[]]($ExeDirs | ForEach-Object{"./results_$framework/" + (Get-Item $_).Name})
 Foreach ($resultDir in $resultDirs) {
     Write-Host $resultDir
     if (Test-Path $resultDir) {

@@ -122,7 +122,7 @@ namespace FASTER.core
                 {
                     if (_exception != default)
                         _exception.Throw();
-                    if (flushEvent is { })
+                    if (!flushEvent.IsDefault())
                         flushEvent.Wait();
                     while (!this.TryCompleteSync(asyncOp: false, out flushEvent, out asyncResult))
                     {
