@@ -373,33 +373,37 @@ namespace FASTER.libdpr
         /// <param name="worker">the worker to add</param>
         /// <param name="callback">callback to invoke when the add is persistent</param>
         /// <returns> (world-line, version) that the new worker should start at </returns>>
-        public (long, long) AddWorker(Worker worker, Action callback)
+        public (long, long) AddWorker(Worker worker, Action<(long, long)> callback)
         {
-            var minVer = versionTable.IsEmpty ? 0 : versionTable.Select(e => e.Value).Min();
-            versionTable.TryAdd(worker, minVer);
+            versionTable.TryAdd(worker, 0);
             lock (volatileState)
             {
                 var currentWorldLines = volatileState.GetCurrentWorldLines();
                 var latestWorldLine = currentWorldLines.Count == 0 ? 0 : currentWorldLines.Select(e => e.Value).Max();
-                // First time we have seen this worker --- start them at the global min version and current cluster
-                // world-line and add to tracking
+
+                (long, long) result;
                 if (volatileState.GetCurrentCut().TryAdd(worker, 0))
                 {
+                    // First time we have seen this worker --- start them at 0 and current cluster
+                    // world-line and add to tracking
                     currentWorldLines.TryAdd(worker, latestWorldLine);
-                    volatileState.hasUpdates = true;
-                    if (callback != null)
-                        callbacks.Add(callback);
-                    return ValueTuple.Create(latestWorldLine, minVer);
+                    result = (latestWorldLine, 0);
                 }
-                // Otherwise, this worker thinks it's booting up for a second time, which means there was a restart.
-                // We count this as a failure. Advance the cluster world-line
-                var newWorldLine = currentWorldLines[worker] = latestWorldLine + 1;
-                // Cannot assume anything later than the persisted cut survived the crash
-                var survivingVersion = volatileState.GetCurrentCut()[worker];
-                ApplyRollback(newWorldLine, worker, survivingVersion);
-                return ValueTuple.Create(newWorldLine, survivingVersion);
-                // TODO(Tianyu): Finish by adding appropriate calls to add worker on DprFinder bootup, and proper handling of return value.
-                // Also, just convey this back to the client in Redis response message
+                else
+                {
+                    // Otherwise, this worker thinks it's booting up for a second time, which means there was a restart.
+                    // We count this as a failure. Advance the cluster world-line
+                    var newWorldLine = currentWorldLines[worker] = latestWorldLine + 1;
+                    // Cannot assume anything later than the persisted cut survived the crash
+                    var survivingVersion = volatileState.GetCurrentCut()[worker];
+                    ApplyRollback(newWorldLine, worker, survivingVersion);
+                    result = (newWorldLine, survivingVersion);
+                }
+                
+                volatileState.hasUpdates = true;
+                if (callback != null)
+                    callbacks.Add(() => callback(result));
+                return result;
             }
         }
 

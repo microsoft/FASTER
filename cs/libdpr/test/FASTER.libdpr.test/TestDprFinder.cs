@@ -34,7 +34,7 @@ namespace FASTER.libdpr
             return ValueTuple.Create(min, max);
         }
     }
-    // Simple single-threaded server
+    
     public class SimpleTestDprFinder : IDprFinder
     {
         // cached local value
@@ -87,5 +87,9 @@ namespace FASTER.libdpr
             globalMaxVersionNum = newMax;
             globalSafeVersionNum = newMin;
         }
+
+        // Test Dpr Finder does not support failure handling and do not care about a dynamic cluster 
+        public long NewWorker(Worker id) => 0;
+        public void DeleteWorker(Worker id) {}
     }
 }

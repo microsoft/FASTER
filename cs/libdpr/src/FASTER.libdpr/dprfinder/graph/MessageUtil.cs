@@ -315,7 +315,34 @@ namespace FASTER.libdpr
             
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
-        } 
+        }
+
+        internal static void SendAddWorkerResponse(this Socket socket, (long, long) result)
+        {
+            var buf = reusableMessageBuffers.Checkout();
+            var head = 0;
+            Debug.Assert(head + 1 >= buf.Length);
+            buf[head++] = (byte) '$';
+
+            var size = LongToDecimalString(2 * sizeof(long), buf, head);
+            Debug.Assert(size != 0);
+            head += size;
+
+            Debug.Assert(head + 4 + 2 * sizeof(long) < buf.Length);
+            buf[head++] = (byte) '\r';
+            buf[head++] = (byte) '\n';
+
+            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), result.Item1);
+            head += sizeof(long);
+            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), result.Item2);
+            head += sizeof(long);
+
+            buf[head++] = (byte) '\r';
+            buf[head++] = (byte) '\n';
+            
+            socket.Send(new Span<byte>(buf, 0, head));
+            reusableMessageBuffers.Return(buf);
+        }
      
     }
 }

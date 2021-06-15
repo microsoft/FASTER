@@ -4,18 +4,22 @@ namespace FASTER.libdpr
 {
     /// <summary>
     /// Abstracts a non-versioned state-store that performs checkpoints and rollbacks synchronously. This is a
-    /// simpler API than IStateObject and can accomodate a wider range of state-stores.
+    /// simpler API than IStateObject designed to work with a wider range of state-stores.
+    ///
+    /// In exchange of its simplicity, this class is pessimistic about concurrency and requires caller help to
+    /// synchronize method calls properly. See VersionScheme().
     /// </summary>
-    /// <typeparam name="TToken">Type of token that uniquely identifies a checkpoint</typeparam>
     public abstract class SimpleStateObject : IStateObject
     {
         private DprWorkerCallbacks callbacks;
         private readonly SimpleVersionScheme versionScheme = new SimpleVersionScheme();
 
         /// <summary>
-        /// Process batches under shared latch for correctness
+        /// Process batches under shared latch for correctness. Before starting to execute a batch, call Enter()
+        /// to obtain the version all operations within the batch will execute in. After execution, call Leave()
+        /// to stop protecting the version and allow checkpoints to continue. 
         /// </summary>
-        /// <returns></returns>
+        /// <returns> VersionScheme used by this SimpleStateObject </returns>
         public SimpleVersionScheme VersionScheme() => versionScheme;
         
         /// <summary>

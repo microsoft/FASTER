@@ -4,7 +4,6 @@ namespace FASTER.libdpr
     /// <summary>
     /// Abstracts an underlying versioned state-store with non-blocking checkpointing and rollback functionalities.
     /// </summary>
-    /// <typeparam name="TToken">Type of token that uniquely identifies a checkpoint</typeparam>
     public interface IStateObject
     {
         /// <summary>
@@ -26,18 +25,18 @@ namespace FASTER.libdpr
         /// Begins a checkpoint to advance to the targetVersion. Invocation of the call only guarantees that object
         /// version eventually reaches targetVersion, and the function may return without performing the checkpoint
         /// (e.g., if targetVersion is smaller than current version, or if another concurrent checkpoint is underway).
-        /// libDPR expects to receive checkpoint-related information, such as token, through registered callback
-        /// instead of this function.
+        /// libDPR expects to receive checkpoint-related information, such as the actual version checkpointed, through
+        /// registered callback instead of this function.
         /// </summary>
-        /// <param name="targetVersion">The version to jump to, or -1 if jumping to next version</param>
+        /// <param name="targetVersion">The version to jump to, or -1 if unconditionally jumping to next version</param>
         void BeginCheckpoint(long targetVersion = -1);
 
         /// <summary>
-        /// Recovers the state object to an earlier checkpoint, identified by the given token. After the function
+        /// Recovers the state object to an earlier checkpoint, identified by the given version. After the function
         /// returns, all future operations should see the recovered state. A restore call must eventually succeed per
         /// invocation, but libDPR will only have one outstanding restore call at a time.
         /// </summary>
-        /// <param name="token">Unique checkpoint for the state object to recover to</param>
+        /// <param name="version">Unique checkpoint for the state object to recover to</param>
         void BeginRestore(long version);
     }
 }

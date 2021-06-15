@@ -140,7 +140,7 @@ namespace FASTER.libdpr
                     socket.SendSyncResponse(backend.MaxVersion(), backend.GetPersistentState());
                     break;
                 case DprFinderCommand.Type.ADD_WORKER:
-                    backend.AddWorker(command.w, () => socket.Send(OkResponse));
+                    backend.AddWorker(command.w, socket.SendAddWorkerResponse);
                     break;
                 case DprFinderCommand.Type.DELETE_WORKER:
                     backend.DeleteWorker(command.w, () => socket.Send(OkResponse));

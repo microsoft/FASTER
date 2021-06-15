@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace FASTER.libdpr
@@ -65,13 +66,17 @@ namespace FASTER.libdpr
         
         public void Process(Span<byte> dprHeader, Span<byte> response, (int, int) op)
         {
-            if (dprServer.RequestBatchBegin(dprHeader, response, out var tracker, out _))
+            ref var dprRequest =
+                ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(response));
+            ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
+
+            if (dprServer.RequestBatchBegin(ref dprRequest, ref dprResponse, out var tracker))
             {
                 var v = stateObject.VersionScheme().Enter();
                 stateObject.DoStuff(op);
                 tracker.MarkOneOperationVersion(0, v);
                 stateObject.VersionScheme().Leave();
-                dprServer.SignalBatchFinish(dprHeader, response, tracker);
+                dprServer.SignalBatchFinish(ref dprRequest, response, tracker);
             }
         }
     }
