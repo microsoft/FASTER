@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.InteropServices.ComTypes;
 using System.Threading;
 using ServerOptions;
 using CommandLine;
