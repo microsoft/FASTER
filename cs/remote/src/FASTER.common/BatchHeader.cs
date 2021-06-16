@@ -3,7 +3,6 @@
 
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using FASTER.server;
 
 namespace FASTER.common
 {
@@ -11,7 +10,7 @@ namespace FASTER.common
     /// Header for message batch
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public unsafe struct BatchHeader
+    public struct BatchHeader
     {
         public BatchHeader(int seqNo, int numMessages, WireFormat protocol)
         {
@@ -31,16 +30,33 @@ namespace FASTER.common
         public int GetSeqNo() => seqNo;
 
         /// <summary>
-        /// Number of messsages packed in batch
+        /// Set sequence number for batch
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetSeqNo(int seqNo) => this.seqNo = seqNo;
+
+        /// <summary>
+        /// Number of messages packed in batch
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetNumMessages() => (int) ((uint) numMessagesAndProtocolType >> 8);
+
+        /// <summary>
+        /// Set number of messages packed in batch
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetNumMessages(int numMessages) => numMessagesAndProtocolType = (numMessages << 8) | (numMessagesAndProtocolType & 0xFF);
         
         /// <summary>
         /// Byte value that denotes the wire protocol this batch is written in. 
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public WireFormat GetProtocol() => (WireFormat) (numMessagesAndProtocolType & 0xFF);
+
+        /// <summary>
+        /// Sets the byte value that denotes the wire protocol this batch is written in. 
+        /// </summary>
+        public void SetProtocol(WireFormat protocol) => numMessagesAndProtocolType = (numMessagesAndProtocolType & ~0xFF) | ((int) protocol & 0xFF);
         
         
         [FieldOffset(0)]

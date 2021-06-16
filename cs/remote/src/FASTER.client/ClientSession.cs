@@ -10,7 +10,6 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.common;
-using FASTER.server;
 
 namespace FASTER.client
 {

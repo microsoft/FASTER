@@ -224,7 +224,8 @@ namespace FASTER.server
         private void Send(byte* d)
         {
             var dstart = d + sizeof(int);
-            Unsafe.AsRef<BatchHeader>(dstart) = new BatchHeader(seqNo++, msgnum - start, WireFormat.Binary);
+            Unsafe.AsRef<BatchHeader>(dstart).SetNumMessages(msgnum - start);
+            Unsafe.AsRef<BatchHeader>(dstart).SetSeqNo(seqNo++);
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header
             *(int*)responseObject.obj.bufferPtr = -(payloadSize - sizeof(int));

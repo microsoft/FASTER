@@ -9,6 +9,7 @@ using FASTER.common;
 using System;
 using System.Runtime.CompilerServices;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Threading;
 
 namespace FASTER.server
@@ -26,17 +27,15 @@ namespace FASTER.server
         readonly ConcurrentDictionary<ServerSessionBase, byte> activeSessions;
         int activeSessionCount;
         bool disposed;
-
+        
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="store">Instance of FasterKV store to use in server</param>
-        /// <param name="functionsGen">Functions generator (based on wire format)</param>
+        /// <param name="backendProvider"> Backend provider for this server</param>
         /// <param name="address">IP address</param>
         /// <param name="port">Port</param>
-        /// <param name="serializer">Parameter serializer</param>
         /// <param name="maxSizeSettings">Max size settings</param>
-        public FasterKVServer(IFasterRemoteBackendProvider backendProvider, string address, int port, MaxSizeSettings maxSizeSettings = default) : base()
+        public FasterKVServer(IFasterRemoteBackendProvider backendProvider, string address, int port, MaxSizeSettings maxSizeSettings = default)
         {
             activeSessions = new ConcurrentDictionary<ServerSessionBase, byte>();
             activeSessionCount = 0;
@@ -53,6 +52,21 @@ namespace FASTER.server
                 UserToken = backendProvider
             };
             acceptEventArg.Completed += AcceptEventArg_Completed;
+        }
+
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="store">Instance of FasterKV store to use in server</param>
+        /// <param name="functionsGen">Functions generator (based on wire format)</param>
+        /// <param name="address">IP address</param>
+        /// <param name="port">Port</param>
+        /// <param name="serializer">Parameter serializer</param>
+        /// <param name="maxSizeSettings">Max size settings</param>
+        public FasterKVServer(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, string address,
+            int port, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
+            : this(new FasterKVBackendProvider<Key, Value, Functions, ParameterSerializer>(store, functionsGen, serializer), address, port, maxSizeSettings)
+        {
         }
 
         /// <summary>

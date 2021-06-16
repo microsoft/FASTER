@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using FASTER.common;
 using FASTER.core;
 
 namespace FASTER.server
