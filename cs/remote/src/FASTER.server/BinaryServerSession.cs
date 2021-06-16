@@ -181,9 +181,12 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
+                            keyptr = src;
                             status = session.Delete(ref serializer.ReadKeyByRef(ref src));
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
+
+                            subscribeKVBroker.Publish(keyptr);
                             break;
 
                         case MessageType.SubscribeKV:
@@ -213,19 +216,7 @@ namespace FASTER.server
             }
         }
 
-        public Status ReadBeforePublish(ref Key key, ref Input input, ref Output output, int sid)
-        {
-            MessageType message = MessageType.SubscribeKV;
-
-            long ctx = ((long)message << 32) | (long)sid;
-            var status = session.Read(ref key, ref input, ref output, ctx, 0);
-            if (status == Status.PENDING)
-                session.CompletePending(true);
-
-            return status;
-        }
-
-        public void Publish(ref Key key, ref Input input, int sid, Status status, ref Output output)
+        public void Publish(int sid, Status status, ref Output output)
         {
             MessageType message = MessageType.SubscribeKV;
             GetResponseObject();
@@ -253,7 +244,7 @@ namespace FASTER.server
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                 Write(sid, ref dcurr, (int)(dend - dcurr));
-                outputCopy = serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
+                serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
 
                 if (status == Status.OK)
                     serializer.SkipOutput(ref dcurr);

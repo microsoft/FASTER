@@ -25,6 +25,7 @@ namespace FASTER.server
         readonly MaxSizeSettings maxSizeSettings;
         readonly ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte> activeSessions;
         readonly SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeKVBroker;
+        readonly ClientSession<Key, Value, Input, Output, long, ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>> session;
 
         int activeSessionCount;
         bool disposed;
@@ -51,7 +52,9 @@ namespace FASTER.server
             servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             servSocket.Bind(endPoint);
             servSocket.Listen(512);
-            subscribeKVBroker.assignSubscriptionSession(new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(servSocket, store, functionsGen(WireFormat.Binary), serializer, this.maxSizeSettings, subscribeKVBroker));
+            var subscriptionSession = store.For(new ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>(functionsGen(WireFormat.Binary), null)).NewSession<ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>>();
+
+            subscribeKVBroker.assignSubscriptionSession(subscriptionSession);
             acceptEventArg = new SocketAsyncEventArgs
             {
                 UserToken = (store, functionsGen, serializer)
