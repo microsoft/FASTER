@@ -8,8 +8,8 @@ namespace FASTER.libdpr
         /// <summary>
         /// Reserved Worker id for cluster management
         /// </summary>
-        public static Worker CLUSTER_MANAGER = new Worker(-1);
-        internal readonly long guid;
+        public readonly long guid;
+
 
         /// <summary>
         /// Constructs a worker with the given guid

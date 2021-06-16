@@ -8,7 +8,7 @@ namespace FASTER.libdpr
     // Client-local information that keeps tracks of every outstanding (not yet completed) request batch. 
     internal class BatchInfo
     {
-        private const int MaxHeaderSize = 4096;
+        internal const int MaxHeaderSize = 4096;
         internal int batchId;
         internal bool allocated;
         internal Worker workerId;

@@ -12,8 +12,7 @@ namespace FASTER.libdpr
         private Dictionary<Worker, TestStateStore> stateStores;
         private SimpleObjectPool<byte[]> bufs;
         private Dictionary<int, byte[]> responses;
-
-
+        
         public TestClientObject(DprClientSession session, Dictionary<Worker, TestStateStore> stateStores, int id)
         {
             this.session = session;
