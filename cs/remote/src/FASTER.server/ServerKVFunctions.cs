@@ -45,13 +45,13 @@ namespace FASTER.server
         public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
             => functions.InPlaceUpdater(ref key, ref input, ref value);
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, core.Status status)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status)
         {
             serverNetworkSession.CompleteRead(ref output, ctx, status);
             functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
         }
 
-        public void RMWCompletionCallback(ref Key key, ref Input input, long ctx, core.Status status)
+        public void RMWCompletionCallback(ref Key key, ref Input input, long ctx, Status status)
         {
             serverNetworkSession.CompleteRMW(ctx, status);
             functions.RMWCompletionCallback(ref key, ref input, ctx, status);

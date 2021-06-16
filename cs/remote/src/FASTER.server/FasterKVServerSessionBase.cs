@@ -20,11 +20,11 @@ namespace FASTER.server
             this.serializer = serializer;
         }
         
-        public abstract void CompleteRead(ref Output output, long ctx, core.Status status);
-        public abstract void CompleteRMW(long ctx, core.Status status);
+        public abstract void CompleteRead(ref Output output, long ctx, Status status);
+        public abstract void CompleteRMW(long ctx, Status status);
 
 
-        public virtual void Dispose()
+        public override void Dispose()
         {
             session.Dispose();
             base.Dispose();

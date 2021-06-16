@@ -7,62 +7,49 @@ using System.Runtime.InteropServices;
 namespace FASTER.common
 {
     /// <summary>
-    /// Header for message batch
+    /// Header for message batch (Little Endian server)
+    /// [4 byte seqNo][1 byte protocol][3 byte numMessages]
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct BatchHeader
     {
-        public BatchHeader(int seqNo, int numMessages, WireFormat protocol)
-        {
-            this.seqNo = seqNo;
-            numMessagesAndProtocolType = (numMessages << 8) | (byte) protocol;
-        }
-        
         /// <summary>
         /// Size
         /// </summary>
         public const int Size = 8;
 
         /// <summary>
-        /// Sequence number for batch
+        /// Sequence number.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetSeqNo() => seqNo;
+        [FieldOffset(0)]
+        public int SeqNo;
 
         /// <summary>
-        /// Set sequence number for batch
+        /// Lower-order 8 bits are protocol type, higher-order 24 bits are num messages.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetSeqNo(int seqNo) => this.seqNo = seqNo;
+        [FieldOffset(4)]
+        private int numMessagesAndProtocolType;
 
         /// <summary>
         /// Number of messages packed in batch
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetNumMessages() => (int) ((uint) numMessagesAndProtocolType >> 8);
-
-        /// <summary>
-        /// Set number of messages packed in batch
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetNumMessages(int numMessages) => numMessagesAndProtocolType = (numMessages << 8) | (numMessagesAndProtocolType & 0xFF);
+        public int NumMessages
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => (int)((uint)numMessagesAndProtocolType >> 8);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set { numMessagesAndProtocolType = (value << 8) | (numMessagesAndProtocolType & 0xFF); }
+        }
         
         /// <summary>
-        /// Byte value that denotes the wire protocol this batch is written in. 
+        /// Wire protocol this batch is written in
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public WireFormat GetProtocol() => (WireFormat) (numMessagesAndProtocolType & 0xFF);
-
-        /// <summary>
-        /// Sets the byte value that denotes the wire protocol this batch is written in. 
-        /// </summary>
-        public void SetProtocol(WireFormat protocol) => numMessagesAndProtocolType = (numMessagesAndProtocolType & ~0xFF) | ((int) protocol & 0xFF);
-        
-        
-        [FieldOffset(0)]
-        private int seqNo;
-        [FieldOffset(4)]
-        // Lower-order 8 bits are protocol type, higher-order 24 bits are num messages.
-        private int numMessagesAndProtocolType;
+        public WireFormat Protocol
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => (WireFormat)(numMessagesAndProtocolType & 0xFF);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set { numMessagesAndProtocolType = (numMessagesAndProtocolType & ~0xFF) | ((int)value & 0xFF); }
+        }
     }
 }

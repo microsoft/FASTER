@@ -186,7 +186,7 @@ namespace FASTER.server
 
             fixed (void* bh = &e.Buffer[4])
             {
-                switch (((BatchHeader *) bh)->GetProtocol())
+                switch (((BatchHeader *) bh)->Protocol)
                 {
                     case WireFormat.Binary:
                         var backend = connArgs.provider.GetBackendForProtocol<FasterKVBackend<Key, Value, Functions, ParameterSerializer>>(WireFormat.Binary);
