@@ -224,7 +224,7 @@ namespace FASTER.core
         /// <summary>
         /// Error handling
         /// </summary>
-        private readonly ErrorList errorList = new ErrorList();
+        private readonly ErrorList errorList = new();
 
         /// <summary>
         /// Observer for records entering read-only region

@@ -38,8 +38,8 @@ namespace VarLenServer
 
             // Create a new server based on above store. You specify additional details such as the serializer (to read and write
             // from and to the wire) and functions (to communicate with FASTER via IFunctions)
-            var server = new FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>
-                (store, wp => new SpanByteFunctionsForServer<long>(wp), opts.Address, opts.Port, new SpanByteSerializer(), default);
+            var server = new FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
+                (store, wp => new SpanByteFunctionsForServer<long>(wp), opts.Address, opts.Port, new SpanByteServerSerializer(), default);
             server.Start();
             Console.WriteLine("Started server");
             Thread.Sleep(Timeout.Infinite);

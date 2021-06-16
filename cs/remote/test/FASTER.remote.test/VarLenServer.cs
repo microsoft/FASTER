@@ -8,7 +8,7 @@ namespace FASTER.remote.test
     class VarLenServer : IDisposable
     {
         readonly string folderName;
-        readonly FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer> server;
+        readonly FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer> server;
         readonly FasterKV<SpanByte, SpanByte> store;
 
         public VarLenServer(string folderName, string address = "127.0.0.1", int port = 33278)
@@ -21,8 +21,8 @@ namespace FASTER.remote.test
 
             // We specify FixedLenSerializer as our in-built serializer for blittable (fixed length) types
             // This server can be used with compatible clients such as FixedLenClient and FASTER.benchmark
-            server = server = new FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>
-                (store, wp => new SpanByteFunctionsForServer<long>(wp), address, port, new SpanByteSerializer(), default);
+            server = server = new FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
+                (store, wp => new SpanByteFunctionsForServer<long>(wp), address, port, new SpanByteServerSerializer(), default);
             server.Start();
         }
 
