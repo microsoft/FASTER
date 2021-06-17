@@ -41,7 +41,6 @@ namespace FASTER.server
         /// <param name="maxSizeSettings">Max size settings</param>
         public FasterKVServer(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, string address, int port, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default) : base()
         {
-            subscribeKVBroker = new SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer>(serializer);
             activeSessions = new ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte>();
             activeSessionCount = 0;
             disposed = false;
@@ -52,9 +51,9 @@ namespace FASTER.server
             servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             servSocket.Bind(endPoint);
             servSocket.Listen(512);
-            var subscriptionSession = store.For(new ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>(functionsGen(WireFormat.Binary), null)).NewSession<ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>>();
+            var subscriptionSession = store.For(functionsGen(WireFormat.Binary)).NewSession<Functions>();
+            subscribeKVBroker = new SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer>(serializer, subscriptionSession);
 
-            subscribeKVBroker.assignSubscriptionSession(subscriptionSession);
             acceptEventArg = new SocketAsyncEventArgs
             {
                 UserToken = (store, functionsGen, serializer)

@@ -16,15 +16,16 @@ namespace FASTER.server
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly ParameterSerializer serializer;
-        private ClientSession<Key, Value, Input, Output, long, ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>> subscriptionSession;
+        readonly ClientSession<Key, Value, Input, Output, long, Functions> subscriptionSession;
         private int sid = 0;
         private ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>> subscriptions;
         //private Trie<byte[], (int, HashSet<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>>)> subscriptionsTrie;
         private AsyncQueue<byte[]> publishQueue;        
 
-        public SubscribeKVBroker(ParameterSerializer serializer)
+        public SubscribeKVBroker(ParameterSerializer serializer, ClientSession<Key, Value, Input, Output, long, Functions> subscriptionSession)
         {
             this.serializer = serializer;
+            this.subscriptionSession = subscriptionSession;
         }
 
         public void removeSubscription(ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> session)
@@ -47,11 +48,6 @@ namespace FASTER.server
             //    subscriptionsTrie[key].Item2.Remove((BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>)session);
         }
 
-        public void assignSubscriptionSession(ClientSession<Key, Value, Input, Output, long, ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>> subscriptionSession)
-        {
-            this.subscriptionSession = subscriptionSession;
-        }
-
         public unsafe (Status, Output) ReadBeforePublish(ref byte* keyBytePtr, ref Input input, ref byte* outputBytePtr, int lengthOutput, int sid)
         {
             MessageType message = MessageType.SubscribeKV;
@@ -67,16 +63,34 @@ namespace FASTER.server
             return (status, output);
         }
 
+        unsafe bool CheckSubKeyMatch(ref byte* subKeyPtr, ref byte* keyPtr)
+        {
+            ref Key key = ref serializer.ReadKeyByRef(ref keyPtr);
+            ref Key subKey = ref serializer.ReadKeyByRef(ref subKeyPtr);
+            if (serializer.Match(ref key, ref subKey) == true)
+                return true;
+            return false;
+        }
+
         public async Task Start()
         {
+            /* Here do the matching of prefixes */
+
             Input input = default;
             var uniqueKeys = new HashSet<byte[]>(new ByteArrayComparer());
             // unique is a set of byte arrays non-conc
             // Read from queue and send to all subscribed sessions
+            byte[] outputBytes = new byte[1024];
+            List<(BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int)> subscribedSessions = new List<(BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int)>();
+
             while (true) {
+
+                var subscriptionKey = await publishQueue.DequeueAsync();
+                uniqueKeys.Add(subscriptionKey);
+
                 while (publishQueue.Count > 0) // delete this line
                 {
-                    var subscriptionKey = await publishQueue.DequeueAsync();
+                    subscriptionKey = await publishQueue.DequeueAsync();
                     uniqueKeys.Add(subscriptionKey);
                 }
 
@@ -84,20 +98,43 @@ namespace FASTER.server
                 {
                     foreach (var byteKey in uniqueKeys)
                     {
-                        byte[] outputBytes = new byte[1024];
                         fixed (byte* ptr1 = &byteKey[0], ptr2 = &outputBytes[0])
                         {
                             byte* keyPtr = ptr1;
-                            byte* outputPtr = ptr2;
+                            byte* outputPtr = ptr2;                            
 
-                            subscriptions.TryGetValue(byteKey, out var value);
-                            var (status, output) = ReadBeforePublish(ref keyPtr, ref input, ref outputPtr, outputBytes.Length, 0);
-                            foreach (var session in value.Keys)
+                            foreach (var subscribedKeyBytes in subscriptions.Keys)
                             {
-                                subscriptions[byteKey].TryGetValue(session, out var sid);
-                                session.Publish(sid, status, ref output);
+                                fixed (byte* subscribedKeyPtr = &subscribedKeyBytes[0])
+                                {
+                                    byte* subKeyPtr = subscribedKeyPtr;
+                                    byte* reqKeyPtr = ptr1;
+
+                                    bool match = CheckSubKeyMatch(ref subKeyPtr, ref reqKeyPtr);
+                                    if (match)
+                                    {
+                                        foreach (var session in subscriptions[subscribedKeyBytes].Keys)
+                                        {
+                                            subscriptions[subscribedKeyBytes].TryGetValue(session, out int sid);
+                                            subscribedSessions.Add((session, sid));
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (subscribedSessions.Count > 0)
+                            {
+                                var (status, output) = ReadBeforePublish(ref keyPtr, ref input, ref outputPtr, outputBytes.Length, 0);
+                                foreach (var subSessionTuple in subscribedSessions)
+                                {
+                                    var session = subSessionTuple.Item1;
+                                    var sid = subSessionTuple.Item2;
+                                    session.Publish(sid, status, ref output);
+                                }
+
                             }
                         }
+                        subscribedSessions.Clear();
                     }
                     uniqueKeys.Clear();
                 }
@@ -117,30 +154,14 @@ namespace FASTER.server
             }
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
-                // only if CAS succshould you start
-                // asyncueue should just be a queue of byte[]
                 Task.Run(() => Start());
             }
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>());
             subscriptions[subscriptionKey].TryAdd(session, id);
             // use a conc hash set
-            //IEnumerator<byte[]> subscriptionKeyEnumerator = (IEnumerator<byte[]>)subscriptionKey.GetEnumerator();
-            //subscriptionsTrie.Add((IEnumerable<byte[]>)subscriptionKeyEnumerator, (id, new HashSet<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>>()));
-            //subscriptionsTrie[(IEnumerable<byte[]>)subscriptionKeyEnumerator].Item2.Add(session);
-
             return id;
         }
-
-        //private IEnumerable<byte[]> getAllPrefixes(byte[] key)
-        //{
-        //    for (int i = 0; i < key.Length; i++)
-        //    {
-        //        int prefixLen = i + 1;
-        //        byte[] prefix = key[..prefixLen];
-        //        yield return prefix;
-        //    }
-        //}
 
         public unsafe void Publish(byte* key)
         {
@@ -149,26 +170,7 @@ namespace FASTER.server
             var start = key;
             ref Key k = ref serializer.ReadKeyByRef(ref key);
             var subscriptionsKey = new Span<byte>(start, (int)(key - start)).ToArray();
-
-            //IEnumerable<byte[]> prefixes = getAllPrefixes(subscriptionsKey);
-            
-            //foreach (var prefix in prefixes)
-            //{
-            //    subscriptionsTrie.GetByPrefix((IEnumerable<byte[]>)prefix.GetEnumerator());
-            //}
-
-            foreach (var subscribedKeyBytes in subscriptions.Keys)
-            {
-                fixed (byte* subscribedKeyPtr = &subscribedKeyBytes[0])
-                {
-                    byte* src = subscribedKeyPtr;
-                    ref Key subscribedKeyTyped = ref serializer.ReadKeyByRef(ref src);
-                    if (serializer.Match(ref k, ref subscribedKeyTyped) == true)
-                        publishQueue.Enqueue(subscriptionsKey);
-                }
-            }
-            //publishQueue.Enqueue((k, subscriptionsKey));
-            // Add to async queue and return
+            publishQueue.Enqueue(subscriptionsKey);
         }
     }
 }
