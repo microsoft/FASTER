@@ -42,11 +42,15 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            session.Dispose();
-            fht.Dispose();
-            fht = null;
-            log.Dispose();
-            objlog.Dispose();
+            try
+            {
+                session.Dispose();
+                fht.Dispose();
+                fht = null;
+                log.Dispose();
+                objlog.Dispose();
+            }
+            catch { }
         }
 
         // Basic test that where shift begin address to untilAddress after compact
