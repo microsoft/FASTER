@@ -3,6 +3,13 @@ variables:
   solutionRemote: 'cs/remote/FASTER.remote.sln'
   RunAzureTests: 'yes'
 
+schedules:
+- cron: 0 4 * * 1,2,3,4,5
+  branches:
+    include:
+    - master
+name: $(date:yyyyMMdd)$(rev:.r)
+
 jobs:
 - job: 'csharpWindows'
   pool:
@@ -25,6 +32,7 @@ jobs:
       x64-Release:
         buildPlatform: 'x64'
         buildConfiguration: 'Release'
+
 
   steps:
   - task: NuGetToolInstaller@1
@@ -71,7 +79,7 @@ jobs:
        !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0 /TestCaseFilter:TestCategory=Smoke'
+      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0'
 
   - task: VSTest@2
     inputs:
@@ -83,7 +91,7 @@ jobs:
        !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.2 /TestCaseFilter:TestCategory=Smoke'
+      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.2'
 
   - task: VSTest@2
     inputs:
@@ -95,7 +103,7 @@ jobs:
        !**\*TestAdapter.dll
       platform: '$(buildPlatform)'
       configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v3.1 /TestCaseFilter:TestCategory=Smoke'
+      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v3.1'
 
   - task: PublishTestResults@2
     inputs:
@@ -194,7 +202,7 @@ jobs:
     inputs:
       command: test
       projects: '**/test/*.csproj'
-      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1 -l "console;verbosity=detailed" --filter "TestCategory=Smoke"'
+      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1 -l "console;verbosity=detailed" --filter'
 
   - task: PublishTestResults@2
     displayName: 'Publish Test Results'
