@@ -191,7 +191,8 @@ namespace FASTER.core
                     if (CopyReadsToTail == CopyReadsToTail.FromReadOnly)
                     {
                         var container = hlog.GetValueContainer(ref hlog.GetValue(physicalAddress));
-                        InternalUpsert(ref key, ref container.Get(), ref userContext, ref pendingContext, fasterSession, sessionCtx, lsn);
+                        pendingContext.logicalAddress = logicalAddress; // set addr early to pass into InternalReadCopyToTail
+                        InternalReadCopyToTail(ref key, ref container.Get(), ref userContext, ref pendingContext, fasterSession, sessionCtx, lsn);
                         container.Dispose();
                     }
                     return OperationStatus.SUCCESS;
@@ -264,6 +265,120 @@ namespace FASTER.core
 #endregion
 
             return status;
+        }
+
+        /// <summary>
+        /// Copies the record read from read-only to tail of the HybridLog, called in InternalRead.
+        /// This call resembles <see cref="InternalContinuePendingReadCopyToTail{Input, Output, Context, FasterSession}(FasterExecutionContext{Input, Output, Context}, AsyncIOContext{Key, Value}, ref PendingContext{Input, Output, Context}, FasterSession, FasterExecutionContext{Input, Output, Context})"/>.
+        /// </summary>
+        /// <typeparam name="Input"></typeparam>
+        /// <typeparam name="Output"></typeparam>
+        /// <typeparam name="Context"></typeparam>
+        /// <typeparam name="FasterSession"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <param name="userContext"></param>
+        /// <param name="pendingContext"></param>
+        /// <param name="fasterSession"></param>
+        /// <param name="currentCtx"></param>
+        /// <param name="lsn"></param>
+        internal void InternalReadCopyToTail<Input, Output, Context, FasterSession>(
+                                    ref Key key, ref Value value,
+                                    ref Context userContext,
+                                    ref PendingContext<Input, Output, Context> pendingContext,
+                                    FasterSession fasterSession,
+                                    FasterExecutionContext<Input, Output, Context> currentCtx,
+                                    long lsn)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            var bucket = default(HashBucket*);
+            var slot = default(int);
+
+            var hash = comparer.GetHashCode64(ref key);
+            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+            #region Trace back record in in-memory HybridLog
+            var entry = default(HashBucketEntry);
+            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
+            var logicalAddress = entry.Address;
+            var physicalAddress = default(long);
+
+            if (UseReadCache)
+                SkipReadCache(ref logicalAddress);
+            var latestLogicalAddress = logicalAddress;
+
+            if (logicalAddress >= hlog.HeadAddress)
+            {
+                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                {
+                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    TraceBackForKeyMatch(ref key,
+                                            logicalAddress,
+                                            hlog.HeadAddress,
+                                            out logicalAddress,
+                                            out physicalAddress);
+                }
+            }
+            #endregion
+
+            if (logicalAddress > pendingContext.logicalAddress)
+            {
+                // Give up early
+                return;
+            }
+
+            Debug.Assert(logicalAddress == pendingContext.logicalAddress);
+
+            #region Create new copy in mutable region
+            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
+            RecordInfo oldRecordInfo = hlog.GetInfoFromBytePointer((byte*)physicalAddress);
+
+            long newLogicalAddress, newPhysicalAddress;
+            if (UseReadCache)
+            {
+                BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
+                newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
+                RecordInfo.WriteInfo(ref readcache.GetInfo(newPhysicalAddress), currentCtx.version,
+                                    tombstone: false, invalidBit: false,
+                                    entry.Address);
+                readcache.Serialize(ref key, newPhysicalAddress);
+                fasterSession.SingleWriter(ref key,
+                                       ref value,
+                                       ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+            }
+            else
+            {
+                BlockAllocate(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
+                newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), currentCtx.version,
+                               tombstone: false, invalidBit: false,
+                               latestLogicalAddress);
+                hlog.Serialize(ref key, newPhysicalAddress);
+                fasterSession.SingleWriter(ref key,
+                                       ref value,
+                                       ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+            }
+
+
+            var updatedEntry = default(HashBucketEntry);
+            updatedEntry.Tag = tag;
+            updatedEntry.Address = newLogicalAddress & Constants.kAddressMask;
+            updatedEntry.Pending = entry.Pending;
+            updatedEntry.Tentative = false;
+            updatedEntry.ReadCache = UseReadCache;
+
+            var foundEntry = default(HashBucketEntry);
+            foundEntry.word = Interlocked.CompareExchange(
+                                            ref bucket->bucket_entries[slot],
+                                            updatedEntry.word,
+                                            entry.word);
+            if (foundEntry.word != entry.word)
+            {
+                if (!UseReadCache) hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                // We don't retry, just give up
+            }
+            #endregion
         }
         #endregion
 
