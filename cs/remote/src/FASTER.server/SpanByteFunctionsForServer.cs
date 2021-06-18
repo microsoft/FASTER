@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Buffers;
+using FASTER.common;
 using FASTER.core;
 
 namespace FASTER.server

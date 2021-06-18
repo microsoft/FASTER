@@ -19,10 +19,13 @@ namespace FASTER.remote.test
             // We use blittable structs Key and Value to construct a costomized server for fixed-length types
             store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
 
+            var provider =
+                new FasterKVBackendProvider<SpanByte, SpanByte, SpanByteFunctionsForServer<long>, SpanByteSerializer>(
+                    store, wp => new SpanByteFunctionsForServer<long>(wp), new SpanByteSerializer());
             // We specify FixedLenSerializer as our in-built serializer for blittable (fixed length) types
             // This server can be used with compatible clients such as FixedLenClient and FASTER.benchmark
             server = server = new FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>
-                (store, wp => new SpanByteFunctionsForServer<long>(wp), address, port, new SpanByteSerializer(), default);
+                (provider, address, port);
             server.Start();
         }
 
