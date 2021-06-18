@@ -56,12 +56,13 @@ namespace FASTER.test
             fht = new FasterKV<KeyStruct, ValueStruct>
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
 
+#if WINDOWS
             //*#*#*# TO DO: Figure Out why this DeviceType fails *#*#*#
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
             {
                 return;
             }
-
+#endif
 
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
