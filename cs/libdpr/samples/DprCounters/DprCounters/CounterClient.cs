@@ -6,6 +6,9 @@ using FASTER.libdpr;
 
 namespace DprCounters
 {
+    /// <summary>
+    /// Client to a cluster of CounterServers. DPR-capable. 
+    /// </summary>
     public class CounterClient
     {
         private DprClient client;

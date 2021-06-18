@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -54,6 +55,13 @@ namespace FASTER.libdpr
         public GraphDprFinder(Socket dprFinderConn)
         {
             this.dprFinderConn = dprFinderConn;
+        }
+
+        public GraphDprFinder(string ip, int port)
+        {
+            var ipEndpoint = new IPEndPoint(IPAddress.Parse(ip), port);
+            dprFinderConn = new Socket(ipEndpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            dprFinderConn.Connect(ipEndpoint);
         }
 
         /// <inheritdoc/>

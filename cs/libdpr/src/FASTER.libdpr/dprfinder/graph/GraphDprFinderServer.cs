@@ -80,7 +80,6 @@ namespace FASTER.libdpr
             acceptEventArg.Completed += AcceptEventArg_Completed;
             if (!servSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
-            
         }
         
         /// <inheritdoc/>
