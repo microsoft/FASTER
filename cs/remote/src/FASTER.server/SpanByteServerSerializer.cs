@@ -92,12 +92,16 @@ namespace FASTER.server
             if (pattern.Length > k.Length)
                 return false;
 
-            Span<byte> keySpan = k.AsSpan();
-            ReadOnlySpan<byte> patternSpan = pattern.AsReadOnlySpan();
-            if (keySpan.StartsWith(patternSpan))
-                return true;
+            byte[] kByte = k.ToByteArray();
+            byte[] patternByte = pattern.ToByteArray();
 
-            return false;            
+            for (int i = 0; i < patternByte.Length; i++)
+            {
+                if (kByte[i] != patternByte[i])
+                    return false;
+            }
+
+            return true;
         }
     }
 }

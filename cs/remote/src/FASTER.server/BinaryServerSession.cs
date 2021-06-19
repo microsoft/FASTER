@@ -200,6 +200,18 @@ namespace FASTER.server
                             Write(sid, ref dcurr, (int)(dend - dcurr));
                             break;
 
+                        case MessageType.PSubscribeKV:
+                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                                SendAndReset(ref d, ref dend);
+
+                            sid = subscribeKVBroker.PSubscribe(ref src, this);
+                            status = Status.PENDING;
+                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                            Write(ref status, ref dcurr, (int)(dend - dcurr));
+                            Write(sid, ref dcurr, (int)(dend - dcurr));
+                            break;
+
+
                         default:
                             throw new NotImplementedException();
                     }
@@ -216,9 +228,14 @@ namespace FASTER.server
             }
         }
 
-        public void Publish(int sid, Status status, ref Output output)
+        public void Publish(int sid, Status status, ref Output output, ref byte* keyPtr, int keyLength, bool prefix)
         {
             MessageType message = MessageType.SubscribeKV;
+            if (prefix)
+                message = MessageType.PSubscribeKV;
+
+            //ref Key key = ref serializer.ReadKeyByRef(ref keyPtr);
+
             GetResponseObject();
 
             byte* d = responseObject.obj.bufferPtr;
@@ -244,6 +261,11 @@ namespace FASTER.server
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                 Write(sid, ref dcurr, (int)(dend - dcurr));
+                if (prefix) {
+                    Buffer.MemoryCopy(keyPtr, dcurr, (int)(dend - dcurr), keyLength);
+                    dcurr += keyLength;
+                }
+                //serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
                 serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
 
                 if (status == Status.OK)

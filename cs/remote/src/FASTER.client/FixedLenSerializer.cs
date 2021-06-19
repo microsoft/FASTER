@@ -84,5 +84,10 @@ namespace FASTER.client
             }
             return true;
         }
+
+        public Key ReadKey(ref byte* src)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

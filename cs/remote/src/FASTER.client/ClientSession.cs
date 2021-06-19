@@ -192,6 +192,19 @@ namespace FASTER.client
             => InternalSubscribeKV(MessageType.SubscribeKV, ref key, ref input, userContext, serialNo);
 
         /// <summary>
+        /// PSubscribeKV operation
+        /// </summary>
+        /// <param name="prefix">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public void PSubscribeKV(Key prefix, Input input = default, Context userContext = default, long serialNo = 0)
+            => InternalSubscribeKV(MessageType.PSubscribeKV, ref prefix, ref input, userContext, serialNo);
+
+
+
+        /// <summary>
         /// Flush current buffer of outgoing messages. Does not wait for responses.
         /// </summary>
         public void Flush()
@@ -379,6 +392,33 @@ namespace FASTER.client
                                 if (status == Status.OK)
                                 {
                                     readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, Status.OK);
+                                }
+                                else if (status == Status.NOTFOUND)
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, Status.NOTFOUND);
+                                }
+                                else if (status == Status.PENDING)
+                                {
+                                    var result = readrmwQueue.Dequeue();
+                                    readRmwPendingContext.Add(p, result);
+                                }
+                                else
+                                {
+                                    throw new Exception("Unexpected status of SubscribeKV");
+                                }
+                                break;
+                            }
+                        case MessageType.PSubscribeKV:
+                            {
+                                var status = ReadStatus(ref src);
+                                var p = hrw.ReadPendingSeqNo(ref src);
+                                if (status == Status.OK)
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item1 = serializer.ReadKey(ref src);
                                     result.Item3 = serializer.ReadOutput(ref src);
                                     functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, Status.OK);
                                 }
