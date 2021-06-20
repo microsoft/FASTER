@@ -44,14 +44,15 @@ namespace FASTER.client
         /// <typeparam name="Functions"></typeparam>
         /// <typeparam name="ParameterSerializer"></typeparam>
         /// <param name="functions">Local callback functions</param>
+        /// <param name="wireFormat">Wire format</param>
         /// <param name="serializer">Parameter serializer</param>
         /// <param name="maxSizeSettings"></param>
         /// <returns></returns>
-        public ClientSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer> NewSession<Input, Output, Context, Functions, ParameterSerializer>(Functions functions, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
+        public ClientSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer> NewSession<Input, Output, Context, Functions, ParameterSerializer>(Functions functions, WireFormat wireFormat, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
             where Functions : ICallbackFunctions<Key, Value, Input, Output, Context>
             where ParameterSerializer : IClientSerializer<Key, Value, Input, Output>
         {
-            return new ClientSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>(address, port, functions, serializer, maxSizeSettings ?? new MaxSizeSettings());
+            return new ClientSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>(address, port, functions, wireFormat, serializer, maxSizeSettings ?? new MaxSizeSettings());
         }
     }
 
@@ -72,7 +73,7 @@ namespace FASTER.client
             where T : unmanaged
         {
             return new ClientSession<ReadOnlyMemory<T>, ReadOnlyMemory<T>, ReadOnlyMemory<T>, (IMemoryOwner<T>, int), byte, MemoryFunctionsBase<T>, MemoryParameterSerializer<T>>
-                (store.address, store.port, new MemoryFunctionsBase<T>(), new MemoryParameterSerializer<T>(memoryPool), maxSizeSettings);
+                (store.address, store.port, new MemoryFunctionsBase<T>(), WireFormat.DefaultVarLenKV, new MemoryParameterSerializer<T>(memoryPool), maxSizeSettings);
         }
 
         /// <summary>
@@ -86,7 +87,7 @@ namespace FASTER.client
             where Value : unmanaged
         {
             return new ClientSession<Key, Value, Value, Value, byte, CallbackFunctionsBase<Key, Value, Value, Value, byte>, FixedLenSerializer<Key, Value, Value, Value>>
-                (store.address, store.port, new CallbackFunctionsBase<Key, Value, Value, Value, byte>(), new FixedLenSerializer<Key, Value, Value, Value>(), maxSizeSettings);
+                (store.address, store.port, new CallbackFunctionsBase<Key, Value, Value, Value, byte>(), WireFormat.DefaultFixedLenKV, new FixedLenSerializer<Key, Value, Value, Value>(), maxSizeSettings);
         }
 
         /// <summary>
@@ -104,7 +105,7 @@ namespace FASTER.client
             where Functions : MemoryFunctionsBase<T>
         {
             return new ClientSession<ReadOnlyMemory<T>, ReadOnlyMemory<T>, ReadOnlyMemory<T>, (IMemoryOwner<T>, int), byte, Functions, MemoryParameterSerializer<T>>
-                (store.address, store.port, functions, new MemoryParameterSerializer<T>(memoryPool), maxSizeSettings);
+                (store.address, store.port, functions, WireFormat.DefaultVarLenKV, new MemoryParameterSerializer<T>(memoryPool), maxSizeSettings);
         }
 
         /// <summary>
@@ -120,7 +121,7 @@ namespace FASTER.client
             where Functions : CallbackFunctionsBase<Key, Value, Value, Value, byte>
         {
             return new ClientSession<Key, Value, Value, Value, byte, Functions, FixedLenSerializer<Key, Value, Value, Value>>
-                (store.address, store.port, functions, new FixedLenSerializer<Key, Value, Value, Value>(), maxSizeSettings);
+                (store.address, store.port, functions, WireFormat.DefaultFixedLenKV, new FixedLenSerializer<Key, Value, Value, Value>(), maxSizeSettings);
         }
 
         /// <summary>
@@ -140,7 +141,7 @@ namespace FASTER.client
             where Functions : CallbackFunctionsBase<Key, Value, Input, Output, byte>
         {
             return new ClientSession<Key, Value, Input, Output, byte, Functions, FixedLenSerializer<Key, Value, Input, Output>>
-                (store.address, store.port, functions, new FixedLenSerializer<Key, Value, Input, Output>(), maxSizeSettings);
+                (store.address, store.port, functions, WireFormat.DefaultFixedLenKV, new FixedLenSerializer<Key, Value, Input, Output>(), maxSizeSettings);
         }
     }
 }

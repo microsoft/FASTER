@@ -33,6 +33,7 @@ namespace FASTER.client
         readonly Socket sendSocket;
         readonly HeaderReaderWriter hrw;
         readonly int bufferSize;
+        readonly WireFormat wireFormat;
         readonly MaxSizeSettings maxSizeSettings;
 
         bool disposed;
@@ -51,12 +52,14 @@ namespace FASTER.client
         /// <param name="address">IP address</param>
         /// <param name="port">Port</param>
         /// <param name="functions">Client callback functions</param>
+        /// <param name="wireFormat"></param>
         /// <param name="serializer">Serializer</param>
         /// <param name="maxSizeSettings">Size settings</param>
-        public ClientSession(string address, int port, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
+        public ClientSession(string address, int port, Functions functions, WireFormat wireFormat, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
         {
             this.functions = functions;
             this.serializer = serializer;
+            this.wireFormat = wireFormat;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
             this.bufferSize = BufferSizeUtils.ClientBufferSize(this.maxSizeSettings);
             this.messageManager = new NetworkSender(bufferSize);
@@ -187,8 +190,8 @@ namespace FASTER.client
             {
                 int payloadSize = (int)(offset - sendObject.obj.bufferPtr);
 
-                // seqNo and wire format are default (0)
                 ((BatchHeader*)(sendObject.obj.bufferPtr + sizeof(int)))->NumMessages = numMessages;
+                ((BatchHeader*)(sendObject.obj.bufferPtr + sizeof(int)))->Protocol = wireFormat;
                 Interlocked.Increment(ref numPendingBatches);
 
                 // Set packet size in header

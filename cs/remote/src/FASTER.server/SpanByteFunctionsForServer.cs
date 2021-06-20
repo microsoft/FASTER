@@ -29,14 +29,14 @@ namespace FASTER.server
         /// <inheritdoc />
         public unsafe override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
         {
-            if (wireFormat == WireFormat.Binary)
+            if (wireFormat != WireFormat.ASCII)
                 CopyWithHeaderTo(ref value, ref dst, memoryPool);
         }
 
         /// <inheritdoc />
         public unsafe override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
         {
-            if (wireFormat == WireFormat.Binary)
+            if (wireFormat != WireFormat.ASCII)
                 CopyWithHeaderTo(ref value, ref dst, memoryPool);
         }
 

@@ -4,11 +4,19 @@
 using System;
 using System.Net.Sockets;
 using FASTER.common;
-using FASTER.core;
 
 namespace FASTER.server
 {
-    internal abstract class ServerSessionBase : IDisposable
+    /// <summary>
+    /// Interface for server session
+    /// </summary>
+    public interface IServerSession : IDisposable
+    {
+        int TryConsumeMessages(byte[] buf);
+        void AddBytesRead(int bytesRead);
+    }
+
+    public abstract class ServerSessionBase : IServerSession
     {
         protected readonly Socket socket;
         protected readonly MaxSizeSettings maxSizeSettings;

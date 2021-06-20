@@ -11,6 +11,5 @@ namespace FASTER.server
         public Socket socket;
         public ServerSessionBase session;
         public MaxSizeSettings maxSizeSettings;
-        public IFasterRemoteBackendProvider provider;
     }
 }

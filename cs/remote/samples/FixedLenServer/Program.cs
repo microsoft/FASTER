@@ -7,6 +7,7 @@ using ServerOptions;
 using CommandLine;
 using FASTER.core;
 using FASTER.server;
+using FASTER.common;
 
 namespace FixedLenServer
 {
@@ -32,15 +33,24 @@ namespace FixedLenServer
 
             opts.GetSettings(out var logSettings, out var checkpointSettings, out var indexSize);
 
-            // We use blittable structs Key and Value to construct a costomized server for fixed-length types
+            // We use blittable structs Key and Value to construct a customized server for fixed-length types
             var store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
             // We specify FixedLenSerializer as our in-built serializer for blittable (fixed length) types
-            // This server can be used with compatible clients such as FixedLenClient and FASTER.benchmark
-            var server = new FasterKVServer<Key, Value, Input, Output, Functions, FixedLenSerializer<Key, Value, Input, Output>>
-                (store, e => new Functions(), opts.Address, opts.Port);
+            // This provider can be used with compatible clients such as FixedLenClient and FASTER.benchmark
+            var provider = new FasterKVProvider<Key, Value, Input, Output, Functions, FixedLenSerializer<Key, Value, Input, Output>>(store, e => new Functions());
+
+            // Create server
+            var server = new FasterServer(opts.Address, opts.Port);
+
+            // Register provider as backend provider for WireFormat.DefaultFixedLenKV
+            server.Register(WireFormat.DefaultFixedLenKV, provider);
+
+            // Start server
             server.Start();
+            Console.WriteLine("Started server");
+
             Thread.Sleep(Timeout.Infinite);
         }
     }

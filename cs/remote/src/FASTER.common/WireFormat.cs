@@ -9,9 +9,18 @@ namespace FASTER.common
     public enum WireFormat : byte
     {
         /// <summary>
-        /// Custom binary format
+        /// Default varlen KV (binary)
         /// </summary>
-        Binary
-    }
+        DefaultVarLenKV = 0,
 
+        /// <summary>
+        /// Default fixed-len KV with 8-byte keys and values (binary)
+        /// </summary>
+        DefaultFixedLenKV = 1,
+
+        /// <summary>
+        /// ASCII wire format (non-binary protocol)
+        /// </summary>
+        ASCII = 255
+    }
 }

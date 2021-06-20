@@ -7,6 +7,7 @@ using CommandLine;
 using ServerOptions;
 using FASTER.core;
 using FASTER.server;
+using FASTER.common;
 
 namespace VarLenServer
 {
@@ -36,12 +37,19 @@ namespace VarLenServer
             var store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
-            // Create a new server based on above store. You specify additional details such as the serializer (to read and write
-            // from and to the wire) and functions (to communicate with FASTER via IFunctions)
-            var server = new FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>
-                (store, wp => new SpanByteFunctionsForServer<long>(wp), opts.Address, opts.Port, new SpanByteSerializer(), default);
+            // This variable-length provider can be used with compatible clients such as VarLenClient
+            var provider = new FasterKVProvider<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>(store, wp => new SpanByteFunctionsForServer<long>(wp), new SpanByteSerializer());
+
+            // Create server
+            var server = new FasterServer(opts.Address, opts.Port);
+
+            // Register provider as backend provider for WireFormat.DefaultFixedLenKV
+            server.Register(WireFormat.DefaultVarLenKV, provider);
+
+            // Start server
             server.Start();
             Console.WriteLine("Started server");
+
             Thread.Sleep(Timeout.Infinite);
         }
     }

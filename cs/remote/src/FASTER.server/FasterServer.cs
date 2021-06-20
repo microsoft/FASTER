@@ -9,35 +9,33 @@ using FASTER.common;
 using System;
 using System.Runtime.CompilerServices;
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
 using System.Threading;
 
 namespace FASTER.server
 {
     /// <summary>
-    /// Server for FasterKV
+    /// Remote server framework for FASTER artifacts
     /// </summary>
-    public sealed class FasterKVServer<Key, Value, Input, Output, Functions, ParameterSerializer> : IDisposable
-            where Functions : IFunctions<Key, Value, Input, Output, long>
-            where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
+    public sealed class FasterServer : IDisposable
     {
         readonly SocketAsyncEventArgs acceptEventArg;
         readonly Socket servSocket;
         readonly MaxSizeSettings maxSizeSettings;
         readonly ConcurrentDictionary<ServerSessionBase, byte> activeSessions;
+        readonly ConcurrentDictionary<WireFormat, IBackendProvider> backendProviders;
         int activeSessionCount;
         bool disposed;
         
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="backendProvider"> Backend provider for this server</param>
         /// <param name="address">IP address</param>
         /// <param name="port">Port</param>
         /// <param name="maxSizeSettings">Max size settings</param>
-        public FasterKVServer(IFasterRemoteBackendProvider backendProvider, string address, int port, MaxSizeSettings maxSizeSettings = default)
+        public FasterServer(string address, int port, MaxSizeSettings maxSizeSettings = default)
         {
             activeSessions = new ConcurrentDictionary<ServerSessionBase, byte>();
+            backendProviders = new ConcurrentDictionary<WireFormat, IBackendProvider>();
             activeSessionCount = 0;
             disposed = false;
 
@@ -47,27 +45,28 @@ namespace FASTER.server
             servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             servSocket.Bind(endPoint);
             servSocket.Listen(512);
-            acceptEventArg = new SocketAsyncEventArgs
-            {
-                UserToken = backendProvider
-            };
+            acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
         }
 
         /// <summary>
-        /// Constructor
+        /// Register backend provider for specified wire format with the server
         /// </summary>
-        /// <param name="store">Instance of FasterKV store to use in server</param>
-        /// <param name="functionsGen">Functions generator (based on wire format)</param>
-        /// <param name="address">IP address</param>
-        /// <param name="port">Port</param>
-        /// <param name="serializer">Parameter serializer</param>
-        /// <param name="maxSizeSettings">Max size settings</param>
-        public FasterKVServer(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, string address,
-            int port, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
-            : this(new FasterKVBackendProvider<Key, Value, Functions, ParameterSerializer>(store, functionsGen, serializer), address, port, maxSizeSettings)
+        /// <param name="wireFormat">Wire format</param>
+        /// <param name="backendProvider">Backend provider</param>
+        public void Register(WireFormat wireFormat, IBackendProvider backendProvider)
         {
+            if (!backendProviders.TryAdd(wireFormat, backendProvider))
+                throw new FasterException($"Wire format {wireFormat} already registered");
         }
+
+        /// <summary>
+        /// Unregister provider associated with specified wire format
+        /// </summary>
+        /// <param name="wireFormat"></param>
+        /// <param name="provider"></param>
+        public void Unregister(WireFormat wireFormat, out IBackendProvider provider)
+            => backendProviders.TryRemove(wireFormat, out provider);
 
         /// <summary>
         /// Start server
@@ -102,13 +101,10 @@ namespace FASTER.server
             var buffer = new byte[bufferSize];
             receiveEventArgs.SetBuffer(buffer, 0, bufferSize);
 
-            var backendProvider = (IFasterRemoteBackendProvider) e.UserToken;
-
             var args = new ConnectionArgs
             {
                 socket = e.AcceptSocket,
                 maxSizeSettings = maxSizeSettings,
-                provider = backendProvider
             };
 
             receiveEventArgs.UserToken = args;
@@ -178,24 +174,27 @@ namespace FASTER.server
 
             if (e.BytesTransferred < 4) return false;
 
-            // FASTER's protocol family is identified by inverted size field in the start of a packet
-            if (e.Buffer[3] <= 127)
-                throw new FasterException("Unexpected wire format");
+            WireFormat protocol;
 
-            if (e.BytesTransferred < 4 + BatchHeader.Size) return false;
-
-            fixed (void* bh = &e.Buffer[4])
+            // FASTER's binary protocol family is identified by inverted size (int) field in the start of a packet
+            // This results in a fourth byte value (little endian) > 127, denoting a non-ASCII wire format.
+            if (e.Buffer[3] > 127)
             {
-                switch (((BatchHeader *) bh)->Protocol)
-                {
-                    case WireFormat.Binary:
-                        var backend = connArgs.provider.GetBackendForProtocol<FasterKVBackend<Key, Value, Functions, ParameterSerializer>>(WireFormat.Binary);
-                        connArgs.session =  new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(connArgs.socket, backend.store, backend.functionsGen(WireFormat.Binary), backend.serializer, connArgs.maxSizeSettings);
-                        break;
-                    default:
-                        throw new FasterException("Unexpected wire format");
-                }
+                if (e.BytesTransferred < 4 + BatchHeader.Size) return false;
+                fixed (void* bh = &e.Buffer[4])
+                    protocol = ((BatchHeader*)bh)->Protocol;
             }
+            else
+            {
+                protocol = WireFormat.ASCII;
+            }
+
+            if (!backendProviders.TryGetValue(protocol, out var provider))
+            {
+                throw new FasterException($"Unsupported wire format {protocol}");
+            }
+
+            connArgs.session = provider.GetBackend(protocol, connArgs.socket);
 
             if (activeSessions.TryAdd(connArgs.session, default))
                 Interlocked.Increment(ref activeSessionCount);
