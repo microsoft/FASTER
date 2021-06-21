@@ -26,8 +26,6 @@ namespace FASTER.server
         {
             this.serializer = serializer;
             this.subscriptionSession = subscriptionSession;
-            this.subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
-            this.psubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
         }
 
         public void removeSubscription(ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> session)
@@ -175,6 +173,8 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
+                this.subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
+                this.psubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
                 Task.Run(() => Start());
             }
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
@@ -190,6 +190,8 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
+                this.subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
+                this.psubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
                 Task.Run(() => Start());
             }
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
