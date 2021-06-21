@@ -1813,7 +1813,10 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <param name="recordInfo"></param>
-        /// <param name="foundLogicalAddress"></param>
+        /// <param name="foundLogicalAddress">
+        /// Most of time it points to record being copied; 
+        /// in compaction it points to the last record scanned during compaction.
+        /// </param>
         /// <param name="fasterSession"></param>
         /// <param name="currentCtx"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1825,6 +1828,7 @@ namespace FASTER.core
                                     FasterExecutionContext<Input, Output, Context> currentCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
+            Debug.Assert(foundLogicalAddress >= hlog.BeginAddress);
             var bucket = default(HashBucket*);
             var slot = default(int);
 

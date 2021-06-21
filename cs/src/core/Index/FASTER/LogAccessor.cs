@@ -302,8 +302,8 @@ namespace FASTER.core
             if (untilAddress > fht.Log.SafeReadOnlyAddress)
                 throw new FasterException("Can compact only until Log.SafeReadOnlyAddress");
             var originalUntilAddress = untilAddress;
+            var lastScannedAddress = untilAddress; // the logical address of the last scanned record during compact, passed to TryCopyToTail
 
-            // TODO: preserve recordInfo
             var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
             using var fhtSession = fht.For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>();
 
@@ -330,10 +330,18 @@ namespace FASTER.core
                         if (recordInfo.Tombstone || cf.IsDeleted(key, value))
                             tempKvSession.Delete(ref key, default, 0);
                         else
-                            tempKvSession.Upsert(ref key, ref value, default, 0);
+                        {
+                            tempKvSession.ContainsKeyInMemory(ref key, out long logicalAddress);
+                            // below is for keeping information in RecordInfo, if we need to extend.
+                            /*long physicalAddress = tempKv.hlog.GetPhysicalAddress(logicalAddress);
+                            ref var tempRecordInfo = ref tempKv.hlog.GetInfo(physicalAddress);
+                            RecordInfo.WriteInfo(ref tempRecordInfo,
+                                tempRecordInfo.Version, false, false, tempRecordInfo.PreviousAddress);*/
+                        }
                     }
                     // Ensure address is at record boundary
                     untilAddress = originalUntilAddress = iter1.NextAddress;
+                    lastScannedAddress = iter1.CurrentAddress;
                 }
 
                 // Scan until SafeReadOnlyAddress
@@ -375,12 +383,10 @@ namespace FASTER.core
                             // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
                             continue;
                         }
-                        // Use the last logical address of the on-disk region as sentinel to force TryCopyToTail
-                        // to fail if key no longer maps to on-disk record.
-                        // As mentioned previously, if a record enters tail and escapes to disk before TryCopyToTail,
-                        // compaction may not capture it. This case escaped record may be replaced with copied record.
-                        long sentinelLogicalAddress = fht.hlog.HeadAddress - 1;
-                        fhtSession.TryCopyToTail(ref iter3.GetKey(), ref iter3.GetValue(), ref recordInfo, sentinelLogicalAddress);
+                        // Use the last logical address of the on-disk region (lastScannedAddress) as
+                        // sentinel to force TryCopyToTail to fail if key no longer maps to on-disk record.
+                        // This should be able to handle the case where a newly inserted record at the tail escapes to disk.
+                        fhtSession.TryCopyToTail(ref iter3.GetKey(), ref iter3.GetValue(), ref recordInfo, lastScannedAddress);
                     }
                 }
             }
