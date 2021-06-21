@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
+using System.Net;
 using FASTER.libdpr;
 
 namespace DprCounters
@@ -30,6 +31,7 @@ namespace DprCounters
         {
             
             this.checkpointDirectory = checkpointDirectory;
+            Directory.CreateDirectory(checkpointDirectory);
             if (version != 0)
                 RestoreCheckpoint(version);
         }

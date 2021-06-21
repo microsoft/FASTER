@@ -61,6 +61,7 @@ namespace FASTER.libdpr
                     backend.PersistState();
                 }
             });
+            ioThread.Start();
 
             processThread = new Thread(() =>
             {
@@ -69,7 +70,8 @@ namespace FASTER.libdpr
                     backend.TryFindDprCut();
                 }
             });
-            
+            processThread.Start();
+
             var ipAddr = IPAddress.Parse(ip);
             var endPoint = new IPEndPoint(ipAddr, port);
             servSocket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);

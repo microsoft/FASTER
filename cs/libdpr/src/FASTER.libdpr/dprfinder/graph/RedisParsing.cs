@@ -26,12 +26,12 @@ namespace FASTER.libdpr
                     if (size == -1)
                     {
                         // Implicit message start at 0 always
-                        size = (int) MessageUtil.LongFromDecimalString(buf, 1, readHead - 2);
+                        size = (int) MessageUtil.LongFromDecimalString(buf, 1, readHead - 1);
                         stringStart = readHead + 1;
                         return false;
                     }
 
-                    return readHead == stringStart + size + 2;
+                    return readHead == stringStart + size + 1;
                 default:
                     // Nothing to do
                     return false;
@@ -109,7 +109,7 @@ namespace FASTER.libdpr
         private bool ProcessRedisBulkString(int readHead, byte[] buf)
         {
             // account for \r\n in the end of string field
-            if (readHead == stringStart + size + 2)
+            if (size != -1 && readHead == stringStart + size + 1)
             {
                 // Fragment has ended
                 currentFragmentStart = readHead + 1;
@@ -180,6 +180,8 @@ namespace FASTER.libdpr
                             default:
                                 throw new NotImplementedException("Unrecognized command type");
                         }
+
+                        size = -1;
                     }
                     return false;
                 case CommandParserState.ARG_W:
@@ -188,6 +190,7 @@ namespace FASTER.libdpr
                         var workerId = BitConverter.ToInt64(buf, stringStart);
                         currentCommand.w = new Worker(workerId);
                         commandParserState = CommandParserState.NONE;
+                        size = -1;
                         return true;
                     }
                     return false;
@@ -211,6 +214,8 @@ namespace FASTER.libdpr
                         {
                             Debug.Assert(false);
                         }
+                        size = -1;
+
                     }
                     return false;
                 case CommandParserState.ARG_WL:
@@ -220,6 +225,7 @@ namespace FASTER.libdpr
                         Debug.Assert(currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY);
                         currentCommand.worldLine = BitConverter.ToInt64(buf, stringStart);
                         commandParserState = CommandParserState.NONE;
+                        size = -1;
                         return true;
                     }
 
@@ -238,6 +244,7 @@ namespace FASTER.libdpr
                             var version = BitConverter.ToInt32(buf,
                                 stringStart + 2 * sizeof(int) + i * sizeof(WorkerVersion));
                             currentCommand.deps.Add(new WorkerVersion(workerId, version));
+                            size = -1;
                         }
 
                         commandParserState = CommandParserState.NONE;

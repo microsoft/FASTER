@@ -23,7 +23,7 @@ namespace DprCounters
         
         public CounterClientSession GetSession()
         {
-            return new CounterClientSession(client.GetSession(Guid.NewGuid()), cluster);
+            return new(client.GetSession(Guid.NewGuid()), cluster);
         }
 
         public void RefreshDpr()

@@ -28,6 +28,7 @@ namespace DprCounters
         /// <param name="dprFinder"> DprFinder for the cluster </param>
         public CounterServer(string ip, int port, Worker me, string checkpointDir, IDprFinder dprFinder)
         {
+            this.dprFinder = dprFinder;
             // Each DPR worker should be backed by one state object. The state object exposes some methods 
             // for the DPR logic to invoke when necessary, but DPR does not otherwise mediate user interactions
             // with it. 
@@ -70,17 +71,26 @@ namespace DprCounters
             socket.Listen(512);
             while (!termination.IsSet)
             {
-                var conn = socket.Accept();
+                Socket conn;
+                try
+                {
+                    conn = socket.Accept();
+                }
+                catch (SocketException e)
+                {
+                    return;
+                }
+
                 var receivedBytes = 0;
                 // Our protocol first reads a size field of the combined DPR header + messages
                 while (receivedBytes < sizeof(int))
-                    receivedBytes += socket.Receive(inBuffer, receivedBytes, inBuffer.Length - receivedBytes,
+                    receivedBytes += conn.Receive(inBuffer, receivedBytes, inBuffer.Length - receivedBytes,
                         SocketFlags.None);
 
                 var size = BitConverter.ToInt32(inBuffer);
                 // Receive the combined message.
                 while (receivedBytes < size + sizeof(int))
-                    receivedBytes += socket.Receive(inBuffer, receivedBytes, inBuffer.Length - receivedBytes,
+                    receivedBytes += conn.Receive(inBuffer, receivedBytes, inBuffer.Length - receivedBytes,
                         SocketFlags.None);
 
                 // We can obtain the DPR header by computing the size information
@@ -131,6 +141,7 @@ namespace DprCounters
 
         public void StopServer()
         {
+            socket.Dispose();
             termination.Set();
         }
     }
