@@ -11,7 +11,7 @@ namespace FASTER.libdpr
     {
         internal int size = -1;
         internal int stringStart = -1;
-        
+
         public bool ProcessChar(int readHead, byte[] buf)
         {
             if (readHead == 0)
@@ -19,6 +19,7 @@ namespace FASTER.libdpr
                 Debug.Assert((char) buf[readHead] == '$');
                 size = -1;
             }
+
             switch ((char) buf[readHead])
             {
                 case '\n':
@@ -56,7 +57,7 @@ namespace FASTER.libdpr
         internal long worldLine;
         internal List<WorkerVersion> deps;
     }
-    
+
     internal enum CommandParserState
     {
         NONE,
@@ -110,6 +111,7 @@ namespace FASTER.libdpr
         {
             // account for \r\n in the end of string field
             if (size != -1 && readHead == stringStart + size + 1)
+
             {
                 // Fragment has ended
                 currentFragmentStart = readHead + 1;
@@ -183,6 +185,7 @@ namespace FASTER.libdpr
 
                         size = -1;
                     }
+
                     return false;
                 case CommandParserState.ARG_W:
                     if (ProcessRedisBulkString(readHead, buf))
@@ -193,6 +196,7 @@ namespace FASTER.libdpr
                         size = -1;
                         return true;
                     }
+
                     return false;
                 case CommandParserState.ARG_WV:
                     if (ProcessRedisBulkString(readHead, buf))
@@ -214,9 +218,10 @@ namespace FASTER.libdpr
                         {
                             Debug.Assert(false);
                         }
-                        size = -1;
 
+                        size = -1;
                     }
+
                     return false;
                 case CommandParserState.ARG_WL:
                     if (ProcessRedisBulkString(readHead, buf))

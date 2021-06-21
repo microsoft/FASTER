@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
+
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -29,6 +30,7 @@ namespace FASTER.libdpr
         public long SafeVersion(Worker worker)
         {
             if (dprTableSnapshot == null) return 0;
+
             return !dprTableSnapshot.TryGetValue(worker, out var safeVersion) ? 0 : safeVersion;
         }
     }
@@ -68,6 +70,7 @@ namespace FASTER.libdpr
         public long SafeVersion(Worker worker)
         {
             return lastKnownState?.GetCurrentCut()[worker] ?? 0;
+
         }
 
         /// <inheritdoc/>
@@ -106,6 +109,7 @@ namespace FASTER.libdpr
             {
                 dprFinderConn.SendSyncCommand();
                 ProcessRespResponse();
+
                 maxVersion = BitConverter.ToInt64(recvBuffer, parser.stringStart);
                 var newState = new GraphDprFinderBackend.State(recvBuffer, parser.stringStart + sizeof(long));
                 Interlocked.Exchange(ref lastKnownState, newState);

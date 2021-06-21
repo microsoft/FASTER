@@ -6,11 +6,11 @@ using System.Net.Sockets;
 
 namespace FASTER.libdpr
 {
- internal static class MessageUtil
- {
-     private static ThreadLocalObjectPool<byte[]> reusableMessageBuffers =
-         new ThreadLocalObjectPool<byte[]>(() => new byte[BatchInfo.MaxHeaderSize], 1);
-     
+    internal static class MessageUtil
+    {
+        private static ThreadLocalObjectPool<byte[]> reusableMessageBuffers =
+            new ThreadLocalObjectPool<byte[]>(() => new byte[BatchInfo.MaxHeaderSize], 1);
+
         private static unsafe int LongToDecimalString(long a, byte[] buf, int offset)
         {
             var digits = stackalloc byte[20];
@@ -49,7 +49,7 @@ namespace FASTER.libdpr
 
             return negative ? -result : result;
         }
-        
+
         internal static int WriteRedisBulkString(string val, byte[] buf, int offset)
         {
             var head = offset;
@@ -93,7 +93,7 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\n';
             return head - offset;
         }
-     
+
         // TODO(Tianyu): Eliminate ad-hoc serialization code and move this inside WorkerVersion class
         internal static unsafe int WriteRedisBulkString(WorkerVersion val, byte[] buf, int offset)
         {
@@ -118,13 +118,13 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\n';
             return head - offset;
         }
-        
+
         internal static unsafe int WriteRedisBulkString(IEnumerable<WorkerVersion> val, byte[] buf, int offset)
         {
             var head = offset;
             if (head + sizeof(byte) >= buf.Length) return 0;
             buf[head++] = (byte) '$';
-            
+
             // Find size of encoding up front
             var count = val.Count();
             var totalSize = sizeof(int) + count * sizeof(WorkerVersion);
@@ -151,7 +151,7 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\n';
             return head - offset;
         }
-        
+
         internal static int WriteRedisArrayHeader(int numElems, byte[] buf, int offset)
         {
             var head = offset;
@@ -167,7 +167,7 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\n';
             return head - offset;
         }
-        
+
         internal class DprFinderRedisProtocolConnState
         {
             private Socket socket;
@@ -180,7 +180,7 @@ namespace FASTER.libdpr
                 this.socket = socket;
                 this.commandHandler = commandHandler;
             }
-            
+
             private static bool HandleReceiveCompletion(SocketAsyncEventArgs e)
             {
                 var connState = (DprFinderRedisProtocolConnState) e.UserToken;
@@ -194,14 +194,13 @@ namespace FASTER.libdpr
                 connState.bytesRead += e.BytesTransferred;
                 for (; connState.readHead < connState.bytesRead; connState.readHead++)
                 {
-
                     if (connState.parser.ProcessChar(connState.readHead, e.Buffer))
                     {
                         connState.commandHandler(connState.parser.currentCommand, connState.socket);
                         connState.commandStart = connState.readHead + 1;
                     }
                 }
-                
+
                 // TODO(Tianyu): Magic number
                 // If less than some certain number of bytes left in the buffer, shift buffer content to head to free
                 // up some space. Don't want to do this too often. Obviously ok to do if no bytes need to be copied (
@@ -215,6 +214,7 @@ namespace FASTER.libdpr
                     connState.readHead -= connState.commandStart;
                     connState.commandStart = 0;
                 }
+
                 e.SetBuffer(connState.readHead, e.Buffer.Length - connState.readHead);
                 return true;
             }
@@ -246,7 +246,7 @@ namespace FASTER.libdpr
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         }
-        
+
         internal static void SendDeleteWorkerCommand(this Socket socket, Worker worker)
         {
             var buf = reusableMessageBuffers.Checkout();
@@ -268,7 +268,7 @@ namespace FASTER.libdpr
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         }
-        
+
         internal static void SendReportRecoveryCommand(this Socket socket, WorkerVersion recovered,
             long worldLine)
         {
@@ -289,7 +289,7 @@ namespace FASTER.libdpr
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         }
-        
+
         internal static void SendSyncResponse(this Socket socket, long maxVersion, (byte[], int) serializedState)
         {
             var buf = reusableMessageBuffers.Checkout();
@@ -312,7 +312,7 @@ namespace FASTER.libdpr
 
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
-            
+
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         }
@@ -339,10 +339,9 @@ namespace FASTER.libdpr
 
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
-            
+
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         }
-     
     }
 }

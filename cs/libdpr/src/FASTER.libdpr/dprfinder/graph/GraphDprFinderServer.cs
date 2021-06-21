@@ -62,7 +62,7 @@ namespace FASTER.libdpr
                 }
             });
             ioThread.Start();
-
+            
             processThread = new Thread(() =>
             {
                 while (!termination.IsSet)
