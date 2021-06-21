@@ -138,7 +138,8 @@ class FasterKv {
   inline Status Rmw(MC& context, AsyncCallback callback, uint64_t monotonic_serial_num);
 
   template <class DC>
-  inline Status Delete(DC& context, AsyncCallback callback, uint64_t monotonic_serial_num);
+  inline Status Delete(DC& context, AsyncCallback callback, uint64_t monotonic_serial_num,
+                        bool force_tombstone = false);
 
   inline bool CompletePending(bool wait = false);
 
@@ -173,9 +174,9 @@ class FasterKv {
 
  private:
   typedef Record<key_t, value_t> record_t;
-
   typedef PendingContext<key_t> pending_context_t;
 
+ public:
   template <class C>
   inline OperationStatus InternalRead(C& pending_context) const;
 
@@ -188,8 +189,9 @@ class FasterKv {
   inline OperationStatus InternalRetryPendingRmw(async_pending_rmw_context_t& pending_context);
 
   template<class C>
-  inline OperationStatus InternalDelete(C& pending_context);
+  inline OperationStatus InternalDelete(C& pending_context, bool force_tombstone);
 
+ private:
   OperationStatus InternalContinuePendingRead(ExecutionContext& ctx,
       AsyncIOContext& io_context);
   OperationStatus InternalContinuePendingRmw(ExecutionContext& ctx,
@@ -239,9 +241,8 @@ class FasterKv {
   void CompleteIoPendingRequests(ExecutionContext& context);
   void CompleteRetryRequests(ExecutionContext& context);
 
-  void InitializeCheckpointLocks();
-
   /// Checkpoint/recovery methods.
+  void InitializeCheckpointLocks();
   void HandleSpecialPhases();
   bool GlobalMoveToNextState(SystemState current_state);
 
@@ -264,12 +265,14 @@ class FasterKv {
 
   void MarkAllPendingRequests();
 
+  /// Grow Index methods
   inline void HeavyEnter();
   bool CleanHashTableBuckets();
   void SplitHashTableBuckets();
   void AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version,
                     HashBucketEntry entry);
 
+  /// Compaction/Garbage collect methods
   Address LogScanForValidity(Address from, faster_t* temp);
   bool ContainsKeyInMemory(key_t key, Address offset);
 
@@ -636,7 +639,7 @@ inline Status FasterKv<K, V, D>::Rmw(MC& context, AsyncCallback callback,
 template <class K, class V, class D>
 template <class DC>
 inline Status FasterKv<K, V, D>::Delete(DC& context, AsyncCallback callback,
-                                        uint64_t monotonic_serial_num) {
+                                        uint64_t monotonic_serial_num, bool force_tombstone) {
   typedef DC delete_context_t;
   typedef PendingDeleteContext<DC> pending_delete_context_t;
   static_assert(std::is_base_of<value_t, typename delete_context_t::value_t>::value,
@@ -645,7 +648,7 @@ inline Status FasterKv<K, V, D>::Delete(DC& context, AsyncCallback callback,
                 "alignof(value_t) != alignof(typename delete_context_t::value_t)");
 
   pending_delete_context_t pending_context{ context, callback };
-  OperationStatus internal_status = InternalDelete(pending_context);
+  OperationStatus internal_status = InternalDelete(pending_context, force_tombstone);
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
@@ -1198,26 +1201,32 @@ inline OperationStatus FasterKv<K, V, D>::InternalRetryPendingRmw(
 
 template <class K, class V, class D>
 template<class C>
-inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context) {
+inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context, bool force_tombstone) {
   typedef C pending_delete_context_t;
 
   if(thread_ctx().phase != Phase::REST) {
     HeavyEnter();
   }
 
+  Address address;
+  Address head_address = hlog.head_address.load();
+  Address read_only_address = hlog.read_only_address.load();
+  Address begin_address = hlog.begin_address.load();
+  uint64_t latest_record_version = 0;
+
   KeyHash hash = pending_context.get_key_hash();
   HashBucketEntry expected_entry;
   AtomicHashBucketEntry* atomic_entry = const_cast<AtomicHashBucketEntry*>(FindEntry(hash, expected_entry));
   if(!atomic_entry) {
     // no record found
-    return OperationStatus::NOT_FOUND;
+    if (!force_tombstone) {
+      return OperationStatus::NOT_FOUND;
+    } else {
+      goto create_record;
+    }
   }
 
-  Address address = expected_entry.address();
-  Address head_address = hlog.head_address.load();
-  Address read_only_address = hlog.read_only_address.load();
-  Address begin_address = hlog.begin_address.load();
-  uint64_t latest_record_version = 0;
+  address = expected_entry.address();
 
   if(address >= head_address) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
@@ -1227,57 +1236,58 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context) {
     }
   }
 
-  CheckpointLockGuard lock_guard{ checkpoint_locks_, hash };
+  {
+    CheckpointLockGuard lock_guard{ checkpoint_locks_, hash };
+    // NO optimization for most common case
 
-  // NO optimization for most common case
-
-  // Acquire necessary locks.
-  switch (thread_ctx().phase) {
-  case Phase::PREPARE:
-    // Working on old version (v).
-    if(!lock_guard.try_lock_old()) {
-      pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
-      return OperationStatus::CPR_SHIFT_DETECTED;
-    } else if(latest_record_version > thread_ctx().version) {
-      // CPR shift detected: we are in the "PREPARE" phase, and a record has a version later than
-      // what we've seen.
-      pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
-      return OperationStatus::CPR_SHIFT_DETECTED;
-    }
-    break;
-  case Phase::IN_PROGRESS:
-    // All other threads are in phase {PREPARE,IN_PROGRESS,WAIT_PENDING}.
-    if(latest_record_version < thread_ctx().version) {
-      // Will create new record or update existing record to new version (v+1).
-      if(!lock_guard.try_lock_new()) {
+    // Acquire necessary locks.
+    switch (thread_ctx().phase) {
+    case Phase::PREPARE:
+      // Working on old version (v).
+      if(!lock_guard.try_lock_old()) {
         pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
-        return OperationStatus::RETRY_LATER;
-      } else {
-        // Update to new version (v+1) requires RCU.
+        return OperationStatus::CPR_SHIFT_DETECTED;
+      } else if(latest_record_version > thread_ctx().version) {
+        // CPR shift detected: we are in the "PREPARE" phase, and a record has a version later than
+        // what we've seen.
+        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
+        return OperationStatus::CPR_SHIFT_DETECTED;
+      }
+      break;
+    case Phase::IN_PROGRESS:
+      // All other threads are in phase {PREPARE,IN_PROGRESS,WAIT_PENDING}.
+      if(latest_record_version < thread_ctx().version) {
+        // Will create new record or update existing record to new version (v+1).
+        if(!lock_guard.try_lock_new()) {
+          pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
+          return OperationStatus::RETRY_LATER;
+        } else {
+          // Update to new version (v+1) requires RCU.
+          goto create_record;
+        }
+      }
+      break;
+    case Phase::WAIT_PENDING:
+      // All other threads are in phase {IN_PROGRESS,WAIT_PENDING,WAIT_FLUSH}.
+      if(latest_record_version < thread_ctx().version) {
+        if(lock_guard.old_locked()) {
+          pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
+          return OperationStatus::RETRY_LATER;
+        } else {
+          // Update to new version (v+1) requires RCU.
+          goto create_record;
+        }
+      }
+      break;
+    case Phase::WAIT_FLUSH:
+      // All other threads are in phase {WAIT_PENDING,WAIT_FLUSH,PERSISTENCE_CALLBACK}.
+      if(latest_record_version < thread_ctx().version) {
         goto create_record;
       }
+      break;
+    default:
+      break;
     }
-    break;
-  case Phase::WAIT_PENDING:
-    // All other threads are in phase {IN_PROGRESS,WAIT_PENDING,WAIT_FLUSH}.
-    if(latest_record_version < thread_ctx().version) {
-      if(lock_guard.old_locked()) {
-        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
-        return OperationStatus::RETRY_LATER;
-      } else {
-        // Update to new version (v+1) requires RCU.
-        goto create_record;
-      }
-    }
-    break;
-  case Phase::WAIT_FLUSH:
-    // All other threads are in phase {WAIT_PENDING,WAIT_FLUSH,PERSISTENCE_CALLBACK}.
-    if(latest_record_version < thread_ctx().version) {
-      goto create_record;
-    }
-    break;
-  default:
-    break;
   }
 
   // Mutable Region: Update the record in-place
