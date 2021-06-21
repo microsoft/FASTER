@@ -23,7 +23,7 @@ namespace FASTER.client
     /// <typeparam name="Context">Context</typeparam>
     /// <typeparam name="Functions">Functions</typeparam>
     /// <typeparam name="ParameterSerializer">Parameter Serializer</typeparam>
-    public unsafe partial class ClientSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer> : IDisposable
+    public unsafe sealed partial class ClientSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer> : IDisposable
             where Functions : ICallbackFunctions<Key, Value, Input, Output, Context>
             where ParameterSerializer : IClientSerializer<Key, Value, Input, Output>
     {
@@ -190,8 +190,7 @@ namespace FASTER.client
             {
                 int payloadSize = (int)(offset - sendObject.obj.bufferPtr);
 
-                ((BatchHeader*)(sendObject.obj.bufferPtr + sizeof(int)))->NumMessages = numMessages;
-                ((BatchHeader*)(sendObject.obj.bufferPtr + sizeof(int)))->Protocol = wireFormat;
+                ((BatchHeader*)(sendObject.obj.bufferPtr + sizeof(int)))->SetNumMessagesProtocol(numMessages, wireFormat);
                 Interlocked.Increment(ref numPendingBatches);
 
                 // Set packet size in header
@@ -249,10 +248,8 @@ namespace FASTER.client
 
 
         int lastSeqNo = -1;
-        readonly Dictionary<int, (Key, Input, Output, Context)> readRmwPendingContext =
-            new Dictionary<int, (Key, Input, Output, Context)>();
-        readonly Dictionary<int, TaskCompletionSource<(Status, Output)>> readRmwPendingTcs =
-            new Dictionary<int, TaskCompletionSource<(Status, Output)>>();
+        readonly Dictionary<int, (Key, Input, Output, Context)> readRmwPendingContext = new();
+        readonly Dictionary<int, TaskCompletionSource<(Status, Output)>> readRmwPendingTcs = new();
 
         internal void ProcessReplies(byte[] buf, int offset)
         {

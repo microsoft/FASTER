@@ -6,7 +6,7 @@ using FASTER.core;
 namespace FASTER.server
 {
     /// <summary>
-    /// Backend for FasterKV store
+    /// Session provider for FasterKV store
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
@@ -14,7 +14,7 @@ namespace FASTER.server
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Functions"></typeparam>
     /// <typeparam name="ParameterSerializer"></typeparam>
-    public class FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer> : IBackendProvider
+    public sealed class FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer> : ISessionProvider
             where Functions : IFunctions<Key, Value, Input, Output, long>
             where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
@@ -39,7 +39,7 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public ServerSessionBase GetBackend(WireFormat wireFormat, Socket socket)
+        public ServerSessionBase GetSession(WireFormat wireFormat, Socket socket)
         {
             return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(socket, store, functionsGen(wireFormat), serializer, maxSizeSettings);
         }

@@ -8,24 +8,39 @@ using FASTER.common;
 namespace FASTER.server
 {
     /// <summary>
-    /// Interface for server session
+    /// Abstract base class for server session provider
     /// </summary>
-    public interface IServerSession : IDisposable
-    {
-        int TryConsumeMessages(byte[] buf);
-        void AddBytesRead(int bytesRead);
-    }
-
     public abstract class ServerSessionBase : IServerSession
     {
+        /// <summary>
+        /// Socket
+        /// </summary>
         protected readonly Socket socket;
+
+        /// <summary>
+        /// Max size settings
+        /// </summary>
         protected readonly MaxSizeSettings maxSizeSettings;
+
+        /// <summary>
+        /// Response object
+        /// </summary>
+        protected ReusableObject<SeaaBuffer> responseObject;
+
+        /// <summary>
+        /// Bytes read
+        /// </summary>
+        protected int bytesRead;
+
         private readonly NetworkSender messageManager;
         private readonly int serverBufferSize;
         
-        protected ReusableObject<SeaaBuffer> responseObject;
-        protected int bytesRead;
 
+        /// <summary>
+        /// Create new instance
+        /// </summary>
+        /// <param name="socket"></param>
+        /// <param name="maxSizeSettings"></param>
         public ServerSessionBase(Socket socket, MaxSizeSettings maxSizeSettings)
         {
             this.socket = socket;
@@ -35,11 +50,21 @@ namespace FASTER.server
             bytesRead = 0;
         }
 
+        /// <inheritdoc />
         public abstract int TryConsumeMessages(byte[] buf);
 
+        /// <inheritdoc />
+        public void AddBytesRead(int bytesRead) => this.bytesRead += bytesRead;
 
+        /// <summary>
+        /// Get response object
+        /// </summary>
         protected void GetResponseObject() { if (responseObject.obj == null) responseObject = messageManager.GetReusableSeaaBuffer(); }
 
+        /// <summary>
+        /// Send response
+        /// </summary>
+        /// <param name="size"></param>
         protected void SendResponse(int size)
         {
             try
@@ -51,6 +76,12 @@ namespace FASTER.server
                 responseObject.Dispose();
             }
         }
+
+        /// <summary>
+        /// Send response
+        /// </summary>
+        /// <param name="offset"></param>
+        /// <param name="size"></param>
         protected void SendResponse(int offset, int size)
         {
             try
@@ -63,7 +94,6 @@ namespace FASTER.server
             }
         }
 
-        public void AddBytesRead(int bytesRead) => this.bytesRead += bytesRead;
         
         /// <summary>
         /// Dispose
@@ -76,5 +106,4 @@ namespace FASTER.server
             messageManager.Dispose();
         }
     }
-
 }

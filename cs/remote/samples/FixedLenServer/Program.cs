@@ -37,14 +37,15 @@ namespace FixedLenServer
             var store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
-            // We specify FixedLenSerializer as our in-built serializer for blittable (fixed length) types
-            // This provider can be used with compatible clients such as FixedLenClient and FASTER.benchmark
+            // This fixed-length session provider can be used with compatible clients such as FixedLenClient and FASTER.benchmark
+            // Uses FixedLenSerializer as our in-built serializer for blittable (fixed length) types
             var provider = new FasterKVProvider<Key, Value, Input, Output, Functions, FixedLenSerializer<Key, Value, Input, Output>>(store, e => new Functions());
 
             // Create server
             var server = new FasterServer(opts.Address, opts.Port);
 
-            // Register provider as backend provider for WireFormat.DefaultFixedLenKV
+            // Register session provider for WireFormat.DefaultFixedLenKV
+            // You can register multiple session providers with the same server, with different wire protocol specifications
             server.Register(WireFormat.DefaultFixedLenKV, provider);
 
             // Start server

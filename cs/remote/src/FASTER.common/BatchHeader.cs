@@ -25,10 +25,10 @@ namespace FASTER.common
         public int SeqNo;
 
         /// <summary>
-        /// Lower-order 8 bits are protocol type, higher-order 24 bits are num messages.
+        /// Lower-order 8 bits are wire protocol, higher-order 24 bits are num messages.
         /// </summary>
         [FieldOffset(4)]
-        private int numMessagesAndProtocolType;
+        private int numMessagesAndProtocol;
 
         /// <summary>
         /// Number of messages packed in batch
@@ -36,9 +36,9 @@ namespace FASTER.common
         public int NumMessages
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => (int)((uint)numMessagesAndProtocolType >> 8);
+            get => (int)((uint)numMessagesAndProtocol >> 8);
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set { numMessagesAndProtocolType = (value << 8) | (numMessagesAndProtocolType & 0xFF); }
+            set { numMessagesAndProtocol = (value << 8) | (numMessagesAndProtocol & 0xFF); }
         }
         
         /// <summary>
@@ -47,9 +47,20 @@ namespace FASTER.common
         public WireFormat Protocol
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => (WireFormat)(numMessagesAndProtocolType & 0xFF);
+            get => (WireFormat)(numMessagesAndProtocol & 0xFF);
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set { numMessagesAndProtocolType = (numMessagesAndProtocolType & ~0xFF) | ((int)value & 0xFF); }
+            set { numMessagesAndProtocol = (numMessagesAndProtocol & ~0xFF) | ((int)value & 0xFF); }
+        }
+
+        /// <summary>
+        /// Set num messages and wire protocol
+        /// </summary>
+        /// <param name="numMessages"></param>
+        /// <param name="protocol"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetNumMessagesProtocol(int numMessages, WireFormat protocol)
+        {
+            numMessagesAndProtocol = (numMessages << 8) | (int)protocol;
         }
     }
 }

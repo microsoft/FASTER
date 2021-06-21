@@ -20,26 +20,29 @@ namespace FASTER.server
     {
         readonly SocketAsyncEventArgs acceptEventArg;
         readonly Socket servSocket;
-        readonly MaxSizeSettings maxSizeSettings;
-        readonly ConcurrentDictionary<ServerSessionBase, byte> activeSessions;
-        readonly ConcurrentDictionary<WireFormat, IBackendProvider> backendProviders;
+        readonly int networkBufferSize;
+        readonly ConcurrentDictionary<IServerSession, byte> activeSessions;
+        readonly ConcurrentDictionary<WireFormat, ISessionProvider> sessionProviders;
         int activeSessionCount;
         bool disposed;
-        
+
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="address">IP address</param>
         /// <param name="port">Port</param>
-        /// <param name="maxSizeSettings">Max size settings</param>
-        public FasterServer(string address, int port, MaxSizeSettings maxSizeSettings = default)
+        /// <param name="networkBufferSize">Size of network buffer</param>
+        public FasterServer(string address, int port, int networkBufferSize = default)
         {
-            activeSessions = new ConcurrentDictionary<ServerSessionBase, byte>();
-            backendProviders = new ConcurrentDictionary<WireFormat, IBackendProvider>();
+            activeSessions = new ConcurrentDictionary<IServerSession, byte>();
+            sessionProviders = new ConcurrentDictionary<WireFormat, ISessionProvider>();
             activeSessionCount = 0;
             disposed = false;
 
-            this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
+            this.networkBufferSize = networkBufferSize;
+            if (networkBufferSize == default)
+                this.networkBufferSize = BufferSizeUtils.ClientBufferSize(new MaxSizeSettings());
+
             var ip = IPAddress.Parse(address);
             var endPoint = new IPEndPoint(ip, port);
             servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
@@ -50,13 +53,13 @@ namespace FASTER.server
         }
 
         /// <summary>
-        /// Register backend provider for specified wire format with the server
+        /// Register session provider for specified wire format with the server
         /// </summary>
         /// <param name="wireFormat">Wire format</param>
-        /// <param name="backendProvider">Backend provider</param>
-        public void Register(WireFormat wireFormat, IBackendProvider backendProvider)
+        /// <param name="backendProvider">Session provider</param>
+        public void Register(WireFormat wireFormat, ISessionProvider backendProvider)
         {
-            if (!backendProviders.TryAdd(wireFormat, backendProvider))
+            if (!sessionProviders.TryAdd(wireFormat, backendProvider))
                 throw new FasterException($"Wire format {wireFormat} already registered");
         }
 
@@ -65,8 +68,8 @@ namespace FASTER.server
         /// </summary>
         /// <param name="wireFormat"></param>
         /// <param name="provider"></param>
-        public void Unregister(WireFormat wireFormat, out IBackendProvider provider)
-            => backendProviders.TryRemove(wireFormat, out provider);
+        public void Unregister(WireFormat wireFormat, out ISessionProvider provider)
+            => sessionProviders.TryRemove(wireFormat, out provider);
 
         /// <summary>
         /// Start server
@@ -97,14 +100,12 @@ namespace FASTER.server
 
             // Ok to create new event args on accept because we assume a connection to be long-running
             var receiveEventArgs = new SocketAsyncEventArgs();
-            var bufferSize = BufferSizeUtils.ClientBufferSize(maxSizeSettings);
-            var buffer = new byte[bufferSize];
-            receiveEventArgs.SetBuffer(buffer, 0, bufferSize);
+            var buffer = new byte[networkBufferSize];
+            receiveEventArgs.SetBuffer(buffer, 0, networkBufferSize);
 
             var args = new ConnectionArgs
             {
-                socket = e.AcceptSocket,
-                maxSizeSettings = maxSizeSettings,
+                socket = e.AcceptSocket
             };
 
             receiveEventArgs.UserToken = args;
@@ -189,12 +190,12 @@ namespace FASTER.server
                 protocol = WireFormat.ASCII;
             }
 
-            if (!backendProviders.TryGetValue(protocol, out var provider))
+            if (!sessionProviders.TryGetValue(protocol, out var provider))
             {
                 throw new FasterException($"Unsupported wire format {protocol}");
             }
 
-            connArgs.session = provider.GetBackend(protocol, connArgs.socket);
+            connArgs.session = provider.GetSession(protocol, connArgs.socket);
 
             if (activeSessions.TryAdd(connArgs.session, default))
                 Interlocked.Increment(ref activeSessionCount);

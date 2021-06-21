@@ -12,7 +12,7 @@ namespace FASTER.client
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    public class FasterKVClient<Key, Value> : IDisposable
+    public sealed class FasterKVClient<Key, Value> : IDisposable
     {
         internal readonly string address;
         internal readonly int port;
@@ -64,76 +64,51 @@ namespace FASTER.client
         /// <summary>
         /// Create new session
         /// </summary>
-        /// <typeparam name="T">Type of memory (unmanaged)</typeparam>
-        /// <param name="store">Client instance of store wrapper</param>
-        /// <param name="maxSizeSettings">Settings for max sizes</param>
-        /// <param name="memoryPool">Memory pool</param>
-        /// <returns>Instance of client session</returns>
-        public static ClientSession<ReadOnlyMemory<T>, ReadOnlyMemory<T>, ReadOnlyMemory<T>, (IMemoryOwner<T>, int), byte, MemoryFunctionsBase<T>, MemoryParameterSerializer<T>> NewSession<T>(this FasterKVClient<ReadOnlyMemory<T>, ReadOnlyMemory<T>> store, MaxSizeSettings maxSizeSettings = default, MemoryPool<T> memoryPool = default)
+        public static ClientSession<ReadOnlyMemory<T>, ReadOnlyMemory<T>, ReadOnlyMemory<T>, (IMemoryOwner<T>, int), byte, MemoryFunctionsBase<T>, MemoryParameterSerializer<T>> NewSession<T>(this FasterKVClient<ReadOnlyMemory<T>, ReadOnlyMemory<T>> store, WireFormat wireFormat = WireFormat.DefaultVarLenKV, MaxSizeSettings maxSizeSettings = default, MemoryPool<T> memoryPool = default)
             where T : unmanaged
         {
             return new ClientSession<ReadOnlyMemory<T>, ReadOnlyMemory<T>, ReadOnlyMemory<T>, (IMemoryOwner<T>, int), byte, MemoryFunctionsBase<T>, MemoryParameterSerializer<T>>
-                (store.address, store.port, new MemoryFunctionsBase<T>(), WireFormat.DefaultVarLenKV, new MemoryParameterSerializer<T>(memoryPool), maxSizeSettings);
-        }
-
-        /// <summary>
-        /// Create session with remote FasterKV server (establishes network connection)
-        /// </summary>
-        /// <typeparam name="Key">Key</typeparam>
-        /// <typeparam name="Value">Value</typeparam>
-        /// <returns></returns>
-        public static ClientSession<Key, Value, Value, Value, byte, CallbackFunctionsBase<Key, Value, Value, Value, byte>, FixedLenSerializer<Key, Value, Value, Value>> NewSession<Key, Value>(this FasterKVClient<Key, Value> store, MaxSizeSettings maxSizeSettings = default)
-            where Key : unmanaged
-            where Value : unmanaged
-        {
-            return new ClientSession<Key, Value, Value, Value, byte, CallbackFunctionsBase<Key, Value, Value, Value, byte>, FixedLenSerializer<Key, Value, Value, Value>>
-                (store.address, store.port, new CallbackFunctionsBase<Key, Value, Value, Value, byte>(), WireFormat.DefaultFixedLenKV, new FixedLenSerializer<Key, Value, Value, Value>(), maxSizeSettings);
+                (store.address, store.port, new MemoryFunctionsBase<T>(), wireFormat, new MemoryParameterSerializer<T>(memoryPool), maxSizeSettings);
         }
 
         /// <summary>
         /// Create new session
         /// </summary>
-        /// <typeparam name="T">Type of memory (unmanaged)</typeparam>
-        /// <typeparam name="Functions">Type of functions</typeparam>
-        /// <param name="store">Client instance of store wrapper</param>
-        /// <param name="functions">Functions</param>
-        /// <param name="maxSizeSettings">Settings for max sizes</param>
-        /// <param name="memoryPool">Memory pool</param>
-        /// <returns>Instance of client session</returns>
-        public static ClientSession<ReadOnlyMemory<T>, ReadOnlyMemory<T>, ReadOnlyMemory<T>, (IMemoryOwner<T>, int), byte, Functions, MemoryParameterSerializer<T>> NewSession<T, Functions>(this FasterKVClient<ReadOnlyMemory<T>, ReadOnlyMemory<T>> store, Functions functions, MaxSizeSettings maxSizeSettings = default, MemoryPool<T> memoryPool = default)
+        public static ClientSession<Key, Value, Value, Value, byte, CallbackFunctionsBase<Key, Value, Value, Value, byte>, FixedLenSerializer<Key, Value, Value, Value>> NewSession<Key, Value>(this FasterKVClient<Key, Value> store, WireFormat wireFormat = WireFormat.DefaultFixedLenKV, MaxSizeSettings maxSizeSettings = default)
+            where Key : unmanaged
+            where Value : unmanaged
+        {
+            return new ClientSession<Key, Value, Value, Value, byte, CallbackFunctionsBase<Key, Value, Value, Value, byte>, FixedLenSerializer<Key, Value, Value, Value>>
+                (store.address, store.port, new CallbackFunctionsBase<Key, Value, Value, Value, byte>(), wireFormat, new FixedLenSerializer<Key, Value, Value, Value>(), maxSizeSettings);
+        }
+
+        /// <summary>
+        /// Create new session
+        /// </summary>
+        public static ClientSession<ReadOnlyMemory<T>, ReadOnlyMemory<T>, ReadOnlyMemory<T>, (IMemoryOwner<T>, int), byte, Functions, MemoryParameterSerializer<T>> NewSession<T, Functions>(this FasterKVClient<ReadOnlyMemory<T>, ReadOnlyMemory<T>> store, Functions functions, WireFormat wireFormat = WireFormat.DefaultVarLenKV, MaxSizeSettings maxSizeSettings = default, MemoryPool<T> memoryPool = default)
             where T : unmanaged
             where Functions : MemoryFunctionsBase<T>
         {
             return new ClientSession<ReadOnlyMemory<T>, ReadOnlyMemory<T>, ReadOnlyMemory<T>, (IMemoryOwner<T>, int), byte, Functions, MemoryParameterSerializer<T>>
-                (store.address, store.port, functions, WireFormat.DefaultVarLenKV, new MemoryParameterSerializer<T>(memoryPool), maxSizeSettings);
+                (store.address, store.port, functions, wireFormat, new MemoryParameterSerializer<T>(memoryPool), maxSizeSettings);
         }
 
         /// <summary>
-        /// Create session with remote FasterKV server (establishes network connection)
+        /// Create new session
         /// </summary>
-        /// <typeparam name="Key"></typeparam>
-        /// <typeparam name="Value"></typeparam>
-        /// <typeparam name="Functions"></typeparam>
-        /// <returns></returns>
-        public static ClientSession<Key, Value, Value, Value, byte, Functions, FixedLenSerializer<Key, Value, Value, Value>> NewSession<Key, Value, Functions>(this FasterKVClient<Key, Value> store, Functions functions, MaxSizeSettings maxSizeSettings = default)
+        public static ClientSession<Key, Value, Value, Value, byte, Functions, FixedLenSerializer<Key, Value, Value, Value>> NewSession<Key, Value, Functions>(this FasterKVClient<Key, Value> store, Functions functions, WireFormat wireFormat = WireFormat.DefaultFixedLenKV, MaxSizeSettings maxSizeSettings = default)
             where Key : unmanaged
             where Value : unmanaged
             where Functions : CallbackFunctionsBase<Key, Value, Value, Value, byte>
         {
             return new ClientSession<Key, Value, Value, Value, byte, Functions, FixedLenSerializer<Key, Value, Value, Value>>
-                (store.address, store.port, functions, WireFormat.DefaultFixedLenKV, new FixedLenSerializer<Key, Value, Value, Value>(), maxSizeSettings);
+                (store.address, store.port, functions, wireFormat, new FixedLenSerializer<Key, Value, Value, Value>(), maxSizeSettings);
         }
 
         /// <summary>
-        /// Create session with remote FasterKV server (establishes network connection)
+        /// Create new session
         /// </summary>
-        /// <typeparam name="Key"></typeparam>
-        /// <typeparam name="Value"></typeparam>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Functions"></typeparam>
-        /// <returns></returns>
-        public static ClientSession<Key, Value, Input, Output, byte, Functions, FixedLenSerializer<Key, Value, Input, Output>> NewSession<Key, Value, Input, Output, Functions>(this FasterKVClient<Key, Value> store, Functions functions, MaxSizeSettings maxSizeSettings = default)
+        public static ClientSession<Key, Value, Input, Output, byte, Functions, FixedLenSerializer<Key, Value, Input, Output>> NewSession<Key, Value, Input, Output, Functions>(this FasterKVClient<Key, Value> store, Functions functions, WireFormat wireFormat = WireFormat.DefaultFixedLenKV, MaxSizeSettings maxSizeSettings = default)
             where Key : unmanaged
             where Value : unmanaged
             where Input : unmanaged
@@ -141,7 +116,7 @@ namespace FASTER.client
             where Functions : CallbackFunctionsBase<Key, Value, Input, Output, byte>
         {
             return new ClientSession<Key, Value, Input, Output, byte, Functions, FixedLenSerializer<Key, Value, Input, Output>>
-                (store.address, store.port, functions, WireFormat.DefaultFixedLenKV, new FixedLenSerializer<Key, Value, Input, Output>(), maxSizeSettings);
+                (store.address, store.port, functions, wireFormat, new FixedLenSerializer<Key, Value, Input, Output>(), maxSizeSettings);
         }
     }
 }

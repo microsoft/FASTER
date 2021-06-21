@@ -37,13 +37,14 @@ namespace VarLenServer
             var store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
-            // This variable-length provider can be used with compatible clients such as VarLenClient
+            // This variable-length session provider can be used with compatible clients such as VarLenClient
             var provider = new FasterKVProvider<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>(store, wp => new SpanByteFunctionsForServer<long>(wp), new SpanByteSerializer());
 
             // Create server
             var server = new FasterServer(opts.Address, opts.Port);
 
             // Register provider as backend provider for WireFormat.DefaultFixedLenKV
+            // You can register multiple providers with the same server, with different wire protocol specifications
             server.Register(WireFormat.DefaultVarLenKV, provider);
 
             // Start server
