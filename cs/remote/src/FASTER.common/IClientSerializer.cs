@@ -50,7 +50,7 @@ namespace FASTER.common
         /// Read key from source memory location, increment pointer by amount read
         /// </summary>
         /// <param name="src">Source memory location</param>
-        /// <returns>Output</returns>
+        /// <returns>Key</returns>
         Key ReadKey(ref byte* src);
 
     }

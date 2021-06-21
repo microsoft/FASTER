@@ -103,7 +103,6 @@ namespace FASTER.server
             return true;
         }
 
-
         private unsafe void ProcessBatch(byte[] buf, int offset)
         {
             GetResponseObject();
@@ -228,21 +227,17 @@ namespace FASTER.server
             }
         }
 
-        public void Publish(int sid, Status status, ref Output output, ref byte* keyPtr, int keyLength, bool prefix)
+        public void Publish(int sid, Status status, ref Output output, ref Key key, bool prefix)
         {
             MessageType message = MessageType.SubscribeKV;
             if (prefix)
                 message = MessageType.PSubscribeKV;
-
-            //ref Key key = ref serializer.ReadKeyByRef(ref keyPtr);
 
             GetResponseObject();
 
             byte* d = responseObject.obj.bufferPtr;
             var dend = d + responseObject.obj.buffer.Length;
             dcurr = d + sizeof(int); // reserve space for size
-            var doutput = dcurr + 6;
-            bool outputCopy = false;
 
             dcurr += BatchHeader.Size;
             start = 0;
@@ -251,8 +246,6 @@ namespace FASTER.server
             if ((int)(dend - dcurr) < 6 + maxSizeSettings.MaxOutputSize)
                 SendAndReset(ref d, ref dend);
 
-            //long ctx = ((long)message << 32) | (long)sid;
-            //var status = subscribeKVSession.Read(ref key, ref input, ref serializer.AsRefOutput(dcurr + 6, (int)(dend - dcurr)), ctx, 0);
             msgnum++;
 
             if (status != Status.PENDING)
@@ -261,11 +254,8 @@ namespace FASTER.server
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                 Write(sid, ref dcurr, (int)(dend - dcurr));
-                if (prefix) {
-                    Buffer.MemoryCopy(keyPtr, dcurr, (int)(dend - dcurr), keyLength);
-                    dcurr += keyLength;
-                }
-                //serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
+                if (prefix)
+                    serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
                 serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
 
                 if (status == Status.OK)

@@ -55,6 +55,14 @@ namespace FASTER.client
         }
 
         /// <inheritdoc />
+        public Key ReadKey(ref byte* src)
+        {
+            var _src = src;
+            src += Unsafe.SizeOf<Key>();
+            return Unsafe.AsRef<Key>(_src);
+        }
+
+        /// <inheritdoc />
         public Output ReadOutput(ref byte* src)
         {
             var _src = src;
@@ -83,11 +91,6 @@ namespace FASTER.client
                 return false;
             }
             return true;
-        }
-
-        public Key ReadKey(ref byte* src)
-        {
-            throw new NotImplementedException();
         }
     }
 }

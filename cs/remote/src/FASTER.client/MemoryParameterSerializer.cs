@@ -26,9 +26,15 @@ namespace FASTER.client
             this.memoryPool = memoryPool ?? MemoryPool<T>.Shared;
         }
 
+        /// <inheritdoc />
         public ReadOnlyMemory<T> ReadKey(ref byte* src)
         {
-            throw new NotImplementedException();
+            var len = (*(int*)src) / sizeof(T);
+            var mem = memoryPool.Rent(len);
+            new ReadOnlySpan<byte>(src + sizeof(int), (*(int*)src)).CopyTo(
+               MemoryMarshal.Cast<T, byte>(mem.Memory.Span));
+            src += sizeof(int) + (*(int*)src);
+            return (mem.Memory);
         }
 
         /// <inheritdoc />
