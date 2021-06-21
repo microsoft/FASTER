@@ -303,6 +303,7 @@ namespace FASTER.core
                 throw new FasterException("Can compact only until Log.SafeReadOnlyAddress");
             var originalUntilAddress = untilAddress;
 
+            // TODO: preserve recordInfo
             var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
             using var fhtSession = fht.For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>();
 
@@ -374,8 +375,12 @@ namespace FASTER.core
                             // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
                             continue;
                         }
-                        
-                        fhtSession.Upsert(ref iter3.GetKey(), ref iter3.GetValue(), default, 0);
+                        // Use the last logical address of the on-disk region as sentinel to force TryCopyToTail
+                        // to fail if key no longer maps to on-disk record.
+                        // As mentioned previously, if a record enters tail and escapes to disk before TryCopyToTail,
+                        // compaction may not capture it. This case escaped record may be replaced with copied record.
+                        long sentinelLogicalAddress = fht.hlog.HeadAddress - 1;
+                        fhtSession.TryCopyToTail(ref iter3.GetKey(), ref iter3.GetValue(), ref recordInfo, sentinelLogicalAddress);
                     }
                 }
             }

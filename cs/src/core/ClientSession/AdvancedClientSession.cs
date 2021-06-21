@@ -668,7 +668,7 @@ namespace FASTER.core
         /// Experimental feature
         /// Checks whether specified record is present in memory
         /// (between HeadAddress and tail, or between fromAddress
-        /// and tail)
+        /// and tail), including tombstones.
         /// </summary>
         /// <param name="key">Key of the record.</param>
         /// <param name="logicalAddress">Logical address of record, if found</param>

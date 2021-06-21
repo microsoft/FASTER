@@ -628,7 +628,7 @@ namespace FASTER.core
         /// Experimental feature
         /// Checks whether specified record is present in memory
         /// (between HeadAddress and tail, or between fromAddress
-        /// and tail)
+        /// and tail), including tombstones.
         /// </summary>
         /// <param name="key">Key of the record.</param>
         /// <param name="logicalAddress">Logical address of record, if found</param>
@@ -853,6 +853,27 @@ namespace FASTER.core
             if (!SupportAsync)
                 throw new FasterException("Do not perform compaction using a threadAffinitized session");
             return fht.Log.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, untilAddress, shiftBeginAddress);
+        }
+
+        /// <summary>
+        /// Try to insert key, value, and the record header only if current logical address matches.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="recordInfo"></param>
+        /// <param name="foundLogicalAddress"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void TryCopyToTail(ref Key key, ref Value desiredValue, ref RecordInfo recordInfo, long foundLogicalAddress)
+        {
+            if (SupportAsync) UnsafeResumeThread();
+            try
+            {
+                fht.InternalTryCopyToTail(ref key, ref desiredValue, ref recordInfo, foundLogicalAddress, FasterSession, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
         }
 
         /// <summary>
