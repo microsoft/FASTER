@@ -425,6 +425,7 @@ namespace FASTER.client
                                 else if (status == Status.NOTFOUND)
                                 {
                                     readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item1 = serializer.ReadKey(ref src);
                                     functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, Status.NOTFOUND);
                                 }
                                 else if (status == Status.PENDING)

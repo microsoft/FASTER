@@ -275,7 +275,7 @@ namespace FASTER.server
 
             if (publishQueue != null && subscriptions.ContainsKey(keyBytes))
                 publishQueue.Enqueue(keyBytes);
-            else if (prefixPublishQueue != null)
+            if (prefixPublishQueue != null)
                 prefixPublishQueue.Enqueue(keyBytes);
         }
     }
