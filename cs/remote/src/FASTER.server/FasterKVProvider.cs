@@ -39,7 +39,7 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public ServerSessionBase GetSession(WireFormat wireFormat, Socket socket)
+        public IServerSession GetSession(WireFormat wireFormat, Socket socket)
         {
             return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(socket, store, functionsGen(wireFormat), serializer, maxSizeSettings);
         }

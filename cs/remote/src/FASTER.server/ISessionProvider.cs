@@ -16,6 +16,6 @@ namespace FASTER.server
         /// <param name="wireFormat">Wire format</param>
         /// <param name="socket">Socket connection</param>
         /// <returns>Server session</returns>
-        ServerSessionBase GetSession(WireFormat wireFormat, Socket socket);
+        IServerSession GetSession(WireFormat wireFormat, Socket socket);
     }
 }
