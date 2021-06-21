@@ -1,14 +1,15 @@
-﻿using FASTER.core;
-using FASTER.server;
-using System;
+﻿using System;
 using System.IO;
+using FASTER.core;
+using FASTER.server;
+using FASTER.common;
 
 namespace FASTER.remote.test
 {
     class VarLenServer : IDisposable
     {
         readonly string folderName;
-        readonly FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer> server;
+        readonly FasterServer server;
         readonly FasterKV<SpanByte, SpanByte> store;
 
         public VarLenServer(string folderName, string address = "127.0.0.1", int port = 33278)
@@ -19,13 +20,11 @@ namespace FASTER.remote.test
             // We use blittable structs Key and Value to construct a costomized server for fixed-length types
             store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
 
-            var provider =
-                new FasterKVBackendProvider<SpanByte, SpanByte, SpanByteFunctionsForServer<long>, SpanByteSerializer>(
-                    store, wp => new SpanByteFunctionsForServer<long>(wp), new SpanByteSerializer());
-            // We specify FixedLenSerializer as our in-built serializer for blittable (fixed length) types
-            // This server can be used with compatible clients such as FixedLenClient and FASTER.benchmark
-            server = server = new FasterKVServer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>
-                (provider, address, port);
+            // Create session provider for VarLen
+            var provider = new FasterKVProvider<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>(store, wp => new SpanByteFunctionsForServer<long>(wp), new SpanByteSerializer());
+
+            server = new FasterServer(address, port);
+            server.Register(WireFormat.DefaultVarLenKV, provider);
             server.Start();
         }
 
@@ -36,7 +35,7 @@ namespace FASTER.remote.test
             new DirectoryInfo(folderName).Delete(true);
         }
 
-        private void GetSettings(string LogDir, out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
+        private static void GetSettings(string LogDir, out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
         {
             logSettings = new LogSettings { PreallocateLog = false };
 
