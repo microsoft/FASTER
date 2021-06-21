@@ -1,8 +1,8 @@
 ﻿using FASTER.core;
 using FASTER.server;
+using FASTER.common;
 using System;
 using System.IO;
-using System.Security.Cryptography;
 
 namespace FASTER.remote.test
 {
@@ -11,7 +11,7 @@ namespace FASTER.remote.test
         where Value : unmanaged
     {
         readonly string folderName;
-        readonly FasterKVServer<Key, Value, Value, Value, FixedLenServerFunctions<Key, Value>, FixedLenSerializer<Key, Value, Value, Value>> server;
+        readonly FasterServer server;
         readonly FasterKV<Key, Value> store;
 
         public FixedLenServer(string folderName, Func<Value, Value, Value> merger, string address = "127.0.0.1", int port = 33278)
@@ -22,14 +22,11 @@ namespace FASTER.remote.test
             // We use blittable structs Key and Value to construct a costomized server for fixed-length types
             store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
 
-            var provider =
-                new FasterKVBackendProvider<Key, Value, FixedLenServerFunctions<Key, Value>,
-                    FixedLenSerializer<Key, Value, Value, Value>>(
-                    store, e => new FixedLenServerFunctions<Key, Value>(merger));
-            // We specify FixedLenSerializer as our in-built serializer for blittable (fixed length) types
-            // This server can be used with compatible clients such as FixedLenClient and FASTER.benchmark
-            server = new FasterKVServer<Key, Value, Value, Value, FixedLenServerFunctions<Key, Value>, FixedLenSerializer<Key, Value, Value, Value>>
-                (provider, address, port);
+            // Create session provider for FixedLen
+            var provider = new FasterKVProvider<Key, Value, Value, Value, FixedLenServerFunctions<Key, Value>, FixedLenSerializer<Key, Value, Value, Value>>(store, e => new FixedLenServerFunctions<Key, Value>(merger));
+            
+            server = new FasterServer(address, port);
+            server.Register(WireFormat.DefaultFixedLenKV, provider);
             server.Start();
         }
 
@@ -40,7 +37,7 @@ namespace FASTER.remote.test
             new DirectoryInfo(folderName).Delete(true);
         }
 
-        private void GetSettings(string LogDir, out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
+        private static void GetSettings(string LogDir, out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
         {
             logSettings = new LogSettings { PreallocateLog = false };
 
