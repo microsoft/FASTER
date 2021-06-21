@@ -43,6 +43,10 @@ using namespace std::chrono_literals;
 namespace FASTER {
 namespace core {
 
+// Forward class declaration
+template<class K, class V, class D>
+class FasterKvHC;
+
 class alignas(Constants::kCacheLineBytes) ThreadContext {
  public:
   ThreadContext()
@@ -79,6 +83,7 @@ template <class K, class V, class D>
 class FasterKv {
  public:
   typedef FasterKv<K, V, D> faster_t;
+  friend class FasterKvHC<K, V, D>;
 
   /// Keys and values stored in this key-value store.
   typedef K key_t;
@@ -122,7 +127,7 @@ class FasterKv {
 
  public:
   /// Thread-related operations
-  Guid StartSession();
+  Guid StartSession(Guid guid = Guid());
   uint64_t ContinueSession(const Guid& guid);
   void StopSession();
   void Refresh();
@@ -332,12 +337,15 @@ class FasterKv {
 
 // Implementations.
 template <class K, class V, class D>
-inline Guid FasterKv<K, V, D>::StartSession() {
+inline Guid FasterKv<K, V, D>::StartSession(Guid guid) {
   SystemState state = system_state_.load();
   if(state.phase != Phase::REST) {
     throw std::runtime_error{ "Can acquire only in REST phase!" };
   }
-  thread_ctx().Initialize(state.phase, state.version, Guid::Create(), 0);
+  if (Guid::IsNull(guid)) {
+    guid = Guid::Create();
+  }
+  thread_ctx().Initialize(state.phase, state.version, guid, 0);
   Refresh();
   return thread_ctx().guid;
 }
