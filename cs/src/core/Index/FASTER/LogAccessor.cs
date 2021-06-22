@@ -302,7 +302,7 @@ namespace FASTER.core
             if (untilAddress > fht.Log.SafeReadOnlyAddress)
                 throw new FasterException("Can compact only until Log.SafeReadOnlyAddress");
             var originalUntilAddress = untilAddress;
-            var lastScannedAddress = untilAddress; // the logical address of the last scanned record during compact, passed to TryCopyToTail
+            long lastScannedAddress = default; // the logical address of the last scanned record during compact, passed to TryCopyToTail
 
             var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
             using var fhtSession = fht.For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>();
@@ -332,7 +332,7 @@ namespace FASTER.core
                         else
                         {
                             tempKvSession.Upsert(ref key, ref value, default, 0);
-                            // below is for keeping information in RecordInfo, if we need to extend.
+                            // below is to get and preserve information in RecordInfo, if we need.
                             /*tempKvSession.ContainsKeyInMemory(ref key, out long logicalAddress);
                             long physicalAddress = tempKv.hlog.GetPhysicalAddress(logicalAddress);
                             ref var tempRecordInfo = ref tempKv.hlog.GetInfo(physicalAddress);

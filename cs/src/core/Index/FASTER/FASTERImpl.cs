@@ -191,7 +191,6 @@ namespace FASTER.core
                     if (CopyReadsToTail == CopyReadsToTail.FromReadOnly)
                     {
                         var container = hlog.GetValueContainer(ref hlog.GetValue(physicalAddress));
-                        pendingContext.logicalAddress = logicalAddress; // set addr early to pass into InternalReadCopyToTail
                         InternalTryCopyToTail(ref key, ref container.Get(), ref pendingContext.recordInfo, logicalAddress, fasterSession, sessionCtx);
                         container.Dispose();
                     }
@@ -1369,7 +1368,7 @@ namespace FASTER.core
             long logicalAddress = pendingContext.entry.Address;
             ref RecordInfo oldRecordInfo = ref hlog.GetInfoFromBytePointer(physicalAddress);
             
-            InternalTryCopyToTail(ref key, ref hlog.GetContextRecordValue(ref request), ref oldRecordInfo, logicalAddress, fasterSession, currentCtx);
+            InternalTryCopyToTail(opCtx, ref key, ref hlog.GetContextRecordValue(ref request), ref oldRecordInfo, logicalAddress, fasterSession, currentCtx);
         }
 
         /// <summary>
@@ -1810,6 +1809,10 @@ namespace FASTER.core
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
         /// <typeparam name="FasterSession"></typeparam>
+        /// <param name="opCtx">
+        /// The thread(or session) context to execute operation in.
+        /// It's different from currentCtx only when the function is used in InternalContinuePendingReadCopyToTail
+        /// </param>
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <param name="recordInfo"></param>
@@ -1821,6 +1824,7 @@ namespace FASTER.core
         /// <param name="currentCtx"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalTryCopyToTail<Input, Output, Context, FasterSession>(
+                                    FasterExecutionContext<Input, Output, Context> opCtx,
                                     ref Key key, ref Value value,
                                     ref RecordInfo recordInfo,
                                     long foundLogicalAddress,
@@ -1874,7 +1878,7 @@ namespace FASTER.core
             {
                 BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
-                RecordInfo.WriteInfo(ref readcache.GetInfo(newPhysicalAddress), currentCtx.version,
+                RecordInfo.WriteInfo(ref readcache.GetInfo(newPhysicalAddress), opCtx.version,
                                     tombstone: false, invalidBit: false,
                                     entry.Address);
                 readcache.Serialize(ref key, newPhysicalAddress);
@@ -1886,7 +1890,7 @@ namespace FASTER.core
             {
                 BlockAllocate(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), currentCtx.version,
+                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
                                tombstone: false, invalidBit: false,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
@@ -1915,10 +1919,22 @@ namespace FASTER.core
             }
             #endregion
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void InternalTryCopyToTail<Input, Output, Context, FasterSession>(
+                                    ref Key key, ref Value value,
+                                    ref RecordInfo recordInfo,
+                                    long foundLogicalAddress,
+                                    FasterSession fasterSession,
+                                    FasterExecutionContext<Input, Output, Context> currentCtx)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            InternalTryCopyToTail(currentCtx, ref key, ref value, ref recordInfo, foundLogicalAddress, fasterSession, currentCtx);
+        }
         #endregion
 
-        #region Split Index
-        private void SplitBuckets(long hash)
+            #region Split Index
+            private void SplitBuckets(long hash)
         {
             long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;
             int offset = (int)(masked_bucket_index >> Constants.kSizeofChunkBits);

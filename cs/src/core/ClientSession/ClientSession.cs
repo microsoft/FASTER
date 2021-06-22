@@ -856,7 +856,8 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Try to insert key, value, and the record header only if current logical address matches.
+        /// Try to insert key and value with the record info preserved.
+        /// Succeed only if logical address in current entry <= foundLogicalAddress.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="desiredValue"></param>
