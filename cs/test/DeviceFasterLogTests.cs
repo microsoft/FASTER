@@ -26,10 +26,10 @@ namespace FASTER.test
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
             {
-                var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureMethodTestContainer}", "checkpoints", "fasterlog.log", deleteOnClose: true);
+                var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "fasterlog.log", deleteOnClose: true);
                 var checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureMethodTestContainer}/checkpoints"));
+                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
                 await FasterLogTest1(logChecksum, device, checkpointManager, iteratorType);
                 device.Dispose();
                 checkpointManager.PurgeAll();
@@ -52,11 +52,11 @@ namespace FASTER.test
                 var mycloudBlobDir = blobContainer.GetDirectoryReference(@"BlobManager/MyLeaseTest1");
 
                 var blobMgr = new DefaultBlobManager(true, mycloudBlobDir);
-                var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureMethodTestContainer}", "checkpoints", "fasterlogLease.log", deleteOnClose: true, underLease: true, blobManager: blobMgr);
+                var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "fasterlogLease.log", deleteOnClose: true, underLease: true, blobManager: blobMgr);
 
                 var checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureMethodTestContainer}/checkpoints"));
+                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
                 await FasterLogTest1(logChecksum, device, checkpointManager, iteratorType);
                 device.Dispose();
                 checkpointManager.PurgeAll();

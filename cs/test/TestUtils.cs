@@ -43,14 +43,25 @@ namespace FASTER.test
             // Make this all under one root folder named {prefix}, which is the base namespace name. All UT namespaces using this must start with this prefix.
             const string prefix = "FASTER.test";
             Debug.Assert(TestContext.CurrentContext.Test.ClassName.StartsWith($"{prefix}."));
-            return $"{prefix}{(forAzure ? '-' : '/')}{TestContext.CurrentContext.Test.ClassName.Substring(prefix.Length + 1)}";
+            var suffix = TestContext.CurrentContext.Test.ClassName.Substring(prefix.Length + 1);
+            return forAzure ? suffix : $"{prefix}/{suffix}";
         }
 
         internal static string ClassTestDir => Path.Combine(TestContext.CurrentContext.TestDirectory, ConvertedClassName());
 
         internal static string MethodTestDir => Path.Combine(ClassTestDir, TestContext.CurrentContext.Test.MethodName);
 
-        internal static string AzureMethodTestContainer => $"{ConvertedClassName(forAzure: true)}-{TestContext.CurrentContext.Test.MethodName}".Replace('.', '-').ToLower();
+        internal static string AzureTestContainer
+        {
+            get
+            {
+                var container = ConvertedClassName(forAzure: true).Replace('.', '-').ToLower();
+                Microsoft.Azure.Storage.NameValidator.ValidateContainerName(container);
+                return container;
+            }
+        }
+
+        internal static string AzureTestDirectory => TestContext.CurrentContext.Test.MethodName;
 
         internal const string AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
     }

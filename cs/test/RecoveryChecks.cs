@@ -484,7 +484,7 @@ namespace FASTER.test.recovery
                 {
                     checkpointManager = new DeviceLogCommitCheckpointManager(
                         new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                        new DefaultCheckpointNamingScheme($"{TestUtils.AzureMethodTestContainer}/checkpoints"));
+                        new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
                 }
                 else
                     return;

@@ -56,7 +56,7 @@ namespace FASTER.test.recovery.sumstore.simple
             {
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureMethodTestContainer}/checkpoints"));
+                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
                 await SimpleRecoveryTest1_Worker(checkpointType, isAsync);
                 checkpointManager.PurgeAll();
             }
@@ -68,7 +68,7 @@ namespace FASTER.test.recovery.sumstore.simple
         {
             checkpointManager = new DeviceLogCommitCheckpointManager(
                 new LocalStorageNamedDeviceFactory(),
-                new DefaultCheckpointNamingScheme($"{TestUtils.MethodTestDir}/checkpoints"));
+                new DefaultCheckpointNamingScheme($"{TestUtils.MethodTestDir}/{TestUtils.AzureTestDirectory}"));
             await SimpleRecoveryTest1_Worker(checkpointType, isAsync);
             checkpointManager.PurgeAll();
         }

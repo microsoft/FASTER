@@ -400,7 +400,7 @@ namespace FASTER.devices
 
                     // If no blob exists for the segment, we must first create the segment asynchronouly. (Create call takes ~70 ms by measurement)
                     // After creation is done, we can call write.
-                    var _ = entry.CreateAsync(size, pageBlob);
+                    entry.CreateAsync(size, pageBlob).GetAwaiter().GetResult();     // REVIEW: this method cannot avoid GetAwaiter
                 }
                 // Otherwise, some other thread beat us to it. Okay to use their blobs.
                 blobEntry = blobs[segmentId];

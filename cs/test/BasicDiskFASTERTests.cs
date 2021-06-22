@@ -25,7 +25,7 @@ namespace FASTER.test
         public void PageBlobWriteRead()
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
-                TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureMethodTestContainer, "checkpoints", "BasicDiskFASTERTests"));
+                TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests"));
         }
 
         [Test]
@@ -33,7 +33,7 @@ namespace FASTER.test
         public void PageBlobWriteReadWithLease()
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
-                TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureMethodTestContainer, "checkpoints", "BasicDiskFASTERTests",null,true,true));
+                TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests",null,true,true));
         }
 
         [Test]
@@ -44,7 +44,7 @@ namespace FASTER.test
             IDevice localDevice = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
             {
-                IDevice cloudDevice = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureMethodTestContainer, "checkpoints", "BasicDiskFASTERTests");
+                IDevice cloudDevice = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests");
                 tested = new TieredStorageDevice(1, localDevice, cloudDevice);
             }
             else
@@ -65,13 +65,6 @@ namespace FASTER.test
             IDevice localDevice2 = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
             var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1, localDevice2));
             TestDeviceWriteRead(device);
-        }
-
-        [Test]
-        [Category("FasterKV")]
-        public void ValidateAzureContainerName()
-        {
-            Microsoft.Azure.Storage.NameValidator.ValidateContainerName(TestUtils.AzureMethodTestContainer);
         }
 
         void TestDeviceWriteRead(IDevice log)
