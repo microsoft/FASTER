@@ -331,9 +331,10 @@ namespace FASTER.core
                             tempKvSession.Delete(ref key, default, 0);
                         else
                         {
-                            tempKvSession.ContainsKeyInMemory(ref key, out long logicalAddress);
+                            tempKvSession.Upsert(ref key, ref value, default, 0);
                             // below is for keeping information in RecordInfo, if we need to extend.
-                            /*long physicalAddress = tempKv.hlog.GetPhysicalAddress(logicalAddress);
+                            /*tempKvSession.ContainsKeyInMemory(ref key, out long logicalAddress);
+                            long physicalAddress = tempKv.hlog.GetPhysicalAddress(logicalAddress);
                             ref var tempRecordInfo = ref tempKv.hlog.GetInfo(physicalAddress);
                             RecordInfo.WriteInfo(ref tempRecordInfo,
                                 tempRecordInfo.Version, false, false, tempRecordInfo.PreviousAddress);*/

@@ -1866,8 +1866,6 @@ namespace FASTER.core
                 return;
             }
 
-            Debug.Assert(logicalAddress == foundLogicalAddress);
-
             #region Create new copy in mutable region
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
 
