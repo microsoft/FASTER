@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 
 namespace FASTER.test.async
 {
-
     [TestFixture]
     public class LowMemAsyncTests
     {
@@ -20,7 +19,7 @@ namespace FASTER.test.async
         [SetUp]
         public void Setup()
         {
-            path = TestContext.CurrentContext.TestDirectory + $"/{TestContext.CurrentContext.Test.ClassName}/";
+            path = TestUtils.MethodTestDir;
             log = new LocalMemoryDevice(1L << 30, 1L << 25, 1, latencyMs: 20);
             // log = Devices.CreateLogDevice(path + "Async.log", deleteOnClose: true);
             Directory.CreateDirectory(path);
@@ -34,8 +33,10 @@ namespace FASTER.test.async
         [TearDown]
         public void TearDown()
         {
-            fht1.Dispose();
-            log.Dispose();
+            fht1?.Dispose();
+            fht1 = null;
+            log?.Dispose();
+            log = null;
             new DirectoryInfo(path).Delete(true);
         }
 

@@ -6,7 +6,6 @@ using NUnit.Framework;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class GenericDiskDeleteTests
     {
@@ -17,8 +16,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericDiskDeleteTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericDiskDeleteTests.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericDiskDeleteTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericDiskDeleteTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<MyKey, MyValue>
                 (128,
@@ -32,13 +31,17 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            session.Dispose();
-            fht.Dispose();
+            session?.Dispose();
+            session = null;
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
-            objlog.Dispose();
-        }
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
 
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
 
         [Test]
         [Category("FasterKV")]

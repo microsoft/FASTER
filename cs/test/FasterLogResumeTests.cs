@@ -9,7 +9,6 @@ using FASTER.core;
 using NUnit.Framework;
 using System.Threading;
 
-
 namespace FASTER.test
 {
     [TestFixture]
@@ -21,7 +20,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+            commitPath = TestUtils.MethodTestDir + "/";
 
             if (Directory.Exists(commitPath))
                 TestUtils.DeleteDirectory(commitPath);
@@ -32,10 +31,9 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            device.Dispose();
-
-            if (Directory.Exists(commitPath))
-                TestUtils.DeleteDirectory(commitPath);
+            device?.Dispose();
+            device = null;
+            TestUtils.DeleteDirectory(commitPath);
         }
 
         [Test]

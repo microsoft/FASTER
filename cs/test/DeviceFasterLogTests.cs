@@ -13,26 +13,23 @@ using Microsoft.Azure.Storage;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class DeviceFasterLogTests
     {
         const int entryLength = 100;
         const int numEntries = 100000;
         private FasterLog log;
-        public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-        public const string TEST_CONTAINER = "test";
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask PageBlobFasterLogTest1([Values] LogChecksumType logChecksum, [Values]FasterLogTests.IteratorType iteratorType)
+        public async ValueTask PageBlobFasterLogTest1([Values] LogChecksumType logChecksum, [Values]FasterLogTestBase.IteratorType iteratorType)
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
             {
-                var device = new AzureStorageDevice(EMULATED_STORAGE_STRING, $"{TEST_CONTAINER}", "PageBlobFasterLogTest1", "fasterlog.log", deleteOnClose: true);
+                var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureMethodTestContainer}", "checkpoints", "fasterlog.log", deleteOnClose: true);
                 var checkpointManager = new DeviceLogCommitCheckpointManager(
-                    new AzureStorageNamedDeviceFactory(EMULATED_STORAGE_STRING),
-                    new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/PageBlobFasterLogTest1"));
+                    new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
+                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureMethodTestContainer}/checkpoints"));
                 await FasterLogTest1(logChecksum, device, checkpointManager, iteratorType);
                 device.Dispose();
                 checkpointManager.PurgeAll();
@@ -42,9 +39,8 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask PageBlobFasterLogTestWithLease([Values] LogChecksumType logChecksum, [Values] FasterLogTests.IteratorType iteratorType)
+        public async ValueTask PageBlobFasterLogTestWithLease([Values] LogChecksumType logChecksum, [Values] FasterLogTestBase.IteratorType iteratorType)
         {
-
             // Need this environment variable set AND Azure Storage Emulator running
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
             {
@@ -56,11 +52,11 @@ namespace FASTER.test
                 var mycloudBlobDir = blobContainer.GetDirectoryReference(@"BlobManager/MyLeaseTest1");
 
                 var blobMgr = new DefaultBlobManager(true, mycloudBlobDir);
-                var device = new AzureStorageDevice(EMULATED_STORAGE_STRING, $"{TEST_CONTAINER}", "PageBlobFasterLogTestWithLease", "fasterlogLease.log", deleteOnClose: true, underLease: true, blobManager: blobMgr);
+                var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureMethodTestContainer}", "checkpoints", "fasterlogLease.log", deleteOnClose: true, underLease: true, blobManager: blobMgr);
 
                 var checkpointManager = new DeviceLogCommitCheckpointManager(
-                    new AzureStorageNamedDeviceFactory(EMULATED_STORAGE_STRING),
-                    new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/PageBlobFasterLogTestWithLease"));
+                    new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
+                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureMethodTestContainer}/checkpoints"));
                 await FasterLogTest1(logChecksum, device, checkpointManager, iteratorType);
                 device.Dispose();
                 checkpointManager.PurgeAll();
@@ -69,10 +65,10 @@ namespace FASTER.test
             }
         }
 
-        private async ValueTask FasterLogTest1(LogChecksumType logChecksum, IDevice device, ILogCommitManager logCommitManager, FasterLogTests.IteratorType iteratorType)
+        private async ValueTask FasterLogTest1(LogChecksumType logChecksum, IDevice device, ILogCommitManager logCommitManager, FasterLogTestBase.IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { PageSizeBits = 20, SegmentSizeBits = 20, LogDevice = device, LogChecksum = logChecksum, LogCommitManager = logCommitManager };
-            log = FasterLogTests.IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
+            log = FasterLogTestBase.IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -86,11 +82,11 @@ namespace FASTER.test
 
             using (var iter = log.Scan(0, long.MaxValue))
             {
-                var counter = new FasterLogTests.Counter(log);
+                var counter = new FasterLogTestBase.Counter(log);
 
                 switch (iteratorType)
                 {
-                    case FasterLogTests.IteratorType.AsyncByteVector:
+                    case FasterLogTestBase.IteratorType.AsyncByteVector:
                         await foreach ((byte[] result, _, _, long nextAddress) in iter.GetAsyncEnumerable())
                         {
                             Assert.IsTrue(result.SequenceEqual(entry));
@@ -103,7 +99,7 @@ namespace FASTER.test
                                 break;
                         }
                         break;
-                    case FasterLogTests.IteratorType.AsyncMemoryOwner:
+                    case FasterLogTestBase.IteratorType.AsyncMemoryOwner:
                         await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
                         {
                             Assert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
@@ -117,7 +113,7 @@ namespace FASTER.test
                                 break;
                         }
                         break;
-                    case FasterLogTests.IteratorType.Sync:
+                    case FasterLogTestBase.IteratorType.Sync:
                         while (iter.GetNext(out byte[] result, out _, out _))
                         {
                             Assert.IsTrue(result.SequenceEqual(entry));

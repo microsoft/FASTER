@@ -8,7 +8,6 @@ using NUnit.Framework;
 
 namespace FASTER.test
 {
-
     //** NOTE - more detailed / in depth Read tests in ReadAddressTests.cs 
     //** These tests ensure the basics are fully covered
 
@@ -22,7 +21,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BasicFasterTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicFasterTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
             session = fht.For(new Functions()).NewSession<Functions>();
@@ -31,10 +30,13 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            session.Dispose();
-            fht.Dispose();
+            session?.Dispose();
+            session = null;
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
@@ -743,7 +745,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         public static void KVBasicsSampleEndToEndInDocs()
         {
-            string testDir = $"{TestContext.CurrentContext.TestDirectory}";
+            string testDir = $"{TestUtils.MethodTestDir}";
             using var log = Devices.CreateLogDevice($"{testDir}/hlog.log", deleteOnClose: true);
             using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
             using var s = store.NewSession(new SimpleFunctions<long, long>());

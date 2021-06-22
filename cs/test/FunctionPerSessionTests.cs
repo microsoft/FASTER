@@ -1,7 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -107,7 +106,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            _log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/FunctionPerSessionTests1.log", deleteOnClose: true);
+            _log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/FunctionPerSessionTests1.log", deleteOnClose: true);
 
             _faster = new FasterKV<int, RefCountedValue>(128, new LogSettings()
             {
@@ -122,9 +121,11 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            _faster.Dispose();
+            _faster?.Dispose();
             _faster = null;
-            _log.Dispose();
+            _log?.Dispose();
+            _log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]

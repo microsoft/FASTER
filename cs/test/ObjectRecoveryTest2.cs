@@ -18,7 +18,7 @@ namespace FASTER.test.recovery.objects
         [SetUp]
         public void Setup()
         {
-            FasterFolderPath = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
+            FasterFolderPath = TestUtils.MethodTestDir;
             if (!Directory.Exists(FasterFolderPath))
                 Directory.CreateDirectory(FasterFolderPath);
         }
@@ -30,7 +30,7 @@ namespace FASTER.test.recovery.objects
         }
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask ObjectRecoveryTest2(
             [Values]CheckpointType checkpointType,
             [Range(100, 700, 300)] int iterations,

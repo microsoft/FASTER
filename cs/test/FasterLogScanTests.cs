@@ -1,30 +1,21 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-using System;
-using System.Buffers;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
-using System.Text;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class FasterLogScanTests
     {
-
         private FasterLog log;
         private IDevice device;
         private FasterLog logUncommitted;
         private IDevice deviceUnCommitted;
 
-        private string path = Path.GetTempPath() + "ScanTests/";
-        static readonly byte[] entry = new byte[100];
+        private string path;
+        static byte[] entry;
         static int entryLength = 100;
         static int numEntries = 1000;
         static int entryFlag = 9999;
@@ -33,9 +24,11 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            entry = new byte[100];
+            path = TestUtils.MethodTestDir + "/";
+
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try {  new DirectoryInfo(path).Delete(true);  }
-            catch {}
+            TestUtils.DeleteDirectory(path);
 
             // Set up the Devices \ logs
             device = Devices.CreateLogDevice(path + "LogScan", deleteOnClose: true);
@@ -68,7 +61,6 @@ namespace FASTER.test
             // Commit to the log
             log.Commit(true);
 
-
             //****** Populate uncommitted log / device for ScanUncommittedTest
             // Set Default entry data
             for (int j = 0; j < entryLength; j++)
@@ -99,21 +91,23 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            log.Dispose();
-            device.Dispose();
-            deviceUnCommitted.Dispose();
-            logUncommitted.Dispose();
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
+            deviceUnCommitted?.Dispose();
+            deviceUnCommitted = null;
+            logUncommitted?.Dispose();
+            logUncommitted = null;
 
             // Clean up log files
-            try { new DirectoryInfo(path).Delete(true); }
-            catch { }
+            TestUtils.DeleteDirectory(path);
         }
 
         [Test]
         [Category("FasterLog")]
         public void ScanBasicDefaultTest()
         {
-
             // Basic default scan from start to end 
             // Indirectly used in other tests, but good to have the basic test here for completeness
 

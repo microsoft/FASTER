@@ -11,7 +11,6 @@ using System.Threading.Tasks;
 
 namespace FASTER.test.recovery.objects
 {
-
     [TestFixture]
     public class ObjectRecoveryTests3
     {
@@ -21,7 +20,7 @@ namespace FASTER.test.recovery.objects
         [SetUp]
         public void Setup()
         {
-            FasterFolderPath = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
+            FasterFolderPath = TestUtils.MethodTestDir;
             if (!Directory.Exists(FasterFolderPath))
                 Directory.CreateDirectory(FasterFolderPath);
         }
@@ -33,7 +32,7 @@ namespace FASTER.test.recovery.objects
         }
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask ObjectRecoveryTest3(
             [Values]CheckpointType checkpointType,
             [Values(1000)] int iterations,

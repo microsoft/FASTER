@@ -31,12 +31,9 @@ namespace FASTER.test.recovery.objectstore
         [SetUp]
         public void Setup()
         {
-            if (test_path == null)
-            {
-                test_path = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
-                if (!Directory.Exists(test_path))
-                    Directory.CreateDirectory(test_path);
-            }
+            test_path = TestUtils.MethodTestDir;
+            if (!Directory.Exists(test_path))
+                Directory.CreateDirectory(test_path);
 
             log = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.log", false);
             objlog = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.obj.log", false);
@@ -53,22 +50,26 @@ namespace FASTER.test.recovery.objectstore
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
-            objlog.Dispose();
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
             TestUtils.DeleteDirectory(test_path);
         }
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask ObjectRecoveryTest1([Values]bool isAsync)
         {
             Populate();
             fht.Dispose();
             fht = null;
             log.Dispose();
+            log = null;
             objlog.Dispose();
+            objlog = null;
             Setup();
 
             if (isAsync)

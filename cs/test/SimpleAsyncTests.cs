@@ -10,7 +10,6 @@ using System.Threading;
 
 namespace FASTER.test.async
 {
-
     [TestFixture]
     public class SimpleAsyncTests
     {
@@ -29,7 +28,7 @@ namespace FASTER.test.async
                 inputArray[i].adId = i;
             }
 
-            path = TestContext.CurrentContext.TestDirectory + "/SimpleAsyncTests/";
+            path = TestUtils.MethodTestDir + "/";
             log = Devices.CreateLogDevice(path + "Async.log", deleteOnClose: true);
             Directory.CreateDirectory(path);
             fht1 = new FasterKV<long, long>
@@ -42,9 +41,11 @@ namespace FASTER.test.async
         [TearDown]
         public void TearDown()
         {
-            fht1.Dispose();
-            log.Dispose();
-            new DirectoryInfo(path).Delete(true);
+            fht1?.Dispose();
+            fht1 = null;
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(path);
         }
 
         // Test that does .ReadAsync with minimum parameters (ref key)

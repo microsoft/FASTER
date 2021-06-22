@@ -7,7 +7,6 @@ using NUnit.Framework;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class VariableLengthStructFASTERTests
     {
@@ -20,15 +19,12 @@ namespace FASTER.test
         [Category("FasterKV")]
         public unsafe void VariableLengthTest1()
         {
-            FasterKV<Key, VLValue> fht;
-            IDevice log;
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<Key, VLValue>
+            var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
+            var fht = new FasterKV<Key, VLValue>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
                 null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = new VLValue() }
                 );
-
             var s = fht.NewSession(new VLFunctions());
 
             Input input = default;
@@ -74,24 +70,20 @@ namespace FASTER.test
             }
             s.Dispose();
             fht.Dispose();
-            fht = null;
             log.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
         [Category("FasterKV")]
         public unsafe void VariableLengthTest2()
         {
-            FasterKV<VLValue, VLValue> fht;
-            IDevice log;
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<VLValue, VLValue>
+            var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
+            var fht = new FasterKV<VLValue, VLValue>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
                 null, null, null, new VariableLengthStructSettings<VLValue, VLValue> { keyLength = new VLValue(), valueLength = new VLValue() }
                 );
-
-
             var s = fht.NewSession(new VLFunctions2());
 
             Input input = default;
@@ -148,9 +140,8 @@ namespace FASTER.test
 
             s.Dispose();
             fht.Dispose();
-            fht = null;
             log.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
-        
     }
 }

@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 using System;
-using System.Buffers;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -10,17 +8,14 @@ using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
 
-
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class EnqueueTests
     {
         private FasterLog log;
         private IDevice device;
-        static readonly byte[] entry = new byte[100];
-        static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10000);
+        static byte[] entry;
         private string commitPath;
 
         public enum EnqueueIteratorType
@@ -41,8 +36,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+            entry = new byte[100];
+            commitPath = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
             if (Directory.Exists(commitPath))
@@ -56,14 +51,14 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            log.Dispose();
-            device.Dispose();
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
 
             // Clean up log files
-            if (Directory.Exists(commitPath))
-                Directory.Delete(commitPath, true);
+            TestUtils.DeleteDirectory(commitPath);
         }
-
 
         [Test]
         [Category("FasterLog")]

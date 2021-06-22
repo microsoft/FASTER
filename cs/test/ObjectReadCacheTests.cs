@@ -6,7 +6,6 @@ using NUnit.Framework;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class ObjectReadCacheTests
     {
@@ -17,8 +16,8 @@ namespace FASTER.test
         public void Setup()
         {
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 10 };
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/ObjectReadCacheTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/ObjectReadCacheTests.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/ObjectReadCacheTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/ObjectReadCacheTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<MyKey, MyValue>
                 (128,
@@ -31,10 +30,13 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
-            objlog.Dispose();
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]

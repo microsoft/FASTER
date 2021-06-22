@@ -1,19 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-using System;
-using System.Buffers;
-using System.Collections.Generic;
+
 using System.IO;
-using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
 
-
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class ManageLocalStorageTests
     {
@@ -24,11 +18,10 @@ namespace FASTER.test
         static readonly byte[] entry = new byte[100];
         private string commitPath;
 
-
         [SetUp]
         public void Setup()
         {
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+            commitPath = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
             // We loop to ensure clean-up as deleteOnClose does not always work for MLSD
@@ -41,20 +34,22 @@ namespace FASTER.test
 
             deviceFullParams = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStoreFullParams.log", deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
             logFullParams = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
-
         }
 
         [TearDown]
         public void TearDown()
         {
-            log.Dispose();
-            device.Dispose();
-            logFullParams.Dispose();
-            deviceFullParams.Dispose();
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
+            logFullParams?.Dispose();
+            logFullParams = null;
+            deviceFullParams?.Dispose();
+            deviceFullParams = null;
 
-            // Clean up log files
-            if (Directory.Exists(commitPath))
-                Directory.Delete(commitPath, true);
+            // Clean up log 
+            TestUtils.DeleteDirectory(commitPath);
         }
 
 

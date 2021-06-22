@@ -1,25 +1,18 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-using System;
-using System.Buffers;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+
 using System.Threading;
-using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
 
-
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class LogReadAsyncTests
     {
         private FasterLog log;
         private IDevice device;
-        private string path = Path.GetTempPath() + "LogReadAsync/";
+        private string path;
 
         public enum ParameterDefaultsIteratorType
         {
@@ -31,9 +24,10 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            path = TestUtils.MethodTestDir + "/";
+
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try { new DirectoryInfo(path).Delete(true); }
-            catch { }
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(path + "LogReadAsync", deleteOnClose: true);
@@ -43,12 +37,13 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            log.Dispose();
-            device.Dispose();
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
 
             // Clean up log files
-            try { new DirectoryInfo(path).Delete(true); }
-            catch { }
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]

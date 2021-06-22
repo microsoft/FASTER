@@ -1,19 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
+
 using System;
-using System.Buffers;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
 
-
 namespace FASTER.test
 {
-
     //** Fundamental basic test for TryEnqueue that covers all the parameters in TryEnqueue
     //** Other tests in FasterLog.cs provide more coverage for TryEnqueue
 
@@ -22,7 +16,7 @@ namespace FASTER.test
     {
         private FasterLog log;
         private IDevice device;
-        private string path = Path.GetTempPath() + "TryEnqueueTests/";
+        private string path;
         static readonly byte[] entry = new byte[100];
 
         public enum TryEnqueueIteratorType
@@ -43,9 +37,10 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            path = TestUtils.MethodTestDir + "/";
+
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try {  new DirectoryInfo(path).Delete(true);  }
-            catch {} 
+            TestUtils.DeleteDirectory(path);
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(path + "TryEnqueue", deleteOnClose: true);
@@ -55,18 +50,18 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            log.Dispose();
-            device.Dispose();
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
 
             // Clean up log files
-            try { new DirectoryInfo(path).Delete(true); }
-            catch { }
+            TestUtils.DeleteDirectory(path);
         }
 
-
-       [Test]
-       [Category("FasterLog")]
-       [Category("Smoke")]
+        [Test]
+        [Category("FasterLog")]
+        [Category("Smoke")]
         public void TryEnqueueBasicTest([Values] TryEnqueueIteratorType iteratorType)
         {
             int entryLength = 50;
