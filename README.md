@@ -39,3 +39,12 @@ provided by the bot. You will only need to do this once across all repos using o
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
 contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+
+# libDPR
+
+We are excited about our new distributed recovery toolkit of libDPR. You can find a preview version of libDPR and associated documentation on this branch.
+libDPR can be found under the 'cs/libdpr'. You can find the docs under 'docs/_pages/'. Note that this branch is still under active development, and we will
+release libDPR more formally when it is ready. For a more detailed writeup about the DPR model and the guarantees, please checkout
+[our SIGMOD 2021 paper](https://tli2.github.io/assets/pdf/dpr-sigmod2021.pdf). If you are here for the source code we used for said paper, you can find
+those [here](https://github.com/tli2/FASTER/commits/serverless) for D-FASTER and [here](https://github.com/tli2/FASTER/commits/libdpr) for D-Redis.
+
