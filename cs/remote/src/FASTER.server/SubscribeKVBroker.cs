@@ -113,7 +113,6 @@ namespace FASTER.server
                         {
                             byte* keyPtr = ptr1;
                             byte* outputPtr = ptr2;
-                            byte* publishKeyPtr = ptr1;
 
                             bool foundSubscription = subscriptions.TryGetValue(byteKey, out var subSessionDict);
                             if (foundSubscription)
@@ -154,7 +153,7 @@ namespace FASTER.server
                                     var session = subSessionTuple.Item1;
                                     var sid = subSessionTuple.Item2;
                                     var prefix = subSessionTuple.Item3;
-
+                                    byte* publishKeyPtr = ptr1;
                                     session.Publish(sid, status, ref output, ref serializer.ReadKeyByRef(ref publishKeyPtr), prefix);
                                 }
                             }
