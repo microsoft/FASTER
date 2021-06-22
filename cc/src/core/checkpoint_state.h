@@ -15,6 +15,9 @@
 namespace FASTER {
 namespace core {
 
+typedef void(*IndexPersistenceCallback)(Status result);
+typedef void(*HybridLogPersistenceCallback)(Status result, uint64_t persistent_serial_num);
+
 /// Checkpoint metadata for the index itself.
 class IndexMetadata {
  public:
@@ -102,8 +105,6 @@ template <class F>
 class CheckpointState {
  public:
   typedef F file_t;
-  typedef void(*index_persistence_callback_t)(Status result);
-  typedef void(*hybrid_log_persistence_callback_t)(Status result, uint64_t persistent_serial_num);
 
   CheckpointState()
     : index_checkpoint_started{ false }
@@ -115,7 +116,7 @@ class CheckpointState {
 
   void InitializeIndexCheckpoint(const Guid& token, uint32_t version, uint64_t table_size,
                                  Address log_begin_address, Address checkpoint_start_address,
-                                 index_persistence_callback_t callback) {
+                                 IndexPersistenceCallback callback) {
     failed = false;
     index_checkpoint_started = false;
     continue_tokens.clear();
@@ -130,7 +131,7 @@ class CheckpointState {
 
   void InitializeHybridLogCheckpoint(const Guid& token, uint32_t version, bool use_snapshot_file,
                                      Address flushed_until_address,
-                                     hybrid_log_persistence_callback_t callback) {
+                                     HybridLogPersistenceCallback callback) {
     failed = false;
     index_checkpoint_started = false;
     continue_tokens.clear();
@@ -150,8 +151,8 @@ class CheckpointState {
   void InitializeCheckpoint(const Guid& token, uint32_t version, uint64_t table_size,
                             Address log_begin_address, Address checkpoint_start_address,
                             bool use_snapshot_file, Address flushed_until_address,
-                            index_persistence_callback_t index_persistence_callback_,
-                            hybrid_log_persistence_callback_t hybrid_log_persistence_callback_) {
+                            IndexPersistenceCallback index_persistence_callback_,
+                            HybridLogPersistenceCallback hybrid_log_persistence_callback_) {
     failed = false;
     index_checkpoint_started = false;
     continue_tokens.clear();
@@ -205,8 +206,8 @@ class CheckpointState {
   file_t snapshot_file;
   std::atomic<uint32_t> flush_pending;
 
-  index_persistence_callback_t index_persistence_callback;
-  hybrid_log_persistence_callback_t hybrid_log_persistence_callback;
+  IndexPersistenceCallback index_persistence_callback;
+  HybridLogPersistenceCallback hybrid_log_persistence_callback;
   std::unordered_map<Guid, uint64_t> continue_tokens;
 };
 

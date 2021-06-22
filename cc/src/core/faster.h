@@ -149,12 +149,12 @@ class FasterKv {
   inline bool CompletePending(bool wait = false);
 
   /// Checkpoint/recovery operations.
-  bool Checkpoint(void(*index_persistence_callback)(Status result),
-                  void(*hybrid_log_persistence_callback)(Status result,
-                      uint64_t persistent_serial_num), Guid& token);
-  bool CheckpointIndex(void(*index_persistence_callback)(Status result), Guid& token);
-  bool CheckpointHybridLog(void(*hybrid_log_persistence_callback)(Status result,
-                           uint64_t persistent_serial_num), Guid& token);
+  bool Checkpoint(IndexPersistenceCallback index_persistence_callback,
+                  HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                  Guid& token);
+  bool CheckpointIndex(IndexPersistenceCallback index_persistence_callback, Guid& token);
+  bool CheckpointHybridLog(HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                            Guid& token);
   Status Recover(const Guid& index_token, const Guid& hybrid_log_token, uint32_t& version,
                  std::vector<Guid>& session_ids);
 
@@ -1395,7 +1395,7 @@ inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
     case OperationType::Delete: {
       async_pending_delete_context_t& delete_context =
         *static_cast<async_pending_delete_context_t*>(&pending_context);
-      internal_status = InternalDelete(delete_context);
+      internal_status = InternalDelete(delete_context, true);
       break;
     }
     }
@@ -2731,9 +2731,9 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
 }
 
 template <class K, class V, class D>
-bool FasterKv<K, V, D>::Checkpoint(void(*index_persistence_callback)(Status result),
-                                   void(*hybrid_log_persistence_callback)(Status result,
-                                       uint64_t persistent_serial_num), Guid& token) {
+bool FasterKv<K, V, D>::Checkpoint(IndexPersistenceCallback index_persistence_callback,
+                                    HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                                    Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
   SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
   SystemState desired{ Action::CheckpointFull, Phase::REST, expected.version };
@@ -2768,7 +2768,7 @@ bool FasterKv<K, V, D>::Checkpoint(void(*index_persistence_callback)(Status resu
 }
 
 template <class K, class V, class D>
-bool FasterKv<K, V, D>::CheckpointIndex(void(*index_persistence_callback)(Status result),
+bool FasterKv<K, V, D>::CheckpointIndex(IndexPersistenceCallback index_persistence_callback,
                                         Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
   SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
@@ -2792,8 +2792,8 @@ bool FasterKv<K, V, D>::CheckpointIndex(void(*index_persistence_callback)(Status
 }
 
 template <class K, class V, class D>
-bool FasterKv<K, V, D>::CheckpointHybridLog(void(*hybrid_log_persistence_callback)(Status result,
-    uint64_t persistent_serial_num), Guid& token) {
+bool FasterKv<K, V, D>::CheckpointHybridLog(HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                                            Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
   SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
   SystemState desired{ Action::CheckpointHybridLog, Phase::REST, expected.version };
