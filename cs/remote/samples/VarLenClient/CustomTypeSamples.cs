@@ -52,6 +52,33 @@ namespace VarLenClient
             session.CompletePending(true);
         }
 
+        void SyncVarLenSubscriptionSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session,
+                                            ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session2)
+        {
+            session2.SubscribeKV(new CustomType(23));
+            session2.CompletePending(true);
+
+            session.Upsert(new CustomType(23), new CustomType(2300));
+            session.CompletePending(true);
+
+            for (int i = 0; i < 100; i++)
+                session.Upsert(new CustomType(i), new CustomType(i + 10000));
+
+            // Flushes partially filled batches, does not wait for responses
+            session.Flush();
+
+            session.Read(new CustomType(23));
+            session.CompletePending(true);
+
+            for (int i = 100; i < 200; i++)
+                session.Upsert(new CustomType(i), new CustomType(i + 10000));
+
+            session.Flush();
+
+            session.CompletePending(true);
+        }
+
+
         async Task AsyncVarLenSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session)
         {
             // By default, we flush async operations as soon as they are issued

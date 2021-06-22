@@ -60,6 +60,16 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
+        public bool Write(ref SpanByte k, ref byte* dst, int length)
+        {
+            if (k.Length > length) return false;
+            k.CopyTo(dst);
+            dst += (k.Length + sizeof(int));
+            return true;
+        }
+
+
+        /// <inheritdoc />
         public bool Write(ref SpanByteAndMemory k, ref byte* dst, int length)
         {
             if (k.Length > length) return false;
@@ -85,5 +95,23 @@ namespace FASTER.server
 
         /// <inheritdoc />
         public int GetLength(ref SpanByteAndMemory o) => o.Length;
+
+        /// <inheritdoc />
+        public bool Match(ref SpanByte k, ref SpanByte pattern)
+        {
+            if (pattern.Length > k.Length)
+                return false;
+
+            byte[] kByte = k.ToByteArray();
+            byte[] patternByte = pattern.ToByteArray();
+
+            for (int i = 0; i < patternByte.Length; i++)
+            {
+                if (kByte[i] != patternByte[i])
+                    return false;
+            }
+
+            return true;
+        }
     }
 }

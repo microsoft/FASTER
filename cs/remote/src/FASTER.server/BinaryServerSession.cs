@@ -103,7 +103,6 @@ namespace FASTER.server
             return true;
         }
 
-
         private unsafe void ProcessBatch(byte[] buf, int offset)
         {
             GetResponseObject();
@@ -164,6 +163,7 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
+                            keyptr = src;
                             ctx = ((long)message << 32) | (long)pendingSeqNo;
                             status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src), ctx);
 
@@ -171,6 +171,8 @@ namespace FASTER.server
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
                             if (status == core.Status.PENDING)
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
+
+                            subscribeKVBroker.Publish(keyptr);
                             break;
 
                         case MessageType.Delete:
@@ -178,9 +180,12 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
+                            keyptr = src;
                             status = session.Delete(ref serializer.ReadKeyByRef(ref src));
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
+
+                            subscribeKVBroker.Publish(keyptr);
                             break;
 
                         case MessageType.SubscribeKV:
@@ -193,6 +198,18 @@ namespace FASTER.server
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
                             Write(sid, ref dcurr, (int)(dend - dcurr));
                             break;
+
+                        case MessageType.PSubscribeKV:
+                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                                SendAndReset(ref d, ref dend);
+
+                            sid = subscribeKVBroker.PSubscribe(ref src, this);
+                            status = Status.PENDING;
+                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                            Write(ref status, ref dcurr, (int)(dend - dcurr));
+                            Write(sid, ref dcurr, (int)(dend - dcurr));
+                            break;
+
 
                         default:
                             throw new NotImplementedException();
@@ -210,11 +227,14 @@ namespace FASTER.server
             }
         }
 
-        public void Publish(ref Key key, ref Input input, int sid)
+        public void Publish(int sid, Status status, ref Output output, ref Key key, bool prefix)
         {
             MessageType message = MessageType.SubscribeKV;
+            if (prefix)
+                message = MessageType.PSubscribeKV;
 
             GetResponseObject();
+
             byte* d = responseObject.obj.bufferPtr;
             var dend = d + responseObject.obj.buffer.Length;
             dcurr = d + sizeof(int); // reserve space for size
@@ -226,8 +246,6 @@ namespace FASTER.server
             if ((int)(dend - dcurr) < 6 + maxSizeSettings.MaxOutputSize)
                 SendAndReset(ref d, ref dend);
 
-            long ctx = ((long)message << 32) | (long)sid;
-            var status = session.Read(ref key, ref input, ref serializer.AsRefOutput(dcurr + 6, (int)(dend - dcurr)), ctx, 0);
             msgnum++;
 
             if (status != Status.PENDING)
@@ -236,12 +254,13 @@ namespace FASTER.server
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                 Write(sid, ref dcurr, (int)(dend - dcurr));
+                if (prefix)
+                    serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
+                serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
 
                 if (status == Status.OK)
                     serializer.SkipOutput(ref dcurr);
             }
-            else
-                session.CompletePending(true);
 
             // Send replies
             if (msgnum - start > 0)

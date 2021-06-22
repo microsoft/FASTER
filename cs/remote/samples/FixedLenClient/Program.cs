@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using FASTER.client;
 
@@ -38,7 +39,10 @@ namespace FixedLenClient
             // using var session = client.NewSession<long, long, byte, Functions, FixedLenSerializer<long, long, long, long>>(new Functions(), new FixedLenSerializer<long, long, long, long>());
 
             // Samples using sync client API
-            SyncSamples(session, session2);
+            SyncSamples(session);
+
+            // Samples using sync subscription client API
+            SyncSubscriptionSamples(session, session2);
 
             // Samples using async client API
             AsyncSamples(session).Wait();
@@ -46,11 +50,8 @@ namespace FixedLenClient
             Console.WriteLine("Success!");
         }
 
-        static void SyncSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session, ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session2)
+        static void SyncSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session)
         {
-            session2.SubscribeKV(23);
-            session2.CompletePending(true);
-
             session.Upsert(23, 23 + 10000);
             session.CompletePending(true);
 
@@ -96,6 +97,55 @@ namespace FixedLenClient
 
             session.CompletePending(true);
         }
+
+        static void SyncSubscriptionSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session, ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session2)
+        {
+            session2.SubscribeKV(23);
+            session2.CompletePending(true);
+
+            for (int i = 0; i < 1000000; i++)
+                session.Upsert(23, i + 10);
+
+            // Flushes partially filled batches, does not wait for responses
+            session.Flush();
+            session.CompletePending(true);
+
+            // Read key 23, result arrives via ReadCompletionCallback
+            //session.Read(23);
+            //session.CompletePending(true);
+
+            // Measure read latency
+            //double micro = 0;
+            //for (int i = 0; i < 1000; i++)
+            //{
+            //    Stopwatch sw = new Stopwatch();
+            //    sw.Start();
+            //    session.Read(23);
+
+            // CompletePending flushes and waits for responses
+            // Responses are received on the callback function - see Functions.cs
+            //    session.CompletePending(true);
+            //    sw.Stop();
+            //    if (i > 0)
+            //        micro += 1000000 * sw.ElapsedTicks / (double)Stopwatch.Frequency;
+            //}
+            //Console.WriteLine("Average latency for sync Read: {0} microsecs", micro / (1000 - 1));
+
+            session.RMW(23, 25);
+            session.RMW(23, 25);
+            session.CompletePending(true);
+
+            // We use a different context here, to verify the different read result in callback function - see Functions.cs
+            //session.Read(23, userContext: 1);
+            //session.CompletePending(true);
+
+            //for (int i = 100; i < 200; i++)
+            //    session.Upsert(i, i + 10000);
+
+            session.Flush();
+            session.CompletePending(true);
+        }
+
 
         static async Task AsyncSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session)
         {

@@ -25,6 +25,7 @@ namespace FASTER.server
         readonly MaxSizeSettings maxSizeSettings;
         readonly ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte> activeSessions;
         readonly SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeKVBroker;
+        readonly ClientSession<Key, Value, Input, Output, long, ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>> session;
 
         int activeSessionCount;
         bool disposed;
@@ -40,7 +41,6 @@ namespace FASTER.server
         /// <param name="maxSizeSettings">Max size settings</param>
         public FasterKVServer(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, string address, int port, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default) : base()
         {
-            subscribeKVBroker = new SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer>(serializer);
             activeSessions = new ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte>();
             activeSessionCount = 0;
             disposed = false;
@@ -51,6 +51,9 @@ namespace FASTER.server
             servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             servSocket.Bind(endPoint);
             servSocket.Listen(512);
+            var subscriptionSession = store.For(functionsGen(WireFormat.Binary)).NewSession<Functions>();
+            subscribeKVBroker = new SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer>(serializer, subscriptionSession);
+
             acceptEventArg = new SocketAsyncEventArgs
             {
                 UserToken = (store, functionsGen, serializer)
@@ -190,6 +193,8 @@ namespace FASTER.server
                 DisposeConnectionSession(e);
                 return false;
             }
+
+            
             return true;
         }
 
@@ -203,6 +208,7 @@ namespace FASTER.server
             {
                 if (activeSessions.TryRemove(_session, out _))
                 {
+                    subscribeKVBroker.removeSubscription(_session);
                     _session.Dispose();
                     Interlocked.Decrement(ref activeSessionCount);
                 }
