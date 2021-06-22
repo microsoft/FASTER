@@ -141,15 +141,7 @@ namespace FASTER.core
             }
 
             var adjustedSize = PageSize + 2 * sectorSize;
-            byte[] tmp;
-            try
-            {
-                tmp = new byte[adjustedSize];
-            } catch (OutOfMemoryException)
-            {
-                Console.WriteLine($"Failed to allocate {adjustedSize} bytes");
-                throw;
-            }
+            var tmp = new byte[adjustedSize];
             Array.Clear(tmp, 0, adjustedSize);
 
             handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);

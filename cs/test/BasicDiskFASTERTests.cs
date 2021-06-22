@@ -67,6 +67,13 @@ namespace FASTER.test
             TestDeviceWriteRead(device);
         }
 
+        [Test]
+        [Category("FasterKV")]
+        public void ValidateAzureContainerName()
+        {
+            Microsoft.Azure.Storage.NameValidator.ValidateContainerName(TestUtils.AzureMethodTestContainer);
+        }
+
         void TestDeviceWriteRead(IDevice log)
         {
             fht = new FasterKV<KeyStruct, ValueStruct>
