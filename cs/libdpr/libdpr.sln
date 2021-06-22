@@ -8,6 +8,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{0E3DF871-4
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FASTER.libdpr.test", "test\FASTER.libdpr.test\FASTER.libdpr.test.csproj", "{CE867101-9A33-446D-A1E0-D343C05B31F5}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{CFC64B98-262D-4A37-ABE4-8FC87D48971C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DprCounters", "samples\DprCounters\DprCounters\DprCounters.csproj", "{80D1055D-3BBC-4337-B6C5-15FC4C3609C3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -22,9 +26,14 @@ Global
 		{CE867101-9A33-446D-A1E0-D343C05B31F5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CE867101-9A33-446D-A1E0-D343C05B31F5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CE867101-9A33-446D-A1E0-D343C05B31F5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{80D1055D-3BBC-4337-B6C5-15FC4C3609C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{80D1055D-3BBC-4337-B6C5-15FC4C3609C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{80D1055D-3BBC-4337-B6C5-15FC4C3609C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{80D1055D-3BBC-4337-B6C5-15FC4C3609C3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{3CE274C4-1764-4A26-BEED-234B2698B614} = {3194EF49-D59E-438E-BD68-04FA6CC570E7}
 		{CE867101-9A33-446D-A1E0-D343C05B31F5} = {0E3DF871-4507-4F77-9AEC-DB3924388974}
+		{80D1055D-3BBC-4337-B6C5-15FC4C3609C3} = {CFC64B98-262D-4A37-ABE4-8FC87D48971C}
 	EndGlobalSection
 EndGlobal

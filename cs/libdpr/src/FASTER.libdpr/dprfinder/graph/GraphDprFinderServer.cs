@@ -61,7 +61,8 @@ namespace FASTER.libdpr
                     backend.PersistState();
                 }
             });
-
+            ioThread.Start();
+            
             processThread = new Thread(() =>
             {
                 while (!termination.IsSet)
@@ -69,7 +70,8 @@ namespace FASTER.libdpr
                     backend.TryFindDprCut();
                 }
             });
-            
+            processThread.Start();
+
             var ipAddr = IPAddress.Parse(ip);
             var endPoint = new IPEndPoint(ipAddr, port);
             servSocket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
@@ -80,7 +82,6 @@ namespace FASTER.libdpr
             acceptEventArg.Completed += AcceptEventArg_Completed;
             if (!servSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
-            
         }
         
         /// <inheritdoc/>
@@ -140,7 +141,7 @@ namespace FASTER.libdpr
                     socket.SendSyncResponse(backend.MaxVersion(), backend.GetPersistentState());
                     break;
                 case DprFinderCommand.Type.ADD_WORKER:
-                    backend.AddWorker(command.w, () => socket.Send(OkResponse));
+                    backend.AddWorker(command.w, socket.SendAddWorkerResponse);
                     break;
                 case DprFinderCommand.Type.DELETE_WORKER:
                     backend.DeleteWorker(command.w, () => socket.Send(OkResponse));

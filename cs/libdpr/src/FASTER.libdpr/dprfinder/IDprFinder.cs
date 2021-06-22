@@ -76,5 +76,9 @@ namespace FASTER.libdpr
         /// <param name="worldLine"></param>
         /// <param name="latestRecoveredVersion"></param>
         void ReportRecovery(long worldLine, WorkerVersion latestRecoveredVersion);
+
+        long NewWorker(Worker id);
+
+        void DeleteWorker(Worker id);
     }
 }

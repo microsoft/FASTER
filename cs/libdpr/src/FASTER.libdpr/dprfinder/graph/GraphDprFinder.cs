@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net;
+
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -27,6 +29,8 @@ namespace FASTER.libdpr
         /// <inheritdoc/>
         public long SafeVersion(Worker worker)
         {
+            if (dprTableSnapshot == null) return 0;
+
             return !dprTableSnapshot.TryGetValue(worker, out var safeVersion) ? 0 : safeVersion;
         }
     }
@@ -55,22 +59,30 @@ namespace FASTER.libdpr
             this.dprFinderConn = dprFinderConn;
         }
 
+        public GraphDprFinder(string ip, int port)
+        {
+            var ipEndpoint = new IPEndPoint(IPAddress.Parse(ip), port);
+            dprFinderConn = new Socket(ipEndpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            dprFinderConn.Connect(ipEndpoint);
+        }
+
         /// <inheritdoc/>
         public long SafeVersion(Worker worker)
         {
-            return lastKnownState.GetCurrentCut()[worker];
+            return lastKnownState?.GetCurrentCut()[worker] ?? 0;
+
         }
 
         /// <inheritdoc/>
         public IDprStateSnapshot GetStateSnapshot()
         {
-            return new DictionaryDprStateSnapshot(lastKnownState.GetCurrentCut());
+            return new DictionaryDprStateSnapshot(lastKnownState?.GetCurrentCut());
         }
 
         /// <inheritdoc/>
         public long SystemWorldLine()
         {
-            return lastKnownState.GetCurrentWorldLines().Select(e => e.Value).Max();
+            return lastKnownState?.GetCurrentWorldLines().Select(e => e.Value).Max() ?? 0;
         }
 
         /// <inheritdoc/>
@@ -96,7 +108,8 @@ namespace FASTER.libdpr
             lock (dprFinderConn)
             {
                 dprFinderConn.SendSyncCommand();
-                ProcessSyncResponse();
+                ProcessRespResponse();
+
                 maxVersion = BitConverter.ToInt64(recvBuffer, parser.stringStart);
                 var newState = new GraphDprFinderBackend.State(recvBuffer, parser.stringStart + sizeof(long));
                 Interlocked.Exchange(ref lastKnownState, newState);
@@ -104,7 +117,7 @@ namespace FASTER.libdpr
 
         }
 
-        private void ProcessSyncResponse()
+        private void ProcessRespResponse()
         {
             int i = 0, receivedSize = 0;
             while (true)
@@ -123,6 +136,28 @@ namespace FASTER.libdpr
             lock (dprFinderConn)
             {
                 dprFinderConn.SendReportRecoveryCommand(latestRecoveredVersion, worldLine);
+                var received = dprFinderConn.Receive(recvBuffer);
+                Debug.Assert(received == 5 && Encoding.ASCII.GetString(recvBuffer, 0, received).Equals("+OK\r\n"));
+            }
+        }
+
+        public long NewWorker(Worker id)
+        {
+            lock (dprFinderConn)
+            {
+                dprFinderConn.SendAddWorkerCommand(id);
+                ProcessRespResponse();
+                lastKnownState ??= new GraphDprFinderBackend.State();
+                lastKnownState.GetCurrentWorldLines()[id] = BitConverter.ToInt64(recvBuffer, parser.stringStart);
+                return BitConverter.ToInt64(recvBuffer, parser.stringStart + sizeof(long));
+            }
+        }
+
+        public void DeleteWorker(Worker id)
+        {
+            lock (dprFinderConn)
+            {
+                dprFinderConn.SendDeleteWorkerCommand(id);
                 var received = dprFinderConn.Receive(recvBuffer);
                 Debug.Assert(received == 5 && Encoding.ASCII.GetString(recvBuffer, 0, received).Equals("+OK\r\n"));
             }

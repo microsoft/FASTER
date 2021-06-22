@@ -222,6 +222,7 @@ namespace FASTER.libdpr
         // is until op 9, with exception of op 7, 8, 9, we can simplify this to until 6.
         private void AdjustCommitPoint(ref CommitPoint computed)
         {
+            computed.ExcludedSerialNos.Sort();
             for (var i = computed.ExcludedSerialNos.Count - 1; i >= 0; i--)
             {
                 if (computed.ExcludedSerialNos[i] != computed.UntilSerialNo - 1) return;
