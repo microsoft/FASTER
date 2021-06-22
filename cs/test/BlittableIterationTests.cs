@@ -57,7 +57,7 @@ namespace FASTER.test
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
 
 #if WINDOWS
-            //*#*#*# TO DO: Figure Out why this DeviceType fails *#*#*#
+            //*#*#*# TO DO: Figure Out why this DeviceType fails  *#*#*#
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
             {
                 return;
@@ -86,7 +86,6 @@ namespace FASTER.test
             iter.Dispose();
 
             Assert.IsTrue(count == totalRecords);
-
 
             for (int i = 0; i < totalRecords; i++)
             {
