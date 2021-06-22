@@ -1,4 +1,5 @@
 ﻿using FASTER.client;
+using FASTER.common;
 using NUnit.Framework;
 using System;
 
@@ -22,7 +23,7 @@ namespace FASTER.remote.test
         }
 
         public ClientSession<long, long, long, long, long, FixedLenClientFunctions, FixedLenSerializer<long, long, long, long>> GetSession()
-            => client.NewSession<long, long, long, FixedLenClientFunctions, FixedLenSerializer<long, long, long, long>>(new FixedLenClientFunctions());
+            => client.NewSession<long, long, long, FixedLenClientFunctions, FixedLenSerializer<long, long, long, long>>(new FixedLenClientFunctions(), WireFormat.DefaultFixedLenKV);
     }
 
     /// <summary>
