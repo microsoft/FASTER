@@ -1933,8 +1933,8 @@ namespace FASTER.core
         }
         #endregion
 
-            #region Split Index
-            private void SplitBuckets(long hash)
+        #region Split Index
+        private void SplitBuckets(long hash)
         {
             long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;
             int offset = (int)(masked_bucket_index >> Constants.kSizeofChunkBits);
