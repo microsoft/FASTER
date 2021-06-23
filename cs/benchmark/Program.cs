@@ -12,11 +12,11 @@ namespace FASTER.benchmark
 
         public static void Main(string[] args)
         {
-            var testLoader = new TestLoader();
+            TestLoader testLoader = new();
             if (!testLoader.Parse(args))
                 return;
 
-            var testStats = new TestStats(testLoader.Options);
+            TestStats testStats = new(testLoader.Options);
             testLoader.LoadData();
             var options = testLoader.Options;   // shortcut
 

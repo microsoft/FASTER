@@ -10,8 +10,8 @@ namespace FASTER.benchmark
 {
     class TestStats 
     {
-        private readonly List<double> initsPerRun = new List<double>();
-        private readonly List<double> opsPerRun = new List<double>();
+        private readonly List<double> initsPerRun = new();
+        private readonly List<double> opsPerRun = new();
 
         private Options options;
         internal static string OptionsString;
