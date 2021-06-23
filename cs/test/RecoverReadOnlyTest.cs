@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
+
 using System;
 using System.IO;
 using System.Threading;
@@ -8,12 +9,10 @@ using FASTER.core;
 using NUnit.Framework;
 using System.Text;
 
-
 //** Note - this test is based on FasterLogPubSub sample found in the samples directory.
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class BasicRecoverReadOnly
     {
@@ -22,17 +21,17 @@ namespace FASTER.test
         private FasterLog logReadOnly;
         private IDevice deviceReadOnly;
 
-        private static string path = Path.GetTempPath() + "BasicRecoverAsyncReadOnly/";
+        private static string path;
         const int commitPeriodMs = 2000;
         const int restorePeriodMs = 1000;
 
         [SetUp]
         public void Setup()
         {
+            path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try {  new DirectoryInfo(path).Delete(true);  }
-            catch {}
+            TestUtils.DeleteDirectory(path);
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(path + "Recover", deleteOnClose: true);
@@ -44,14 +43,17 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            log.Dispose();
-            device.Dispose();
-            logReadOnly.Dispose();
-            deviceReadOnly.Dispose();
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
+            logReadOnly?.Dispose();
+            logReadOnly = null;
+            deviceReadOnly?.Dispose();
+            deviceReadOnly = null;
 
             // Clean up log files
-            try { new DirectoryInfo(path).Delete(true); }
-            catch { }
+            TestUtils.DeleteDirectory(path);
         }
 
 
@@ -81,7 +83,6 @@ namespace FASTER.test
         //**** Helper Functions - based off of FasterLogPubSub sample ***
         static async Task CommitterAsync(FasterLog log, CancellationToken cancellationToken)
         {
-
             while (!cancellationToken.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(commitPeriodMs), cancellationToken);
@@ -107,7 +108,6 @@ namespace FASTER.test
         // to the primary FasterLog's commits.
         public async Task SeparateConsumerAsync(CancellationToken cancellationToken)
         {
-
             var _ = BeginRecoverReadOnlyLoop(logReadOnly, cancellationToken);
 
             // This enumerator waits asynchronously when we have reached the committed tail of the duplicate FasterLog. When RecoverReadOnly
@@ -119,7 +119,6 @@ namespace FASTER.test
             }
         }
 
-
         static async Task BeginRecoverReadOnlyLoop(FasterLog log, CancellationToken cancellationToken)
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -129,7 +128,6 @@ namespace FASTER.test
                 await log.RecoverReadOnlyAsync(cancellationToken);
             }
         }
-
     }
 }
 

@@ -11,15 +11,14 @@ namespace FASTER.test
     [TestFixture]
     internal class DeltaLogStandAloneTests
     {
-
         [Test]
         [Category("FasterLog")]
         public void DeltaLogTest1()
         {
             int TotalCount = 1000;
-            string path = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+            string path = TestUtils.MethodTestDir + "/";
             DirectoryInfo di = Directory.CreateDirectory(path);
-            using (IDevice device = Devices.CreateLogDevice(path + TestContext.CurrentContext.Test.Name + "/delta.log", deleteOnClose: false))
+            using (IDevice device = Devices.CreateLogDevice(path + "/delta.log", deleteOnClose: false))
             {
                 device.Initialize(-1);
                 using DeltaLog deltaLog = new DeltaLog(device, 12, 0);
@@ -72,6 +71,7 @@ namespace FASTER.test
                 }
                 catch { }
             }
+            TestUtils.DeleteDirectory(path);
         }
     }
 }

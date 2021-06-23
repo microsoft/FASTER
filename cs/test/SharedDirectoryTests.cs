@@ -29,7 +29,7 @@ namespace FASTER.test.recovery.sumstore
         [SetUp]
         public void Setup()
         {
-            this.rootPath = $"{TestContext.CurrentContext.TestDirectory}/{Path.GetRandomFileName()}";
+            this.rootPath = TestUtils.MethodTestDir;
             Directory.CreateDirectory(this.rootPath);
             this.sharedLogDirectory = $"{this.rootPath}/SharedLogs";
             Directory.CreateDirectory(this.sharedLogDirectory);
@@ -43,17 +43,12 @@ namespace FASTER.test.recovery.sumstore
         {
             this.original.TearDown();
             this.clone.TearDown();
-            try
-            {
-                TestUtils.DeleteDirectory(this.rootPath);
-            }
-            catch
-            {
-            }
+            TestUtils.DeleteDirectory(rootPath);
+            TestUtils.DeleteDirectory(sharedLogDirectory);
         }
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask SharedLogDirectory([Values]bool isAsync)
         {
             this.original.Initialize($"{this.rootPath}/OriginalCheckpoint", this.sharedLogDirectory);
@@ -87,7 +82,7 @@ namespace FASTER.test.recovery.sumstore
             // Dispose original, files should not be deleted on Windows
             this.original.TearDown();
 
-#if NETCOREAPP
+#if NETCOREAPP || NET
             if (RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
 #endif
             {
@@ -111,7 +106,7 @@ namespace FASTER.test.recovery.sumstore
 
             public void Initialize(string checkpointDirectory, string logDirectory, bool populateLogHandles = false)
             {
-#if NETCOREAPP
+#if NETCOREAPP || NET
                 if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                     populateLogHandles = false;
 #endif
@@ -133,12 +128,14 @@ namespace FASTER.test.recovery.sumstore
                     for (int i = 0; i < segmentIds.Count; i++)
                     {
                         var segmentId = segmentIds[i];
+#pragma warning disable CA1416 // populateLogHandles will be false for non-windows
                         var handle = LocalStorageDevice.CreateHandle(segmentId, disableFileBuffering: false, deleteOnClose: true, preallocateFile: false, segmentSize: -1, fileName: deviceFileName, IntPtr.Zero);
+#pragma warning restore CA1416
                         initialHandles[i] = new KeyValuePair<int, SafeFileHandle>(segmentId, handle);
                     }
                 }
 
-#if NETCOREAPP
+#if NETCOREAPP || NET
                 if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                 {
                     this.LogDevice = new ManagedLocalStorageDevice(deviceFileName, deleteOnClose: true);

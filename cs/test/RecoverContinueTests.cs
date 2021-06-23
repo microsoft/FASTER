@@ -17,12 +17,13 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         private FasterKV<AdId, NumClicks> fht3;
         private IDevice log;
         private int numOps;
-        private string checkpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints3";
+        private string checkpointDir;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/RecoverContinueTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/RecoverContinueTests.log", deleteOnClose: true);
+            checkpointDir = TestUtils.MethodTestDir + "/checkpoints3";
             Directory.CreateDirectory(checkpointDir);
 
             fht1 = new FasterKV
@@ -52,18 +53,19 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         [TearDown]
         public void TearDown()
         {
-            fht1.Dispose();
-            fht2.Dispose();
-            fht3.Dispose();
+            fht1?.Dispose();
+            fht2?.Dispose();
+            fht3?.Dispose();
             fht1 = null;
             fht2 = null;
             fht3 = null;
-            log.Dispose();
-            TestUtils.DeleteDirectory(checkpointDir);
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask RecoverContinueTest([Values]bool isAsync)
         {
             long sno = 0;

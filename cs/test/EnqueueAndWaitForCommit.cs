@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 using System;
-using System.IO;
 using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
@@ -16,8 +15,8 @@ namespace FASTER.test
 
         public FasterLog log;
         public IDevice device;
-        static readonly byte[] entry = new byte[entryLength];
-        static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
+        static byte[] entry;
+        static ReadOnlySpanBatch spanBatch;
         private string commitPath;
 
         public enum EnqueueIteratorType
@@ -38,11 +37,13 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+            entry = new byte[entryLength];
+            spanBatch = new(numEntries);
+
+            commitPath = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try { new DirectoryInfo(commitPath).Delete(true); }
-            catch { }
+            TestUtils.DeleteDirectory(commitPath);
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(commitPath + "EnqueueAndWaitForCommit.log", deleteOnClose: true);
@@ -52,12 +53,13 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            log.Dispose();
-            device.Dispose();
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
 
             // Clean up log files
-            try { new DirectoryInfo(commitPath).Delete(true); }
-            catch { }
+            TestUtils.DeleteDirectory(commitPath);
         }
 
         [Test]

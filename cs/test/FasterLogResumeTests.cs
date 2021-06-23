@@ -9,7 +9,6 @@ using FASTER.core;
 using NUnit.Framework;
 using System.Threading;
 
-
 namespace FASTER.test
 {
     [TestFixture]
@@ -21,7 +20,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+            commitPath = TestUtils.MethodTestDir + "/";
 
             if (Directory.Exists(commitPath))
                 TestUtils.DeleteDirectory(commitPath);
@@ -32,10 +31,9 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            device.Dispose();
-
-            if (Directory.Exists(commitPath))
-                TestUtils.DeleteDirectory(commitPath);
+            device?.Dispose();
+            device = null;
+            TestUtils.DeleteDirectory(commitPath);
         }
 
         [Test]
@@ -49,7 +47,7 @@ namespace FASTER.test
             var input3 = new byte[] { 11, 12 };
             string readerName = "abc";
 
-            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitFile = commitPath }))
+            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum }))
             {
                 await l.EnqueueAsync(input1, cancellationToken);
                 await l.EnqueueAsync(input2);
@@ -63,7 +61,7 @@ namespace FASTER.test
                 await l.CommitAsync();
             }
 
-            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitFile = commitPath }))
+            using (var l = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum }))
             {
                 using var recoveredIterator = l.Scan(0, long.MaxValue, readerName);
                 Assert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));

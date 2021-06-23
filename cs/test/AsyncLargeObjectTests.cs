@@ -9,7 +9,6 @@ using NUnit.Framework;
 
 namespace FASTER.test.async
 {
-
     [TestFixture]
     internal class LargeObjectTests
     {
@@ -22,12 +21,9 @@ namespace FASTER.test.async
         [SetUp]
         public void Setup()
         {
-            if (test_path == null)
-            {
-                test_path = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
-                if (!Directory.Exists(test_path))
-                    Directory.CreateDirectory(test_path);
-            }
+            test_path = TestUtils.MethodTestDir;
+            if (!Directory.Exists(test_path))
+                Directory.CreateDirectory(test_path);
         }
 
         [TearDown]

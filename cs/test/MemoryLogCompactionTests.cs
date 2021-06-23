@@ -9,7 +9,6 @@ using System.Buffers;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class MemoryLogCompactionTests
     {
@@ -19,7 +18,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/MemoryLogCompactionTests1.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/MemoryLogCompactionTests1.log", deleteOnClose: true);
             fht = new FasterKV<ReadOnlyMemory<int>, Memory<int>>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
         }
@@ -27,9 +26,11 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]

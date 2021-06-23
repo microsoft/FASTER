@@ -27,12 +27,9 @@ namespace FASTER.test.recovery.sumstore
         [SetUp]
         public void Setup()
         {
-            if (test_path == null)
-            {
-                test_path = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
-                if (!Directory.Exists(test_path))
-                    Directory.CreateDirectory(test_path);
-            }
+            test_path = TestUtils.MethodTestDir;
+            if (!Directory.Exists(test_path))
+                Directory.CreateDirectory(test_path);
 
             log = Devices.CreateLogDevice(test_path + "/FullRecoveryTests.log");
 
@@ -46,14 +43,15 @@ namespace FASTER.test.recovery.sumstore
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
             TestUtils.DeleteDirectory(test_path);
         }
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryTestSeparateCheckpoint([Values]bool isAsync)
         {
             Populate(SeparateCheckpointAction);
@@ -64,6 +62,7 @@ namespace FASTER.test.recovery.sumstore
                 fht.Dispose();
                 fht = null;
                 log.Dispose();
+                log = null;
                 Setup();
                 await RecoverAndTestAsync(logTokens[i], indexTokens[i], isAsync);
             }
@@ -71,6 +70,7 @@ namespace FASTER.test.recovery.sumstore
 
         [Test]
         [Category("FasterKV")]
+        Category("CheckpointRestore")]
         [Category("Smoke")]
         public async ValueTask RecoveryTestFullCheckpoint([Values] bool isAsync, [Values] TestUtils.DeviceType deviceType)
         {
@@ -98,6 +98,7 @@ namespace FASTER.test.recovery.sumstore
                 fht.Dispose();
                 fht = null;
                 log.Dispose();
+                log = null;
                 Setup();
                 await RecoverAndTestAsync(token, token, isAsync);
             }

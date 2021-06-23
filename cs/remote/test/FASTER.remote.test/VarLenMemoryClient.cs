@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Buffers;
 using FASTER.client;
+using FASTER.common;
 using NUnit.Framework;
 
 namespace FASTER.remote.test
@@ -20,7 +21,7 @@ namespace FASTER.remote.test
         }
 
         public ClientSession<ReadOnlyMemory<int>, ReadOnlyMemory<int>, ReadOnlyMemory<int>, (IMemoryOwner<int>, int), long, MemoryFunctions, MemoryParameterSerializer<int>> GetSession()
-            => client.NewSession<ReadOnlyMemory<int>, (IMemoryOwner<int>, int), long, MemoryFunctions, MemoryParameterSerializer<int>>(new MemoryFunctions(), new MemoryParameterSerializer<int>());
+            => client.NewSession<ReadOnlyMemory<int>, (IMemoryOwner<int>, int), long, MemoryFunctions, MemoryParameterSerializer<int>>(new MemoryFunctions(), WireFormat.DefaultVarLenKV, new MemoryParameterSerializer<int>());
     }
 
     /// <summary>

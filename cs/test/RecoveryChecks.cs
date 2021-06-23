@@ -17,18 +17,14 @@ namespace FASTER.test.recovery
         Cloud
     }
 
-    [TestFixture]
-    public class RecoveryChecks
+    public class RecoveryCheckBase
     {
-        IDevice log;
-        const int numOps = 5000;
-        AdId[] inputArray;
-        string path;
-        public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-        public const string TEST_CONTAINER = "recoverychecks";
+        protected IDevice log;
+        protected const int numOps = 5000;
+        protected AdId[] inputArray;
+        protected string path;
 
-        [SetUp]
-        public void Setup()
+        protected void BaseSetup()
         {
             inputArray = new AdId[numOps];
             for (int i = 0; i < numOps; i++)
@@ -36,16 +32,16 @@ namespace FASTER.test.recovery
                 inputArray[i].adId = i;
             }
 
-            path = TestContext.CurrentContext.TestDirectory + "/RecoveryChecks/";
+            path = TestUtils.MethodTestDir + "/";
             log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
             Directory.CreateDirectory(path);
         }
 
-        [TearDown]
-        public void TearDown()
+        protected void BaseTearDown()
         {
-            log.Dispose();
-            new DirectoryInfo(path).Delete(true);
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(path);
         }
 
         public class MyFunctions : SimpleFunctions<long, long>
@@ -66,9 +62,19 @@ namespace FASTER.test.recovery
                     Assert.IsTrue(status == Status.OK && output == key + 1);
             }
         }
+    }
+
+    [TestFixture]
+    public class RecoveryCheck1Tests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck1([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1<<10)]int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -111,7 +117,7 @@ namespace FASTER.test.recovery
             }
             else
             {
-                task.GetAwaiter().GetResult();
+                task.AsTask().GetAwaiter().GetResult();
                 fht2.Recover();
             }
 
@@ -130,8 +136,19 @@ namespace FASTER.test.recovery
             s2.CompletePending(true);
         }
 
+    }
+
+    [TestFixture]
+    public class RecoveryCheck2Tests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
+
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck2([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -177,7 +194,7 @@ namespace FASTER.test.recovery
                 }
                 else
                 {
-                    task.GetAwaiter().GetResult();
+                    task.AsTask().GetAwaiter().GetResult();
                     fht2.Recover();
                 }
 
@@ -196,9 +213,19 @@ namespace FASTER.test.recovery
                 s2.CompletePending(true);
             }
         }
+    }
+
+    [TestFixture]
+    public class RecoveryCheck3Tests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck3([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -244,7 +271,7 @@ namespace FASTER.test.recovery
                 }
                 else
                 {
-                    task.GetAwaiter().GetResult();
+                    task.AsTask().GetAwaiter().GetResult();
                     fht2.Recover();
                 }
 
@@ -264,8 +291,19 @@ namespace FASTER.test.recovery
             }
         }
 
+    }
+
+    [TestFixture]
+    public class RecoveryCheck4Tests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
+
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck4([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -303,7 +341,7 @@ namespace FASTER.test.recovery
                 }
 
                 if (i == 0)
-                    fht1.TakeIndexCheckpointAsync().GetAwaiter().GetResult();
+                    fht1.TakeIndexCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
                 var task = fht1.TakeHybridLogCheckpointAsync(checkpointType);
 
@@ -314,7 +352,7 @@ namespace FASTER.test.recovery
                 }
                 else
                 {
-                    task.GetAwaiter().GetResult();
+                    task.AsTask().GetAwaiter().GetResult();
                     fht2.Recover();
                 }
 
@@ -334,8 +372,19 @@ namespace FASTER.test.recovery
             }
         }
 
+    }
+
+    [TestFixture]
+    public class RecoveryCheck5Tests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
+
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck5([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -389,7 +438,7 @@ namespace FASTER.test.recovery
             }
             else
             {
-                task.GetAwaiter().GetResult();
+                task.AsTask().GetAwaiter().GetResult();
                 fht2.Recover();
             }
 
@@ -407,10 +456,19 @@ namespace FASTER.test.recovery
             }
             s2.CompletePending(true);
         }
+    }
 
+    [TestFixture]
+    public class RecoveryCheckSnapshotTests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask IncrSnapshotRecoveryCheck([Values] DeviceMode deviceMode)
         {
             ICheckpointManager checkpointManager;
@@ -418,15 +476,15 @@ namespace FASTER.test.recovery
             {
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactory(),
-                    new DefaultCheckpointNamingScheme(TestContext.CurrentContext.TestDirectory + $"/RecoveryChecks/IncrSnapshotRecoveryCheck"));
+                    new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir + "/checkpoints/"));  // PurgeAll deletes this directory
             }
             else
             {
                 if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
                 {
                     checkpointManager = new DeviceLogCommitCheckpointManager(
-                        new AzureStorageNamedDeviceFactory(EMULATED_STORAGE_STRING),
-                        new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/IncrSnapshotRecoveryCheck"));
+                        new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
+                        new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
                 }
                 else
                     return;
@@ -437,7 +495,7 @@ namespace FASTER.test.recovery
             checkpointManager.Dispose();
         }
 
-        public async ValueTask IncrSnapshotRecoveryCheck(ICheckpointManager checkpointManager)
+        private async ValueTask IncrSnapshotRecoveryCheck(ICheckpointManager checkpointManager)
         {
             using var fht1 = new FasterKV<long, long>
                 (1 << 10,
@@ -452,7 +510,7 @@ namespace FASTER.test.recovery
             }
 
             var task = fht1.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
-            var result = await task;
+            var (success, token) = await task;
 
             for (long key = 950; key < 1000; key++)
             {
@@ -463,7 +521,7 @@ namespace FASTER.test.recovery
             await fht1.CompleteCheckpointAsync();
 
             Assert.IsTrue(_result1);
-            Assert.IsTrue(_token1 == result.token);
+            Assert.IsTrue(_token1 == token);
 
             for (long key = 1000; key < 2000; key++)
             {
@@ -474,8 +532,7 @@ namespace FASTER.test.recovery
             await fht1.CompleteCheckpointAsync();
 
             Assert.IsTrue(_result2);
-            Assert.IsTrue(_token2 == result.token);
-            
+            Assert.IsTrue(_token2 == token);
 
             using var fht2 = new FasterKV<long, long>
                 (1 << 10,

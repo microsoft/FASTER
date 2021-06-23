@@ -102,7 +102,7 @@ namespace FASTER.test.readaddress
             // Track the recordInfo for its PreviousAddress.
             public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo)
             {
-                if (ctx is {})
+                if (ctx is not null)
                 {
                     ctx.output = output;
                     ctx.recordInfo = recordInfo;
@@ -112,7 +112,7 @@ namespace FASTER.test.readaddress
 
             public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status)
             {
-                if (ctx is {})
+                if (ctx is not null)
                 {
                     ctx.output = input;
                     ctx.recordInfo = default;
@@ -133,7 +133,7 @@ namespace FASTER.test.readaddress
 
             internal TestStore(bool useReadCache, CopyReadsToTail copyReadsToTail, bool flush)
             {
-                this.testDir = $"{TestContext.CurrentContext.TestDirectory}/{TestContext.CurrentContext.Test.Name}";
+                this.testDir = TestUtils.MethodTestDir;
                 this.logDevice = Devices.CreateLogDevice($"{testDir}/hlog.log");
                 this.flush = flush;
 
@@ -237,12 +237,11 @@ namespace FASTER.test.readaddress
 
             public void Dispose()
             {
-                if (!(this.fkv is null))
-                    this.fkv.Dispose();
-                if (!(this.logDevice is null))
-                    this.logDevice.Dispose();
-                if (!string.IsNullOrEmpty(this.testDir))
-                    new DirectoryInfo(this.testDir).Delete(true);
+                this.fkv?.Dispose();
+                this.fkv = null;
+                this.logDevice?.Dispose();
+                this.logDevice = null;
+                TestUtils.DeleteDirectory(this.testDir);
             }
         }
 

@@ -141,7 +141,7 @@ namespace FASTER.core
             }
 
             var adjustedSize = PageSize + 2 * sectorSize;
-            byte[] tmp = new byte[adjustedSize];
+            var tmp = new byte[adjustedSize];
             Array.Clear(tmp, 0, adjustedSize);
 
             handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);

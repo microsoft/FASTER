@@ -1,27 +1,23 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-using System;
-using System.Buffers;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
-using System.Text;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class FasterLogScanTests
     {
-
         private FasterLog log;
         private IDevice device;
         private string commitPath;
         static readonly byte[] entry = new byte[100];
+        private FasterLog logUncommitted;
+        private IDevice deviceUnCommitted;
+
+        private string path;
+        static byte[] entry;
         static int entryLength = 100;
         static int numEntries = 1000;
         static int entryFlag = 9999;
@@ -30,11 +26,13 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            entry = new byte[100];
+            path = TestUtils.MethodTestDir + "/";
+
             commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try {  new DirectoryInfo(commitPath).Delete(true);  }
-            catch {}
+            TestUtils.DeleteDirectory(path);
 
             // do not set up devices and log here because have DeviceType Enum which can't be set up here and has to be in the test
 
@@ -108,7 +106,21 @@ namespace FASTER.test
             logUncommitted.RefreshUncommitted(true);
         }
 
+        [TearDown]
+        public void TearDown()
+        {
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
+            deviceUnCommitted?.Dispose();
+            deviceUnCommitted = null;
+            logUncommitted?.Dispose();
+            logUncommitted = null;
 
+            // Clean up log files
+            TestUtils.DeleteDirectory(path);
+        }
 
         [Test]
         [Category("FasterLog")]

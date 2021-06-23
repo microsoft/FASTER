@@ -7,8 +7,6 @@ using System.IO;
 
 namespace FASTER.test
 {
-
-
     [TestFixture]
     internal class GenericLogCompactionTests
     {
@@ -21,8 +19,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericLogCompactionTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericLogCompactionTests.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericLogCompactionTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericLogCompactionTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<MyKey, MyValue>
                 (128,
@@ -42,15 +40,16 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            try
-            {
-                session.Dispose();
-                fht.Dispose();
-                fht = null;
-                log.Dispose();
-                objlog.Dispose();
-            }
-            catch { }
+            session?.Dispose();
+            session = null;
+            fht?.Dispose();
+            fht = null;
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
+
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         // Basic test that where shift begin address to untilAddress after compact

@@ -1,33 +1,28 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-using System;
-using System.Buffers;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
 
-
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class WaitForCommitTests
     {
         public FasterLog log;
         public IDevice device;
-        private string path = Path.GetTempPath() + "WaitForCommitTests/";
+        private string path;
         static readonly byte[] entry = new byte[10];
 
         [SetUp]
         public void Setup()
         {
+            path = TestUtils.MethodTestDir + "/";
+
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try { new DirectoryInfo(path).Delete(true); }
-            catch { }
+            TestUtils.DeleteDirectory(path);
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(path + "WaitForCommit", deleteOnClose: true);
@@ -37,12 +32,13 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            log.Dispose();
-            device.Dispose();
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
 
             // Clean up log files
-            try { new DirectoryInfo(path).Delete(true); }
-            catch { }
+            TestUtils.DeleteDirectory(path);
         }
 
         [TestCase("Sync")]  // use string here instead of Bool so shows up in Test Explorer with more descriptive name
