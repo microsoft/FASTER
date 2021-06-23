@@ -34,7 +34,7 @@ namespace FASTER.client
             new ReadOnlySpan<byte>(src + sizeof(int), (*(int*)src)).CopyTo(
                MemoryMarshal.Cast<T, byte>(mem.Memory.Span));
             src += sizeof(int) + (*(int*)src);
-            return (mem.Memory);
+            return (mem.Memory.Slice(0, len));
         }
 
         /// <inheritdoc />
