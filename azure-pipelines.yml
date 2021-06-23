@@ -51,7 +51,7 @@ jobs:
     inputs:
       command: test
       projects: '**/*.test.csproj'
-      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
+      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=diagnostic"'
       
   - task: PublishTestResults@2
     displayName: 'Publish Test Results'
