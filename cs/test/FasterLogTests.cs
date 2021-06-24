@@ -850,7 +850,7 @@ namespace FASTER.test
             // to make sure it isn't crashing and that it does actually commit it
             // Seen timing issues on CI machine when doing false to true ... so just take a second to let it settle
             log.Commit(false);
-            Thread.Sleep(4000);
+            Thread.Sleep(5000);
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
