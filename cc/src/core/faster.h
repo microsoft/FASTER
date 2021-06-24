@@ -197,6 +197,9 @@ class FasterKv {
   template<class C>
   inline OperationStatus InternalDelete(C& pending_context, bool force_tombstone);
 
+  template<class UC>
+  Status ConditionalCopyToTail(UC& context, HashBucketEntry& expected_entry);
+
  private:
   OperationStatus InternalContinuePendingRead(ExecutionContext& ctx,
       AsyncIOContext& io_context);
@@ -3122,6 +3125,80 @@ bool FasterKv<K, V, D>::ContainsKeyInMemory(key_t key, Address offset)
   // Otherwise, we failed and so return false.
   if (address >= offset) return true;
   return false;
+}
+
+template <class K, class V, class D>
+template <class UC>
+inline Status FasterKv<K, V, D>::ConditionalCopyToTail(UC& context, HashBucketEntry& expected_entry) {
+  typedef PendingUpsertContext<UC> pending_upsert_context_t;
+  pending_upsert_context_t pending_context { context, nullptr }; // will never go async
+
+  // Find hash index bucket for this key (must exist)
+  KeyHash hash = pending_context.get_key_hash();
+  HashBucketEntry entry;
+  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, entry);
+  assert(atomic_entry != nullptr);
+  // NOTE: if an entry was just created, entry = kInvalidEntry
+
+  do {
+    // Assume it's impossible for writes to go pending
+    // TODO: get rid of this, once we've implemented relaxed CPR
+    assert( thread_ctx().phase == Phase::REST);
+
+    if (entry == HashBucketEntry::kInvalidEntry) {
+      // TODO: check if it might be possible for expected_entry to have a a different value
+      // if that was acquired before shiftbeginindex (i.e. compaction)
+      assert(expected_entry == HashBucketEntry::kInvalidEntry);
+      goto create_record;
+    }
+
+    if (entry.address() != expected_entry.address()) {
+      // Hash-chain changed since last time!
+      if (expected_entry.address() < hlog.head_address.load()) {
+        // Part of the hash chain we need to check extends to disk section -- need to re-check chain
+        expected_entry = entry;
+        return Status::Pending;
+      }
+
+      // Check if an entry with same key was inserted during this time
+      Address address = entry.address();
+      record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
+      if(!pending_context.is_key_equal(record->key())) {
+        address = TraceBackForKeyMatchCtxt(pending_context, record->header.previous_address(),
+                                            expected_entry.address() + 1);
+      }
+
+      if (address > expected_entry.address()) {
+        // Some other entry with *same* key was inserted -- abort insert
+        return Status::Aborted;
+      }
+      assert(address == expected_entry.address());
+      // Update expected entry to reflect new hash chain
+      expected_entry = entry;
+    }
+
+    // Append entry to the log
+  create_record:
+    uint32_t record_size = record_t::size(pending_context.key_size(), pending_context.value_size());
+    Address new_address = BlockAllocate(record_size);
+    record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+    new(record) record_t{
+      RecordInfo{
+        static_cast<uint16_t>(thread_ctx().version), true, false, false, expected_entry.address() }
+    };
+    pending_context.write_deep_key_at(const_cast<key_t*>(&record->key()));
+    pending_context.Put(record);
+
+    // Try to update hash bucket address
+    HashBucketEntry updated_entry{ new_address, hash.tag(), false };
+    if(atomic_entry->compare_exchange_strong(entry, updated_entry)) {
+      // Installed the new record in the hash table.
+      return Status::Ok;
+    }
+
+    // Hash-chain changed since last time -- retry
+    record->header.invalid = true;
+  } while (true);
 }
 
 }
