@@ -27,28 +27,6 @@ jobs:
         buildConfiguration: 'Release'
 
   steps:
-  - task: NuGetToolInstaller@1
-
-  - task: NuGetCommand@2
-    inputs:
-      restoreSolution: '$(solution)'
-
-  - task: VSBuild@1
-    inputs:
-      solution: '$(solution)'
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-
-  - task: NuGetCommand@2
-    inputs:
-      restoreSolution: '$(solutionRemote)'
-
-  - task: VSBuild@1
-    inputs:
-      solution: '$(solutionRemote)'
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-
   - powershell: 'Invoke-WebRequest -OutFile azure-storage-emulator.msi -Uri "https://go.microsoft.com/fwlink/?LinkId=717179&clcid=0x409"'
     displayName: 'Download Azure Storage Emulator'
 
@@ -61,43 +39,22 @@ jobs:
   - script: '"C:\storage-emulator\root\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
     displayName: 'Start Storage Emulator'
 
-  - task: VSTest@2
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build $(buildConfiguration)'
     inputs:
-      testAssemblyVer2: |
-       **\$(BuildConfiguration)\net46*\*test.dll
-       **\$(BuildConfiguration)\**\net46*\*test.dll
-       !**\*Microsoft.VisualStudio.TestPlatform*
-       !**\obj\**
-       !**\*TestAdapter.dll
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETFramework,Version=v4.0 /TestCaseFilter:TestCategory=Smoke'
+      command: 'build'
+      projects: '**/*.test.csproj'
+      arguments: '--configuration $(buildConfiguration) /TestCaseFilter:TestCategory=Smoke'
 
-  - task: VSTest@2
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet test $(buildConfiguration)'
     inputs:
-      testAssemblyVer2: |
-       **\$(BuildConfiguration)\netcoreapp2*\*test.dll
-       **\$(BuildConfiguration)\**\netcoreapp2*\*test.dll
-       !**\*Microsoft.VisualStudio.TestPlatform*
-       !**\obj\**
-       !**\*TestAdapter.dll
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v2.2 /TestCaseFilter:TestCategory=Smoke'
-
-  - task: VSTest@2
-    inputs:
-      testAssemblyVer2: |
-       **\$(BuildConfiguration)\netcoreapp3*\*test.dll
-       **\$(BuildConfiguration)\**\netcoreapp3*\*test.dll
-       !**\*Microsoft.VisualStudio.TestPlatform*
-       !**\obj\**
-       !**\*TestAdapter.dll
-      platform: '$(buildPlatform)'
-      configuration: '$(buildConfiguration)'
-      otherConsoleOptions: '/Framework:.NETCoreApp,Version=v3.1 /TestCaseFilter:TestCategory=Smoke'
-
+      command: test
+      projects: '**/*.test.csproj'
+      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed" /TestCaseFilter:TestCategory=Smoke'
+      
   - task: PublishTestResults@2
+    displayName: 'Publish Test Results'
     inputs:
       testRunner: VSTest
       testResultsFiles: '**/*.trx'
@@ -137,7 +94,7 @@ jobs:
 
 - job: 'cppLinux'
   pool:
-    vmImage: ubuntu-latest
+    vmImage: ubuntu-18.04
   displayName: 'C++ (Linux)'
 
   steps:
@@ -146,7 +103,6 @@ jobs:
       sudo apt update
       sudo apt install -y g++-7 libaio-dev uuid-dev libtbb-dev
     displayName: 'Install depdendencies'
-
   - script: |
       export CXX='g++-7'
       cd cc
@@ -158,44 +114,40 @@ jobs:
       cmake -DCMAKE_BUILD_TYPE=Release ../..
       make -j
     displayName: 'Compile'
-
   - script: |
       CTEST_OUTPUT_ON_FAILURE=1 make test
     workingDirectory: 'cc/build/Debug'
     displayName: 'Run Tests (Debug)'
-
 - job: 'csharpLinux'
   pool:
-    vmImage: ubuntu-latest
+    vmImage: ubuntu-18.04
   displayName: 'C# (Linux)'
 
+  strategy:
+    maxParallel: 2
+    matrix:
+      AnyCPU-Debug:
+        buildPlatform: 'Any CPU'
+        buildConfiguration: 'Debug'
+      AnyCPU-Release:
+        buildPlatform: 'Any CPU'
+        buildConfiguration: 'Release'
+
   steps:
-  - task: NuGetToolInstaller@1
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build $(buildConfiguration)'
     inputs:
-      versionSpec: '5.5.0'
-
-  - task: NuGetCommand@2
-    inputs:
-      restoreSolution: '$(solution)'
-
-  - task: UseDotNet@2
-    inputs:
-      packageType: 'sdk'
-      version: '3.1.201'
-
-  - script: |
-      mono --version
-      msbuild /version
-      msbuild /t:restore $(solution)
-      msbuild /p:Configuration=Release $(solution)
-    displayName: 'Build'
+      command: 'build'
+      projects: '**/*.test.csproj'
+      arguments: '--configuration $(buildConfiguration)'
 
   - task: DotNetCoreCLI@2
+    displayName: 'dotnet test $(buildConfiguration)'
     inputs:
       command: test
-      projects: '**/test/*.csproj'
-      arguments: '--configuration $(buildConfiguration) --framework netcoreapp3.1 -l "console;verbosity=detailed" --filter "TestCategory=Smoke"'
-
+      projects: '**/*.test.csproj'
+      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed" --filter "TestCategory=Smoke"'
+      
   - task: PublishTestResults@2
     displayName: 'Publish Test Results'
     inputs:
