@@ -44,14 +44,14 @@ jobs:
     inputs:
       command: 'build'
       projects: '**/*.test.csproj'
-      arguments: '--configuration $(buildConfiguration) /TestCaseFilter:TestCategory=Smoke'
+      arguments: '--configuration $(buildConfiguration)'
 
   - task: DotNetCoreCLI@2
     displayName: 'dotnet test $(buildConfiguration)'
     inputs:
       command: test
       projects: '**/*.test.csproj'
-      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed" /TestCaseFilter:TestCategory=Smoke'
+      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed" --filter:TestCategory=Smoke'
       
   - task: PublishTestResults@2
     displayName: 'Publish Test Results'
