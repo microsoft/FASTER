@@ -276,7 +276,8 @@ class PersistentMemoryMalloc {
       throw std::invalid_argument{ "Must have at least 2 non-head pages" };
     }
     // The latest N pages should be mutable.
-    num_mutable_pages_ = static_cast<uint32_t>(log_mutable_fraction * buffer_size_);
+    // If mutable fraction is 0, then allocate minimum size possible (i.e. 2 mutable pages)
+    num_mutable_pages_ = (log_mutable_fraction > 0) ? static_cast<uint32_t>(log_mutable_fraction * buffer_size_) : 2;
     if(num_mutable_pages_ <= 1) {
       // Need at least two mutable pages: one to write to, and one to open up when the previous
       // mutable page is full.
