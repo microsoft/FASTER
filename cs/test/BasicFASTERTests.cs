@@ -18,22 +18,20 @@ namespace FASTER.test
         private FasterKV<KeyStruct, ValueStruct> fht;
         private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> session;
         private IDevice log;
-        private string commitPath;
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicFasterTests.log", deleteOnClose: true);
+            path = TestUtils.MethodTestDir + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path);
+
+            log = Devices.CreateLogDevice(path + "/BasicFasterTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
             session = fht.For(new Functions()).NewSession<Functions>();
-
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
-
-            // Clean up log files from previous test runs in case they weren't cleaned up
-            if (Directory.Exists(commitPath))
-                Directory.Delete(commitPath, true);
-
         }
 
         [TearDown]
@@ -45,7 +43,8 @@ namespace FASTER.test
             fht = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.DeleteDirectory(path);
+
         }
 
         [Test]
@@ -54,7 +53,7 @@ namespace FASTER.test
         public void NativeInMemWriteRead([Values] TestUtils.DeviceType deviceType)
         {
             // Reset all the log and fht values since using all deviceType
-            string filename = commitPath + "NativeInMemWriteRead" + deviceType.ToString() + ".log";
+            string filename = path + "NativeInMemWriteRead" + deviceType.ToString() + ".log";
             log = TestUtils.CreateTestDevice(deviceType, filename);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (128, new LogSettings { LogDevice = log, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 });
@@ -271,8 +270,8 @@ namespace FASTER.test
                     session.CompletePending(true);
                 }
 
-                Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                Assert.IsTrue(output.value.vfield1 == value.vfield1,"output1:"+ output.value.vfield1.ToString()+" value1:"+ value.vfield1.ToString());
+                Assert.IsTrue(output.value.vfield2 == value.vfield2,"output2:" + output.value.vfield2.ToString() + " value2:" + value.vfield2.ToString());
             }
 
             // Shift head and retry - should not find in main memory now
@@ -284,7 +283,8 @@ namespace FASTER.test
                 var i = r.Next(10000);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                Assert.IsTrue(session.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING);
+                Status foundStatus = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(foundStatus == Status.PENDING, "Found Status:"+ foundStatus.ToString() + " Expected Status: PENDING");
                 session.CompletePending(true);
             }
         }

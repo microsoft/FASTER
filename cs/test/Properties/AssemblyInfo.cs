@@ -39,7 +39,7 @@ using System.Runtime.InteropServices;
 //[assembly: AssemblyFileVersion("1.0.0.0")]
 
 // Make all fixtures in the test assembly run in parallel
-[assembly: Parallelizable(ParallelScope.Fixtures)]
-#if !(NETCOREAPP || NET)    // net461 runs x86 by default so throttle its parallelism
-[assembly: LevelOfParallelism(8)]
-#endif
+//[assembly: Parallelizable(ParallelScope.Fixtures)]
+//#if !(NETCOREAPP || NET)    // net461 runs x86 by default so throttle its parallelism
+//[assembly: LevelOfParallelism(8)]
+//#endif

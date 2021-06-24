@@ -20,7 +20,7 @@ namespace FASTER.test
         private FasterLog log;
         private IDevice device;
         static byte[] entry;
-        private string commitPath;
+        private string path;
 
         public enum EnqueueIteratorType
         {
@@ -42,11 +42,10 @@ namespace FASTER.test
         public void Setup()
         {
             entry = new byte[100];
-            commitPath = TestUtils.MethodTestDir + "/";
+            path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            if (Directory.Exists(commitPath))
-                Directory.Delete(commitPath, true);
+            TestUtils.DeleteDirectory(path);
         }
 
         [TearDown]
@@ -58,7 +57,8 @@ namespace FASTER.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(commitPath);
+            TestUtils.DeleteDirectory(path);
+
         }
 
         [Test]
@@ -70,7 +70,7 @@ namespace FASTER.test
             int numEntries = 500;
             int entryFlag = 9999;
 
-            string filename = commitPath+ "Enqueue"+deviceType.ToString()+".log";
+            string filename = path + "Enqueue"+deviceType.ToString()+".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 }); // Needs to match what is set in TestUtils.CreateTestDevice 
 
@@ -80,13 +80,11 @@ namespace FASTER.test
                 return;
             }
 
-
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
 #endif
-
 
             // Reduce SpanBatch to make sure entry fits on page
             if (iteratorType == EnqueueIteratorType.SpanBatch)
@@ -180,7 +178,7 @@ namespace FASTER.test
         {
 
             bool datacheckrun = false;
-            string filename = commitPath + "EnqueueAsyncBasic" + deviceType.ToString() + ".log";
+            string filename = path + "EnqueueAsyncBasic" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device,SegmentSizeBits = 22 });
 

@@ -13,11 +13,18 @@ namespace FASTER.test
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
+        private string path;
+
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
+            path = TestUtils.MethodTestDir + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path);
+
+            log = Devices.CreateLogDevice(path + "/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>(128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
         }
 
@@ -28,7 +35,7 @@ namespace FASTER.test
             fht = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.DeleteDirectory(path);
         }
 
         const int numRecords = 1000;

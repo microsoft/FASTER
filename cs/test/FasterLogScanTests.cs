@@ -11,8 +11,6 @@ namespace FASTER.test
     {
         private FasterLog log;
         private IDevice device;
-        private string commitPath;
-        static readonly byte[] entry = new byte[100];
         private FasterLog logUncommitted;
         private IDevice deviceUnCommitted;
 
@@ -29,25 +27,34 @@ namespace FASTER.test
             entry = new byte[100];
             path = TestUtils.MethodTestDir + "/";
 
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path);
-
-            // do not set up devices and log here because have DeviceType Enum which can't be set up here and has to be in the test
 
         }
 
         [TearDown]
         public void TearDown()
         {
-            log.Dispose();
-            device.Dispose();
+            //*##*# TO DO: Check why Emulator on TearDown fails with a "Blob Doesn't exist exception" but not with any other device type"
+            try
+            {
 
-            try { new DirectoryInfo(commitPath).Delete(true); }
+                log?.Dispose();
+                log = null;
+                device?.Dispose();
+                device = null;
+                deviceUnCommitted?.Dispose();
+                deviceUnCommitted = null;
+                logUncommitted?.Dispose();
+                logUncommitted = null;
+            }
             catch { }
 
+            // Clean up log files
+            TestUtils.DeleteDirectory(path);
         }
+
+
 
         public void PopulateLog(FasterLog log)
         {
@@ -106,21 +113,6 @@ namespace FASTER.test
             logUncommitted.RefreshUncommitted(true);
         }
 
-        [TearDown]
-        public void TearDown()
-        {
-            log?.Dispose();
-            log = null;
-            device?.Dispose();
-            device = null;
-            deviceUnCommitted?.Dispose();
-            deviceUnCommitted = null;
-            logUncommitted?.Dispose();
-            logUncommitted = null;
-
-            // Clean up log files
-            TestUtils.DeleteDirectory(path);
-        }
 
         [Test]
         [Category("FasterLog")]
@@ -129,7 +121,7 @@ namespace FASTER.test
         {
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = commitPath + "LogScanDefault" + deviceType.ToString() + ".log";
+            string filename = path + "LogScanDefault" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
@@ -187,7 +179,7 @@ namespace FASTER.test
             // Test where all params are set just to make sure handles it ok
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = commitPath + "LogScanNoDefault" + deviceType.ToString() + ".log";
+            string filename = path + "LogScanNoDefault" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
@@ -242,7 +234,7 @@ namespace FASTER.test
             //You can persist iterators(or more precisely, their CompletedUntilAddress) as part of a commit by simply naming them during their creation. 
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = commitPath + "LogScanByName" + deviceType.ToString() + ".log";
+            string filename = path + "LogScanByName" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
@@ -297,7 +289,7 @@ namespace FASTER.test
             // You may also force an iterator to start at the specified begin address, i.e., without recovering: recover parameter = false
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = commitPath + "LogScanWithoutRecover" + deviceType.ToString() + ".log";
+            string filename = path + "LogScanWithoutRecover" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
@@ -351,7 +343,7 @@ namespace FASTER.test
             // Same as default, but do it just to make sure have test in case default changes
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = commitPath + "LogScanDoublePage" + deviceType.ToString() + ".log";
+            string filename = path + "LogScanDoublePage" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
@@ -405,7 +397,7 @@ namespace FASTER.test
         {
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = commitPath + "LogScanSinglePage" + deviceType.ToString() + ".log";
+            string filename = path + "LogScanSinglePage" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
@@ -458,7 +450,7 @@ namespace FASTER.test
         {
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = commitPath + "LogScan" + deviceType.ToString() + ".log";
+            string filename = path + "LogScan" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 

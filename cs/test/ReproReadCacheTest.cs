@@ -33,6 +33,8 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
+
         public unsafe void RandomReadCacheTest1()
         {
             var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicFasterTests.log", deleteOnClose: true);

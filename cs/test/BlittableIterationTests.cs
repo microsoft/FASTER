@@ -11,20 +11,19 @@ namespace FASTER.test
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
-        private string commitPath;
-
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BlittableIterationTests.log", deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+            path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            if (Directory.Exists(commitPath))
-                Directory.Delete(commitPath, true);
+            TestUtils.DeleteDirectory(path);
+
+            log = Devices.CreateLogDevice(path + "/BlittableIterationTests.log", deleteOnClose: true);
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
         }
 
         [TearDown]
@@ -34,7 +33,7 @@ namespace FASTER.test
             fht = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.DeleteDirectory(path);
         }
 
         [Test]
@@ -44,7 +43,7 @@ namespace FASTER.test
         public void BlittableIterationTest1([Values] TestUtils.DeviceType deviceType)
         {
 
-            string filename = commitPath + "BlittableIterationTest1" + deviceType.ToString() + ".log";
+            string filename = path + "BlittableIterationTest1" + deviceType.ToString() + ".log";
             log = TestUtils.CreateTestDevice(deviceType, filename);
             fht = new FasterKV<KeyStruct, ValueStruct>
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });

@@ -18,7 +18,6 @@ namespace FASTER.test
         private IDevice device;
         private string path;
         static readonly byte[] entry = new byte[100];
-        private string commitPath;
 
         public enum TryEnqueueIteratorType
         {
@@ -40,14 +39,9 @@ namespace FASTER.test
         {
             path = TestUtils.MethodTestDir + "/";
 
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path);
 
-            // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "TryEnqueue", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
         }
 
         [TearDown]
@@ -73,7 +67,7 @@ namespace FASTER.test
             int entryFlag = 9999;
 
             // Create devices \ log for test
-            string filename = commitPath + "TryEnqueue" + deviceType.ToString() + ".log";
+            string filename = path + "TryEnqueue" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 });
 
@@ -82,7 +76,6 @@ namespace FASTER.test
             {
                 return;
             }
-
 
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing

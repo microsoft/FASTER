@@ -20,9 +20,9 @@ namespace FASTER.test
         [Category("FasterLog")]
         public void TestDisposeReleasesFileLocksWithInprogressCommit()
         {
-            string commitPath = TestUtils.MethodTestDir + "/";
-            DirectoryInfo di = Directory.CreateDirectory(commitPath);
-            IDevice device = Devices.CreateLogDevice(commitPath + "testDisposeReleasesFileLocksWithInprogressCommit.log", preallocateFile: true, deleteOnClose: false);
+            string path = TestUtils.MethodTestDir + "/";
+            DirectoryInfo di = Directory.CreateDirectory(path);
+            IDevice device = Devices.CreateLogDevice(path + "testDisposeReleasesFileLocksWithInprogressCommit.log", preallocateFile: true, deleteOnClose: false);
             FasterLog fasterLog = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry });
             Assert.IsTrue(fasterLog.TryEnqueue(new byte[100], out long beginAddress));
             fasterLog.Commit(spinWait: false);
@@ -48,7 +48,7 @@ namespace FASTER.test
         protected const int numSpanEntries = 500;  // really slows down if go too many
         protected FasterLog log;
         protected IDevice device;
-        protected string commitPath;
+        protected string path;
         protected DeviceLogCommitCheckpointManager manager;
 
         protected static readonly byte[] entry = new byte[100];
@@ -64,25 +64,30 @@ namespace FASTER.test
 
         protected void BaseSetup()
         {
-            commitPath = TestUtils.MethodTestDir + "/";
+            path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(commitPath);
+            TestUtils.DeleteDirectory(path);
 
-            device = Devices.CreateLogDevice(commitPath + "fasterlog.log", deleteOnClose: true);
-            manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(commitPath));
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(path));
         }
 
         protected void BaseTearDown()
         {
-            log?.Dispose();
-            log = null;
-            manager?.Dispose();
-            manager = null;
-            device?.Dispose();
-            device = null;
+            //*##*# TO DO: Check why Emulator on TearDown fails with a "Blob Doesn't exist exception" but not with any other device type"
+            try
+            {
+                log?.Dispose();
+                log = null;
+                manager?.Dispose();
+                manager = null;
+                device?.Dispose();
+                device = null;
+            }
+            catch { }
 
-            TestUtils.DeleteDirectory(commitPath);
+            TestUtils.DeleteDirectory(path);
         }
 
         internal class Counter
@@ -527,7 +532,7 @@ namespace FASTER.test
 
         public async ValueTask TryEnqueue2([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
-            string filename = commitPath + "TryEnqueue2" + deviceType.ToString() + ".log";
+            string filename = path + "TryEnqueue2" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
 
             var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22 };
@@ -600,7 +605,7 @@ namespace FASTER.test
 
         public async ValueTask TruncateUntilBasic([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
-            string filename = commitPath + "TruncateUntilBasic" + deviceType.ToString() + ".log";
+            string filename = path + "TruncateUntilBasic" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
 
             var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22 };
@@ -648,7 +653,7 @@ namespace FASTER.test
 
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numSpanEntries);
 
-            string filename = commitPath + "EnqueueAndWaitForCommitAsyncBasicTest" + deviceType.ToString() + ".log";
+            string filename = path + "EnqueueAndWaitForCommitAsyncBasicTest" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22 });
 
@@ -825,7 +830,7 @@ namespace FASTER.test
         [Category("Smoke")]
         public void CommitNoSpinWait([Values] TestUtils.DeviceType deviceType)
         {
-            string filename = commitPath + "CommitNoSpinWait" + deviceType.ToString() + ".log";
+            string filename = path + "CommitNoSpinWait" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 });
 
@@ -886,7 +891,7 @@ namespace FASTER.test
             CancellationToken token = cts.Token;
             Task currentTask;
 
-            string filename = commitPath + "CommitAsyncPrevTask" + deviceType.ToString() + ".log";
+            string filename = path + "CommitAsyncPrevTask" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 };
             log = await FasterLog.CreateAsync(logSettings);
@@ -974,7 +979,7 @@ namespace FASTER.test
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
 
-            string filename = commitPath + "RefreshUncommittedAsyncTest" + deviceType.ToString() + ".log";
+            string filename = path + "RefreshUncommittedAsyncTest" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
 
             log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogCommitManager = manager, SegmentSizeBits = 22 });
@@ -1040,10 +1045,6 @@ namespace FASTER.test
             }
             log.Dispose();
         }
-
-
-
-
 
     }
 }

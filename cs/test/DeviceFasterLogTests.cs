@@ -21,9 +21,6 @@ namespace FASTER.test
         private FasterLog log;
         static readonly byte[] entry = new byte[100];
 
-        public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-        public const string TEST_CONTAINER = "test";
-
         [Test]
         [Category("FasterLog")]
         public async ValueTask PageBlobFasterLogTest1([Values] LogChecksumType logChecksum, [Values]FasterLogTestBase.IteratorType iteratorType)
@@ -43,7 +40,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask PageBlobFasterLogTestWithLease([Values] LogChecksumType logChecksum, [Values] FasterLogTests.IteratorType iteratorType)
+        public async ValueTask PageBlobFasterLogTestWithLease([Values] LogChecksumType logChecksum, [Values] FasterLogTestBase.IteratorType iteratorType)
         {
             // Need this environment variable set AND Azure Storage Emulator running
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))

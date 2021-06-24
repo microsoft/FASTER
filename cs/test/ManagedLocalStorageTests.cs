@@ -16,23 +16,22 @@ namespace FASTER.test
         private FasterLog logFullParams;
         private IDevice deviceFullParams;
         static readonly byte[] entry = new byte[100];
-        private string commitPath;
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            commitPath = TestUtils.MethodTestDir + "/";
+            path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
             // We loop to ensure clean-up as deleteOnClose does not always work for MLSD
-            while (Directory.Exists(commitPath))
-                Directory.Delete(commitPath, true);
+            TestUtils.DeleteDirectory(path);
 
             // Create devices \ log for test
-            device = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStore.log", deleteOnClose: true);
+            device = new ManagedLocalStorageDevice(path + "ManagedLocalStore.log", deleteOnClose: true);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
 
-            deviceFullParams = new ManagedLocalStorageDevice(commitPath + "ManagedLocalStoreFullParams.log", deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
+            deviceFullParams = new ManagedLocalStorageDevice(path + "ManagedLocalStoreFullParams.log", deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
             logFullParams = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
         }
 
@@ -49,7 +48,7 @@ namespace FASTER.test
             deviceFullParams = null;
 
             // Clean up log 
-            TestUtils.DeleteDirectory(commitPath);
+            TestUtils.DeleteDirectory(path);
         }
 
 
@@ -170,8 +169,8 @@ namespace FASTER.test
             logFullParams.Commit(true);
 
             // Verify  
-            Assert.IsTrue(File.Exists(commitPath + "/log-commits/commit.0.0"));
-            Assert.IsTrue(File.Exists(commitPath + "/ManagedLocalStore.log.0"));
+            Assert.IsTrue(File.Exists(path + "/log-commits/commit.0.0"));
+            Assert.IsTrue(File.Exists(path + "/ManagedLocalStore.log.0"));
 
             // Read the log just to verify can actually read it
             int currentEntry = 0;

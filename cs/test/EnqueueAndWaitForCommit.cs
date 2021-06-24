@@ -17,7 +17,7 @@ namespace FASTER.test
         public IDevice device;
         static byte[] entry;
         static ReadOnlySpanBatch spanBatch;
-        private string commitPath;
+        private string path;
 
         public enum EnqueueIteratorType
         {
@@ -40,13 +40,13 @@ namespace FASTER.test
             entry = new byte[entryLength];
             spanBatch = new(numEntries);
 
-            commitPath = TestUtils.MethodTestDir + "/";
+            path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(commitPath);
+            TestUtils.DeleteDirectory(path);
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(commitPath + "EnqueueAndWaitForCommit.log", deleteOnClose: true);
+            device = Devices.CreateLogDevice(path + "EnqueueAndWaitForCommit.log", deleteOnClose: true);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
         }
 
@@ -59,7 +59,7 @@ namespace FASTER.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(commitPath);
+            TestUtils.DeleteDirectory(path);
         }
 
         [Test]

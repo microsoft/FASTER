@@ -22,6 +22,7 @@ namespace FASTER.test
     {
         internal static void DeleteDirectory(string path)
         {
+
             try
             {
                 foreach (string directory in Directory.GetDirectories(path))

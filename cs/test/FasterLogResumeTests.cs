@@ -15,17 +15,16 @@ namespace FASTER.test
     internal class FasterLogResumeTests
     {
         private IDevice device;
-        private string commitPath;
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            commitPath = TestUtils.MethodTestDir + "/";
+            path = TestUtils.MethodTestDir + "/";
 
-            if (Directory.Exists(commitPath))
-                TestUtils.DeleteDirectory(commitPath);
+            TestUtils.DeleteDirectory(path);
 
-            device = Devices.CreateLogDevice(commitPath + "fasterlog.log", deleteOnClose: true);
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
         }
 
         [TearDown]
@@ -33,7 +32,7 @@ namespace FASTER.test
         {
             device?.Dispose();
             device = null;
-            TestUtils.DeleteDirectory(commitPath);
+            TestUtils.DeleteDirectory(path);
         }
 
         [Test]
@@ -78,7 +77,7 @@ namespace FASTER.test
             var input3 = new byte[] { 11, 12 };
             string readerName = "abc";
 
-            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), overwriteLogCommits, removeOutdated))
+            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(path), overwriteLogCommits, removeOutdated))
             {
 
                 long originalCompleted;
@@ -122,7 +121,7 @@ namespace FASTER.test
             var input3 = new byte[] { 11, 12 };
             string readerName = "abcd";
 
-            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), overwriteLogCommits, removeOutdated))
+            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(path), overwriteLogCommits, removeOutdated))
             {
                 long originalCompleted;
 
