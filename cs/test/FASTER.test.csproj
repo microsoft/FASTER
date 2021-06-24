@@ -1,11 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks Condition="'$(OS)' == 'Windows_NT'">net5.0;netcoreapp3.1;netcoreapp2.1;net461</TargetFrameworks>
-    <TargetFrameworks Condition="'$(OS)' != 'Windows_NT'">net5.0;netcoreapp3.1</TargetFrameworks>
+    <TargetFrameworks>netcoreapp3.1;netcoreapp2.1;net461</TargetFrameworks>
     <Platforms>AnyCPU;x64</Platforms>
-    <LangVersion>latest</LangVersion>
     <HighEntropyVA>true</HighEntropyVA>
+    <LangVersion>8</LangVersion>
   </PropertyGroup>
 
   <PropertyGroup>
