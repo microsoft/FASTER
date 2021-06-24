@@ -140,7 +140,8 @@ class FasterKv {
   inline Status Upsert(UC& context, AsyncCallback callback, uint64_t monotonic_serial_num);
 
   template <class MC>
-  inline Status Rmw(MC& context, AsyncCallback callback, uint64_t monotonic_serial_num);
+  inline Status Rmw(MC& context, AsyncCallback callback, uint64_t monotonic_serial_num,
+                      bool create_if_not_exists = true);
 
   template <class DC>
   inline Status Delete(DC& context, AsyncCallback callback, uint64_t monotonic_serial_num,
@@ -623,7 +624,7 @@ inline Status FasterKv<K, V, D>::Upsert(UC& context, AsyncCallback callback,
 template <class K, class V, class D>
 template <class MC>
 inline Status FasterKv<K, V, D>::Rmw(MC& context, AsyncCallback callback,
-                                     uint64_t monotonic_serial_num) {
+                                     uint64_t monotonic_serial_num, bool create_if_not_exists) {
   typedef MC rmw_context_t;
   typedef PendingRmwContext<MC> pending_rmw_context_t;
   static_assert(std::is_base_of<value_t, typename rmw_context_t::value_t>::value,
@@ -631,11 +632,15 @@ inline Status FasterKv<K, V, D>::Rmw(MC& context, AsyncCallback callback,
   static_assert(alignof(value_t) == alignof(typename rmw_context_t::value_t),
                 "alignof(value_t) != alignof(typename rmw_context_t::value_t)");
 
-  pending_rmw_context_t pending_context{ context, callback };
+  pending_rmw_context_t pending_context{ context, callback, create_if_not_exists };
   OperationStatus internal_status = InternalRmw(pending_context, false);
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
+  } else if (internal_status == OperationStatus::NOT_FOUND) {
+    // Can be returned iff create_if_not_exists = false
+    assert(!create_if_not_exists);
+    status = Status::NotFound;
   } else {
     bool async;
     status = HandleOperationStatus(thread_ctx(), pending_context, internal_status, async);
@@ -760,6 +765,8 @@ inline void FasterKv<K, V, D>::CompleteRetryRequests(ExecutionContext& context) 
     Status result;
     if(internal_status == OperationStatus::SUCCESS) {
       result = Status::Ok;
+    } else if (internal_status == OperationStatus::NOT_FOUND) {
+      result = Status::NotFound;
     } else {
       result = HandleOperationStatus(context, *pending_context.get(), internal_status,
                                      pending_context.async);
@@ -1130,6 +1137,10 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
     }
     return OperationStatus::RECORD_ON_DISK;
   } else {
+    // No record exists in the log
+    if (!pending_context.create_if_not_exists) {
+      return OperationStatus::NOT_FOUND;
+    }
     // Create a new record.
     goto create_record;
   }
@@ -1601,6 +1612,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
     AsyncIOContext& io_context) {
   async_pending_rmw_context_t* pending_context = static_cast<async_pending_rmw_context_t*>(
         io_context.caller_context);
+  bool create_if_not_exists = pending_context->create_if_not_exists;
 
   // Find a hash bucket entry to store the updated value in.
   KeyHash hash = pending_context->get_key_hash();
@@ -1631,6 +1643,10 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
   record_t* new_record;
   if(io_context.address < hlog.begin_address.load()) {
     // The on-disk trace back failed to find a key match.
+    if (!create_if_not_exists) {
+      return OperationStatus::NOT_FOUND;
+    }
+
     uint32_t record_size = record_t::size(pending_context->key_size(), pending_context->value_size());
     new_address = BlockAllocate(record_size);
     new_record = reinterpret_cast<record_t*>(hlog.Get(new_address));

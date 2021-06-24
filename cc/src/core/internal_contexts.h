@@ -305,12 +305,14 @@ class AsyncPendingRmwContext : public PendingContext<K> {
  public:
   typedef K key_t;
  protected:
-  AsyncPendingRmwContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_)
-    : PendingContext<key_t>(OperationType::RMW, caller_context_, caller_callback_) {
+  AsyncPendingRmwContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_, bool create_if_not_exists_)
+    : PendingContext<key_t>(OperationType::RMW, caller_context_, caller_callback_)
+    , create_if_not_exists{create_if_not_exists_} {
   }
   /// The deep copy constructor.
   AsyncPendingRmwContext(AsyncPendingRmwContext& other, IAsyncContext* caller_context)
-    : PendingContext<key_t>(other, caller_context) {
+    : PendingContext<key_t>(other, caller_context)
+    , create_if_not_exists{other.create_if_not_exists} {
   }
  public:
   /// Set initial value.
@@ -323,6 +325,9 @@ class AsyncPendingRmwContext : public PendingContext<K> {
   virtual uint32_t value_size() const = 0;
   /// Get value size for RCU
   virtual uint32_t value_size(const void* old_rec) const = 0;
+
+  /// If false, it will return NOT_FOUND instead of creating a new record
+  bool create_if_not_exists;
 };
 
 /// A synchronous Rmw() context preserves its type information.
@@ -336,8 +341,8 @@ class PendingRmwContext : public AsyncPendingRmwContext<typename MC::key_t> {
   typedef Record<key_t, value_t> record_t;
   constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
-  PendingRmwContext(rmw_context_t& caller_context_, AsyncCallback caller_callback_)
-    : AsyncPendingRmwContext<key_t>(caller_context_, caller_callback_) {
+  PendingRmwContext(rmw_context_t& caller_context_, AsyncCallback caller_callback_, bool create_if_not_exists_)
+    : AsyncPendingRmwContext<key_t>(caller_context_, caller_callback_, create_if_not_exists_) {
   }
   /// The deep copy constructor.
   PendingRmwContext(PendingRmwContext& other, IAsyncContext* caller_context_)
