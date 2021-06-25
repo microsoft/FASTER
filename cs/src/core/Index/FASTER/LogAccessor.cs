@@ -387,7 +387,7 @@ namespace FASTER.core
                         // Use the last logical address of the on-disk region (lastScannedAddress) as
                         // sentinel to force TryCopyToTail to fail if key no longer maps to on-disk record.
                         // This should be able to handle the case where a newly inserted record at the tail escapes to disk.
-                        fhtSession.TryCopyToTail(ref iter3.GetKey(), ref iter3.GetValue(), ref recordInfo, lastScannedAddress);
+                        fhtSession.CopyToTail(ref iter3.GetKey(), ref iter3.GetValue(), ref recordInfo, lastScannedAddress, noReadCache : true);
                     }
                 }
             }

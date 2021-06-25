@@ -856,20 +856,21 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Try to insert key and value with the record info preserved.
-        /// Succeed only if logical address in current entry <= foundLogicalAddress.
+        /// Insert key and value with the record info preserved.
+        /// Succeed only if logical address of the key is <= foundLogicalAddress; otherwise give up and return.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="desiredValue"></param>
         /// <param name="recordInfo"></param>
         /// <param name="foundLogicalAddress"></param>
+        /// <param name="noReadCache"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void TryCopyToTail(ref Key key, ref Value desiredValue, ref RecordInfo recordInfo, long foundLogicalAddress)
+        public void CopyToTail(ref Key key, ref Value desiredValue, ref RecordInfo recordInfo, long foundLogicalAddress, bool noReadCache)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                fht.InternalTryCopyToTail(ref key, ref desiredValue, ref recordInfo, foundLogicalAddress, FasterSession, ctx);
+                fht.InternalCopyToTail(ref key, ref desiredValue, ref recordInfo, foundLogicalAddress, FasterSession, ctx, noReadCache);
             }
             finally
             {
