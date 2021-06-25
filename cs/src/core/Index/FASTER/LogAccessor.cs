@@ -302,12 +302,12 @@ namespace FASTER.core
             if (untilAddress > fht.Log.SafeReadOnlyAddress)
                 throw new FasterException("Can compact only until Log.SafeReadOnlyAddress");
             var originalUntilAddress = untilAddress;
-            long lastScannedAddress = default; // the logical address of the last scanned record during compact, passed to TryCopyToTail
 
             var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
             using var fhtSession = fht.For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>();
 
             VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null;
+            VariableLengthStructSettings<Key, long> variableLengthStructSettingsKaddr = null;
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
                 variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
@@ -315,10 +315,17 @@ namespace FASTER.core
                     keyLength = varLen.KeyLength,
                     valueLength = varLen.ValueLength,
                 };
+                variableLengthStructSettingsKaddr = new VariableLengthStructSettings<Key, long>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = null,
+                };
             }
 
             using (var tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings))
             using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
+            using (var tempKaddr = new FasterKV<Key, long>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettingsKaddr))
+            using (var tempKaddrSession = tempKaddr.NewSession<long, long, Empty, SimpleFunctions<Key, long>>(new SimpleFunctions<Key, long>()))
             {
                 using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
                 {
@@ -328,10 +335,15 @@ namespace FASTER.core
                         ref var value = ref iter1.GetValue();
 
                         if (recordInfo.Tombstone || cf.IsDeleted(key, value))
+                        {
                             tempKvSession.Delete(ref key, default, 0);
+                            tempKaddrSession.Delete(ref key, default, 0);
+                        }
                         else
                         {
                             tempKvSession.Upsert(ref key, ref value, default, 0);
+                            long addr = iter1.CurrentAddress;
+                            tempKaddrSession.Upsert(ref key, ref addr, default, 0);
                             // below is to get and preserve information in RecordInfo, if we need.
                             /*tempKvSession.ContainsKeyInMemory(ref key, out long logicalAddress);
                             long physicalAddress = tempKv.hlog.GetPhysicalAddress(logicalAddress);
@@ -342,7 +354,6 @@ namespace FASTER.core
                     }
                     // Ensure address is at record boundary
                     untilAddress = originalUntilAddress = iter1.NextAddress;
-                    lastScannedAddress = iter1.CurrentAddress;
                 }
 
                 // Scan until SafeReadOnlyAddress
@@ -384,10 +395,10 @@ namespace FASTER.core
                             // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
                             continue;
                         }
-                        // Use the last logical address of the on-disk region (lastScannedAddress) as
-                        // sentinel to force TryCopyToTail to fail if key no longer maps to on-disk record.
-                        // This should be able to handle the case where a newly inserted record at the tail escapes to disk.
-                        fhtSession.CopyToTail(ref iter3.GetKey(), ref iter3.GetValue(), ref recordInfo, lastScannedAddress, noReadCache : true);
+                        long expectedAddress = default;
+                        var status = tempKaddrSession.Read(ref iter3.GetKey(), ref expectedAddress);
+                        Debug.Assert(status == Status.OK);
+                        fhtSession.CopyToTail(ref iter3.GetKey(), ref iter3.GetValue(), ref recordInfo, expectedAddress, noReadCache : true);
                     }
                 }
             }
