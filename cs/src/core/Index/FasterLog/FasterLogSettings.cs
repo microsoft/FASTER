@@ -63,10 +63,10 @@ namespace FASTER.core
         public ILogCommitManager LogCommitManager = null;
 
         /// <summary>
-        /// Use specified directory for storing and retrieving checkpoints
+        /// Use specified directory (path) for storing and retrieving checkpoints. If not provided, use
+        /// base path of the log device.
         /// </summary>
-        [Obsolete("This field is obsolete. The default log commit manager uses its own naming system. To use the old commit manager, set FasterLogSettings.LogCommitManager = new LocalLogCommitManager(LogCommitFile).", false)]
-        public string LogCommitFile = null;
+        public string LogCommitPath = null;
 
         /// <summary>
         /// User callback to allocate memory for read entries

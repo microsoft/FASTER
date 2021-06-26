@@ -139,6 +139,7 @@ namespace FASTER.core
                 new DeviceLogCommitCheckpointManager
                 (new LocalStorageNamedDeviceFactory(),
                     new DefaultCheckpointNamingScheme(
+                        logSettings.LogCommitPath ??
                         new FileInfo(logSettings.LogDevice.FileName).Directory.FullName));
 
             if (logSettings.LogCommitManager == null)

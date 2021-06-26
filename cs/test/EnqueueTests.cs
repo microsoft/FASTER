@@ -72,19 +72,7 @@ namespace FASTER.test
 
             string filename = path + "Enqueue"+deviceType.ToString()+".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22 }); // Needs to match what is set in TestUtils.CreateTestDevice 
-
-            //*#*#*# TO DO: Figure Out why this DeviceType fails *#*#*#
-            if (deviceType == TestUtils.DeviceType.LocalMemory)
-            {
-                return;
-            }
-
-#if WINDOWS
-            // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
-            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
-                return;
-#endif
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitPath = path }); // Needs to match what is set in TestUtils.CreateTestDevice 
 
             // Reduce SpanBatch to make sure entry fits on page
             if (iteratorType == EnqueueIteratorType.SpanBatch)
@@ -136,6 +124,7 @@ namespace FASTER.test
             // Commit to the log
             log.Commit(true);
 
+            Thread.Sleep(1000);
             // flag to make sure data has been checked 
             bool datacheckrun = false;
 
