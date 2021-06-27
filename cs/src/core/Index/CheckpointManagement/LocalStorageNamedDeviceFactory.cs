@@ -55,12 +55,12 @@ namespace FASTER.core
 
             if (pathInfo.Exists)
             {
-                foreach (var folder in pathInfo.GetDirectories().OrderByDescending(f => f.LastWriteTime))
+                foreach (var folder in pathInfo.GetDirectories().OrderByDescending(f => f.CreationTime))
                 {
                     yield return new FileDescriptor(folder.Name, "");
                 }
 
-                foreach (var file in pathInfo.GetFiles().OrderByDescending(f => f.LastWriteTime))
+                foreach (var file in pathInfo.GetFiles().OrderByDescending(f => f.CreationTime))
                 {
                     yield return new FileDescriptor("", file.Name);
                 }
