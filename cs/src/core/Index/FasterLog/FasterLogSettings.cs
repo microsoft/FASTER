@@ -63,10 +63,11 @@ namespace FASTER.core
         public ILogCommitManager LogCommitManager = null;
 
         /// <summary>
-        /// Use specified directory (path) for storing and retrieving checkpoints. If not provided, use
-        /// base path of the log device.
+        /// Use specified directory (path) as base for storing and retrieving log commits. By default,
+        /// commits will be stored in a folder named log-commits under this directory. If not provided, 
+        /// we use the base path of the log device by default.
         /// </summary>
-        public string LogCommitPath = null;
+        public string LogCommitDir = null;
 
         /// <summary>
         /// User callback to allocate memory for read entries
