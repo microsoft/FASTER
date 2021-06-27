@@ -48,7 +48,8 @@ namespace FASTER.test.recovery
         {
             public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status)
             {
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status, $"status = {status}");
+                Assert.AreEqual(key, output, $"output = {output}");
             }
         }
 
@@ -56,10 +57,16 @@ namespace FASTER.test.recovery
         {
             public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status)
             {
+                Verify(status, key, output);
+            }
+
+            internal static void Verify(Status status, long key, long output)
+            {
+                Assert.AreEqual(Status.OK, status);
                 if (key < 950)
-                    Assert.IsTrue(status == Status.OK && output == key);
+                    Assert.AreEqual(key, output);
                 else
-                    Assert.IsTrue(status == Status.OK && output == key + 1);
+                    Assert.AreEqual(key + 1, output);
             }
         }
     }
@@ -97,7 +104,10 @@ namespace FASTER.test.recovery
                     long output = default;
                     var status = s1.Read(ref key, ref output);
                     if (status != Status.PENDING)
-                        Assert.IsTrue(status == Status.OK && output == key);
+                    {
+                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
                 }
                 s1.CompletePending(true);
             }
@@ -131,7 +141,10 @@ namespace FASTER.test.recovery
                 long output = default;
                 var status = s2.Read(ref key, ref output);
                 if (status != Status.PENDING)
-                    Assert.IsTrue(status == Status.OK && output == key);
+                {
+                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
             }
             s2.CompletePending(true);
         }
@@ -180,7 +193,10 @@ namespace FASTER.test.recovery
                         long output = default;
                         var status = s1.Read(ref key, ref output);
                         if (status != Status.PENDING)
-                            Assert.IsTrue(status == Status.OK && output == key);
+                        {
+                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.AreEqual(key, output, $"output = {output}");
+                        }
                     }
                     s1.CompletePending(true);
                 }
@@ -208,7 +224,10 @@ namespace FASTER.test.recovery
                     long output = default;
                     var status = s2.Read(ref key, ref output);
                     if (status != Status.PENDING)
-                        Assert.IsTrue(status == Status.OK && output == key);
+                    {
+                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
                 }
                 s2.CompletePending(true);
             }
@@ -257,7 +276,10 @@ namespace FASTER.test.recovery
                         long output = default;
                         var status = s1.Read(ref key, ref output);
                         if (status != Status.PENDING)
-                            Assert.IsTrue(status == Status.OK && output == key);
+                        {
+                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.AreEqual(key, output, $"output = {output}");
+                        }
                     }
                     s1.CompletePending(true);
                 }
@@ -285,7 +307,10 @@ namespace FASTER.test.recovery
                     long output = default;
                     var status = s2.Read(ref key, ref output);
                     if (status != Status.PENDING)
-                        Assert.IsTrue(status == Status.OK && output == key);
+                    {
+                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
                 }
                 s2.CompletePending(true);
             }
@@ -335,7 +360,10 @@ namespace FASTER.test.recovery
                         long output = default;
                         var status = s1.Read(ref key, ref output);
                         if (status != Status.PENDING)
-                            Assert.IsTrue(status == Status.OK && output == key);
+                        {
+                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.AreEqual(key, output, $"output = {output}");
+                        }
                     }
                     s1.CompletePending(true);
                 }
@@ -366,7 +394,10 @@ namespace FASTER.test.recovery
                     long output = default;
                     var status = s2.Read(ref key, ref output);
                     if (status != Status.PENDING)
-                        Assert.IsTrue(status == Status.OK && output == key);
+                    {
+                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
                 }
                 s2.CompletePending(true);
             }
@@ -407,7 +438,10 @@ namespace FASTER.test.recovery
                     long output = default;
                     var status = s1.Read(ref key, ref output);
                     if (status != Status.PENDING)
-                        Assert.IsTrue(status == Status.OK && output == key);
+                    {
+                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
                 }
                 s1.CompletePending(true);
             }
@@ -419,7 +453,10 @@ namespace FASTER.test.recovery
                 long output = default;
                 var status = s1.Read(ref key, ref output);
                 if (status != Status.PENDING)
-                    Assert.IsTrue(status == Status.OK && output == key);
+                {
+                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
             }
             s1.CompletePending(true);
 
@@ -452,7 +489,10 @@ namespace FASTER.test.recovery
                 long output = default;
                 var status = s2.Read(ref key, ref output);
                 if (status != Status.PENDING)
-                    Assert.IsTrue(status == Status.OK && output == key);
+                {
+                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
             }
             s2.CompletePending(true);
         }
@@ -551,10 +591,7 @@ namespace FASTER.test.recovery
                 var status = s2.Read(ref key, ref output);
                 if (status != Status.PENDING)
                 {
-                    if (key < 950)
-                        Assert.IsTrue(status == Status.OK && output == key);
-                    else
-                        Assert.IsTrue(status == Status.OK && output == key + 1);
+                    MyFunctions2.Verify(status, key, output);
                 }
             }
             s2.CompletePending(true);

@@ -5,16 +5,8 @@ using NUnit.Framework;
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Buffers;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using FASTER.core;
-using NUnit.Framework;
 using FASTER.devices;
-using Microsoft.Azure.Storage.Blob;
-using Microsoft.Azure.Storage;
 
 namespace FASTER.test
 {
@@ -70,12 +62,12 @@ namespace FASTER.test
             {
 #if WINDOWS
                 case DeviceType.LSD:
+#pragma warning disable CA1416 // Validate platform compatibility -- we're under #if WINDOWS
                     device = new LocalStorageDevice(filename, false, deleteOnClose: true, true, -1, false, false);
+#pragma warning restore CA1416 // Validate platform compatibility
                     break;
                 case DeviceType.EmulatedAzure:
-                    string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-                    string TEST_CONTAINER = "test";
-                    device = new AzureStorageDevice(EMULATED_STORAGE_STRING, $"{TEST_CONTAINER}", "AzureStorageDeviceLogDir", "fasterlogblob", deleteOnClose: true);
+                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, "fasterlogblob", deleteOnClose: true);
                     break;
 #endif
                 case DeviceType.MLSD:

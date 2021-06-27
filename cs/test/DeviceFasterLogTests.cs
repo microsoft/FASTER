@@ -73,7 +73,7 @@ namespace FASTER.test
         {
 
             // Create devices \ log for test for in memory device
-            LocalMemoryDevice device = new LocalMemoryDevice(1L << 30, 1L << 25, 2, latencyMs: 20);
+            LocalMemoryDevice device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyMs: 20);
             FasterLog LocalMemorylog = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
 
             int entryLength = 10;

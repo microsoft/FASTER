@@ -709,7 +709,7 @@ namespace FASTER.core
             SegmentBufferSize = 1 + (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             if (SegmentSize < PageSize)
-                throw new FasterException("Segment ("+ SegmentSize.ToString()+ ") must be at least of page size ("+ PageSize.ToString()+ ")");
+                throw new FasterException($"Segment ({SegmentSize.ToString()}) must be at least of page size ({PageSize.ToString()})");
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
 
@@ -739,7 +739,7 @@ namespace FASTER.core
         /// <param name="firstValidAddress"></param>
         protected void Initialize(long firstValidAddress)
         {
-            Debug.Assert(firstValidAddress <= PageSize);
+            Debug.Assert(firstValidAddress <= PageSize, $"firstValidAddress {firstValidAddress} shoulld be <= PageSize {PageSize}");
 
             bufferPool = new SectorAlignedBufferPool(1, sectorSize);
 
@@ -1910,7 +1910,7 @@ namespace FASTER.core
                 {
                     if (errorCode != 0)
                     {
-                        errorList.Add(result.fromAddress);
+                        errorList.Add(result.fromAddress, errorCode);
                     }
                     Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
                     ShiftFlushedUntilAddress();
