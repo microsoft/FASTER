@@ -112,18 +112,18 @@ namespace FASTER.test.recovery
 
             if (isAsync)
             {
-                await task;
-                await fht2.RecoverAsync();
+                var (status, token) = await task;
+                await fht2.RecoverAsync(default, token);
             }
             else
             {
-                task.AsTask().GetAwaiter().GetResult();
-                fht2.Recover();
+                var (status, token) = task.AsTask().GetAwaiter().GetResult();
+                fht2.Recover(default, token);
             }
 
-            Assert.IsTrue(fht1.Log.HeadAddress == fht2.Log.HeadAddress);
-            Assert.IsTrue(fht1.Log.ReadOnlyAddress == fht2.Log.ReadOnlyAddress);
-            Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress);
+            Assert.AreEqual(fht1.Log.HeadAddress, fht2.Log.HeadAddress);
+            Assert.AreEqual(fht1.Log.ReadOnlyAddress, fht2.Log.ReadOnlyAddress);
+            Assert.AreEqual(fht1.Log.TailAddress, fht2.Log.TailAddress);
 
             using var s2 = fht2.NewSession(new MyFunctions());
             for (long key = 0; key < 1000; key++)
@@ -189,18 +189,18 @@ namespace FASTER.test.recovery
 
                 if (isAsync)
                 {
-                    await task;
-                    await fht2.RecoverAsync();
+                    var (status, token) = await task;
+                    await fht2.RecoverAsync(default, token);
                 }
                 else
                 {
-                    task.AsTask().GetAwaiter().GetResult();
-                    fht2.Recover();
+                    var(status, token) = task.AsTask().GetAwaiter().GetResult();
+                    fht2.Recover(default, token);
                 }
 
-                Assert.IsTrue(fht1.Log.HeadAddress == fht2.Log.HeadAddress);
-                Assert.IsTrue(fht1.Log.ReadOnlyAddress == fht2.Log.ReadOnlyAddress);
-                Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress);
+                Assert.AreEqual(fht1.Log.HeadAddress, fht2.Log.HeadAddress);
+                Assert.AreEqual(fht1.Log.ReadOnlyAddress, fht2.Log.ReadOnlyAddress);
+                Assert.AreEqual(fht1.Log.TailAddress, fht2.Log.TailAddress);
 
                 using var s2 = fht2.NewSession(new SimpleFunctions<long, long>());
                 for (long key = 0; key < 1000 * i + 1000; key++)
@@ -266,18 +266,18 @@ namespace FASTER.test.recovery
 
                 if (isAsync)
                 {
-                    await task;
-                    await fht2.RecoverAsync();
+                    var (status, token) = await task;
+                    await fht2.RecoverAsync(default, token);
                 }
                 else
                 {
-                    task.AsTask().GetAwaiter().GetResult();
-                    fht2.Recover();
+                    var (status, token) = task.AsTask().GetAwaiter().GetResult();
+                    fht2.Recover(default, token);
                 }
 
-                Assert.IsTrue(fht1.Log.HeadAddress == fht2.Log.HeadAddress);
-                Assert.IsTrue(fht1.Log.ReadOnlyAddress == fht2.Log.ReadOnlyAddress);
-                Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress);
+                Assert.AreEqual(fht1.Log.HeadAddress, fht2.Log.HeadAddress);
+                Assert.AreEqual(fht1.Log.ReadOnlyAddress, fht2.Log.ReadOnlyAddress);
+                Assert.AreEqual(fht1.Log.TailAddress, fht2.Log.TailAddress);
 
                 using var s2 = fht2.NewSession(new SimpleFunctions<long, long>());
                 for (long key = 0; key < 1000 * i + 1000; key++)
@@ -347,18 +347,18 @@ namespace FASTER.test.recovery
 
                 if (isAsync)
                 {
-                    await task;
-                    await fht2.RecoverAsync();
+                    var (status, token) = await task;
+                    await fht2.RecoverAsync(default, token);
                 }
                 else
                 {
-                    task.AsTask().GetAwaiter().GetResult();
-                    fht2.Recover();
+                    var (status, token) = task.AsTask().GetAwaiter().GetResult();
+                    fht2.Recover(default, token);
                 }
 
-                Assert.IsTrue(fht1.Log.HeadAddress == fht2.Log.HeadAddress);
-                Assert.IsTrue(fht1.Log.ReadOnlyAddress == fht2.Log.ReadOnlyAddress);
-                Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress);
+                Assert.AreEqual(fht1.Log.HeadAddress, fht2.Log.HeadAddress);
+                Assert.AreEqual(fht1.Log.ReadOnlyAddress, fht2.Log.ReadOnlyAddress);
+                Assert.AreEqual(fht1.Log.TailAddress, fht2.Log.TailAddress);
 
                 using var s2 = fht2.NewSession(new SimpleFunctions<long, long>());
                 for (long key = 0; key < 1000 * i + 1000; key++)
@@ -433,18 +433,18 @@ namespace FASTER.test.recovery
 
             if (isAsync)
             {
-                await task;
-                await fht2.RecoverAsync();
+                var (status, token) = await task;
+                await fht2.RecoverAsync(default, token);
             }
             else
             {
-                task.AsTask().GetAwaiter().GetResult();
-                fht2.Recover();
+                var (status, token) = task.AsTask().GetAwaiter().GetResult();
+                fht2.Recover(default, token);
             }
 
-            Assert.IsTrue(fht1.Log.HeadAddress == fht2.Log.HeadAddress);
-            Assert.IsTrue(fht1.Log.ReadOnlyAddress == fht2.Log.ReadOnlyAddress);
-            Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress);
+            Assert.AreEqual(fht1.Log.HeadAddress, fht2.Log.HeadAddress);
+            Assert.AreEqual(fht1.Log.ReadOnlyAddress, fht2.Log.ReadOnlyAddress);
+            Assert.AreEqual(fht1.Log.TailAddress, fht2.Log.TailAddress);
 
             using var s2 = fht2.NewSession(new MyFunctions());
             for (long key = 0; key < 1000; key++)
@@ -540,7 +540,7 @@ namespace FASTER.test.recovery
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
-            await fht2.RecoverAsync();
+            await fht2.RecoverAsync(default, _token2);
 
             Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress, $"fht1 tail = {fht1.Log.TailAddress}; fht2 tail = {fht2.Log.TailAddress}");
 
