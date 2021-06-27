@@ -106,13 +106,13 @@ namespace FASTER.test.recovery
 
             if (isAsync)
             {
-                await task;
-                await fht2.RecoverAsync();
+                var (status, token) = await task;
+                await fht2.RecoverAsync(default, token);
             }
             else
             {
-                task.GetAwaiter().GetResult();
-                fht2.Recover();
+                var (status, token) = task.GetAwaiter().GetResult();
+                fht2.Recover(default, token);
             }
 
             Assert.AreEqual(fht1.Log.HeadAddress, fht2.Log.HeadAddress);
@@ -172,13 +172,13 @@ namespace FASTER.test.recovery
 
                 if (isAsync)
                 {
-                    await task;
-                    await fht2.RecoverAsync();
+                    var (status, token) = await task;
+                    await fht2.RecoverAsync(default, token);
                 }
                 else
                 {
-                    task.GetAwaiter().GetResult();
-                    fht2.Recover();
+                    var(status, token) = task.GetAwaiter().GetResult();
+                    fht2.Recover(default, token);
                 }
 
                 Assert.AreEqual(fht1.Log.HeadAddress, fht2.Log.HeadAddress);
@@ -239,13 +239,13 @@ namespace FASTER.test.recovery
 
                 if (isAsync)
                 {
-                    await task;
-                    await fht2.RecoverAsync();
+                    var (status, token) = await task;
+                    await fht2.RecoverAsync(default, token);
                 }
                 else
                 {
-                    task.GetAwaiter().GetResult();
-                    fht2.Recover();
+                    var (status, token) = task.GetAwaiter().GetResult();
+                    fht2.Recover(default, token);
                 }
 
                 Assert.AreEqual(fht1.Log.HeadAddress, fht2.Log.HeadAddress);
@@ -309,13 +309,13 @@ namespace FASTER.test.recovery
 
                 if (isAsync)
                 {
-                    await task;
-                    await fht2.RecoverAsync();
+                    var (status, token) = await task;
+                    await fht2.RecoverAsync(default, token);
                 }
                 else
                 {
-                    task.GetAwaiter().GetResult();
-                    fht2.Recover();
+                    var (status, token) = task.GetAwaiter().GetResult();
+                    fht2.Recover(default, token);
                 }
 
                 Assert.AreEqual(fht1.Log.HeadAddress, fht2.Log.HeadAddress);
@@ -384,13 +384,13 @@ namespace FASTER.test.recovery
 
             if (isAsync)
             {
-                await task;
-                await fht2.RecoverAsync();
+                var (status, token) = await task;
+                await fht2.RecoverAsync(default, token);
             }
             else
             {
-                task.GetAwaiter().GetResult();
-                fht2.Recover();
+                var (status, token) = task.GetAwaiter().GetResult();
+                fht2.Recover(default, token);
             }
 
             Assert.AreEqual(fht1.Log.HeadAddress, fht2.Log.HeadAddress);
@@ -482,7 +482,7 @@ namespace FASTER.test.recovery
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
-            await fht2.RecoverAsync();
+            await fht2.RecoverAsync(default, _token2);
 
             Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress, $"fht1 tail = {fht1.Log.TailAddress}; fht2 tail = {fht2.Log.TailAddress}");
 
