@@ -72,7 +72,7 @@ namespace FASTER.test
 
             string filename = path + "Enqueue"+deviceType.ToString()+".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitPath = path }); // Needs to match what is set in TestUtils.CreateTestDevice 
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path }); // Needs to match what is set in TestUtils.CreateTestDevice 
 
             // Reduce SpanBatch to make sure entry fits on page
             if (iteratorType == EnqueueIteratorType.SpanBatch)
@@ -124,7 +124,6 @@ namespace FASTER.test
             // Commit to the log
             log.Commit(true);
 
-            Thread.Sleep(1000);
             // flag to make sure data has been checked 
             bool datacheckrun = false;
 
