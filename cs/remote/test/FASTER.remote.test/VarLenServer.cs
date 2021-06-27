@@ -21,7 +21,7 @@ namespace FASTER.remote.test
             store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
 
             // Create session provider for VarLen
-            var provider = new FasterKVProvider<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>(store, wp => new SpanByteFunctionsForServer<long>(wp), new SpanByteSerializer());
+            var provider = new FasterKVProvider<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>(store, wp => new SpanByteFunctionsForServer<long>(wp), new SpanByteServerSerializer());
 
             server = new FasterServer(address, port);
             server.Register(WireFormat.DefaultVarLenKV, provider);

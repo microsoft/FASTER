@@ -229,7 +229,7 @@ namespace FASTER.server
             }
         }
 
-        public void Publish(int sid, Status status, ref Output output, ref Key key, bool prefix)
+        public override void Publish(int sid, Status status, ref Output output, ref Key key, bool prefix)
         {
             MessageType message = MessageType.SubscribeKV;
             if (prefix)

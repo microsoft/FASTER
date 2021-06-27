@@ -38,7 +38,7 @@ namespace VarLenServer
             if (opts.Recover) store.Recover();
 
             // This variable-length session provider can be used with compatible clients such as VarLenClient
-            var provider = new FasterKVProvider<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>(store, wp => new SpanByteFunctionsForServer<long>(wp), new SpanByteSerializer());
+            var provider = new FasterKVProvider<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>(store, wp => new SpanByteFunctionsForServer<long>(wp), new SpanByteServerSerializer());
 
             // Create server
             var server = new FasterServer(opts.Address, opts.Port);

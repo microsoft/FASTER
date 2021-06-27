@@ -18,8 +18,8 @@ namespace FASTER.server
         readonly ParameterSerializer serializer;
         readonly ClientSession<Key, Value, Input, Output, long, Functions> subscriptionSession;
         private int sid = 0;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>> subscriptions;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>> psubscriptions;
+        private ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>> subscriptions;
+        private ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>> psubscriptions;
         private AsyncQueue<byte[]> publishQueue;
 
         public SubscribeKVBroker(ParameterSerializer serializer, ClientSession<Key, Value, Input, Output, long, Functions> subscriptionSession)
@@ -28,7 +28,7 @@ namespace FASTER.server
             this.subscriptionSession = subscriptionSession;
         }
 
-        public void removeSubscription(ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> session)
+        public void removeSubscription(FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> session)
         {
             if (subscriptions == null && psubscriptions == null)
                 return;
@@ -92,7 +92,7 @@ namespace FASTER.server
             var uniqueKeys = new HashSet<byte[]>(new ByteArrayComparer());
 
             byte[] outputBytes = new byte[1024];
-            List<(BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int, bool)> subscribedSessions = new List<(BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int, bool)>();
+            List<(FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int, bool)> subscribedSessions = new List<(FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int, bool)>();
 
             while (true) {
 
@@ -172,12 +172,12 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
-                this.subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
-                this.psubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
+                this.subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
+                this.psubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
                 Task.Run(() => Start());
             }
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
-            subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>());
+            subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>());
             subscriptions[subscriptionKey].TryAdd(session, id);
             return id;
         }
@@ -189,12 +189,12 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
-                this.subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
-                this.psubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
+                this.subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
+                this.psubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
                 Task.Run(() => Start());
             }
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
-            psubscriptions.TryAdd(subscriptionPrefix, new ConcurrentDictionary<BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>, int>());
+            psubscriptions.TryAdd(subscriptionPrefix, new ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>());
             psubscriptions[subscriptionPrefix].TryAdd(session, id);
             return id;
         }

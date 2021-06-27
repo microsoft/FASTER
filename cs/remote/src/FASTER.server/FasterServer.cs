@@ -25,7 +25,6 @@ namespace FASTER.server
         readonly ConcurrentDictionary<IServerSession, byte> activeSessions;
         readonly ConcurrentDictionary<WireFormat, ISessionProvider> sessionProviders;
         // readonly ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte> activeSessions;
-        readonly SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeKVBroker;
         // readonly ClientSession<Key, Value, Input, Output, long, ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>> session;
 
         int activeSessionCount;
@@ -53,7 +52,6 @@ namespace FASTER.server
             servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             servSocket.Bind(endPoint);
             servSocket.Listen(512);
-            subscribeKVBroker = new SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer>(serializer, subscriptionSession);
             acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
         }
@@ -228,7 +226,7 @@ namespace FASTER.server
             {
                 if (activeSessions.TryRemove(_session, out _))
                 {
-                    subscribeKVBroker.removeSubscription(_session);
+                    //subscribeKVBroker.removeSubscription(_session);
                     _session.Dispose();
                     Interlocked.Decrement(ref activeSessionCount);
                 }

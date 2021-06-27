@@ -22,6 +22,7 @@ namespace FASTER.server
         readonly Func<WireFormat, Functions> functionsGen;
         readonly ParameterSerializer serializer;
         readonly MaxSizeSettings maxSizeSettings;
+        readonly SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeKVBroker;
 
         /// <summary>
         /// Create FasterKV backend
@@ -36,12 +37,14 @@ namespace FASTER.server
             this.functionsGen = functionsGen;
             this.serializer = serializer;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
+            var subscriptionSession = store.For(functionsGen(WireFormat.DefaultVarLenKV)).NewSession<Functions>();
+            this.subscribeKVBroker = new SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer>(serializer, subscriptionSession);
         }
 
         /// <inheritdoc />
         public IServerSession GetSession(WireFormat wireFormat, Socket socket)
         {
-            return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(socket, store, functionsGen(wireFormat), serializer, maxSizeSettings);
+            return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker);
         }
     }
 }
