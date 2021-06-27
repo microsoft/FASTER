@@ -24,7 +24,7 @@ namespace ServerOptions
         [Option('s', "segment", Required = false, Default = "1g", HelpText = "Size of each log segment in bytes on disk (rounds down to power of 2)")]
         public string SegmentSize { get; set; }
 
-        [Option('i', "index", Required = false, Default = "64m", HelpText = "Size of hash index in bytes (rounds down to power of 2)")]
+        [Option('i', "index", Required = false, Default = "8g", HelpText = "Size of hash index in bytes (rounds down to power of 2)")]
         public string IndexSize { get; set; }
 
         [Option('l', "logdir", Required = false, Default = null, HelpText = "Storage directory for data (hybrid log). Runs memory-only if unspecified.")]

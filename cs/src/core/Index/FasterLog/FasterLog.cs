@@ -134,20 +134,12 @@ namespace FASTER.core
 
         private FasterLog(FasterLogSettings logSettings, bool oldCommitManager)
         {
-            if (oldCommitManager)
-            {
-                logCommitManager = logSettings.LogCommitManager ??
-                    new LocalLogCommitManager(logSettings.LogCommitFile ??
-                    logSettings.LogDevice.FileName + ".commit");
-            }
-            else
-            {
-                logCommitManager = logSettings.LogCommitManager ??
-                    new DeviceLogCommitCheckpointManager
-                    (new LocalStorageNamedDeviceFactory(),
-                        new DefaultCheckpointNamingScheme(
-                          new FileInfo(logSettings.LogDevice.FileName).Directory.FullName));
-            }
+            Debug.Assert(oldCommitManager == false);
+            logCommitManager = logSettings.LogCommitManager ??
+                new DeviceLogCommitCheckpointManager
+                (new LocalStorageNamedDeviceFactory(),
+                    new DefaultCheckpointNamingScheme(
+                        new FileInfo(logSettings.LogDevice.FileName).Directory.FullName));
 
             if (logSettings.LogCommitManager == null)
                 disposeLogCommitManager = true;
@@ -1060,7 +1052,7 @@ namespace FASTER.core
             }
 
             info = new FasterLogRecoveryInfo();
-            using (var r = new BinaryReader(new MemoryStream(commitInfo)))
+            using (BinaryReader r = new(new MemoryStream(commitInfo)))
             {
                 info.Initialize(r);
             }

@@ -27,6 +27,7 @@ namespace FASTER.benchmark
 
     internal unsafe class ConcurrentDictionary_YcsbBenchmark
     {
+        readonly TestLoader testLoader;
         readonly int numaStyle;
         readonly string distribution;
         readonly int readPercent;
@@ -44,6 +45,7 @@ namespace FASTER.benchmark
 
         internal ConcurrentDictionary_YcsbBenchmark(Key[] i_keys_, Key[] t_keys_, TestLoader testLoader)
         {
+            this.testLoader = testLoader;
             init_keys_ = i_keys_;
             txn_keys_ = t_keys_;
             numaStyle = testLoader.Options.NumaStyle;
@@ -67,7 +69,7 @@ namespace FASTER.benchmark
             for (int i = 0; i < 8; i++)
                 input_[i].value = i;
 
-            store = new ConcurrentDictionary<Key, Value>(testLoader.Options.ThreadCount, YcsbConstants.kMaxKey, new KeyComparer());
+            store = new (testLoader.Options.ThreadCount, testLoader.MaxKey, new KeyComparer());
         }
 
         internal void Dispose()
@@ -77,15 +79,14 @@ namespace FASTER.benchmark
 
         private void RunYcsb(int thread_idx)
         {
-            RandomGenerator rng = new RandomGenerator((uint)(1 + thread_idx));
+            RandomGenerator rng = new ((uint)(1 + thread_idx));
 
             if (numaStyle == 0)
                 Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
             else
                 Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
+            var sw = Stopwatch.StartNew();
 
             Value value = default;
             long reads_done = 0;
@@ -101,9 +102,9 @@ namespace FASTER.benchmark
             while (!done)
             {
                 long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
-                while (chunk_idx >= YcsbConstants.kTxnCount)
+                while (chunk_idx >= testLoader.TxnCount)
                 {
-                    if (chunk_idx == YcsbConstants.kTxnCount)
+                    if (chunk_idx == testLoader.TxnCount)
                         idx_ = 0;
                     chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 }
@@ -172,7 +173,7 @@ namespace FASTER.benchmark
 
         internal unsafe (double, double) Run(TestLoader testLoader)
         {
-            RandomGenerator rng = new RandomGenerator();
+            RandomGenerator rng = new ();
 
             GCHandle handle = GCHandle.Alloc(input_, GCHandleType.Pinned);
             input_ptr = (Input*)handle.AddrOfPinnedObject();
@@ -192,8 +193,7 @@ namespace FASTER.benchmark
                 int x = idx;
                 workers[idx] = new Thread(() => SetupYcsb(x));
             }
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
+            var sw = Stopwatch.StartNew();
             // Start threads.
             foreach (Thread worker in workers)
             {
@@ -205,7 +205,7 @@ namespace FASTER.benchmark
             }
             sw.Stop();
 
-            double insertsPerSecond = ((double)YcsbConstants.kInitCount / sw.ElapsedMilliseconds) * 1000;
+            double insertsPerSecond = ((double)testLoader.InitCount / sw.ElapsedMilliseconds) * 1000;
             Console.WriteLine(TestStats.GetLoadingTimeLine(insertsPerSecond, sw.ElapsedMilliseconds));
 
             idx_ = 0;
@@ -224,10 +224,9 @@ namespace FASTER.benchmark
                 worker.Start();
             }
 
-            Stopwatch swatch = new Stopwatch();
-            swatch.Start();
+            var swatch = Stopwatch.StartNew();
 
-            if (YcsbConstants.kPeriodicCheckpointMilliseconds <= 0)
+            if (testLoader.Options.PeriodicCheckpointMilliseconds <= 0)
             {
                 Thread.Sleep(TimeSpan.FromSeconds(testLoader.Options.RunSeconds));
             }
@@ -236,8 +235,8 @@ namespace FASTER.benchmark
                 double runSeconds = 0;
                 while (runSeconds < testLoader.Options.RunSeconds)
                 {
-                    Thread.Sleep(TimeSpan.FromMilliseconds(YcsbConstants.kPeriodicCheckpointMilliseconds));
-                    runSeconds += YcsbConstants.kPeriodicCheckpointMilliseconds / 1000;
+                    Thread.Sleep(TimeSpan.FromMilliseconds(testLoader.Options.PeriodicCheckpointMilliseconds));
+                    runSeconds += testLoader.Options.PeriodicCheckpointMilliseconds / 1000;
                 }
             }
 
@@ -282,7 +281,7 @@ namespace FASTER.benchmark
             Value value = default;
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
-                chunk_idx < YcsbConstants.kInitCount;
+                chunk_idx < testLoader.InitCount;
                 chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize)
             {
                 for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize; ++idx)
@@ -381,10 +380,10 @@ namespace FASTER.benchmark
 
         #region Load Data
 
-        internal static void CreateKeyVectors(out Key[] i_keys, out Key[] t_keys)
+        internal static void CreateKeyVectors(TestLoader testLoader, out Key[] i_keys, out Key[] t_keys)
         {
-            i_keys = new Key[YcsbConstants.kInitCount];
-            t_keys = new Key[YcsbConstants.kTxnCount];
+            i_keys = new Key[testLoader.InitCount];
+            t_keys = new Key[testLoader.TxnCount];
         }
         internal class KeySetter : IKeySetter<Key>
         {

@@ -25,6 +25,8 @@ workloads. Start learning about FASTER, its unique capabilities, and how to get 
 
 [aka.ms/FASTER](https://aka.ms/FASTER)
 
+For a preview of our new distributed recovery algorithm of DPR, please take a look at [the DPR development branch](https://github.com/microsoft/FASTER/tree/dpr)
+
 
 # Contributing
 

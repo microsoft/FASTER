@@ -6,16 +6,16 @@ using FASTER.common;
 
 namespace FASTER.server
 {
-    internal struct ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer> : IFunctions<Key, Value, Input, Output, long>
+    internal struct ServerKVFunctions<Key, Value, Input, Output, Functions, ParameterSerializer> : IFunctions<Key, Value, Input, Output, long>
         where Functions : IFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         private readonly Functions functions;
-        private readonly ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> serverNetworkSession;
+        private readonly FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> serverNetworkSession;
 
         public bool SupportsLocking => functions.SupportsLocking;
 
-        public ServerFunctions(Functions functions, ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> serverNetworkSession)
+        public ServerKVFunctions(Functions functions, FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> serverNetworkSession)
         {
             this.functions = functions;
             this.serverNetworkSession = serverNetworkSession;
@@ -45,13 +45,13 @@ namespace FASTER.server
         public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
             => functions.InPlaceUpdater(ref key, ref input, ref value);
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, core.Status status)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status)
         {
             serverNetworkSession.CompleteRead(ref output, ctx, status);
             functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
         }
 
-        public void RMWCompletionCallback(ref Key key, ref Input input, long ctx, core.Status status)
+        public void RMWCompletionCallback(ref Key key, ref Input input, long ctx, Status status)
         {
             serverNetworkSession.CompleteRMW(ctx, status);
             functions.RMWCompletionCallback(ref key, ref input, ctx, status);

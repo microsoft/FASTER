@@ -83,7 +83,7 @@ namespace FASTER.test
     [TearDown]
         public void TearDown()
         {
-            if (log is { })
+            if (log is not null)
                 log.Dispose();
             manager.Dispose();
             device.Dispose();
@@ -133,10 +133,10 @@ namespace FASTER.test
                                               IAsyncEnumerator<(IMemoryOwner<byte> entry, int entryLength, long currentAddress, long nextAddress)> asyncMemoryOwnerIter,
                                               FasterLogScanIterator iter, byte[] expectedData = default, bool verifyAtEnd = false)
         {
-            if (asyncByteVectorIter is {})
+            if (asyncByteVectorIter is not null)
             {
                 Assert.IsTrue(await asyncByteVectorIter.MoveNextAsync());
-                if (expectedData is {})
+                if (expectedData is not null)
                     Assert.IsTrue(asyncByteVectorIter.Current.entry.SequenceEqual(expectedData));
 
                 // MoveNextAsync() would hang here waiting for more entries
@@ -145,10 +145,10 @@ namespace FASTER.test
                 return;
             }
 
-            if (asyncMemoryOwnerIter is {})
+            if (asyncMemoryOwnerIter is not null)
             {
                 Assert.IsTrue(await asyncMemoryOwnerIter.MoveNextAsync());
-                if (expectedData is {})
+                if (expectedData is not null)
                     Assert.IsTrue(asyncMemoryOwnerIter.Current.entry.Memory.Span.ToArray().Take(expectedData.Length).SequenceEqual(expectedData));
                 asyncMemoryOwnerIter.Current.entry.Dispose();
 
@@ -159,7 +159,7 @@ namespace FASTER.test
             }
 
             Assert.IsTrue(iter.GetNext(out byte[] result, out _, out _));
-            if (expectedData is {})
+            if (expectedData is not null)
                 Assert.IsTrue(result.SequenceEqual(expectedData));
             if (verifyAtEnd)
                 Assert.IsFalse(iter.GetNext(out _, out _, out _));

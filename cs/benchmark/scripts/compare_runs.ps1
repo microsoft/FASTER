@@ -61,6 +61,10 @@ class Result : System.IComparable, System.IEquatable[Object] {
     [bool]$SmallData
     [bool]$SmallMemory
     [bool]$SyntheticData
+    [bool]$NoAff
+    [int]$ChkptMs
+    [string]$ChkptType
+    [bool]$ChkptIncr
 
     Result([string]$line) {
         $fields = $line.Split(';')
@@ -81,6 +85,10 @@ class Result : System.IComparable, System.IEquatable[Object] {
                 "sd" { $this.SmallData = $value -eq "y" }
                 "sm" { $this.SmallMemory = $value -eq "y"  }
                 "sy" { $this.SyntheticData = $value -eq "y"  }
+                "noaff" { $this.NoAff = $value -eq "y"  }
+                "chkptms" { $this.ChkptMs = $value }
+                "chkpttype" { $this.ChkptType = $value }
+                "chkptincr" { $this.ChkptIncr = $value -eq "y"  }
             }
         }
     }
@@ -95,6 +103,10 @@ class Result : System.IComparable, System.IEquatable[Object] {
         $this.SmallData = $other.SmallData
         $this.SmallMemory = $other.SmallMemory
         $this.SyntheticData = $other.SyntheticData
+        $this.NoAff = $other.NoAff
+        $this.ChkptMs = $other.ChkptMs
+        $this.ChkptType = $other.ChkptType
+        $this.ChkptIncr = $other.ChkptIncr
     }
 
     [Result] CalculateDifference([Result]$newResult) {
@@ -158,11 +170,16 @@ class Result : System.IComparable, System.IEquatable[Object] {
          -and $this.SmallData -eq $other.SmallData
          -and $this.SmallMemory -eq $other.SmallMemory
          -and $this.SyntheticData -eq $other.SyntheticData
+         -and $this.NoAff -eq $other.NoAff
+         -and $this.ChkptMs -eq $other.ChkptMs
+         -and $this.ChkptType -eq $other.ChkptType
+         -and $this.ChkptIncr -eq $other.ChkptIncr
     }
 
     [int] GetHashCode() {
         return ($this.Numa, $this.Distribution, $this.ReadPercent, $this.ThreadCount, $this.LockMode,
-                $this.Iterations, $this.SmallData, $this.SmallMemory, $this.SyntheticData).GetHashCode();
+                $this.Iterations, $this.SmallData, $this.SmallMemory, $this.SyntheticData,
+                $this.NoAff, $this.ChkptMs, $this.ChkptType, $this.ChkptIncr).GetHashCode();
     }
 }
 
@@ -266,7 +283,11 @@ function RenameProperties([System.Object[]]$results) {
                 Iterations,
                 SmallData,
                 SmallMemory,
-                SyntheticData
+                SyntheticData,
+                NoAff,
+                ChkptMs,
+                ChkptType,
+                ChkptIncr
 }
 
 RenameProperties $LoadResults | Out-GridView -Title "Loading Comparison (Inserts Per Second): $OldDir -vs- $NewDir"

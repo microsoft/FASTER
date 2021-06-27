@@ -12,6 +12,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using FASTER.client;
+using FASTER.common;
 
 namespace FASTER.benchmark
 {
@@ -129,7 +130,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            var session = store.NewSession<Input, Output, Empty, Functions, FixedLenSerializer<Key, Value, Input, Output>>(functions, serializer);
+            var session = store.NewSession<Input, Output, Empty, Functions, FixedLenSerializer<Key, Value, Input, Output>>(functions, WireFormat.DefaultFixedLenKV, serializer);
 
             int cnt = 0;
             while (!done)
@@ -363,7 +364,7 @@ namespace FASTER.benchmark
             //else
             //    Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
 
-            var session = store.NewSession<Input, Output, Empty, Functions, FixedLenSerializer<Key, Value, Input, Output>>(functions, serializer);
+            var session = store.NewSession<Input, Output, Empty, Functions, FixedLenSerializer<Key, Value, Input, Output>>(functions, WireFormat.DefaultFixedLenKV, serializer);
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
