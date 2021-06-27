@@ -3054,15 +3054,30 @@ inline void FasterKv<K, V, D>::InternalCompact(ScanIterator<F>* iter) {
   record_t * record;
   CompactionPendingRecordEntry<K, V> * record_info;
   uint8_t pending_record_entry [sizeof(CompactionPendingRecordEntry<K, V>)];
+  ScannedPage<F> page;
 
   StartSession();
+
+  bool pages_available = true;
   while(true) {
-    if (retry_records_queue.empty()) {
+    if (!retry_records_queue.empty()) {
+      // pop next entry from retry queue
+      record_info = retry_records_queue.front();
+      retry_records_queue.pop_front();
+    }
+    else if (pages_available) {
       HashBucketEntry expected_entry;
       // get next record from hybrid log
-      record = iter->GetNext(record_address);
-
-      if (record == nullptr || record->header.tombstone)  {
+      record = page.GetNext(record_address);
+      if (record == nullptr) {
+        Refresh();
+        if(!iter->GetNextPage(page)) {
+          // No more pages
+          pages_available = false;
+        }
+        continue;
+      }
+      if (record->header.tombstone)  {
         // if record is tombstone, no need to copy to tail
         goto complete_pending;
       }
@@ -3074,9 +3089,7 @@ inline void FasterKv<K, V, D>::InternalCompact(ScanIterator<F>* iter) {
       record_info = new (pending_record_entry) CompactionPendingRecordEntry<K, V>(
                             record, record_address, expected_entry, record_address + 1);
     } else {
-      // pop next entry from retry queue
-      record_info = retry_records_queue.front();
-      retry_records_queue.pop_front();
+      goto complete_pending;
     }
 
     { // Issue record exists request
@@ -3129,7 +3142,7 @@ complete_pending:
     pending_records_queue.clear();
 
     ++num_iter;
-    if (record == nullptr &&              // no more records to compact
+    if (!pages_available &&               // no more records to compact
         pending_records_info.empty() &&   // no callbacks pending
         pending_records_queue.empty() &&  // no pending records to handle
         retry_records_queue.empty()) {    // no retry records to handle

@@ -32,6 +32,61 @@ enum class Buffering : uint8_t {
   DOUBLE_PAGE = 2,
 };
 
+template<class F>
+class ScannedPage {
+ public:
+  /// For convenience. Typedef type signatures on records and the hybrid log.
+  typedef Record<typename F::key_t, typename F::value_t> record_t;
+
+  ScannedPage()
+    : page{ nullptr }
+    , current_address{ Address::kInvalidAddress }
+    , until_address{  Address::kInvalidAddress }
+    {}
+
+  ScannedPage(uint8_t* page_, const Address current_address_, const Address until_address_)
+    : page{ page_ }
+    , current_address{ current_address_ }
+    , until_address{ until_address_ }
+  {}
+
+  ~ScannedPage() {
+    if (page != nullptr) {
+      aligned_free(reinterpret_cast<void*>(page));
+    }
+  }
+
+  ScannedPage& operator=(const ScannedPage& other) = delete;
+  ScannedPage(const ScannedPage&) = delete;
+
+  record_t* GetNext(Address& record_address) {
+    if (page == nullptr) return nullptr;
+
+    if (current_address >= until_address || current_address.offset() >= Address::kMaxOffset) {
+      record_address = Address::kInvalidAddress;
+      return nullptr;
+    }
+
+    record_t* record = reinterpret_cast<record_t*>(page + current_address.offset());
+    if (!record->header.IsNull()) {
+      record_address = current_address;
+      current_address += record->size();
+      return record;
+    }
+
+    // likely the record didn't fit in this page -- no more entries in this page
+    current_address = Address::kMaxAddress;
+    record_address = Address::kInvalidAddress;
+    return nullptr;
+  }
+
+ public:
+  uint8_t* page;
+  Address current_address;
+
+  Address until_address;
+};
+
 /// Helps scan through records on a Log.
 /// `F` is the type signature on the FASTER instance using this iterator.
 template <class F>
@@ -106,54 +161,57 @@ class ScanIterator {
   ScanIterator& operator=(const ScanIterator& from) = delete;
 
   /// Returns a pointer to the next record.
-  record_t* GetNext(Address& record_address) {
+  bool GetNextPage(ScannedPage<F>& page) {
     std::lock_guard<std::mutex> lock(mutex);
+    if (current >= until) {
+      return false;
+    }
 
-    for (int iters = 0; ; iters++) {
-      // should not execute more than 2 iters
-      if (iters == 2) assert(false);
-      // We've exceeded the range over which we had to perform our scan.
-      // No work to do over here other than returning a nullptr.
-      if (current >= until) {
-        record_address = Address::kInvalidAddress;
-        return nullptr;
-      }
+    if (page.page == nullptr) {
+      // Allocate a page in memory
+      page.page = reinterpret_cast<uint8_t*>(
+                        aligned_alloc(hLog->sector_size, hlog_t::kPageSize));
+    }
 
-      record_t * record;
-      bool addr_in_memory = current >= hLog->head_address.load();
-      if (!addr_in_memory) {
-        // in persistent storage
-        if ((currentFrame == 0 && current.offset() == 0) || (current == start)) {
-          // block until we load pages into the memory
-          // TODO: further optimize this (i.e. async request for next page when we move to next frame)
-          BlockAndLoad();
-        }
-        record = reinterpret_cast<record_t*>(frames[currentFrame] + current.offset());
-      }
-      else {
-        record = reinterpret_cast<record_t*>(hLog->Get(current));
-      }
+    Address page_addr{ current.page(), 0 };
+    uint64_t bytes_to_read = (page_addr + hlog_t::kPageSize < until)
+                                ? hlog_t::kPageSize
+                                : (until - page_addr).control();
 
-      if (!record->header.IsNull()) {
-        // valid record -- update next record pointer and return
-        record_address = current;
-        current += record->size();
-        return record;
-      }
+    if (current >= hLog->head_address.load()) {
+      // Copy page contents from memory
+      // NOTE: this is needed, since pages stored in memory may be flushed to disk
+      memcpy(page.page, hLog->Page(page_addr.page()), bytes_to_read);
+    }
+    else {
+      // block until we load pages into the memory
+      // TODO: further optimize this (i.e. async request for next page when we move to next frame)
+      std::atomic<bool> done{ false };
 
-      // likely this record didn't fit in this page -- move to next page
-      current = Address(current.page() + 1, 0);
-      if (!addr_in_memory) {
-        // switch to the next prefetched frame
-        currentFrame = (currentFrame + 1) % numFrames;
+      // Issue an IO to the persistent layer and then wait for it to complete.
+      auto cb = [](IAsyncContext* ctxt, Status result, size_t bytes) {
+        assert(result == Status::Ok);
+
+        CallbackContext<Context> context{ ctxt };
+        assert(bytes == context->bytes_to_read);
+        context->counter->store(true);
+      };
+
+      // Issue reads to fill up the buffer and wait for them to complete.
+      auto ctxt = Context(&done, bytes_to_read);
+      hLog->file->ReadAsync(page_addr.control(),
+                            reinterpret_cast<void*>(page.page),
+                            bytes_to_read, cb, ctxt);
+
+      while (!done.load()) {
+        disk->TryComplete();
       }
     }
-  }
+    page.current_address = current;
+    page.until_address = until;
 
-  /// Returns a pointer to the next record, along with its (logical) address
-  record_t* GetNext() {
-    Address record_address;
-    return GetNext(record_address);
+    current = Address(current.page() + 1, 0);
+    return true;
   }
 
  private:
@@ -192,8 +250,9 @@ class ScanIterator {
    public:
     /// Constructs a context given a pointer to an atomic counter keeping
     /// track of the number of IOs that have completed so far.
-    Context(std::atomic<uint64_t>* ctr)
-     : counter(ctr)
+    Context(std::atomic<bool>* counter_, uint64_t bytes_to_read_)
+     : counter{ counter_ }
+     , bytes_to_read{ bytes_to_read_ }
     {}
 
     /// Destroys a Context.
@@ -208,7 +267,8 @@ class ScanIterator {
    public:
     /// Pointer to an atomic counter. Counts the number of IOs that have
     /// completed so far.
-    std::atomic<uint64_t>* counter;
+    std::atomic<bool>* counter;
+    uint64_t bytes_to_read;
   };
 
   /// The underlying hybrid log to scan over.
