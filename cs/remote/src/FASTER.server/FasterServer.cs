@@ -228,12 +228,17 @@ namespace FASTER.server
 
         private void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs) e.UserToken;
-            do
+            try
             {
-                // No more things to receive
-                if (!HandleReceiveCompletion(e)) break;
-            } while (!connArgs.socket.ReceiveAsync(e));
+                var connArgs = (ConnectionArgs)e.UserToken;
+                do
+                {
+                    // No more things to receive
+                    if (!HandleReceiveCompletion(e)) break;
+                } while (!connArgs.socket.ReceiveAsync(e));
+            }
+            // ignore session socket disposed due to server dispose
+            catch (ObjectDisposedException) { }
         }
     }
 }
