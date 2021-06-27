@@ -4,6 +4,7 @@
 using System;
 using System.Threading.Tasks;
 using FASTER.client;
+using FASTER.common;
 
 namespace VarLenClient
 {
@@ -21,7 +22,7 @@ namespace VarLenClient
 
             // Create a session to FasterKV server
             // Sessions are mono-threaded, similar to normal FasterKV sessions
-            using var session = client.NewSession(new CustomTypeFunctions());
+            using var session = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
 
             // Explicit version of NewSession call, where you provide all types, callback functions, and serializer
             // using var session = client.NewSession<long, long, long, Functions, BlittableParameterSerializer<long, long, long, long>>(new Functions(), new BlittableParameterSerializer<long, long, long, long>());

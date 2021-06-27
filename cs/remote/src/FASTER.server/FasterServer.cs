@@ -14,18 +14,19 @@ using System.Threading;
 namespace FASTER.server
 {
     /// <summary>
-    /// Server for FasterKV
+    /// Remote server framework for FASTER artifacts
     /// </summary>
-    public sealed class FasterKVServer<Key, Value, Input, Output, Functions, ParameterSerializer> : IDisposable
-            where Functions : IFunctions<Key, Value, Input, Output, long>
-            where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
+    public sealed class FasterServer : IDisposable
     {
         readonly SocketAsyncEventArgs acceptEventArg;
         readonly Socket servSocket;
         readonly MaxSizeSettings maxSizeSettings;
-        readonly ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte> activeSessions;
+        readonly int networkBufferSize;
+        readonly ConcurrentDictionary<IServerSession, byte> activeSessions;
+        readonly ConcurrentDictionary<WireFormat, ISessionProvider> sessionProviders;
+        // readonly ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte> activeSessions;
         readonly SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeKVBroker;
-        readonly ClientSession<Key, Value, Input, Output, long, ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>> session;
+        // readonly ClientSession<Key, Value, Input, Output, long, ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>> session;
 
         int activeSessionCount;
         bool disposed;
@@ -33,33 +34,48 @@ namespace FASTER.server
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="store">Instance of FasterKV store to use in server</param>
-        /// <param name="functionsGen">Functions generator (based on wire format)</param>
         /// <param name="address">IP address</param>
         /// <param name="port">Port</param>
-        /// <param name="serializer">Parameter serializer</param>
-        /// <param name="maxSizeSettings">Max size settings</param>
-        public FasterKVServer(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, string address, int port, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default) : base()
+        /// <param name="networkBufferSize">Size of network buffer</param>
+        public FasterServer(string address, int port, int networkBufferSize = default)
         {
-            activeSessions = new ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte>();
+            activeSessions = new ConcurrentDictionary<IServerSession, byte>();
+            sessionProviders = new ConcurrentDictionary<WireFormat, ISessionProvider>();
             activeSessionCount = 0;
             disposed = false;
 
-            this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
+            this.networkBufferSize = networkBufferSize;
+            if (networkBufferSize == default)
+                this.networkBufferSize = BufferSizeUtils.ClientBufferSize(new MaxSizeSettings());
+
             var ip = IPAddress.Parse(address);
             var endPoint = new IPEndPoint(ip, port);
             servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             servSocket.Bind(endPoint);
             servSocket.Listen(512);
-            var subscriptionSession = store.For(functionsGen(WireFormat.Binary)).NewSession<Functions>();
             subscribeKVBroker = new SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer>(serializer, subscriptionSession);
-
-            acceptEventArg = new SocketAsyncEventArgs
-            {
-                UserToken = (store, functionsGen, serializer)
-            };
+            acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
         }
+
+        /// <summary>
+        /// Register session provider for specified wire format with the server
+        /// </summary>
+        /// <param name="wireFormat">Wire format</param>
+        /// <param name="backendProvider">Session provider</param>
+        public void Register(WireFormat wireFormat, ISessionProvider backendProvider)
+        {
+            if (!sessionProviders.TryAdd(wireFormat, backendProvider))
+                throw new FasterException($"Wire format {wireFormat} already registered");
+        }
+
+        /// <summary>
+        /// Unregister provider associated with specified wire format
+        /// </summary>
+        /// <param name="wireFormat"></param>
+        /// <param name="provider"></param>
+        public void Unregister(WireFormat wireFormat, out ISessionProvider provider)
+            => sessionProviders.TryRemove(wireFormat, out provider);
 
         /// <summary>
         /// Start server
@@ -90,19 +106,12 @@ namespace FASTER.server
 
             // Ok to create new event args on accept because we assume a connection to be long-running
             var receiveEventArgs = new SocketAsyncEventArgs();
-            var bufferSize = BufferSizeUtils.ClientBufferSize(maxSizeSettings);
-            var buffer = new byte[bufferSize];
-            receiveEventArgs.SetBuffer(buffer, 0, bufferSize);
+            var buffer = new byte[networkBufferSize];
+            receiveEventArgs.SetBuffer(buffer, 0, networkBufferSize);
 
-            var (store, functionsGen, serializer) = ((FasterKV<Key, Value>, Func<WireFormat, Functions>, ParameterSerializer))e.UserToken;
-
-            var args = new ConnectionArgs<Key, Value, Input, Output, Functions, ParameterSerializer>
+            var args = new ConnectionArgs
             {
-                socket = e.AcceptSocket,
-                store = store,
-                functionsGen = functionsGen,
-                serializer = serializer,
-                maxSizeSettings = maxSizeSettings
+                socket = e.AcceptSocket
             };
 
             receiveEventArgs.UserToken = args;
@@ -147,7 +156,7 @@ namespace FASTER.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HandleReceiveCompletion(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs<Key, Value, Input, Output, Functions, ParameterSerializer>)e.UserToken;
+            var connArgs = (ConnectionArgs) e.UserToken;
             if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || disposed)
             {
                 DisposeConnectionSession(e);
@@ -166,22 +175,33 @@ namespace FASTER.server
             return true;
         }
 
-        private bool CreateSession(SocketAsyncEventArgs e)
+        private unsafe bool CreateSession(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs<Key, Value, Input, Output, Functions, ParameterSerializer>)e.UserToken;
+            var connArgs = (ConnectionArgs) e.UserToken;
 
-            if (e.BytesTransferred < 4)
-            {
-                e.SetBuffer(0, e.Buffer.Length);
-                return true;
-            }
+            if (e.BytesTransferred < 4) return false;
 
+            WireFormat protocol;
+
+            // FASTER's binary protocol family is identified by inverted size (int) field in the start of a packet
+            // This results in a fourth byte value (little endian) > 127, denoting a non-ASCII wire format.
             if (e.Buffer[3] > 127)
             {
-                connArgs.session = new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(connArgs.socket, connArgs.store, connArgs.functionsGen(WireFormat.Binary), connArgs.serializer, connArgs.maxSizeSettings, subscribeKVBroker);
+                if (e.BytesTransferred < 4 + BatchHeader.Size) return false;
+                fixed (void* bh = &e.Buffer[4])
+                    protocol = ((BatchHeader*)bh)->Protocol;
             }
             else
-                throw new FasterException("Unexpected wire format");
+            {
+                protocol = WireFormat.ASCII;
+            }
+
+            if (!sessionProviders.TryGetValue(protocol, out var provider))
+            {
+                throw new FasterException($"Unsupported wire format {protocol}");
+            }
+
+            connArgs.session = provider.GetSession(protocol, connArgs.socket);
 
             if (activeSessions.TryAdd(connArgs.session, default))
                 Interlocked.Increment(ref activeSessionCount);
@@ -194,13 +214,13 @@ namespace FASTER.server
                 return false;
             }
 
-            
+
             return true;
         }
 
         private void DisposeConnectionSession(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs<Key, Value, Input, Output, Functions, ParameterSerializer>)e.UserToken;
+            var connArgs = (ConnectionArgs) e.UserToken;
             connArgs.socket.Dispose();
             e.Dispose();
             var _session = connArgs.session;
@@ -217,7 +237,7 @@ namespace FASTER.server
 
         private void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs<Key, Value, Input, Output, Functions, ParameterSerializer>)e.UserToken;
+            var connArgs = (ConnectionArgs) e.UserToken;
             do
             {
                 // No more things to receive
