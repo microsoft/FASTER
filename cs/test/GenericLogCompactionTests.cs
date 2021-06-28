@@ -37,7 +37,7 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            //*##*# TO DO: Check why Emulator on LogCompactBasicTest fails with a "Blob Doesn't exist exception" but not with any other device type"
+            //** Bug #142980 - FasterKV: Blob Doesn't exist exception when .Dispose() when running Emulator.  -- Work around so doesn't crash during clean up is put try catch around
             try
             {
                 session?.Dispose();
