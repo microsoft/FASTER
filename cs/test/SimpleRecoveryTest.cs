@@ -45,8 +45,7 @@ namespace FASTER.test.recovery.sumstore.simple
             log = null;
 
             checkpointManager?.Dispose();
-            if (!string.IsNullOrEmpty(checkpointDir))
-                TestUtils.DeleteDirectory(checkpointDir);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]

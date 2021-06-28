@@ -20,7 +20,8 @@ namespace FASTER.test
             SpanByte input = default;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
 
-            {   // Directory lifetime scope
+            try
+            {
                 using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
                 using var fht = new FasterKV<SpanByte, SpanByte>
                     (128, new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 });
@@ -42,20 +43,25 @@ namespace FASTER.test
                 var output2 = SpanByteAndMemory.FromFixedSpan(output);
 
                 s.Upsert(key2, value2);
-
                 s.Read(key2, ref input, ref output2);
 
                 Assert.IsTrue(!output2.IsSpanByte);
                 Assert.IsTrue(output2.Memory.Memory.Span.Slice(0, output2.Length).SequenceEqual(value2));
             }
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            finally
+            {
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            }
         }
 
         [Test]
         [Category("FasterKV")]
         public unsafe void MultiReadSpanByteKeyTest()
         {
-            {   // Directory lifetime scope
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+
+            try
+            {
                 using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/MultiReadSpanByteKeyTest.log", deleteOnClose: true);
                 using var fht = new FasterKV<SpanByte, long>(
                     size: 1L << 20,
@@ -107,7 +113,10 @@ namespace FASTER.test
                     return value;
                 }
             }
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            finally
+            {
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            }
         }
 
         class MultiReadSpanByteKeyTestFunctions : FunctionsBase<SpanByte, long, long, long, Empty>
