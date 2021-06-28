@@ -16,6 +16,14 @@ namespace FASTER.server
         /// <param name="wireFormat">Wire format</param>
         /// <param name="socket">Socket connection</param>
         /// <returns>Server session</returns>
+        /// 
+
+        /// <summary>
+        /// Remove all subscriptions made by a particular session.
+        /// </summary>
+        /// <param name="session">Session whose subscriptions to be removed</param>
+        public void RemoveSubscriptions(IServerSession session);
+
         IServerSession GetSession(WireFormat wireFormat, Socket socket);
     }
 }

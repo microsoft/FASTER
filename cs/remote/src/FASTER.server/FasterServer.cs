@@ -226,7 +226,9 @@ namespace FASTER.server
             {
                 if (activeSessions.TryRemove(_session, out _))
                 {
-                    //subscribeKVBroker.removeSubscription(_session);
+                    foreach (var provider in sessionProviders)
+                        provider.Value.RemoveSubscriptions(_session);
+
                     _session.Dispose();
                     Interlocked.Decrement(ref activeSessionCount);
                 }

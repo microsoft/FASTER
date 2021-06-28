@@ -42,6 +42,12 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
+        public void RemoveSubscriptions(IServerSession session)
+        {
+            subscribeKVBroker.removeSubscription((FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>)session);
+        }
+
+        /// <inheritdoc />
         public IServerSession GetSession(WireFormat wireFormat, Socket socket)
         {
             return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker);
