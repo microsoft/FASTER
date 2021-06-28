@@ -5,11 +5,28 @@
 
 #include "core/async.h"
 
+#include "log_scan.h"
 #include "hash_bucket.h"
 #include "record.h"
 
 namespace FASTER {
 namespace core {
+
+template<class F>
+struct CompactionThreadsContext {
+ public:
+  CompactionThreadsContext(ScanIterator<F>* iter_, int n_threads)
+    : iter{ iter_ } {
+      for (int i = 0; i < n_threads; i++) {
+        done.emplace_back(std::make_unique<std::atomic<bool>>(false));
+      }
+    }
+  // non-copyable
+  CompactionThreadsContext(const CompactionThreadsContext&) = delete;
+
+  ScanIterator<F>* iter;
+  std::vector<std::unique_ptr<std::atomic<bool>>> done;
+};
 
 template<class K, class V>
 struct CompactionPendingRecordEntry {

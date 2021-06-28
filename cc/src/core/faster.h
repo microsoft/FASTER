@@ -20,6 +20,7 @@
 #include "checkpoint_locks.h"
 #include "checkpoint_state.h"
 #include "constants.h"
+#include "compact.h"
 #include "gc_state.h"
 #include "grow_state.h"
 #include "guid.h"
@@ -200,7 +201,7 @@ class FasterKv {
       AsyncIOContext& io_context);
 
   template<class F>
-  inline void InternalCompact(ScanIterator<F>* iter);
+  inline void InternalCompact(CompactionThreadsContext<F>* ct_ctx, int thread_idx);
 
   // Find the hash bucket entry, if any, corresponding to the specified hash.
   // The caller can use the "expected_entry" to CAS its desired address into the entry.
@@ -2964,27 +2965,37 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
   if (until_address > hlog.safe_read_only_address.control()) {
     throw std::invalid_argument {"Can compact only until hlog.safe_read_only_address"};
   }
-  if (!epoch_.IsProtected() && shift_begin_address) {
-    throw std::runtime_error{ "Thread should have an active FASTER session for truncation to be performed"};
+  if (!epoch_.IsProtected()) {
+    throw std::runtime_error{ "Thread should have an active FASTER session in order to perform compaction"};
   }
-
-  bool is_protected = epoch_.IsProtected();
-  if (is_protected) StopSession();
 
   std::deque<std::thread> threads;
   ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE,
                           hlog.begin_address.load(), Address(until_address), &disk);
+  CompactionThreadsContext<faster_t> threads_context{ &iter, n_threads };
 
-  // Spawn threads
-  for (int i = 0; i < n_threads; ++i) {
-    threads.emplace_back(&FasterKv<K, V, D>::InternalCompact<faster_t>, this, &iter);
+  // Spawn the threads first
+  for (int idx = 0; idx < n_threads - 1; ++idx) {
+    threads.emplace_back(&FasterKv<K, V, D>::InternalCompact<faster_t>,
+                        this, &threads_context, idx);
   }
+  InternalCompact(&threads_context, n_threads - 1); // participate in the compaction
+
   // Wait for threads
-  for (auto & thread : threads) {
-    thread.join();
+  // NOTE: since we have an active session, we *must* periodically refresh
+  //       in order to allow progress for remaining active threads
+  //       -- thus using blocking `thread.join` is not an option
+  int remaining = n_threads - 1;
+  while (remaining > 0) {
+    for (int idx = 0; idx < n_threads - 1; ++idx) {
+      if (threads_context.done[idx]->load() && threads[idx].joinable()) {
+        threads[idx].join();
+        --remaining;
+      }
+    }
+    Refresh();
+    std::this_thread::yield();
   }
-
-  if (is_protected) StartSession();
 
   if (shift_begin_address) {
     // Truncate log & update hash index
@@ -3015,7 +3026,7 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
 
 template<class K, class V, class D>
 template<class F>
-inline void FasterKv<K, V, D>::InternalCompact(ScanIterator<F>* iter) {
+inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_ctx, int thread_idx) {
   constexpr int io_check_freq = 20;
 
   typedef std::unordered_map<uint64_t, CompactionPendingRecordEntry<K, V>> pending_records_info_t;
@@ -3054,7 +3065,7 @@ inline void FasterKv<K, V, D>::InternalCompact(ScanIterator<F>* iter) {
   record_t * record;
   CompactionPendingRecordEntry<K, V> * record_info;
   uint8_t pending_record_entry [sizeof(CompactionPendingRecordEntry<K, V>)];
-  ScannedPage<F> page;
+  ScannedPage<F> page; // first GetNext() will return false
 
   StartSession();
 
@@ -3066,12 +3077,12 @@ inline void FasterKv<K, V, D>::InternalCompact(ScanIterator<F>* iter) {
       retry_records_queue.pop_front();
     }
     else if (pages_available) {
-      HashBucketEntry expected_entry;
       // get next record from hybrid log
+      HashBucketEntry expected_entry;
       record = page.GetNext(record_address);
       if (record == nullptr) {
         Refresh();
-        if(!iter->GetNextPage(page)) {
+        if(!ct_ctx->iter->GetNextPage(page)) {
           // No more pages
           pages_available = false;
         }
@@ -3151,6 +3162,8 @@ complete_pending:
   }
   CompletePending(true);
   StopSession();
+  // Mark thread as finished
+  ct_ctx->done[thread_idx]->store(true);
 }
 
 template <class K, class V, class D>

@@ -174,7 +174,7 @@ class ScanIterator {
     }
 
     Address page_addr{ current.page(), 0 };
-    uint64_t bytes_to_read = (page_addr + hlog_t::kPageSize < until)
+    uint64_t bytes_to_read = (page_addr + hlog_t::kPageSize <= until)
                                 ? hlog_t::kPageSize
                                 : (until - page_addr).control();
 
