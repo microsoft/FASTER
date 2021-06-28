@@ -140,9 +140,6 @@ namespace FASTER.test
             // Basic default scan from start to end 
             // Indirectly used in other tests, but good to have the basic test here for completeness
 
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
-
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
             using (var iter = log.Scan(0, 100_000_000))  
@@ -151,8 +148,6 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
 
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result["+ currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
@@ -162,9 +157,9 @@ namespace FASTER.test
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
+
         }
 
         [Test]
@@ -194,9 +189,6 @@ namespace FASTER.test
 #endif
             PopulateLog(log);
 
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
-
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
             using (var iter = log.Scan(0, 100_000_000,name: null,recover: true,scanBufferingMode: ScanBufferingMode.DoublePageBuffering,scanUncommitted: false))
@@ -205,8 +197,6 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
 
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
@@ -216,9 +206,8 @@ namespace FASTER.test
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
         }
 
 
@@ -249,10 +238,6 @@ namespace FASTER.test
 #endif
             PopulateLog(log);
 
-
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
-
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
             using (var iter = log.Scan(0, 100_000_000, name: "TestScan", recover: true))
@@ -261,8 +246,6 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
 
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
@@ -272,9 +255,8 @@ namespace FASTER.test
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-            Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
         }
 
 
@@ -304,10 +286,6 @@ namespace FASTER.test
 
             PopulateLog(log);
 
-
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
-
             // Read the log 
             int currentEntry = 9;   // since starting at specified address of 1000, need to set current entry as 9 so verification starts at proper spot
             using (var iter = log.Scan(1000, 100_000_000, recover: false))
@@ -316,9 +294,6 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
-
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
 
@@ -327,9 +302,8 @@ namespace FASTER.test
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
         }
 
         [Test]
@@ -360,9 +334,6 @@ namespace FASTER.test
             PopulateLog(log);
 
 
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
-
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
             using (var iter = log.Scan(0, 100_000_000, scanBufferingMode: ScanBufferingMode.DoublePageBuffering))
@@ -371,9 +342,6 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
-
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
 
@@ -382,9 +350,8 @@ namespace FASTER.test
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
         }
 
         [Test]
@@ -412,9 +379,6 @@ namespace FASTER.test
 #endif
             PopulateLog(log);
 
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
-
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
             using (var iter = log.Scan(0, 100_000_000, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
@@ -423,8 +387,6 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
 
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
@@ -434,9 +396,8 @@ namespace FASTER.test
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
         }
 
 
@@ -465,9 +426,6 @@ namespace FASTER.test
 
             PopulateUncommittedLog(log);
 
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
-
             // Setting scanUnCommitted to true is actual test here.
             // Read the log - Look for the flag so know each entry is unique and still reads uncommitted
             int currentEntry = 0;
@@ -477,9 +435,6 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
-
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
 
@@ -488,9 +443,8 @@ namespace FASTER.test
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
         }
 
     }

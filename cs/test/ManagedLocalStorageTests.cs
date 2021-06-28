@@ -112,9 +112,8 @@ namespace FASTER.test
 
             // Final commit to the log
             log.Commit(true);
-            
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
+
+            int currentEntry = 0;
 
             Thread[] th2 = new Thread[numIterThreads];
             for (int t = 0; t < numIterThreads; t++)
@@ -123,14 +122,10 @@ namespace FASTER.test
                     new Thread(() =>
                     {
                         // Read the log - Look for the flag so know each entry is unique
-                        int currentEntry = 0;
                         using (var iter = log.Scan(0, long.MaxValue))
                         {
                             while (iter.GetNext(out byte[] result, out _, out _))
                             {
-                                // set check flag to show got in here
-                                datacheckrun = true;
-
                                 if (numEnqueueThreads == 1)
                                     Assert.IsTrue(result[0] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString());
                                 currentEntry++;
@@ -146,9 +141,9 @@ namespace FASTER.test
             for (int t = 0; t < numIterThreads; t++)
                 th2[t].Join();
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure number of entries is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(numEntries, currentEntry);
+
         }
 
         [Test]
