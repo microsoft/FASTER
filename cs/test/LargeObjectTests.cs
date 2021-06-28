@@ -20,8 +20,7 @@ namespace FASTER.test.largeobjects
         public void Setup()
         {
             test_path = TestUtils.MethodTestDir;
-            if (!Directory.Exists(test_path))
-                Directory.CreateDirectory(test_path);
+            TestUtils.RecreateDirectory(test_path);
         }
 
         [TearDown]

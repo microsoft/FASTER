@@ -15,6 +15,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BlittableLogCompactionTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });

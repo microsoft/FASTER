@@ -4,7 +4,6 @@
 using System;
 using System.Threading.Tasks;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test.async
@@ -16,14 +15,13 @@ namespace FASTER.test.async
         private FasterKV<MyKey, MyLargeValue> fht2;
         private IDevice log, objlog;
         private string test_path;
-        private readonly MyLargeFunctions functions = new MyLargeFunctions();
+        private readonly MyLargeFunctions functions = new();
 
         [SetUp]
         public void Setup()
         {
             test_path = TestUtils.MethodTestDir;
-            if (!Directory.Exists(test_path))
-                Directory.CreateDirectory(test_path);
+            TestUtils.RecreateDirectory(test_path);
         }
 
         [TearDown]

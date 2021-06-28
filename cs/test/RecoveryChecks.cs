@@ -3,7 +3,6 @@
 
 using System.Threading.Tasks;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 using FASTER.test.recovery.sumstore;
 using System;
@@ -34,7 +33,7 @@ namespace FASTER.test.recovery
 
             path = TestUtils.MethodTestDir + "/";
             log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
-            Directory.CreateDirectory(path);
+            TestUtils.RecreateDirectory(path);
         }
 
         protected void BaseTearDown()

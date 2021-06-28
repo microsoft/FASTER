@@ -26,7 +26,7 @@ namespace FASTER.test
             path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(path, wait:true);
 
             log = Devices.CreateLogDevice(path + "/BasicFasterTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
@@ -44,7 +44,6 @@ namespace FASTER.test
             log?.Dispose();
             log = null;
             TestUtils.DeleteDirectory(path);
-
         }
 
         [Test]
@@ -762,7 +761,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         public static void KVBasicsSampleEndToEndInDocs()
         {
-            string testDir = $"{TestUtils.MethodTestDir}";
+            string testDir = TestUtils.MethodTestDir;
             using var log = Devices.CreateLogDevice($"{testDir}/hlog.log", deleteOnClose: true);
             using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
             using var s = store.NewSession(new SimpleFunctions<long, long>());

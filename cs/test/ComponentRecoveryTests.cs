@@ -13,6 +13,8 @@ namespace FASTER.test.recovery
     {
         private static unsafe void Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten)
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
+
             seed = 123;
             var rand1 = new Random(seed);
             device = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/MallocFixedPageSizeRecoveryTest.dat", deleteOnClose: true);
@@ -89,6 +91,8 @@ namespace FASTER.test.recovery
 
         private static unsafe void Setup_FuzzyIndexRecoveryTest(out int seed, out int size, out long numAdds, out IDevice ht_device, out IDevice ofb_device, out FasterBase hash_table1, out ulong ht_num_bytes_written, out ulong ofb_num_bytes_written, out int num_ofb_buckets)
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+
             seed = 123;
             size = 1 << 16;
             numAdds = 1 << 18;

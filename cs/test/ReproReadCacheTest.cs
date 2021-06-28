@@ -37,6 +37,7 @@ namespace FASTER.test
 
         public unsafe void RandomReadCacheTest1()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicFasterTests.log", deleteOnClose: true);
             var fht = new FasterKV<SpanByte, long>(
                 size: 1L << 20,

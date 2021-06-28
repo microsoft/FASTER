@@ -29,11 +29,13 @@ namespace FASTER.test.recovery.objectstore
         private IDevice log, objlog;
 
         [SetUp]
-        public void Setup()
+        public void Setup() => Setup(deleteDir: true);
+
+        public void Setup(bool deleteDir)
         {
             test_path = TestUtils.MethodTestDir;
-            if (!Directory.Exists(test_path))
-                Directory.CreateDirectory(test_path);
+            if (deleteDir)
+                TestUtils.RecreateDirectory(test_path);
 
             log = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.log", false);
             objlog = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.obj.log", false);
@@ -48,7 +50,9 @@ namespace FASTER.test.recovery.objectstore
         }
 
         [TearDown]
-        public void TearDown()
+        public void TearDown() => TearDown(deleteDir: true);
+
+        public void TearDown(bool deleteDir)
         {
             fht?.Dispose();
             fht = null;
@@ -56,7 +60,15 @@ namespace FASTER.test.recovery.objectstore
             log = null;
             objlog?.Dispose();
             objlog = null;
-            TestUtils.DeleteDirectory(test_path);
+
+            if (deleteDir)
+                TestUtils.DeleteDirectory(test_path);
+        }
+
+        private void PrepareToRecover()
+        {
+            TearDown(deleteDir: false);
+            Setup(deleteDir: false);
         }
 
         [Test]
@@ -64,13 +76,7 @@ namespace FASTER.test.recovery.objectstore
         public async ValueTask ObjectRecoveryTest1([Values]bool isAsync)
         {
             Populate();
-            fht.Dispose();
-            fht = null;
-            log.Dispose();
-            log = null;
-            objlog.Dispose();
-            objlog = null;
-            Setup();
+            PrepareToRecover();
 
             if (isAsync)
                 await fht.RecoverAsync(token, token);

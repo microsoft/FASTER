@@ -67,7 +67,7 @@ namespace FASTER.test
             path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(path, wait:true);
 
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
             manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(path));
@@ -154,6 +154,19 @@ namespace FASTER.test
                 Assert.IsTrue(result.SequenceEqual(expectedData));
             if (verifyAtEnd)
                 Assert.IsFalse(iter.GetNext(out _, out _, out _));
+        }
+
+        protected static async Task LogWriterAsync(FasterLog log, byte[] entry)
+        {
+            CancellationTokenSource cts = new CancellationTokenSource();
+            CancellationToken token = cts.Token;
+
+            // Enter in some entries then wait on this separate thread
+            await log.EnqueueAsync(entry);
+            await log.EnqueueAsync(entry);
+            var commitTask = await log.CommitAsync(null, token);
+            await log.EnqueueAsync(entry);
+            await log.CommitAsync(commitTask, token);
         }
     }
 
@@ -318,14 +331,11 @@ namespace FASTER.test
         [Category("FasterLog")]
         public async ValueTask CommitAsyncPrevTask()
         {
-
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
-            Task currentTask;
 
             var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager };
             log = await FasterLog.CreateAsync(logSettings);
-
 
             // make it small since launching each on separate threads 
             int entryLength = 10;
@@ -337,7 +347,7 @@ namespace FASTER.test
             }
 
             // Enqueue and AsyncCommit in a separate thread (wait there until commit is done though).
-            currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
+            Task currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
 
             // Give all a second or so to queue up and to help with timing issues - shouldn't need but timing issues
             Thread.Sleep(2000);
@@ -346,8 +356,13 @@ namespace FASTER.test
             currentTask.Wait(4000, token);
 
             // double check to make sure finished - seen cases where timing kept running even after commit done
+            bool wasCanceled = false;
             if (currentTask.Status != TaskStatus.RanToCompletion)
+            {
+                wasCanceled = true;
+                Console.WriteLine("currentTask failed to complete; canceling");
                 cts.Cancel();
+            }
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
@@ -380,30 +395,14 @@ namespace FASTER.test
             // case of task not stopping
             if (currentTask.Status != TaskStatus.RanToCompletion)
             {
-                Assert.Fail("Final Status check Failure -- Task should be 'RanToCompletion' but current Status is:" + currentTask.Status);
+                Assert.Fail($"Final Status check Failure -- Task should be 'RanToCompletion' but current Status is: {currentTask.Status}; wasCanceled = {wasCanceled}");
             }
-        }
-
-        static async Task LogWriterAsync(FasterLog log, byte[] entry)
-        {
-
-            CancellationTokenSource cts = new CancellationTokenSource();
-            CancellationToken token = cts.Token;
-
-
-            // Enter in some entries then wait on this separate thread
-            await log.EnqueueAsync(entry);
-            await log.EnqueueAsync(entry);
-            var commitTask = await log.CommitAsync(null,token);
-            await log.EnqueueAsync(entry);
-            await log.CommitAsync(commitTask,token);
         }
 
         [Test]
         [Category("FasterLog")]
         public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType)
         {
-
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
 
@@ -886,19 +885,16 @@ namespace FASTER.test
         [Category("Smoke")]
         public async ValueTask CommitAsyncPrevTask([Values] TestUtils.DeviceType deviceType)
         {
-
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
-            Task currentTask;
 
-            string filename = path + "CommitAsyncPrevTask" + deviceType.ToString() + ".log";
+            string filename = $"{path}/CommitAsyncPrevTask_{deviceType}.log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 };
             log = await FasterLog.CreateAsync(logSettings);
 
-
             // make it small since launching each on separate threads 
-            int entryLength = 10;
+            const int entryLength = 10;
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
@@ -907,7 +903,7 @@ namespace FASTER.test
             }
 
             // Enqueue and AsyncCommit in a separate thread (wait there until commit is done though).
-            currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
+            Task currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
 
             // Give all a second or so to queue up and to help with timing issues - shouldn't need but timing issues
             Thread.Sleep(2000);
@@ -916,8 +912,13 @@ namespace FASTER.test
             currentTask.Wait(4000, token);
 
             // double check to make sure finished - seen cases where timing kept running even after commit done
+            bool wasCanceled = false;
             if (currentTask.Status != TaskStatus.RanToCompletion)
+            {
+                wasCanceled = true;
+                Console.WriteLine("currentTask failed to complete; canceling");
                 cts.Cancel();
+            }
 
             // flag to make sure data has been checked 
             bool datacheckrun = false;
@@ -950,32 +951,15 @@ namespace FASTER.test
             // case of task not stopping
             if (currentTask.Status != TaskStatus.RanToCompletion)
             {
-                Assert.Fail("Final Status check Failure -- Task should be 'RanToCompletion' but current Status is:" + currentTask.Status);
+                Assert.Fail($"Final Status check Failure -- Task should be 'RanToCompletion' but current Status is: {currentTask.Status}; wasCanceled = {wasCanceled}");
             }
         }
-
-        static async Task LogWriterAsync(FasterLog log, byte[] entry)
-        {
-
-            CancellationTokenSource cts = new CancellationTokenSource();
-            CancellationToken token = cts.Token;
-
-
-            // Enter in some entries then wait on this separate thread
-            await log.EnqueueAsync(entry);
-            await log.EnqueueAsync(entry);
-            var commitTask = await log.CommitAsync(null,token);
-            await log.EnqueueAsync(entry);
-            await log.CommitAsync(commitTask,token);
-        }
-
 
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
         public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
-
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
 

@@ -71,6 +71,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         public void BasicHighLatencyDeviceTest()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // Create devices \ log for test for in memory device
             LocalMemoryDevice device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyMs: 20);
@@ -95,13 +96,10 @@ namespace FASTER.test
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
                     Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as " + currentEntry.ToString());
-
                     currentEntry++;
                 }
             }
-
         }
-
 
         private async ValueTask FasterLogTest1(LogChecksumType logChecksum, IDevice device, ILogCommitManager logCommitManager, FasterLogTestBase.IteratorType iteratorType)
         {

@@ -46,6 +46,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null });
             session = fkv.For(new Functions()).NewSession<Functions>();

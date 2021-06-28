@@ -26,13 +26,15 @@ namespace FASTER.test.recovery.sumstore
         private IDevice log;
 
         [SetUp]
-        public void Setup()
-        {
+        public void Setup() => Setup(deleteDir:true);
 
+        public void Setup(bool deleteDir)
+        {
             path = TestUtils.MethodTestDir + "/";
 
-            // Do NOT clean up here as tests use this Setup() to recover
-            //            TestUtils.DeleteDirectory(path);
+            // Do NOT clean up here unless specified, as tests use this Setup() to recover
+            if (deleteDir)
+                TestUtils.DeleteDirectory(path, true);
 
             log = Devices.CreateLogDevice(path + "FullRecoveryTests.log");
 
@@ -44,7 +46,9 @@ namespace FASTER.test.recovery.sumstore
         }
 
         [TearDown]
-        public void TearDown()
+        public void TearDown() => TearDown(deleteDir: true);
+
+        public void TearDown(bool deleteDir)
         {
             //*##*# TO DO: Check why Emulator on LogCompactBasicTest fails with a "Blob Doesn't exist exception" but not with any other device type"
             try
@@ -56,8 +60,15 @@ namespace FASTER.test.recovery.sumstore
             }
             catch { }
 
-            TestUtils.DeleteDirectory(path);
+            // Do NOT clean up here unless specified, as tests use this Setup() to recover
+            if (deleteDir)
+                TestUtils.DeleteDirectory(path);
+        }
 
+        private void PrepareToRecover()
+        {
+            TearDown(deleteDir: false);
+            Setup(deleteDir: false);
         }
 
         [Test]
@@ -70,11 +81,7 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < logTokens.Count; i++)
             {
                 if (i >= indexTokens.Count) break;
-                fht.Dispose();
-                fht = null;
-                log.Dispose();
-                log = null;
-                Setup();
+                PrepareToRecover();
                 await RecoverAndTestAsync(logTokens[i], indexTokens[i], isAsync);
             }
         }
@@ -85,7 +92,6 @@ namespace FASTER.test.recovery.sumstore
         [Category("Smoke")]
         public async ValueTask RecoveryTestFullCheckpoint([Values] bool isAsync, [Values] TestUtils.DeviceType deviceType)
         {
-
             // Reset all the log and fht values since using all deviceType
             log = TestUtils.CreateTestDevice(deviceType, path + "FullRecoveryTests.log");
             fht = new FasterKV<AdId, NumClicks>
@@ -105,11 +111,7 @@ namespace FASTER.test.recovery.sumstore
 
             foreach (var token in logTokens)
             {
-                fht.Dispose();
-                fht = null;
-                log.Dispose();
-                log = null;
-                Setup();
+                PrepareToRecover();
                 await RecoverAndTestAsync(token, token, isAsync);
             }
         }

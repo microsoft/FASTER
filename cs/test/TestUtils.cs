@@ -7,38 +7,66 @@ using System.Diagnostics;
 using System.IO;
 using FASTER.core;
 using FASTER.devices;
+using System.Threading;
+using System.Runtime.InteropServices;
 
 namespace FASTER.test
 {
     internal static class TestUtils
     {
-        internal static void DeleteDirectory(string path)
+        /// <summary>
+        /// Delete a directory recursively
+        /// </summary>
+        /// <param name="path">The folder to delete</param>
+        /// <param name="wait">If true, loop on exceptions that are retryable, and verify the directory no longer exists. Generally true on SetUp, false on TearDown</param>
+        internal static void DeleteDirectory(string path, bool wait = false)
         {
+            if (!Directory.Exists(path))
+                return;
 
-            try
-            {
-                foreach (string directory in Directory.GetDirectories(path))
-                    DeleteDirectory(directory);
-            }
-            catch (DirectoryNotFoundException)
-            {
-                // Ignore this; some tests call this before the test run to make sure there are no leftovers (e.g. from a debug session).
-            }
+            foreach (string directory in Directory.GetDirectories(path))
+                DeleteDirectory(directory, wait);
 
-            // Exceptions may happen due to a handle briefly remaining held after Dispose().
-            try
+            bool retry = true;
+            while (retry)
             {
-                Directory.Delete(path, true);
-            }
-            catch (Exception ex) when (ex is IOException ||
-                                       ex is UnauthorizedAccessException)
-            {
+                // Exceptions may happen due to a handle briefly remaining held after Dispose().
+                retry = false;
                 try
                 {
                     Directory.Delete(path, true);
                 }
-                catch { }
+                catch (Exception ex) when (ex is IOException ||
+                                           ex is UnauthorizedAccessException)
+                {
+                    if (!wait)
+                    {
+                        try { Directory.Delete(path, true); }
+                        catch { }
+                        return;
+                    }
+                    retry = true;
+                }
             }
+            
+            if (!wait)
+                return;
+
+            while (Directory.Exists(path))
+                Thread.Yield();
+        }
+
+        /// <summary>
+        /// Create a clean new directory, removing a previous one if needed.
+        /// </summary>
+        /// <param name="path"></param>
+        internal static void RecreateDirectory(string path)
+        {
+            if (Directory.Exists(path))
+                DeleteDirectory(path);
+
+            // Don't catch; if this fails, so should the test
+            Directory.CreateDirectory(path);
         }
 
         // Used to test the various devices by using the same test with VALUES parameter
@@ -62,9 +90,10 @@ namespace FASTER.test
             {
 #if WINDOWS
                 case DeviceType.LSD:
-#pragma warning disable CA1416 // Validate platform compatibility -- we're under #if WINDOWS
-                    device = new LocalStorageDevice(filename, false, deleteOnClose: true, true, -1, false, false);
-#pragma warning restore CA1416 // Validate platform compatibility
+#if NETSTANDARD || NET
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))    // avoids CA1416 // Validate platform compatibility
+#endif
+                        device = new LocalStorageDevice(filename, false, deleteOnClose: true, true, -1, false, false);
                     break;
                 case DeviceType.EmulatedAzure:
                     device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, "fasterlogblob", deleteOnClose: true);
@@ -91,9 +120,7 @@ namespace FASTER.test
             return forAzure ? suffix : $"{prefix}/{suffix}";
         }
 
-        internal static string ClassTestDir => Path.Combine(TestContext.CurrentContext.TestDirectory, ConvertedClassName());
-
-        internal static string MethodTestDir => Path.Combine(ClassTestDir, TestContext.CurrentContext.Test.MethodName);
+        internal static string MethodTestDir => Path.Combine(TestContext.CurrentContext.TestDirectory, $"{ConvertedClassName()}_{TestContext.CurrentContext.Test.MethodName}");
 
         internal static string AzureTestContainer
         {

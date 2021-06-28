@@ -26,6 +26,7 @@ namespace FASTER.test.recovery.sumstore.simple
         [SetUp]
         public void Setup()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             checkpointManager = default;
             checkpointDir = default;
             inputArray = new AdId[numOps];

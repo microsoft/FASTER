@@ -30,7 +30,7 @@ namespace FASTER.test.recovery.sumstore
         public void Setup()
         {
             this.rootPath = TestUtils.MethodTestDir;
-            Directory.CreateDirectory(this.rootPath);
+            TestUtils.RecreateDirectory(this.rootPath);
             this.sharedLogDirectory = $"{this.rootPath}/SharedLogs";
             Directory.CreateDirectory(this.sharedLogDirectory);
 
@@ -44,7 +44,6 @@ namespace FASTER.test.recovery.sumstore
             this.original.TearDown();
             this.clone.TearDown();
             TestUtils.DeleteDirectory(rootPath);
-            TestUtils.DeleteDirectory(sharedLogDirectory);
         }
 
         [Test]

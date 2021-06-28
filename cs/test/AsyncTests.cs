@@ -25,6 +25,7 @@ namespace FASTER.test.async
         [Category("FasterKV"), Category("CheckpointRestore")]
         public async Task AsyncRecoveryTest1(CheckpointType checkpointType)
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/AsyncRecoveryTest1.log", deleteOnClose: true);
 
             string testPath = TestUtils.MethodTestDir + "/checkpoints4";

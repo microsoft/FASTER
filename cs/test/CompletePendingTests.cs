@@ -22,7 +22,7 @@ namespace FASTER.test
             path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(path, wait:true);
 
             log = Devices.CreateLogDevice(path + "/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>(128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
@@ -121,7 +121,6 @@ namespace FASTER.test
                 Assert.AreEqual(keyStruct, completedOutputs.Current.Key);
                 Assert.IsFalse(completedOutputs.Next());
             }
-
         }
 
         [Test]

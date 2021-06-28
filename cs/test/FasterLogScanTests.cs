@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-using System.IO;
 using FASTER.core;
 using NUnit.Framework;
 
@@ -16,9 +15,9 @@ namespace FASTER.test
 
         private string path;
         static byte[] entry;
-        static int entryLength = 100;
-        static int numEntries = 1000;
-        static int entryFlag = 9999;
+        const int entryLength = 100;
+        const int numEntries = 1000;
+        static readonly int entryFlag = 9999;
 
         // Create and populate the log file so can do various scans
         [SetUp]
@@ -28,8 +27,7 @@ namespace FASTER.test
             path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path);
-
+            TestUtils.DeleteDirectory(path, wait:true);
         }
 
         [TearDown]
@@ -38,7 +36,6 @@ namespace FASTER.test
             //*##*# TO DO: Check why Emulator on TearDown fails with a "Blob Doesn't exist exception" but not with any other device type"
             try
             {
-
                 log?.Dispose();
                 log = null;
                 device?.Dispose();

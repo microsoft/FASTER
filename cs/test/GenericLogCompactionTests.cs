@@ -3,7 +3,6 @@
 
 using FASTER.core;
 using NUnit.Framework;
-using System.IO;
 
 namespace FASTER.test
 {
@@ -15,15 +14,13 @@ namespace FASTER.test
         private IDevice log, objlog;
         private string path;
 
-
         [SetUp]
         public void Setup()
         {
-
             path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(path, wait:true);
 
             log = Devices.CreateLogDevice(path + "/GenericLogCompactionTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(path + "/GenericLogCompactionTests.obj.log", deleteOnClose: true);
@@ -35,7 +32,6 @@ namespace FASTER.test
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
             session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
-
         }
 
         [TearDown]
@@ -65,7 +61,6 @@ namespace FASTER.test
         [Category("Smoke")]
         public void LogCompactBasicTest([Values] TestUtils.DeviceType deviceType)
         {
-
             // Reset all the log and fht values since using all deviceType
             string filename = path + "LogCompactBasicTest" + deviceType.ToString() + ".log";
             string objfilename = path + "LogCompactBasicTest_obj" + deviceType.ToString() + ".log";
@@ -81,7 +76,6 @@ namespace FASTER.test
                 );
 
             session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
-
 
             MyInput input = new MyInput();
 
@@ -162,7 +156,6 @@ namespace FASTER.test
                 }
             }
         }
-
 
         [Test]
         [Category("FasterKV")]

@@ -25,7 +25,7 @@ namespace FASTER.test
 
             // Clean up log files from previous test runs in case they weren't cleaned up
             // We loop to ensure clean-up as deleteOnClose does not always work for MLSD
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(path, wait:true);
 
             // Create devices \ log for test
             device = new ManagedLocalStorageDevice(path + "ManagedLocalStore.log", deleteOnClose: true);

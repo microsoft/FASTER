@@ -16,6 +16,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericIterationTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericIterationTests.obj.log", deleteOnClose: true);
 

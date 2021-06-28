@@ -17,6 +17,7 @@ namespace FASTER.test
         {
             int TotalCount = 1000;
             string path = TestUtils.MethodTestDir + "/";
+            TestUtils.DeleteDirectory(path, wait: true);
             DirectoryInfo di = Directory.CreateDirectory(path);
             using (IDevice device = Devices.CreateLogDevice(path + "/delta.log", deleteOnClose: false))
             {

@@ -1,15 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 using System;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
-using FASTER.devices;
-using Microsoft.Azure.Storage.Blob;
-using Microsoft.Azure.Storage;
 
 
 namespace FASTER.test
@@ -37,7 +33,6 @@ namespace FASTER.test
             public int TotalEntries() => batchSize;
         }
 
-
         [SetUp]
         public void Setup()
         {
@@ -45,7 +40,7 @@ namespace FASTER.test
             path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(path, wait:true);
         }
 
         [TearDown]
@@ -58,7 +53,6 @@ namespace FASTER.test
 
             // Clean up log files
             TestUtils.DeleteDirectory(path);
-
         }
 
         [Test]
@@ -141,11 +135,11 @@ namespace FASTER.test
                         // Span Batch only added first entry several times so have separate verification
                         if (iteratorType == EnqueueIteratorType.SpanBatch)
                         {
-                            Assert.IsTrue(result[0] == (byte)entryFlag, "Fail - Result[0]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                            Assert.AreEqual((byte)entryFlag, result[0]);
                         }
                         else
                         {
-                            Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                            Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         }
 
                         currentEntry++;

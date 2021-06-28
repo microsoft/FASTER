@@ -18,6 +18,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/MemoryLogCompactionTests1.log", deleteOnClose: true);
             fht = new FasterKV<ReadOnlyMemory<int>, Memory<int>>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });

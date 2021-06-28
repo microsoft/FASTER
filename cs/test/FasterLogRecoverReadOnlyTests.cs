@@ -31,7 +31,7 @@ namespace FASTER.test.recovery
             deviceName = path + "testlog";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(path, wait:true);
 
             cts = new CancellationTokenSource();
             done = new SemaphoreSlim(0);

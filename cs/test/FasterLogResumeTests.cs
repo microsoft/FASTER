@@ -22,7 +22,7 @@ namespace FASTER.test
         {
             path = TestUtils.MethodTestDir + "/";
 
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(path, wait:true);
 
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
         }

@@ -134,6 +134,7 @@ namespace FASTER.test.readaddress
             internal TestStore(bool useReadCache, CopyReadsToTail copyReadsToTail, bool flush)
             {
                 this.testDir = TestUtils.MethodTestDir;
+                TestUtils.DeleteDirectory(this.testDir, wait:true);
                 this.logDevice = Devices.CreateLogDevice($"{testDir}/hlog.log");
                 this.flush = flush;
 

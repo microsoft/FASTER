@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 using FASTER.test.recovery.sumstore;
 using System.Threading.Tasks;
@@ -29,8 +28,8 @@ namespace FASTER.test.async
             }
 
             path = TestUtils.MethodTestDir + "/";
+            TestUtils.RecreateDirectory(path);
             log = Devices.CreateLogDevice(path + "Async.log", deleteOnClose: true);
-            Directory.CreateDirectory(path);
             fht1 = new FasterKV<long, long>
                 (1L << 10,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 15 },

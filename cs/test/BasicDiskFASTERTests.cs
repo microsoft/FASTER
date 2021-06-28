@@ -40,6 +40,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         public void TieredWriteRead()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             IDevice tested;
             IDevice localDevice = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))

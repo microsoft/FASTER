@@ -19,8 +19,7 @@ namespace FASTER.test.recovery.objects
         public void Setup()
         {
             FasterFolderPath = TestUtils.MethodTestDir;
-            if (!Directory.Exists(FasterFolderPath))
-                Directory.CreateDirectory(FasterFolderPath);
+            TestUtils.RecreateDirectory(FasterFolderPath);
         }
 
         [TearDown]

@@ -106,6 +106,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
             _log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/FunctionPerSessionTests1.log", deleteOnClose: true);
 
             _faster = new FasterKV<int, RefCountedValue>(128, new LogSettings()

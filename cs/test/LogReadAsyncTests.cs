@@ -27,7 +27,7 @@ namespace FASTER.test
             path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.DeleteDirectory(path, wait:true);
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(path + "LogReadAsync", deleteOnClose: true);

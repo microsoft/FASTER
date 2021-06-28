@@ -22,6 +22,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         [SetUp]
         public void Setup()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/RecoverContinueTests.log", deleteOnClose: true);
             checkpointDir = TestUtils.MethodTestDir + "/checkpoints3";
             Directory.CreateDirectory(checkpointDir);

@@ -15,6 +15,7 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 10 };
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/ObjectReadCacheTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/ObjectReadCacheTests.obj.log", deleteOnClose: true);

@@ -20,6 +20,7 @@ namespace FASTER.test.async
         public void Setup()
         {
             path = TestUtils.MethodTestDir;
+            TestUtils.DeleteDirectory(path, wait: true);
             log = new LocalMemoryDevice(1L << 30, 1L << 25, 1, latencyMs: 20);
             // log = Devices.CreateLogDevice(path + "Async.log", deleteOnClose: true);
             Directory.CreateDirectory(path);
@@ -37,7 +38,7 @@ namespace FASTER.test.async
             fht1 = null;
             log?.Dispose();
             log = null;
-            new DirectoryInfo(path).Delete(true);
+            TestUtils.DeleteDirectory(path);
         }
 
         private static async Task Populate(ClientSession<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> s1)

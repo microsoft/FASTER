@@ -16,6 +16,8 @@ namespace FASTER.test
         [Category("FasterKV")]
         public void ShouldSkipEmptySpaceAtEndOfPage()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+
             var vlLength = new VLValue();
             var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog-vl-iter.log", deleteOnClose: true);
             var fht = new FasterKV<Key, VLValue>

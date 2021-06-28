@@ -18,6 +18,7 @@ namespace FASTER.test
         {
             Span<byte> output = stackalloc byte[20];
             SpanByte input = default;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
 
             {   // Directory lifetime scope
                 using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
