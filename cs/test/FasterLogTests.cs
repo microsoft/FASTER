@@ -18,13 +18,19 @@ namespace FASTER.test
     {
         [Test]
         [Category("FasterLog")]
-        public void TestDisposeReleasesFileLocksWithInprogressCommit()
+        [Category("Smoke")]
+
+        public void TestDisposeReleasesFileLocksWithInprogressCommit([Values] TestUtils.DeviceType deviceType)
         {
             string path = TestUtils.MethodTestDir + "/";
+            string filename = path + "TestDisposeRelease" + deviceType.ToString() + ".log";
+
             DirectoryInfo di = Directory.CreateDirectory(path);
-            IDevice device = Devices.CreateLogDevice(path + "testDisposeReleasesFileLocksWithInprogressCommit.log", preallocateFile: true, deleteOnClose: false);
-            FasterLog fasterLog = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry });
+            IDevice device = TestUtils.CreateTestDevice(deviceType, filename);
+            FasterLog fasterLog = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path, LogChecksum = LogChecksumType.PerEntry });
+
             Assert.IsTrue(fasterLog.TryEnqueue(new byte[100], out long beginAddress));
+
             fasterLog.Commit(spinWait: false);
             fasterLog.Dispose();
             device.Dispose();
@@ -75,17 +81,12 @@ namespace FASTER.test
 
         protected void BaseTearDown()
         {
-            //*##*# TO DO: Check why Emulator on TearDown fails with a "Blob Doesn't exist exception" but not with any other device type"
-            try
-            {
-                log?.Dispose();
-                log = null;
-                manager?.Dispose();
-                manager = null;
-                device?.Dispose();
-                device = null;
-            }
-            catch { }
+            log?.Dispose();
+            log = null;
+            manager?.Dispose();
+            manager = null;
+            device?.Dispose();
+            device = null;
 
             TestUtils.DeleteDirectory(path);
         }

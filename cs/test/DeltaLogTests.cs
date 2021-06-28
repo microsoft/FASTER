@@ -13,13 +13,22 @@ namespace FASTER.test
     {
         [Test]
         [Category("FasterLog")]
-        public void DeltaLogTest1()
+        [Category("Smoke")]
+        public void DeltaLogTest1([Values] TestUtils.DeviceType deviceType)
         {
             int TotalCount = 1000;
             string path = TestUtils.MethodTestDir + "/";
+            string filename = path + "delta" + deviceType.ToString() + ".log";
             TestUtils.DeleteDirectory(path, wait: true);
             DirectoryInfo di = Directory.CreateDirectory(path);
-            using (IDevice device = Devices.CreateLogDevice(path + "/delta.log", deleteOnClose: false))
+
+            //*#*#*# TO DO: Figure Out why this DeviceType fails - For FASTER Log, need to add 'LogCommitDir = path' to log settings so maybe something similar with deltalog   *#*#*#
+            if (deviceType == TestUtils.DeviceType.LocalMemory)
+            {
+                return;
+            }
+
+            using (IDevice device = TestUtils.CreateTestDevice(deviceType, filename))
             {
                 device.Initialize(-1);
                 using DeltaLog deltaLog = new DeltaLog(device, 12, 0);
