@@ -16,29 +16,15 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Invoked when a version has been finalized --- i.e., no more operations can be a part of this version.
-        /// </summary>
-        /// <param name="version">Version number of the finished version</param>
-        /// <param name="token">unique token that identifies the checkpoint associated with the version</param>
-        public void OnVersionEnd(long oldVersion)
-        {
-            // Get or Add as some operations may have executed early in the next version, which would lead to a created
-            // entry for the version without a token.
-            var versionHandle = state.versions.GetOrAdd(oldVersion, v => new VersionHandle());
-        }
-
-        /// <summary>
         /// Invoked when a version is persistent.
         /// </summary>
         /// <param name="version">Version number of the finished version</param>
         /// <param name="token">unique token that identifies the checkpoint associated with the version</param>
         public void OnVersionPersistent(long version)
         {
-            var versionObject = state.versions[version];
+            var deps = state.versions[version];
             var workerVersion = new WorkerVersion(state.me, version);
-            // TODO(Tianyu): For performance, change IDprFinder code to only buffer this write and invoke expensive
-            // writes on refreshes.
-            state.dprFinder.ReportNewPersistentVersion(workerVersion, versionObject.deps);
+            state.dprFinder.ReportNewPersistentVersion(workerVersion, deps);
         }
 
         /// <summary>

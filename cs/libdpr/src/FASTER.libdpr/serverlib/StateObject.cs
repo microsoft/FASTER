@@ -1,4 +1,6 @@
 
+using System;
+
 namespace FASTER.libdpr
 {
     /// <summary>
@@ -20,7 +22,8 @@ namespace FASTER.libdpr
         /// </summary>
         /// <returns>Current version (lower bound) of the state object</returns>
         long Version();
-        
+
+        delegate ReadOnlySpan<byte> DepsProvider(long version);
         /// <summary>
         /// Begins a checkpoint to advance to the targetVersion. Invocation of the call only guarantees that object
         /// version eventually reaches targetVersion, and the function may return without performing the checkpoint
@@ -29,7 +32,7 @@ namespace FASTER.libdpr
         /// registered callback instead of this function.
         /// </summary>
         /// <param name="targetVersion">The version to jump to, or -1 if unconditionally jumping to next version</param>
-        void BeginCheckpoint(long targetVersion = -1);
+        void BeginCheckpoint(DepsProvider depsProvider, long targetVersion = -1);
 
         /// <summary>
         /// Recovers the state object to an earlier checkpoint, identified by the given version. After the function

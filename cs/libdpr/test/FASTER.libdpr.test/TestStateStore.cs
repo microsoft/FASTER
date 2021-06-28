@@ -21,7 +21,7 @@ namespace FASTER.libdpr
             }
         }
         
-        protected override void PerformCheckpoint(long version, Action onPersist)
+        protected override void PerformCheckpoint(long version, ReadOnlySpan<byte> deps, Action onPersist)
         {
             int prefix;
             lock (opLog)

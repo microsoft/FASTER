@@ -29,7 +29,7 @@ namespace FASTER.libdpr
         /// checkpoint requests, or restore requests with this function. 
         /// </summary>
         /// <param name="onPersist">Callback to invoke when checkpoint is recoverable</param>
-        protected abstract void PerformCheckpoint(long version, Action onPersist);
+        protected abstract void PerformCheckpoint(long version, ReadOnlySpan<byte> deps, Action onPersist);
 
         /// <summary>
         /// Blockingly recovers to a previous checkpoint as identified by the token. The function returns only after
@@ -52,13 +52,13 @@ namespace FASTER.libdpr
         }
         
         /// <inheritdoc/>
-        public void BeginCheckpoint(long targetVersion = -1)
+        public void BeginCheckpoint(IStateObject.DepsProvider depsProvider, long targetVersion = -1)
         {
             versionScheme.AdvanceVersion(v =>
             {
-                PerformCheckpoint(v, () =>
+                var deps = depsProvider(v);
+                PerformCheckpoint(v, deps, () =>
                 {
-                    callbacks.OnVersionEnd(v);
                     callbacks.OnVersionPersistent(v);
                 });
             }, targetVersion);

@@ -9,16 +9,7 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    /// <summary>
-    /// Per-version information needed by DPR
-    /// </summary>
-    internal class VersionHandle
-    {
-        /// <summary>
-        /// The set of dependencies of a version
-        /// </summary>
-        public LightDependencySet deps = new LightDependencySet();
-    }
+
 
     /// <summary>
     /// Maintains per-worker state for DPR version-tracking.
@@ -26,7 +17,6 @@ namespace FASTER.libdpr
     /// Shared between the DprManager and DprWorkerCallback. This is separate from DprManager to avoid introducing
     /// the IStateObject generic type argument to DprWorkerCallback.
     /// </summary>
-    /// <typeparam name="TToken">Type of token checkpoints generate</typeparam>
     internal class DprWorkerState
     {
         internal DprWorkerState(IDprFinder dprFinder, Worker me)
@@ -34,14 +24,16 @@ namespace FASTER.libdpr
             this.dprFinder = dprFinder;
             this.me = me;
             worldlineTracker = new SimpleVersionScheme();
-            versions = new ConcurrentDictionary<long, VersionHandle>();
+            versions = new ConcurrentDictionary<long, LightDependencySet>();
+            dependencySetPool = new SimpleObjectPool<LightDependencySet>(() => new LightDependencySet());
         }
         
         internal readonly IDprFinder dprFinder;
 
         internal readonly SimpleVersionScheme worldlineTracker;
         internal ManualResetEventSlim rollbackProgress;
-        internal readonly ConcurrentDictionary<long, VersionHandle> versions;
+        internal readonly ConcurrentDictionary<long, LightDependencySet> versions;
+        internal readonly SimpleObjectPool<LightDependencySet> dependencySetPool;
         internal readonly Worker me;
         
         internal Stopwatch sw = Stopwatch.StartNew();
@@ -60,6 +52,7 @@ namespace FASTER.libdpr
         private readonly DprWorkerState state;
         private readonly TStateObject stateObject;
         private SimpleObjectPool<DprBatchVersionTracker> trackers;
+        private byte[] depSerializationArray;
         
         public DprServer(IDprFinder dprFinder, Worker me, TStateObject stateObject)
         {
@@ -68,13 +61,31 @@ namespace FASTER.libdpr
             this.stateObject = stateObject;
             trackers = new SimpleObjectPool<DprBatchVersionTracker>(() => new DprBatchVersionTracker());
             stateObject.Register(new DprWorkerCallbacks(state));
+            depSerializationArray = new byte[2 * LightDependencySet.MaxClusterSize * sizeof(long)];
         }
 
         public TStateObject StateObject() => stateObject;
 
+        private ReadOnlySpan<byte> ComputeDependency(long version)
+        {
+            var deps = state.versions[version];
+            var head = 0;
+            foreach (var wv in deps)
+            {
+                BitConverter.TryWriteBytes(new Span<byte>(depSerializationArray, head, sizeof(long)), wv.Worker.guid);
+                head += sizeof(long);
+                BitConverter.TryWriteBytes(new Span<byte>(depSerializationArray, head, sizeof(long)), wv.Version);
+                head += sizeof(long);
+            }
+
+            return new ReadOnlySpan<byte>(depSerializationArray, 0, head);
+        }
+
         public void TryRefreshAndCheckpoint(long checkpointPeriodMilli, long refreshPeriodMilli)
         {
             var currentTime = state.sw.ElapsedMilliseconds;
+            
+            var lastCommitted = state.dprFinder.SafeVersion(state.me);
             
             if (state.lastRefreshMilli + refreshPeriodMilli < currentTime)
             {
@@ -84,8 +95,17 @@ namespace FASTER.libdpr
             
             if (state.lastCheckpointMilli + checkpointPeriodMilli <= currentTime)
             {
-                stateObject.BeginCheckpoint(Math.Max(stateObject.Version() + 1, state.dprFinder.GlobalMaxVersion()));
+                stateObject.BeginCheckpoint(ComputeDependency, Math.Max(stateObject.Version() + 1, state.dprFinder.GlobalMaxVersion()));
                 Utility.MonotonicUpdate(ref state.lastCheckpointMilli, currentTime, out _);
+            }
+
+            // Can prune dependency information of committed versions
+            var newCommitted = state.dprFinder.SafeVersion(state.me);
+            for (var i = lastCommitted + 1; i < newCommitted; i++)
+            {
+                state.versions.TryRemove(i, out var deps);
+                state.dependencySetPool.Return(deps);
+                // TODO(Tianyu): Also signal to underlying state object that commit can be erased
             }
         }
      
@@ -120,7 +140,7 @@ namespace FASTER.libdpr
             // can be safely executed), taking checkpoints if necessary.
             while (request.versionLowerBound > stateObject.Version())
             {
-                stateObject.BeginCheckpoint(request.versionLowerBound);
+                stateObject.BeginCheckpoint(ComputeDependency, request.versionLowerBound);
                 Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
             }
 
@@ -158,14 +178,14 @@ namespace FASTER.libdpr
             
             // Update batch dependencies to the current worker-version. This is an over-approximation, as the batch
             // could get processed at a future version instead due to thread timing. However, this is not a correctness
-            // issue, nor do we lose precision as batch-level dependency tracking is already an approximation.
-            var versionHandle = state.versions.GetOrAdd(stateObject.Version(), version => new VersionHandle());
+            // issue, nor do we lose much precision as batch-level dependency tracking is already an approximation.
+            var deps = state.versions.GetOrAdd(stateObject.Version(), version => state.dependencySetPool.Checkout());
             fixed (byte* depValues = request.deps)
             {
                 for (var i = 0; i < request.numDeps; i++)
                 {
                     ref var wv = ref Unsafe.AsRef<WorkerVersion>(depValues + sizeof(WorkerVersion) * i);
-                    versionHandle.deps.Update(wv.Worker, wv.Version);
+                    deps.Update(wv.Worker, wv.Version);
                 }
             }
             // Exit without releasing epoch, as protection is supposed to extend until end of batch.
@@ -210,7 +230,7 @@ namespace FASTER.libdpr
         /// <param name="targetVersion"> the version to jump to after the checkpoint</param>
         public void ForceCheckpoint(long targetVersion = -1)
         {
-            stateObject.BeginCheckpoint(targetVersion);
+            stateObject.BeginCheckpoint(ComputeDependency, targetVersion);
             Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
         }
     }

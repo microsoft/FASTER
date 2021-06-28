@@ -38,7 +38,7 @@ namespace DprCounters
         
         // With SimpleStateObject, CounterStateObject only needs to implement a single-threaded
         // checkpoint scheme.
-        protected override void PerformCheckpoint(long version, Action onPersist)
+        protected override void PerformCheckpoint(long version, ReadOnlySpan<byte> deps, Action onPersist)
         {
             // Use a simple naming scheme to associate checkpoints with versions. A more sophisticated scheme may
             // store persistent mappings or use other schemes to do so.
