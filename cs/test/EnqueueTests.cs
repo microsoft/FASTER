@@ -60,6 +60,7 @@ namespace FASTER.test
         [Category("Smoke")]
         public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
+
             int entryLength = 20;
             int numEntries = 500;
             int entryFlag = 9999;
@@ -71,8 +72,8 @@ namespace FASTER.test
             // Reduce SpanBatch to make sure entry fits on page
             if (iteratorType == EnqueueIteratorType.SpanBatch)
             {
-                entryLength = 10;
-                numEntries = 300;
+                entryLength = 5;
+                numEntries = 200;
             }
 
             // Set Default entry data
@@ -118,9 +119,6 @@ namespace FASTER.test
             // Commit to the log
             log.Commit(true);
 
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
-
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
             using (var iter = log.Scan(0, 100_000_000))
@@ -129,9 +127,6 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
-
                         // Span Batch only added first entry several times so have separate verification
                         if (iteratorType == EnqueueIteratorType.SpanBatch)
                         {
@@ -147,9 +142,9 @@ namespace FASTER.test
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure expected length (entryLength) is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
+
         }
 
 
@@ -159,7 +154,8 @@ namespace FASTER.test
         public async Task EnqueueAsyncBasicTest([Values] TestUtils.DeviceType deviceType)
         {
 
-            bool datacheckrun = false;
+            const int expectedEntryCount = 10;
+
             string filename = path + "EnqueueAsyncBasic" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device,SegmentSizeBits = 22 });
@@ -198,9 +194,6 @@ namespace FASTER.test
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
 
-                    // set check flag to show got in here
-                    datacheckrun = true;
-
                     // Verify based on which input read
                     switch (currentEntry)
                     {
@@ -226,9 +219,9 @@ namespace FASTER.test
 
                 }
 
-                // if data verification was skipped, then pop a fail
-                if (datacheckrun == false)
-                    Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+                // Make sure expected length is same as current - also makes sure that data verification was not skipped
+                Assert.AreEqual(expectedEntryCount, currentEntry);
+
             }
 
         }

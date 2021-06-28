@@ -53,6 +53,7 @@ namespace FASTER.test
 
             // make it small since launching each on separate threads 
             int entryLength = 10;
+            int expectedEntries = 3;  //*#*#* Shouldn't this be 10???
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
@@ -83,9 +84,6 @@ namespace FASTER.test
             if (currentTask.Status != TaskStatus.RanToCompletion)
                 cts.Cancel();
 
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
-
             // Read the log to make sure all entries are put in
             int currentEntry = 0;
             using (var iter = log.Scan(0, 100_000_000))
@@ -94,8 +92,6 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
 
                         Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + " not match expected:" + currentEntry);
 
@@ -104,9 +100,8 @@ namespace FASTER.test
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure expected entries is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(expectedEntries, currentEntry);
 
             // NOTE: seeing issues where task is not running to completion on Release builds
             // This is a final check to make sure task finished. If didn't then assert
