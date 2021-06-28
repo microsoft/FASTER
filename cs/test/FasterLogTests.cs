@@ -332,7 +332,7 @@ namespace FASTER.test
 
             // make it small since launching each on separate threads 
             int entryLength = 10;
-            int expectedEntries = 3; //*#*#* Shouldn't this be 10??
+            int expectedEntries = 3; // Not entry length because this is number of enqueues called
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
@@ -877,7 +877,7 @@ namespace FASTER.test
 
             // make it small since launching each on separate threads 
             const int entryLength = 10;
-            int expectedEntries = 3; //*#*#* shouldn't this be 10??
+            int expectedEntries = 3; // Not entry length because this is number of enqueues called
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
