@@ -158,8 +158,8 @@ class DeleteContext : public IAsyncContext {
 TEST_P(CompactLookupParametrizedTestFixture, InMemAllLive) {
   // In memory hybrid log
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
-  // 512 MB log size -- 64 MB mutable region (min possible)
-  faster_t store { 1024, (1 << 20) * 512, "", 0.125 };
+  // 1 GB log size -- 64 MB mutable region (min possible)
+  faster_t store { 1024, (1 << 20) * 1024, "", 0.125 };
   int numRecords = 200000;
 
   store.StartSession();
@@ -202,8 +202,8 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemAllLive) {
 TEST_P(CompactLookupParametrizedTestFixture, InMemHalfLive) {
   // In memory hybrid log
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
-  // 512 MB log size -- 64 MB mutable region (min possible)
-  faster_t store { 1024, (1 << 20) * 512, "", 0.125 };
+  // 1 GB log size -- 64 MB mutable region (min possible)
+  faster_t store { 1024, (1 << 20) * 1024, "", 0.125 };
   int numRecords = 200000;
 
   store.StartSession();
@@ -259,8 +259,8 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemHalfLive) {
 TEST_P(CompactLookupParametrizedTestFixture, InMemAllLiveNewEntries) {
   // In memory hybrid log
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
-  // 512 MB log size -- 64 MB mutable region (min possible)
-  faster_t store { 1024, (1 << 20) * 512, "", 0.125 };
+  // 1 GB log size -- 64 MB mutable region (min possible)
+  faster_t store { 1024, (1 << 20) * 1024, "", 0.125 };
   int numRecords = 200000;
 
   store.StartSession();
@@ -319,8 +319,8 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemConcurrentOps) {
   // In memory hybrid log
   typedef FASTER::device::NullDisk disk_t;
   typedef FasterKv<Key, MediumValue, disk_t> faster_t;
-  // 512 MB log size -- 64 MB mutable region (min possible)
-  faster_t store { 1024, (1 << 20) * 512, "", 0.125 };
+  // 1 GB log size -- 64 MB mutable region (min possible)
+  faster_t store { 1024, (1 << 20) * 1024, "", 0.125 };
   static constexpr int numRecords = 200000;
 
   store.StartSession();
