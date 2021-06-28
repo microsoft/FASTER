@@ -39,8 +39,8 @@ using System.Runtime.InteropServices;
 //[assembly: AssemblyFileVersion("1.0.0.0")]
 
 // Make all fixtures in the test assembly run in parallel
-//#if false // disable parallelism until all the problems are resolved
-#if NETCOREAPP || NET    // net461 runs x86 by default so OOMs on current memory usage by tests when running multiple tests simultaneously
+#if false // disable parallelism until all the problems are resolved
+//#if NETCOREAPP || NET    // net461 runs x86 by default so OOMs on current memory usage by tests when running multiple tests simultaneously
 [assembly: Parallelizable(ParallelScope.Fixtures)]
     //[assembly: LevelOfParallelism(4)] // For reduced parallelization of net461 if we reduce memory usage in tests
 #endif
