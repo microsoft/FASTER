@@ -72,8 +72,8 @@ namespace FASTER.test
             // Reduce SpanBatch to make sure entry fits on page
             if (iteratorType == EnqueueIteratorType.SpanBatch)
             {
-                entryLength = 10;
-                numEntries = 300;
+                entryLength = 5;
+                numEntries = 200;
             }
 
             // Set Default entry data
