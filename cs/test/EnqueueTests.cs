@@ -158,14 +158,7 @@ namespace FASTER.test
 
             string filename = path + "EnqueueAsyncBasic" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device,SegmentSizeBits = 22 });
-
-            //*#*#*# TO DO: Figure Out why this DeviceType fails *#*#*#
-            if (deviceType == TestUtils.DeviceType.LocalMemory)
-            {
-                return;
-            }
-
+            log = new FasterLog(new FasterLogSettings { LogDevice = device,SegmentSizeBits = 22, LogCommitDir = path });
 
 #if WINDOWS
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)

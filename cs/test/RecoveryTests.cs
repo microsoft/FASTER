@@ -101,7 +101,7 @@ namespace FASTER.test.recovery.sumstore
                 new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.Snapshot }
             );
 
-            //*#*#*# TO DO: Figure Out why this DeviceType fails *#*#*#
+            //*#*#*# TO DO: Figure Out why this DeviceType fails - For FASTER Log, need to add 'LogCommitDir = path' to log settings   *#*#*#
             if (deviceType == TestUtils.DeviceType.LocalMemory)
             {
                 return;
