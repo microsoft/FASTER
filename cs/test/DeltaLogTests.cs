@@ -43,7 +43,6 @@ namespace FASTER.test
 
             // Clean up log files
             TestUtils.DeleteDirectory(path, wait: true);
-
         }
 
 

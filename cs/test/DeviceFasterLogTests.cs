@@ -20,6 +20,35 @@ namespace FASTER.test
         const int numEntries = 100000;
         private FasterLog log;
         static readonly byte[] entry = new byte[100];
+        private DeviceLogCommitCheckpointManager checkpointManager;
+        private CloudBlobContainer blobContainer;
+        private IDevice device;
+        private string path;
+
+        [SetUp]
+        public void Setup()
+        {
+            path = TestUtils.MethodTestDir + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait: true);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
+            checkpointManager?.PurgeAll();
+            checkpointManager?.Dispose();
+            blobContainer?.Delete();
+
+            // Clean up log files
+            TestUtils.DeleteDirectory(path, wait: true);
+        }
 
         [Test]
         [Category("FasterLog")]
@@ -27,14 +56,11 @@ namespace FASTER.test
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
             {
-                var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "fasterlog.log", deleteOnClose: true);
-                var checkpointManager = new DeviceLogCommitCheckpointManager(
+                device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "fasterlog.log", deleteOnClose: true);
+                checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
                     new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
                 await FasterLogTest1(logChecksum, device, checkpointManager, iteratorType);
-                device.Dispose();
-                checkpointManager.PurgeAll();
-                checkpointManager.Dispose();
             }
         }
 
@@ -53,16 +79,12 @@ namespace FASTER.test
                 var mycloudBlobDir = blobContainer.GetDirectoryReference(@"BlobManager/MyLeaseTest1");
 
                 var blobMgr = new DefaultBlobManager(true, mycloudBlobDir);
-                var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "fasterlogLease.log", deleteOnClose: true, underLease: true, blobManager: blobMgr);
+                device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "fasterlogLease.log", deleteOnClose: true, underLease: true, blobManager: blobMgr);
 
-                var checkpointManager = new DeviceLogCommitCheckpointManager(
+                checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
                     new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
                 await FasterLogTest1(logChecksum, device, checkpointManager, iteratorType);
-                device.Dispose();
-                checkpointManager.PurgeAll();
-                checkpointManager.Dispose();
-                blobContainer.Delete();
             }
         }
 
@@ -71,11 +93,10 @@ namespace FASTER.test
         [Category("FasterLog")]
         public void BasicHighLatencyDeviceTest()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-
+            
             // Create devices \ log for test for in memory device
-            LocalMemoryDevice device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyMs: 20);
-            FasterLog LocalMemorylog = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
+            device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyMs: 20);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
 
             int entryLength = 10;
 
@@ -83,19 +104,19 @@ namespace FASTER.test
             for (int i = 0; i < entryLength; i++)
             {
                 entry[i] = (byte)i;
-                LocalMemorylog.Enqueue(entry);
+                log.Enqueue(entry);
             }
 
             // Commit to the log
-            LocalMemorylog.Commit(true);
+            log.Commit(true);
 
             // Read the log just to verify was actually committed
             int currentEntry = 0;
-            using (var iter = LocalMemorylog.Scan(0, 100_000_000))
+            using (var iter = log.Scan(0, 100_000_000))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
-                    Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as " + currentEntry.ToString());
+                    Assert.IsTrue(result[currentEntry] == currentEntry, $"Fail - Result[{currentEntry}]: is not same as {currentEntry}");
                     currentEntry++;
                 }
             }
@@ -162,8 +183,6 @@ namespace FASTER.test
                 }
                 Assert.IsTrue(counter.count == numEntries);
             }
-
-            log.Dispose();
         }
     }
 }
