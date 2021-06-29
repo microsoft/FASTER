@@ -2970,8 +2970,8 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
   }
 
   std::deque<std::thread> threads;
-  ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE,
-                          hlog.begin_address.load(), Address(until_address), &disk);
+  LogPageIterator<faster_t> iter(&hlog, hlog.begin_address.load(),
+                                  Address(until_address), &disk);
   CompactionThreadsContext<faster_t> threads_context{ &iter, n_threads };
 
   // Spawn the threads first
@@ -3065,7 +3065,7 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
   record_t * record;
   CompactionPendingRecordEntry<K, V> * record_info;
   uint8_t pending_record_entry [sizeof(CompactionPendingRecordEntry<K, V>)];
-  ScannedPage<F> page; // first GetNext() will return false
+  LogPage<F> page; // first GetNext() will return false
 
   StartSession();
 
@@ -3303,7 +3303,7 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
   // On encountering a tombstone, we try to delete the record from the mini
   // instance of FASTER.
   int numOps = 0;
-  ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE, begin,
+  LogRecordIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE, begin,
                               Address(untilAddress), &disk);
   while (true) {
     auto r = iter.GetNext();
@@ -3338,7 +3338,7 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
   // Finally, scan through all records within the temporary FASTER instance,
   // inserting those that don't already exist within FASTER's mutable region.
   numOps = 0;
-  ScanIterator<faster_t> iter2(&tempKv.hlog, Buffering::DOUBLE_PAGE,
+  LogRecordIterator<faster_t> iter2(&tempKv.hlog, Buffering::DOUBLE_PAGE,
                                tempKv.hlog.begin_address.load(),
                                tempKv.hlog.GetTailAddress(), &tempKv.disk);
   while (true) {
@@ -3391,7 +3391,7 @@ Address FasterKv<K, V, D>::LogScanForValidity(Address from, faster_t* temp)
   Address sRO = hlog.safe_read_only_address.load();
   while (from < sRO) {
     int numOps = 0;
-    ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE, from,
+    LogRecordIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE, from,
                                 sRO, &disk);
     while (true) {
       auto r = iter.GetNext();
