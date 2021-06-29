@@ -27,7 +27,7 @@ namespace FASTER.libdpr
                     if (size == -1)
                     {
                         // Implicit message start at 0 always
-                        size = (int) MessageUtil.LongFromDecimalString(buf, 1, readHead - 1);
+                        size = (int) RespUtil.LongFromDecimalString(buf, 1, readHead - 1);
                         stringStart = readHead + 1;
                         return false;
                     }
@@ -101,7 +101,7 @@ namespace FASTER.libdpr
         {
             result = default;
             if (buf[readHead - 1] != '\r' || buf[readHead] != '\n') return false;
-            result = MessageUtil.LongFromDecimalString(buf, currentFragmentStart + 1, readHead - 1);
+            result = RespUtil.LongFromDecimalString(buf, currentFragmentStart + 1, readHead - 1);
             // Fragment has ended
             currentFragmentStart = readHead + 1;
             return true;
@@ -122,7 +122,7 @@ namespace FASTER.libdpr
             {
                 // This is the first field, should read the size. The integer size field starts one past
                 // the message type byte and ends at '\r'
-                size = (int) MessageUtil.LongFromDecimalString(buf, currentFragmentStart + 1, readHead - 1);
+                size = (int) RespUtil.LongFromDecimalString(buf, currentFragmentStart + 1, readHead - 1);
 
                 if (size == -1) throw new NotImplementedException("Null Bulk String not supported");
 

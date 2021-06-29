@@ -58,7 +58,7 @@ namespace FASTER.libdpr
             }
         }
 
-        public unsafe void WriteReliably(byte[] buf, int offset, int size)
+        public unsafe void WriteReliablyAsync(byte[] buf, int offset, int size, Action callback)
         {
             var header = new MetadataHeader();
             header.size = size;
@@ -70,19 +70,40 @@ namespace FASTER.libdpr
             // Write of metadata block should be atomic
             Debug.Assert(frontDevice.SegmentSize >= sizeof(MetadataHeader));
             frontDevice.WriteAsync((IntPtr) header.bytes, 0, 0, (uint) sizeof(MetadataHeader),
-                (e, n, o) => countdown.Signal(), null);
-
-            fixed (byte* b = &buf[offset])
-            {
-                // Skip one segment to avoid clobbering with metadata header write
-                frontDevice.WriteAsync((IntPtr) b, 0, (uint) frontDevice.SectorSize, (uint) size,
-                    (e, n, o) => countdown.Signal(), null);
-                countdown.Wait();
-            }
-
-            (frontDevice, backDevice) = (backDevice, frontDevice);
+                (e, n, o) =>
+                {
+                    if (countdown.Signal())
+                    {
+                        (frontDevice, backDevice) = (backDevice, frontDevice);
+                        callback();
+                        countdown.Dispose();
+                    }
+                        
+                }, null);
+            
+            var handle = GCHandle.Alloc(buf, GCHandleType.Pinned);
+            // Skip one segment to avoid clobbering with metadata header write
+            frontDevice.WriteAsync(handle.AddrOfPinnedObject(), 0,  frontDevice.SectorSize, (uint) size,
+                (e, n, o) =>
+                {
+                    if (countdown.Signal())
+                    {
+                        (frontDevice, backDevice) = (backDevice, frontDevice);
+                        callback();
+                        countdown.Dispose();
+                    }
+                    handle.Free();
+                }, null);
         }
 
+        public void WriteReliably(byte[] buf, int offset, int size)
+        {
+            var completion = new ManualResetEventSlim();
+            WriteReliablyAsync(buf, offset, size, completion.Set);
+            completion.Wait();
+            completion.Dispose();
+        }
+        
         private unsafe long ReadFromDevice(IDevice device, out byte[] buf)
         {
             var header = new MetadataHeader();
