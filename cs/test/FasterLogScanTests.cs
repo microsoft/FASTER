@@ -33,7 +33,7 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            //*##*# TO DO: Check why Emulator on TearDown fails with a "Blob Doesn't exist exception" but not with any other device type"
+            //*** Bug #142980 - Blob not exist exception in Dispose so use Try \ Catch to make sure tests run without issues 
             try
             {
                 log?.Dispose();

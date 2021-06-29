@@ -29,9 +29,6 @@ namespace FASTER.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path, wait:true);
 
-            // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "LogReadAsync", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
         }
 
         [TearDown]
@@ -48,11 +45,16 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public void LogReadAsyncBasicTest([Values] ParameterDefaultsIteratorType iteratorType)
+        [Category("Smoke")]
+        public void LogReadAsyncBasicTest([Values] ParameterDefaultsIteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
-            int entryLength = 100;
-            int numEntries = 1000000;
+            int entryLength = 20;
+            int numEntries = 500;
             int entryFlag = 9999;
+            string filename = path + "LogReadAsync" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device,SegmentSizeBits = 22, LogCommitDir = path });
+
             byte[] entry = new byte[entryLength];
 
             // Set Default entry data
@@ -78,6 +80,7 @@ namespace FASTER.test
             // Commit to the log
             log.Commit(true);
 
+
             // Read one entry based on different parameters for AsyncReadOnly and verify 
             switch (iteratorType)
             {
@@ -88,9 +91,9 @@ namespace FASTER.test
                     var foundEntry = record.Result.Item1[1];  // 1
                     var foundTotal = record.Result.Item2;
 
-                    Assert.IsTrue(foundFlagged == (byte)entryFlag, "Fail reading data - Found Flagged Entry:" + foundFlagged.ToString() + "  Expected Flagged entry:" + entryFlag);
-                    Assert.IsTrue(foundEntry == 1, "Fail reading data - Found Normal Entry:" + foundEntry.ToString() + "  Expected Value: 1");
-                    Assert.IsTrue(foundTotal == 100, "Fail reading data - Found Total:" + foundTotal.ToString() + "  Expected Total: 100");
+                    Assert.IsTrue(foundFlagged == (byte)entryFlag, $"Fail reading data - Found Flagged Entry:{foundFlagged}  Expected Flagged entry:{entryFlag}");
+                    Assert.IsTrue(foundEntry == 1, $"Fail reading data - Found Normal Entry:{foundEntry} Expected Value: 1");
+                    Assert.IsTrue(foundTotal == entryLength, $"Fail reading data - Found Total:{foundTotal}  Expected Total: {entryLength}");
 
                     break;
                 case ParameterDefaultsIteratorType.LengthParam:
@@ -100,9 +103,9 @@ namespace FASTER.test
                     foundEntry = record.Result.Item1[1];  // 1
                     foundTotal = record.Result.Item2;
 
-                    Assert.IsTrue(foundFlagged == (byte)entryFlag, "Fail reading data - Found Flagged Entry:" + foundFlagged.ToString() + "  Expected Flagged entry:" + entryFlag);
-                    Assert.IsTrue(foundEntry == 1, "Fail reading data - Found Normal Entry:" + foundEntry.ToString() + "  Expected Value: 1");
-                    Assert.IsTrue(foundTotal == 100, "Fail reading data - Found Total:" + foundTotal.ToString() + "  Expected Total: 100");
+                    Assert.IsTrue(foundFlagged == (byte)entryFlag, $"Fail reading data - Found Flagged Entry:{foundFlagged}  Expected Flagged entry:{entryFlag}");
+                    Assert.IsTrue(foundEntry == 1, $"Fail reading data - Found Normal Entry:{foundEntry} Expected Value: 1");
+                    Assert.IsTrue(foundTotal == entryLength, $"Fail reading data - Found Total:{foundTotal}  Expected Total: {entryLength}");
 
                     break;
                 case ParameterDefaultsIteratorType.TokenParam:
@@ -114,15 +117,17 @@ namespace FASTER.test
                     foundEntry = record.Result.Item1[1];  // 1
                     foundTotal = record.Result.Item2;
 
-                    Assert.IsTrue(foundFlagged == (byte)entryFlag, "Fail reading data - Found Flagged Entry:" + foundFlagged.ToString() + "  Expected Flagged entry:" + entryFlag);
-                    Assert.IsTrue(foundEntry == 1, "Fail reading data - Found Normal Entry:" + foundEntry.ToString() + "  Expected Value: 1");
-                    Assert.IsTrue(foundTotal == 100, "Fail reading data - Found Total:" + foundTotal.ToString() + "  Expected Total: 100");
+                    Assert.IsTrue(foundFlagged == (byte)entryFlag, $"Fail reading data - Found Flagged Entry:{foundFlagged}  Expected Flagged entry:{entryFlag}");
+                    Assert.IsTrue(foundEntry == 1, $"Fail reading data - Found Normal Entry:{foundEntry} Expected Value: 1");
+                    Assert.IsTrue(foundTotal == entryLength, $"Fail reading data - Found Total:{foundTotal}  Expected Total: {entryLength}");
 
                     break;
                 default:
                     Assert.Fail("Unknown case ParameterDefaultsIteratorType.DefaultParams:");
                     break;
             }
+
+
         }
 
     }
