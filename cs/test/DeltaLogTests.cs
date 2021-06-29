@@ -11,13 +11,48 @@ namespace FASTER.test
     [TestFixture]
     internal class DeltaLogStandAloneTests
     {
+
+        private FasterLog log;
+        private IDevice device;
+        private string path;
+
+        [SetUp]
+        public void Setup()
+        {
+            path = TestUtils.MethodTestDir + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait: true);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            //** #142980 - Blob not exist exception in Dispose so use Try \ Catch to make sure tests run without issues 
+            try
+            {
+
+                log?.Dispose();
+                log = null;
+                device?.Dispose();
+                device = null;
+
+            }
+            catch
+            { }
+
+            // Clean up log files
+            TestUtils.DeleteDirectory(path, wait: true);
+
+        }
+
+
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
         public void DeltaLogTest1([Values] TestUtils.DeviceType deviceType)
         {
             int TotalCount = 1000;
-            string path = TestUtils.MethodTestDir + "/";
             string filename = path + "delta" + deviceType.ToString() + ".log";
             TestUtils.DeleteDirectory(path, wait: true);
             DirectoryInfo di = Directory.CreateDirectory(path);
@@ -28,7 +63,7 @@ namespace FASTER.test
                 return;
             }
 
-            using (IDevice device = TestUtils.CreateTestDevice(deviceType, filename))
+            using (device = TestUtils.CreateTestDevice(deviceType, filename))
             {
                 device.Initialize(-1);
                 using DeltaLog deltaLog = new DeltaLog(device, 12, 0);
@@ -81,7 +116,7 @@ namespace FASTER.test
                 }
                 catch { }
             }
-            TestUtils.DeleteDirectory(path);
+            //TestUtils.DeleteDirectory(path);
         }
     }
 }

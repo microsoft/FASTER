@@ -50,7 +50,7 @@ namespace FASTER.test.recovery.sumstore
 
         public void TearDown(bool deleteDir)
         {
-            //*##*# TO DO: Check why Emulator on LogCompactBasicTest fails with a "Blob Doesn't exist exception" but not with any other device type"
+            //** #142980 - Blob not exist exception in Dispose so use Try \ Catch to make sure tests run without issues 
             try
             {
                 fht?.Dispose();
