@@ -8,9 +8,9 @@ namespace StoreCheckpointRecover
 {
     public sealed class Functions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value) => value.value = input.value;
-        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue) => newValue = oldValue;
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value) { value.value += input.value; return true; }
+        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue value) => value.value = input.value;
+        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue oldValue, ref MyValue newValue) => newValue = oldValue;
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue value) { value.value += input.value; return true; }
 
 
         public override void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)

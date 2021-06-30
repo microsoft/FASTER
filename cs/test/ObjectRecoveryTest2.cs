@@ -227,10 +227,10 @@ namespace FASTER.test.recovery.objects
 
     public class MyFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value) => value.value = input.value;
+        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue value) => value.value = input.value;
         public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
-        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue) => newValue = oldValue;
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue oldValue, ref MyValue newValue) => newValue = oldValue;
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue value)
         {
             if (value.value.Length < input.value.Length)
                 return false;

@@ -28,19 +28,19 @@ namespace FASTER.core
         /// </summary>
         public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) => true;
 
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
+        public void CopyUpdater(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue) { }
 
         public void DeleteCompletionCallback(ref Key key, Context ctx) { }
 
-        public void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
+        public void InitialUpdater(ref Key key, ref Input input, ref Output output, ref Value value) { }
 
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) => true;
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Output output, ref Value value) => true;
 
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue) => true;
 
         public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
 
-        public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
+        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
 
         /// <summary>
         /// No reads during compaction

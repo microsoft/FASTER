@@ -248,8 +248,8 @@ namespace FASTER.core
                 if (!pendingContext.NoKey && pendingContext.key == default)    // If this is true, we don't have a valid key
                     pendingContext.key = hlog.GetKeyContainer(ref key);
                 if (pendingContext.input == default) pendingContext.input = fasterSession.GetHeapContainer(ref input);
-                pendingContext.output = output;
 
+                pendingContext.output = output;
                 if (pendingContext.output is IHeapConvertible heapConvertible)
                     heapConvertible.ConvertToHeap();
 
@@ -563,9 +563,9 @@ namespace FASTER.core
             return OperationStatus.RETRY_NOW;
         }
 
-#endregion
+        #endregion
 
-#region RMW Operation
+        #region RMW Operation
 
         /// <summary>
         /// Read-Modify-Write Operation. Updates value of 'key' using 'input' and current value.
@@ -574,6 +574,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key">key of the record.</param>
         /// <param name="input">input used to update the value.</param>
+        /// <param name="output">Location to store output computed from input and value.</param>
         /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
         /// <param name="fasterSession">Callback functions.</param>
@@ -605,7 +606,7 @@ namespace FASTER.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRMW<Input, Output, Context, FasterSession>(
-                                   ref Key key, ref Input input,
+                                   ref Key key, ref Input input, ref Output output,
                                    ref Context userContext,
                                    ref PendingContext<Input, Output, Context> pendingContext,
                                    FasterSession fasterSession,
@@ -658,7 +659,7 @@ namespace FASTER.core
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 if (!recordInfo.Tombstone
-                    && fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
+                    && fasterSession.InPlaceUpdater(ref key, ref input, ref output, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
                 {
                     hlog.MarkPage(logicalAddress, sessionCtx.version);
                     return OperationStatus.SUCCESS;
@@ -689,7 +690,7 @@ namespace FASTER.core
                             Debug.Assert(recordInfo.Version == sessionCtx.version);
                         }
 
-                        if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
+                        if (fasterSession.InPlaceUpdater(ref key, ref input, ref output, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
                         {
                             if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
                             else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
@@ -752,7 +753,7 @@ namespace FASTER.core
         CreateNewRecord:
             if (latchDestination != LatchDestination.CreatePendingContext)
             {
-                status = CreateNewRecordRMW(ref key, ref input, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry, latestLogicalAddress);
+                status = CreateNewRecordRMW(ref key, ref input, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry, latestLogicalAddress);
                 if (status != OperationStatus.ALLOCATE_FAILED)
                     goto LatchRelease;
                 latchDestination = LatchDestination.CreatePendingContext;
@@ -765,6 +766,11 @@ namespace FASTER.core
                 pendingContext.type = OperationType.RMW;
                 if (pendingContext.key == default) pendingContext.key = hlog.GetKeyContainer(ref key);
                 if (pendingContext.input == default) pendingContext.input = fasterSession.GetHeapContainer(ref input);
+
+                pendingContext.output = output;
+                if (pendingContext.output is IHeapConvertible heapConvertible)
+                    heapConvertible.ConvertToHeap();
+
                 pendingContext.userContext = userContext;
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
@@ -871,7 +877,7 @@ namespace FASTER.core
             return LatchDestination.NormalProcessing;
         }
 
-        private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
+        private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                           FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, long logicalAddress, 
                                                                                           long physicalAddress, ushort tag, HashBucketEntry entry, long latestLogicalAddress) 
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
@@ -897,19 +903,19 @@ namespace FASTER.core
             OperationStatus status;
             if (logicalAddress < hlog.BeginAddress)
             {
-                fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+                fasterSession.InitialUpdater(ref key, ref input, ref output, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
                 status = OperationStatus.NOTFOUND;
             }
             else if (logicalAddress >= hlog.HeadAddress)
             {
                 if (hlog.GetInfo(physicalAddress).Tombstone)
                 {
-                    fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+                    fasterSession.InitialUpdater(ref key, ref input, ref output, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
                     status = OperationStatus.NOTFOUND;
                 }
                 else
                 {
-                    fasterSession.CopyUpdater(ref key, ref input,
+                    fasterSession.CopyUpdater(ref key, ref input, ref output,
                                             ref hlog.GetValue(physicalAddress),
                                             ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
                     status = OperationStatus.SUCCESS;
@@ -1566,14 +1572,14 @@ namespace FASTER.core
                 if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
                 {
                     fasterSession.InitialUpdater(ref key,
-                                             ref pendingContext.input.Get(),
+                                             ref pendingContext.input.Get(), ref pendingContext.output,
                                              ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
                     status = OperationStatus.NOTFOUND;
                 }
                 else
                 {
                     fasterSession.CopyUpdater(ref key,
-                                          ref pendingContext.input.Get(),
+                                          ref pendingContext.input.Get(), ref pendingContext.output,
                                           ref hlog.GetContextRecordValue(ref request),
                                           ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
                     status = OperationStatus.SUCCESS;
@@ -1603,7 +1609,7 @@ namespace FASTER.core
 
             OperationStatus internalStatus;
             do
-                internalStatus = InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, opCtx, pendingContext.serialNum);
+                internalStatus = InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, opCtx, pendingContext.serialNum);
             while (internalStatus == OperationStatus.RETRY_NOW);
             return internalStatus;
         }
@@ -1683,6 +1689,7 @@ namespace FASTER.core
                         case OperationType.RMW:
                             internalStatus = InternalRMW(ref pendingContext.key.Get(),
                                                          ref pendingContext.input.Get(),
+                                                         ref pendingContext.output,
                                                          ref pendingContext.userContext,
                                                          ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                             break;
