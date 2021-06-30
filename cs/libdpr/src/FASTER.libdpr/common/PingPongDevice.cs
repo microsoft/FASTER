@@ -58,7 +58,7 @@ namespace FASTER.libdpr
             }
         }
 
-        public unsafe void WriteReliablyAsync(byte[] buf, int offset, int size, Action callback)
+        public unsafe void WriteReliablyAsync(byte[] buf, int offset, int size, Action callback = null)
         {
             var header = new MetadataHeader();
             header.size = size;
@@ -75,7 +75,7 @@ namespace FASTER.libdpr
                     if (countdown.Signal())
                     {
                         (frontDevice, backDevice) = (backDevice, frontDevice);
-                        callback();
+                        callback?.Invoke();
                         countdown.Dispose();
                     }
                         
@@ -89,7 +89,7 @@ namespace FASTER.libdpr
                     if (countdown.Signal())
                     {
                         (frontDevice, backDevice) = (backDevice, frontDevice);
-                        callback();
+                        callback?.Invoke();
                         countdown.Dispose();
                     }
                     handle.Free();

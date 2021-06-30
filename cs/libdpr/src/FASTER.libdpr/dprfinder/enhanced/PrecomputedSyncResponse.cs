@@ -6,26 +6,27 @@ using FASTER.core;
 
 namespace FASTER.libdpr.enhanced
 {
-    public class PrecomputedSyncResponse
+    internal class PrecomputedSyncResponse
     {
-        private ReaderWriterLockSlim rwLatch;
-        private byte[] serializedResponse;
-        private int recoveryStateEnd, responseEnd;
+        internal long worldLine;
+        internal byte[] serializedResponse;
+        internal int recoveryStateEnd, responseEnd;
 
-        public ReadOnlySpan<byte> ReadResponseProtected()
+        internal PrecomputedSyncResponse(ClusterState clusterState)
         {
-            rwLatch.EnterReadLock();
-            return new ReadOnlySpan<byte>(serializedResponse, 0, responseEnd);
+            worldLine = clusterState.currentWorldLine;
+            var serializedSize = sizeof(long) + RespUtil.DictionarySerializedSize(clusterState.worldLineDivergencePoint);
+            if (serializedSize > serializedResponse.Length)
+                serializedResponse = new byte[Math.Max(2 * serializedResponse.Length, serializedSize)];
+
+            BitConverter.TryWriteBytes(new Span<byte>(serializedResponse, 0, sizeof(long)),
+                clusterState.currentWorldLine);
+            recoveryStateEnd = RespUtil.SerializeDictionary(clusterState.worldLineDivergencePoint, serializedResponse, sizeof(long));
+            responseEnd = recoveryStateEnd;
         }
 
-        public void ExitProtection()
+        internal void UpdateCut(Dictionary<Worker, long> newCut)
         {
-            rwLatch.ExitReadLock();
-        }
-
-        public void UpdateCut(Dictionary<Worker, long> newCut)
-        {
-            rwLatch.EnterWriteLock();
             var serializedSize = RespUtil.DictionarySerializedSize(newCut);
             if (serializedSize > serializedResponse.Length - recoveryStateEnd)
             {
@@ -35,23 +36,6 @@ namespace FASTER.libdpr.enhanced
             }
 
             responseEnd = RespUtil.SerializeDictionary(newCut, serializedResponse, recoveryStateEnd);
-            Debug.Assert(responseEnd != 0);
-            rwLatch.ExitWriteLock();
-        }
-
-        public void UpdateClusterState(PersistentState persistentState, Dictionary<Worker, long> cut)
-        {
-            rwLatch.EnterWriteLock();
-            var serializedSize = sizeof(long) + RespUtil.DictionarySerializedSize(persistentState.worldLineDivergencePoint) +
-                            RespUtil.DictionarySerializedSize(cut);
-            if (serializedSize > serializedResponse.Length)
-                serializedResponse = new byte[Math.Max(2 * serializedResponse.Length, serializedSize)];
-
-            BitConverter.TryWriteBytes(new Span<byte>(serializedResponse, 0, sizeof(long)),
-                persistentState.currentWorldLine);
-            recoveryStateEnd = RespUtil.SerializeDictionary(persistentState.worldLineDivergencePoint, serializedResponse, sizeof(long));
-            responseEnd = RespUtil.SerializeDictionary(cut, serializedResponse, recoveryStateEnd);
-            rwLatch.ExitWriteLock();
         }
     }
 }

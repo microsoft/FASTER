@@ -7,12 +7,12 @@ using System.Threading;
 
 namespace FASTER.libdpr.enhanced
 {
-    public class PersistentState
+    public class ClusterState
     {
         public long currentWorldLine;
         public Dictionary<Worker, long> worldLineDivergencePoint;
 
-        public PersistentState()
+        public ClusterState()
         {
             currentWorldLine = 1;
             worldLineDivergencePoint = new Dictionary<Worker, long>();
@@ -21,29 +21,27 @@ namespace FASTER.libdpr.enhanced
 
     public class EnhancedDprFinderBackend
     {
+        private long maxVersion = 0;
+        private Dictionary<Worker, long> currentCut;
+
+        private ClusterState volatileClusterState;
+        private ReaderWriterLockSlim clusterChangeLatch;
+
         private ConcurrentDictionary<WorkerVersion, List<WorkerVersion>> precedenceGraph =
             new ConcurrentDictionary<WorkerVersion, List<WorkerVersion>>();
 
-        private long maxVersion = 0;
-        private Dictionary<Worker, long> currentCut;
-        private PersistentState persistentState;
-        private ReaderWriterLockSlim clusterChangeLatch;
+        private ConcurrentDictionary<Worker, long> versionTable = new ConcurrentDictionary<Worker, long>();
+        private ConcurrentQueue<WorkerVersion> outstandingWvs = new ConcurrentQueue<WorkerVersion>();
 
-
-        private List<Action> callbacks = new List<Action>();
-
-        private PingPongDevice persistentStorage;
+        private HashSet<WorkerVersion> visited = new HashSet<WorkerVersion>();
+        private Queue<WorkerVersion> frontier = new Queue<WorkerVersion>();
 
         private SimpleObjectPool<List<WorkerVersion>> objectPool =
             new SimpleObjectPool<List<WorkerVersion>>(() => new List<WorkerVersion>());
 
-        private HashSet<WorkerVersion> visited = new HashSet<WorkerVersion>();
-        private Queue<WorkerVersion> frontier = new Queue<WorkerVersion>();
-        private ConcurrentQueue<WorkerVersion> outstandingWvs = new ConcurrentQueue<WorkerVersion>();
-        private ConcurrentDictionary<Worker, long> versionTable = new ConcurrentDictionary<Worker, long>();
+        private PingPongDevice persistentStorage;
+        private PrecomputedSyncResponse syncResponse;
 
-        private byte[] serializationBuffer;
-        
         public EnhancedDprFinderBackend(PingPongDevice persistentStorage)
         {
             this.persistentStorage = persistentStorage;
@@ -58,45 +56,42 @@ namespace FASTER.libdpr.enhanced
             {
                 clusterChangeLatch.EnterReadLock();
 
-                lock (currentCut)
+                if (wv.Version <= currentCut.GetValueOrDefault(wv.Worker, 0))
                 {
-                    if (wv.Version <= currentCut.GetValueOrDefault(wv.Worker, 0))
-                    {
-                        // already committed. Remove but do not signal changes to the cut
-                        if (precedenceGraph.TryRemove(wv, out var list))
-                            objectPool.Return(list);
-                        return true;
-                    }
-
-                    visited.Clear();
-                    frontier.Clear();
-                    frontier.Enqueue(wv);
-
-
-                    while (frontier.Count != 0)
-                    {
-                        var node = frontier.Dequeue();
-                        if (visited.Contains(node)) continue;
-                        if (currentCut.GetValueOrDefault(node.Worker, 0) >= node.Version) continue;
-                        if (!precedenceGraph.TryGetValue(node, out var val)) return false;
-
-                        visited.Add(node);
-                        foreach (var dep in val)
-                            frontier.Enqueue(dep);
-                    }
-
-                    // Lock to ensure readers of current cut do not see partial updates
-                    foreach (var committed in visited)
-                    {
-                        var version = currentCut.GetValueOrDefault(committed.Worker, 0);
-                        if (version < committed.Version)
-                            currentCut[committed.Worker] = committed.Version;
-                        if (precedenceGraph.TryRemove(committed, out var list))
-                            objectPool.Return(list);
-                    }
-
+                    // already committed. Remove but do not signal changes to the cut
+                    if (precedenceGraph.TryRemove(wv, out var list))
+                        objectPool.Return(list);
                     return true;
                 }
+
+                visited.Clear();
+                frontier.Clear();
+                frontier.Enqueue(wv);
+
+
+                while (frontier.Count != 0)
+                {
+                    var node = frontier.Dequeue();
+                    if (visited.Contains(node)) continue;
+                    if (currentCut.GetValueOrDefault(node.Worker, 0) >= node.Version) continue;
+                    if (!precedenceGraph.TryGetValue(node, out var val)) return false;
+
+                    visited.Add(node);
+                    foreach (var dep in val)
+                        frontier.Enqueue(dep);
+                }
+
+                // Lock to ensure readers of current cut do not see partial updates
+                foreach (var committed in visited)
+                {
+                    var version = currentCut.GetValueOrDefault(committed.Worker, 0);
+                    if (version < committed.Version)
+                        currentCut[committed.Worker] = committed.Version;
+                    if (precedenceGraph.TryRemove(committed, out var list))
+                        objectPool.Return(list);
+                }
+
+                return true;
             }
             finally
             {
@@ -113,13 +108,26 @@ namespace FASTER.libdpr.enhanced
                 if (!TryCommitWorkerVersion(wv))
                     outstandingWvs.Enqueue(wv);
             }
+            
+            clusterChangeLatch.EnterReadLock();
+            // Compute a new syncResponse for consumption
+            if (syncResponse.worldLine == volatileClusterState.currentWorldLine)
+                syncResponse.UpdateCut(currentCut);
+            clusterChangeLatch.ExitReadLock();
         }
 
         public void NewCheckpoint(long worldLine, WorkerVersion wv, IEnumerable<WorkerVersion> deps)
         {
             // We need to protect against entering outdated information into the graph
             clusterChangeLatch.EnterReadLock();
-            if (worldLine != persistentState.currentWorldLine) return;
+            
+            // The DprFinder should be the most up-to-date w.r.t. worldlines
+            Debug.Assert(worldLine <= volatileClusterState.currentWorldLine);
+            // Unless the reported versions are in the current world-line (or belong to the common prefix), we should
+            // not allow this write to go through
+            if (worldLine != volatileClusterState.currentWorldLine
+                && wv.Version > volatileClusterState.worldLineDivergencePoint[wv.Worker]) return;
+            
             var list = objectPool.Checkout();
             list.Clear();
             var prev = versionTable[wv.Worker];
@@ -130,12 +138,8 @@ namespace FASTER.libdpr.enhanced
             precedenceGraph.TryAdd(wv, list);
             outstandingWvs.Enqueue(wv);
             versionTable.TryUpdate(wv.Worker, wv.Version, prev);
-            clusterChangeLatch.ExitReadLock();
-        }
-
-        private void FlushPersistentState()
-        {
             
+            clusterChangeLatch.ExitReadLock();
         }
 
         public (long, long) AddWorker(Worker worker, Action<(long, long)> callback)
@@ -143,54 +147,64 @@ namespace FASTER.libdpr.enhanced
             clusterChangeLatch.EnterWriteLock();
             versionTable.TryAdd(worker, 0);
             (long, long) result;
-            if (persistentState.worldLineDivergencePoint.TryAdd(worker, 0))
+            if (volatileClusterState.worldLineDivergencePoint.TryAdd(worker, 0))
             {
                 // First time we have seen this worker --- start them at current world-line
-                result = (persistentState.currentWorldLine, 0);
+                result = (volatileClusterState.currentWorldLine, 0);
             }
             else
             {
                 // Otherwise, this worker thinks it's booting up for a second time, which means there was a restart.
                 // We count this as a failure. Advance the cluster world-line
-                persistentState.currentWorldLine++;
-                // TODO(Tianyu): This is slightly more aggressive than needed, but no worse than original DPR. Can do
-                // more precise rollback later.
+                volatileClusterState.currentWorldLine++;
+                // TODO(Tianyu): This is slightly more aggressive than needed, but no worse than original DPR. Can
+                // implement more precise rollback later.
                 foreach (var (w, v) in currentCut)
-                    persistentState.worldLineDivergencePoint[w] = v;
+                    volatileClusterState.worldLineDivergencePoint[w] = v;
                 // Anything in the precedence graph is rolled back and we can just remove them 
                 foreach (var list in precedenceGraph.Values)
                     objectPool.Return(list);
                 precedenceGraph.Clear();
                 var survivingVersion = currentCut[worker];
-                result = (persistentState.currentWorldLine, survivingVersion);
+                result = (volatileClusterState.currentWorldLine, survivingVersion);
             }
 
-            if (callback != null)
-                callbacks.Add(() => callback(result));
-            
-            // TODO(Tianyu):
-            // 1. Serialize this state to buffer
-            // 2. Flush to disk
-            // 3. Update responses to sync calls 
-            // 4. Mark operation complete and invoke callback
+            var newResponse = new PrecomputedSyncResponse(volatileClusterState);
+            persistentStorage.WriteReliablyAsync(newResponse.serializedResponse, 0, newResponse.recoveryStateEnd, () =>
+            {
+                clusterChangeLatch.EnterWriteLock();
+                newResponse.UpdateCut(currentCut);
+                if (syncResponse.worldLine < newResponse.worldLine)
+                    syncResponse = newResponse;
+                clusterChangeLatch.ExitWriteLock();
+                callback?.Invoke(result);
+            });
             clusterChangeLatch.ExitWriteLock();
             return result;
         }
 
-        public void DeleteWorker(Worker worker, Action callback)
+        public void DeleteWorker(Worker worker, Action callback = null)
         {
             clusterChangeLatch.EnterWriteLock();
 
             currentCut.Remove(worker);
-            persistentState.worldLineDivergencePoint.Remove(worker);
-            persistentState.worldLineDivergencePoint.Remove(worker);
+            volatileClusterState.worldLineDivergencePoint.Remove(worker);
+            volatileClusterState.worldLineDivergencePoint.Remove(worker);
             versionTable.TryRemove(worker, out _);
-            if (callback != null)
-                callbacks.Add(callback);
+
+            var newResponse = new PrecomputedSyncResponse(volatileClusterState);
+            persistentStorage.WriteReliablyAsync(newResponse.serializedResponse, 0, newResponse.recoveryStateEnd, () =>
+            {
+                clusterChangeLatch.EnterWriteLock();
+                newResponse.UpdateCut(currentCut);
+                if (syncResponse.worldLine < newResponse.worldLine)
+                    syncResponse = newResponse;
+                clusterChangeLatch.ExitWriteLock();
+                callback?.Invoke();
+            });
             clusterChangeLatch.ExitWriteLock();
-            // TODO(Tianyu): Trigger write to storage
         }
-        
+
         public long MaxVersion() => maxVersion;
 
         public void Dispose()
