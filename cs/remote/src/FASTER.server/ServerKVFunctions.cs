@@ -33,17 +33,17 @@ namespace FASTER.server
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
             => functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
 
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
-            => functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
+        public void CopyUpdater(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue)
+            => functions.CopyUpdater(ref key, ref input, ref output, ref oldValue, ref newValue);
 
         public void DeleteCompletionCallback(ref Key key, long ctx)
             => functions.DeleteCompletionCallback(ref key, ctx);
 
-        public void InitialUpdater(ref Key key, ref Input input, ref Value value)
-            => functions.InitialUpdater(ref key, ref input, ref value);
+        public void InitialUpdater(ref Key key, ref Input input, ref Output output, ref Value value)
+            => functions.InitialUpdater(ref key, ref input, ref output, ref value);
 
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
-            => functions.InPlaceUpdater(ref key, ref input, ref value);
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Output output, ref Value value)
+            => functions.InPlaceUpdater(ref key, ref input, ref output, ref value);
 
         public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status)
         {
@@ -51,10 +51,10 @@ namespace FASTER.server
             functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
         }
 
-        public void RMWCompletionCallback(ref Key key, ref Input input, long ctx, Status status)
+        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status)
         {
             serverNetworkSession.CompleteRMW(ctx, status);
-            functions.RMWCompletionCallback(ref key, ref input, ctx, status);
+            functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
         }
 
         public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
