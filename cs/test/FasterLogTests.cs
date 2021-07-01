@@ -751,12 +751,6 @@ namespace FASTER.test
         [Category("Smoke")]
         public void CommitNoSpinWait([Values] TestUtils.DeviceType deviceType)
         {
-
-            //*#*#*# TO DO: Get this working without Sleeps - unstable to run
-            return;
-            //*#*#*# TO DO: Get this working without Sleeps
-
-
             string filename = path + "CommitNoSpinWait" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 });
@@ -807,6 +801,17 @@ namespace FASTER.test
         [Category("Smoke")]
         public async ValueTask CommitAsyncPrevTask([Values] TestUtils.DeviceType deviceType)
         {
+            CancellationTokenSource cts = new CancellationTokenSource();
+            CancellationToken token = cts.Token;
+
+            string filename = $"{path}/CommitAsyncPrevTask_{deviceType}.log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 };
+            log = await FasterLog.CreateAsync(logSettings);
+
+
+
+
 
 
             //*#*#*# TO DO: Get this working without Sleeps - unstable to run
@@ -815,13 +820,8 @@ namespace FASTER.test
 
 
 
-            CancellationTokenSource cts = new CancellationTokenSource();
-            CancellationToken token = cts.Token;
 
-            string filename = $"{path}/CommitAsyncPrevTask_{deviceType}.log";
-            device = TestUtils.CreateTestDevice(deviceType, filename);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 };
-            log = await FasterLog.CreateAsync(logSettings);
+
 
             // make it small since launching each on separate threads 
             const int entryLength = 10;
