@@ -6,8 +6,12 @@
 #include <atomic>
 #include <functional>
 
+#include "core/key_hash.h"
+
 namespace FASTER {
 namespace test {
+
+using namespace FASTER::core;
 
 template<class T, class HashFn = std::hash<T>>
 class FixedSizeKey {
@@ -153,6 +157,82 @@ class NonMovable
   NonMovable() = default;
   ~NonMovable() = default;
 };
+
+// Variable size keys / values
+
+class VariableSizeKey : NonCopyable, NonMovable {
+ public:
+  // Copy constructor
+  //VariableSizeKey(const VariableSizeKey& other) {
+  //    Create(this, key_length_, other.buffer());
+  //}
+
+  static uint32_t size(uint32_t key_length) {
+    return static_cast<uint32_t>(sizeof(VariableSizeKey) + key_length * sizeof(uint32_t));
+  }
+
+  static void Create(VariableSizeKey* dst, uint32_t key_length, const uint32_t* key_data) {
+    dst->key_length_ = key_length;
+    memcpy(dst->buffer(), key_data, key_length * sizeof(uint32_t));
+  }
+
+  /// Methods and operators required by the (implicit) interface:
+  inline uint32_t size() const {
+    return static_cast<uint32_t>(sizeof(VariableSizeKey) + key_length_ * sizeof(uint32_t));
+  }
+  inline KeyHash GetHash() const {
+    return KeyHash(Utility::HashBytes(
+      reinterpret_cast<const uint16_t*>(buffer()), key_length_ * 2));
+  }
+
+  /// Comparison operators.
+  inline bool operator==(const VariableSizeKey& other) const {
+    if (this->key_length_ != other.key_length_) return false;
+    return memcmp(buffer(), other.buffer(), key_length_) == 0;
+  }
+  inline bool operator!=(const VariableSizeKey& other) const {
+    return !(*this == other);
+  }
+
+  uint32_t key_length_;
+
+  inline const uint32_t* buffer() const {
+    return reinterpret_cast<const uint32_t*>(this + 1);
+  }
+  inline uint32_t* buffer() {
+    return reinterpret_cast<uint32_t*>(this + 1);
+  }
+};
+
+class VariableSizeShallowKey {
+ public:
+  VariableSizeShallowKey(uint32_t* key_data, uint32_t key_length)
+      : key_length_(key_length), key_data_(key_data)
+  { }
+
+  inline uint32_t size() const {
+    return VariableSizeKey::size(key_length_);
+  }
+  inline KeyHash GetHash() const {
+    return KeyHash(Utility::HashBytes(
+      reinterpret_cast<const uint16_t*>(key_data_), key_length_ * 2));
+  }
+  inline void write_deep_key_at(VariableSizeKey* dst) const {
+    VariableSizeKey::Create(dst, key_length_, key_data_);
+  }
+  /// Comparison operators.
+  inline bool operator==(const VariableSizeKey& other) const {
+    if (this->key_length_ != other.key_length_) return false;
+    return memcmp(key_data_, other.buffer(), key_length_) == 0;
+  }
+  inline bool operator!=(const VariableSizeKey& other) const {
+    return !(*this == other);
+  }
+
+  uint32_t key_length_;
+  uint32_t* key_data_;
+};
+
 
 }
 } // namespace FASTER::test
