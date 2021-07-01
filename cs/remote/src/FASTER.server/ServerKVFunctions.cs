@@ -33,17 +33,17 @@ namespace FASTER.server
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
             => functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
 
-        public void CopyUpdater(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue)
-            => functions.CopyUpdater(ref key, ref input, ref output, ref oldValue, ref newValue);
+        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
+            => functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
 
         public void DeleteCompletionCallback(ref Key key, long ctx)
             => functions.DeleteCompletionCallback(ref key, ctx);
 
-        public void InitialUpdater(ref Key key, ref Input input, ref Output output, ref Value value)
-            => functions.InitialUpdater(ref key, ref input, ref output, ref value);
+        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
+            => functions.InitialUpdater(ref key, ref input, ref value, ref output);
 
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Output output, ref Value value)
-            => functions.InPlaceUpdater(ref key, ref input, ref output, ref value);
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
+            => functions.InPlaceUpdater(ref key, ref input, ref value, ref output);
 
         public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status)
         {
