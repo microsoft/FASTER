@@ -1871,7 +1871,7 @@ namespace FASTER.core
         /// It is useful in Compact.
         /// </param>
         /// <returns>
-        /// NOTFOUND: didn't find the expected record of the same key that is <= expectedLogicalAddress
+        /// NOTFOUND: didn't find the expected record of the same key that isn't greater than expectedLogicalAddress
         /// RETRY_NOW: failed.
         /// SUCCESS:
         /// </returns>
@@ -1900,10 +1900,6 @@ namespace FASTER.core
                 SkipReadCache(ref logicalAddress);
             var latestLogicalAddress = logicalAddress;
 
-            // It may incorrectly skip record to be copied, when there's an on-disk record of a collided key
-            // whose logical address is greater than expectedLogicalAddress. This is benign in most cases except Compact
-            // but is unlikely to happen in Compact.
-            // TODO: debug assert for this case 
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
@@ -1920,13 +1916,17 @@ namespace FASTER.core
 
             if (logicalAddress > expectedLogicalAddress || logicalAddress < hlog.BeginAddress)
             {
-                // A new record has been added for the same key, or the chain doesn't contain key.
-                // Since we don't find entry again, entry may be stale and the latter might happen.
-                // In these cases, we give up early.
+                // We give up early.
                 return OperationStatus.NOTFOUND;
             }
 
-            //Debug.Assert(logicalAddress == expectedLogicalAddress);
+#if DEBUG
+            // While copying from disk to tail, the expected address may be in read cache.
+            // Otherwise, the logicalAddress should match the expected.
+            HashBucketEntry debugEntry = default;
+            debugEntry.word = expectedLogicalAddress;
+            Debug.Assert(logicalAddress == expectedLogicalAddress || debugEntry.ReadCache);
+#endif
 
             #region Create new copy in mutable region
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);

@@ -857,7 +857,7 @@ namespace FASTER.core
 
         /// <summary>
         /// Insert key and value with the record info preserved.
-        /// Succeed only if logical address of the key is <= foundLogicalAddress; otherwise give up and return.
+        /// Succeed only if logical address of the key isn't greater than foundLogicalAddress; otherwise give up and return.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="desiredValue"></param>
