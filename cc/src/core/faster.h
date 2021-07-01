@@ -252,8 +252,8 @@ class FasterKv {
   template <class EC>
   inline Status RecordExists(EC& context, AsyncCallback callback, Address begin_address);
 
-  template <class UC>
-  inline Status ConditionalCopyToTail(UC& context, AsyncCallback callback, HashBucketEntry& expected_entry);
+  template <class CC>
+  inline Status ConditionalCopyToTail(CC& copy_context, HashBucketEntry& expected_entry);
 
   /// Checkpoint/recovery methods.
   void HandleSpecialPhases();
@@ -2962,24 +2962,27 @@ template<class K, class V, class D>
 bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_begin_address, int n_threads) {
   // TODO: maybe switch to an initial phase for GC to avoid concurrent actions (e.g. checkpoint, grow index, etc.)
 
+  if (hlog.begin_address.load() >= until_address) {
+    throw std::invalid_argument {"Invalid until address; should be larger than hlog.begin_address"};
+  }
   if (until_address > hlog.safe_read_only_address.control()) {
     throw std::invalid_argument {"Can compact only until hlog.safe_read_only_address"};
   }
   if (!epoch_.IsProtected()) {
-    throw std::runtime_error{ "Thread should have an active FASTER session in order to perform compaction"};
+    throw std::runtime_error {"Thread should have an active FASTER session in order to perform compaction"};
   }
 
   std::deque<std::thread> threads;
   LogPageIterator<faster_t> iter(&hlog, hlog.begin_address.load(),
                                   Address(until_address), &disk);
-  CompactionThreadsContext<faster_t> threads_context{ &iter, n_threads };
+  CompactionThreadsContext<faster_t> threads_context{ &iter, n_threads-1 };
 
   // Spawn the threads first
   for (int idx = 0; idx < n_threads - 1; ++idx) {
     threads.emplace_back(&FasterKv<K, V, D>::InternalCompact<faster_t>,
                         this, &threads_context, idx);
   }
-  InternalCompact(&threads_context, n_threads - 1); // participate in the compaction
+  InternalCompact(&threads_context, -1); // participate in the compaction
 
   // Wait for threads
   // NOTE: since we have an active session, we *must* periodically refresh
@@ -3029,9 +3032,10 @@ template<class F>
 inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_ctx, int thread_idx) {
   constexpr int io_check_freq = 20;
 
-  typedef std::unordered_map<uint64_t, CompactionPendingRecordEntry<K, V>> pending_records_info_t;
-  typedef std::deque<CompactionPendingRecordEntry<K, V>> pending_records_queue_t;
-  typedef std::deque<CompactionPendingRecordEntry<K, V>*> retry_records_queue_t;
+  typedef CompactionPendingRecordEntry<K, V> pending_record_entry_t;
+  typedef std::unordered_map<uint64_t, pending_record_entry_t> pending_records_info_t;
+  typedef std::deque<pending_record_entry_t> pending_records_queue_t;
+  typedef std::deque<pending_record_entry_t*> retry_records_queue_t;
 
   pending_records_info_t pending_records_info;
   pending_records_queue_t pending_records_queue;
@@ -3062,12 +3066,15 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
     records_info->erase(address);
   };
 
-  record_t * record;
-  CompactionPendingRecordEntry<K, V> * record_info;
-  uint8_t pending_record_entry [sizeof(CompactionPendingRecordEntry<K, V>)];
+  record_t* record;
+  pending_record_entry_t* record_info;
+  uint8_t pending_record_entry [sizeof(pending_record_entry_t)];
   LogPage<F> page; // first GetNext() will return false
 
-  StartSession();
+  // Start session for each spawned thread
+  if (thread_idx >= 0) {
+    StartSession();
+  }
 
   bool pages_available = true;
   while(true) {
@@ -3080,7 +3087,18 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
       // get next record from hybrid log
       HashBucketEntry expected_entry;
       record = page.GetNext(record_address);
+
       if (record == nullptr) {
+        // No more records in this page
+
+        // Shound not move to a new page, until all pending
+        // requests have finished
+        if (!pending_records_info.empty() ||
+            !pending_records_queue.empty() ||
+            !retry_records_queue.empty()) {
+          goto complete_pending;
+        }
+        // Try to get next page
         Refresh();
         if(!ct_ctx->iter->GetNextPage(page)) {
           // No more pages
@@ -3097,7 +3115,7 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
       hash = record->key().GetHash();
       assert( FindEntry(hash, expected_entry) != nullptr );
       // search entire hash chain (i.e. until record adress)
-      record_info = new (pending_record_entry) CompactionPendingRecordEntry<K, V>(
+      record_info = new (pending_record_entry) pending_record_entry_t(
                             record, record_address, expected_entry, record_address + 1);
     } else {
       goto complete_pending;
@@ -3110,7 +3128,7 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
       pending_records_info.insert({ record_info->address.control(), *record_info });
 
       // Try to find a more recent record in the (recordAddress, tailAddress] range
-      CompactionExists<K, V> context(record_info->key, record_info->value, record_info->address,
+      CompactionExists<K, V> context(record_info->record, record_info->address,
                                     &pending_records_info, &pending_records_queue);
       Status status = RecordExists(context, callback, record_info->search_min_offset);
       assert(status == Status::Ok || status == Status::NotFound || status == Status::Pending);
@@ -3134,18 +3152,17 @@ complete_pending:
     }
     for (auto const & pending_record : pending_records_queue) {
       // Copy to tail if no other entry with same key exists
-      CompactionUpsert<K, V> upsert_context(pending_record.key, pending_record.value);
+      //CompactionCopyToTailContext<K, V> copy_context{ pending_record.key, pending_record.value };
+      CompactionCopyToTailContext<K, V> copy_context{ pending_record.record };
       HashBucketEntry expected_entry (pending_record.expected_entry);
-      Status status = ConditionalCopyToTail(upsert_context, nullptr, expected_entry);
+      Status status = ConditionalCopyToTail(copy_context, expected_entry);
       assert(status == Status::Ok || status == Status::Aborted || status == Status::Pending);
 
       if (status == Status::Pending) {
         // could not determine if record is live -- push record to retry queue
-        //fprintf(stderr, "Slowdown: retry compacting entry\n");
-        // search only the newly introduced hash chain part
-        auto record_info = new CompactionPendingRecordEntry<K, V>(pending_record.key, pending_record.value,
-                                                                  pending_record.address, expected_entry,
-                                                                  pending_record.expected_entry.address() + 1);
+        // NOTE: we will search only the newly introduced hash chain part
+        auto record_info = new pending_record_entry_t(pending_record.record, pending_record.address,
+                                            expected_entry, pending_record.expected_entry.address() + 1);
         retry_records_queue.push_back(record_info);
       }
 
@@ -3161,9 +3178,13 @@ complete_pending:
     }
   }
   CompletePending(true);
-  StopSession();
-  // Mark thread as finished
-  ct_ctx->done[thread_idx]->store(true);
+
+  // Stop session for each spawned thread
+  if (thread_idx >= 0) {
+    StopSession();
+    // Mark thread as finished
+    ct_ctx->done[thread_idx]->store(true);
+  }
 }
 
 template <class K, class V, class D>
@@ -3215,14 +3236,11 @@ inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callbac
 }
 
 template <class K, class V, class D>
-template <class UC>
-inline Status FasterKv<K, V, D>::ConditionalCopyToTail(UC& context, AsyncCallback callback,
-                                                        HashBucketEntry& expected_entry) {
-  typedef PendingUpsertContext<UC> pending_upsert_context_t;
-  pending_upsert_context_t pending_context { context, callback };
+template <class CC>
+inline Status FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context, HashBucketEntry& expected_entry) {
 
   // Find hash index bucket for this key (must exist)
-  KeyHash hash = pending_context.get_key_hash();
+  KeyHash hash = copy_context.get_key_hash();
   HashBucketEntry entry;
   AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, entry);
   assert(atomic_entry != nullptr);
@@ -3242,8 +3260,8 @@ inline Status FasterKv<K, V, D>::ConditionalCopyToTail(UC& context, AsyncCallbac
       // Check if an entry with same key was inserted during this time
       Address address = entry.address();
       record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
-      if(!pending_context.is_key_equal(record->key())) {
-        address = TraceBackForKeyMatchCtxt(pending_context, record->header.previous_address(),
+      if(!copy_context.is_key_equal(record->key())) {
+        address = TraceBackForKeyMatchCtxt(copy_context, record->header.previous_address(),
                                             expected_entry.address() + 1);
       }
 
@@ -3257,15 +3275,16 @@ inline Status FasterKv<K, V, D>::ConditionalCopyToTail(UC& context, AsyncCallbac
     }
 
     // Append entry to the log
-    uint32_t record_size = record_t::size(pending_context.key_size(), pending_context.value_size());
+    uint32_t record_size = record_t::size(copy_context.key_size(), copy_context.value_size());
     Address new_address = BlockAllocate(record_size);
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+    // Copy record
+    memcpy(record, copy_context.record, record_size);
+    // Replace record header
     new(record) record_t{
       RecordInfo{
         static_cast<uint16_t>(thread_ctx().version), true, false, false, expected_entry.address() }
     };
-    pending_context.write_deep_key_at(const_cast<key_t*>(&record->key()));
-    pending_context.Put(record);
 
     // Try to update hash bucket address
     HashBucketEntry updated_entry{ new_address, hash.tag(), false };
@@ -3273,10 +3292,12 @@ inline Status FasterKv<K, V, D>::ConditionalCopyToTail(UC& context, AsyncCallbac
       // Installed the new record in the hash table.
       return Status::Ok;
     }
-
     // Hash-chain changed since last time -- retry
     record->header.invalid = true;
-  } while (true);
+
+    Refresh();
+  }
+  while (true);
 }
 
 /// When invoked, compacts the hybrid-log between the begin address and a
