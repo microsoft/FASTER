@@ -14,7 +14,7 @@ namespace FASTER.core
     public class TryAddFunctions<Key, Value, Context> : SimpleFunctions<Key, Value, Context>
     {
         /// <inheritdoc />
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value output, ref Value value) => true;
+        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output) => true;
         /// <inheritdoc />
         public override bool NeedCopyUpdate(ref Key key, ref Value input, ref Value oldValue) => false;
     }

@@ -28,13 +28,13 @@ namespace FASTER.core
         /// </summary>
         public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) => true;
 
-        public void CopyUpdater(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue) { }
+        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output) { }
 
         public void DeleteCompletionCallback(ref Key key, Context ctx) { }
 
-        public void InitialUpdater(ref Key key, ref Input input, ref Output output, ref Value value) { }
+        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) { }
 
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Output output, ref Value value) => true;
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => true;
 
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue) => true;
 

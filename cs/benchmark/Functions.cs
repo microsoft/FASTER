@@ -65,20 +65,20 @@ namespace FASTER.benchmark
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitialUpdater(ref Key key, ref Input input, ref Output output, ref Value value)
+        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
         {
             value.value = input.value;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Output output, ref Value value)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
         {
             value.value += input.value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyUpdater(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue)
+        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
         {
             newValue.value = input.value + oldValue.value;
         }

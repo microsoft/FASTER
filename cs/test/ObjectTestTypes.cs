@@ -77,12 +77,12 @@ namespace FASTER.test
 
     public class MyFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, Empty>
     {
-        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue value)
+        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output)
         {
             value = new MyValue { value = input.value };
         }
 
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue value)
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output)
         {
             value.value += input.value;
             return true;
@@ -90,7 +90,7 @@ namespace FASTER.test
 
         public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
 
-        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue oldValue, ref MyValue newValue)
+        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output)
         {
             newValue = new MyValue { value = oldValue.value + input.value };
         }
@@ -135,12 +135,12 @@ namespace FASTER.test
 
     public class MyFunctionsDelete : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, int>
     {
-        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue value)
+        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output)
         {
             value = new MyValue { value = input.value };
         }
 
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue value)
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output)
         {
             value.value += input.value;
             return true;
@@ -148,7 +148,7 @@ namespace FASTER.test
 
         public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
 
-        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyOutput output, ref MyValue oldValue, ref MyValue newValue)
+        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output)
         {
             newValue = new MyValue { value = oldValue.value + input.value };
         }
@@ -203,12 +203,12 @@ namespace FASTER.test
 
     public class MixedFunctions : FunctionsBase<int, MyValue, MyInput, MyOutput, Empty>
     {
-        public override void InitialUpdater(ref int key, ref MyInput input, ref MyOutput output, ref MyValue value)
+        public override void InitialUpdater(ref int key, ref MyInput input, ref MyValue value, ref MyOutput output)
         {
             value = new MyValue { value = input.value };
         }
 
-        public override bool InPlaceUpdater(ref int key, ref MyInput input, ref MyOutput output, ref MyValue value)
+        public override bool InPlaceUpdater(ref int key, ref MyInput input, ref MyValue value, ref MyOutput output)
         {
             value.value += input.value;
             return true;
@@ -216,7 +216,7 @@ namespace FASTER.test
 
         public override bool NeedCopyUpdate(ref int key, ref MyInput input, ref MyValue oldValue) => true;
 
-        public override void CopyUpdater(ref int key, ref MyInput input, ref MyOutput output, ref MyValue oldValue, ref MyValue newValue)
+        public override void CopyUpdater(ref int key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output)
         {
             newValue = new MyValue { value = oldValue.value + input.value };
         }

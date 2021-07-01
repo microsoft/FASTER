@@ -659,7 +659,7 @@ namespace FASTER.core
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 if (!recordInfo.Tombstone
-                    && fasterSession.InPlaceUpdater(ref key, ref input, ref output, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
+                    && fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress))
                 {
                     hlog.MarkPage(logicalAddress, sessionCtx.version);
                     return OperationStatus.SUCCESS;
@@ -690,7 +690,7 @@ namespace FASTER.core
                             Debug.Assert(recordInfo.Version == sessionCtx.version);
                         }
 
-                        if (fasterSession.InPlaceUpdater(ref key, ref input, ref output, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
+                        if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress))
                         {
                             if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
                             else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
@@ -903,21 +903,21 @@ namespace FASTER.core
             OperationStatus status;
             if (logicalAddress < hlog.BeginAddress)
             {
-                fasterSession.InitialUpdater(ref key, ref input, ref output, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+                fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output);
                 status = OperationStatus.NOTFOUND;
             }
             else if (logicalAddress >= hlog.HeadAddress)
             {
                 if (hlog.GetInfo(physicalAddress).Tombstone)
                 {
-                    fasterSession.InitialUpdater(ref key, ref input, ref output, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+                    fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output);
                     status = OperationStatus.NOTFOUND;
                 }
                 else
                 {
-                    fasterSession.CopyUpdater(ref key, ref input, ref output,
-                                            ref hlog.GetValue(physicalAddress),
-                                            ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+                    fasterSession.CopyUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress),
+                                            ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+                                            ref output);
                     status = OperationStatus.SUCCESS;
                 }
             }
@@ -1572,16 +1572,16 @@ namespace FASTER.core
                 if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
                 {
                     fasterSession.InitialUpdater(ref key,
-                                             ref pendingContext.input.Get(), ref pendingContext.output,
-                                             ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+                                             ref pendingContext.input.Get(), ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+                                             ref pendingContext.output);
                     status = OperationStatus.NOTFOUND;
                 }
                 else
                 {
                     fasterSession.CopyUpdater(ref key,
-                                          ref pendingContext.input.Get(), ref pendingContext.output,
-                                          ref hlog.GetContextRecordValue(ref request),
-                                          ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+                                          ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request),
+                                          ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+                                          ref pendingContext.output);
                     status = OperationStatus.SUCCESS;
                 }
 

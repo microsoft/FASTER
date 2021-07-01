@@ -28,7 +28,7 @@ namespace FASTER.test
 
             public override bool ConcurrentWriter(ref int key, ref int src, ref int dst, ref RecordInfo recordInfo, long address) => Increment(ref dst);
 
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int output, ref int value, ref RecordInfo recordInfo, long address) => Increment(ref value);
+            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, long address) => Increment(ref value);
 
             public override bool SupportsLocking => true;
             public override void Lock(ref RecordInfo recordInfo, ref int key, ref int value, LockType lockType, ref long lockContext) => recordInfo.SpinLock();

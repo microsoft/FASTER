@@ -1029,9 +1029,9 @@ namespace FASTER.core
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
                 => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
 
-            public void CopyUpdater(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue)
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
             {
-                _clientSession.functions.CopyUpdater(ref key, ref input, ref output, ref oldValue, ref newValue);
+                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
             }
 
             public void DeleteCompletionCallback(ref Key key, Context ctx)
@@ -1049,13 +1049,13 @@ namespace FASTER.core
                 return _clientSession.variableLengthStruct.GetLength(ref t, ref input);
             }
 
-            public void InitialUpdater(ref Key key, ref Input input, ref Output output, ref Value value)
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
             {
-                _clientSession.functions.InitialUpdater(ref key, ref input, ref output, ref value);
+                _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
                 => !this.SupportsLocking
                     ? InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address)
                     : InPlaceUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, address);
@@ -1064,7 +1064,7 @@ namespace FASTER.core
             private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 recordInfo.Version = _clientSession.ctx.version;
-                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref output, ref value, ref recordInfo, address);
+                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
 
             private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)

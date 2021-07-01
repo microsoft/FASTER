@@ -58,12 +58,12 @@ namespace FASTER.test.recovery.sumstore
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref Output output, ref NumClicks value)
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
         {
             value = input.numClicks;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref Output output, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
@@ -71,7 +71,7 @@ namespace FASTER.test.recovery.sumstore
 
         public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
 
-        public override void CopyUpdater(ref AdId key, ref AdInput input, ref Output output, ref NumClicks oldValue, ref NumClicks newValue)
+        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }

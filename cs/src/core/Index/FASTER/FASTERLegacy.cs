@@ -337,9 +337,9 @@ namespace FASTER.core
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
                 => _fasterKV._functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
 
-            public void CopyUpdater(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue)
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
             {
-                _fasterKV._functions.CopyUpdater(ref key, ref input, ref output, ref oldValue, ref newValue);
+                _fasterKV._functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
             }
 
             public void DeleteCompletionCallback(ref Key key, Context ctx)
@@ -357,14 +357,14 @@ namespace FASTER.core
                 return _fasterKV._variableLengthStructForInput.GetLength(ref t, ref input);
             }
 
-            public void InitialUpdater(ref Key key, ref Input input, ref Output output, ref Value value)
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
             {
-                _fasterKV._functions.InitialUpdater(ref key, ref input, ref output, ref value);
+                _fasterKV._functions.InitialUpdater(ref key, ref input, ref value, ref output);
             }
 
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                return _fasterKV._functions.InPlaceUpdater(ref key, ref input, ref output, ref value);
+                return _fasterKV._functions.InPlaceUpdater(ref key, ref input, ref value, ref output);
             }
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo)

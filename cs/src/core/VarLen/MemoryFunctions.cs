@@ -66,19 +66,19 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref Key key, ref Memory<T> input, ref (IMemoryOwner<T>, int) output, ref Memory<T> value)
+        public override void InitialUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output)
         {
             input.CopyTo(value);
         }
 
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref Memory<T> input, ref (IMemoryOwner<T>, int) output, ref Memory<T> oldValue, ref Memory<T> newValue)
+        public override void CopyUpdater(ref Key key, ref Memory<T> input, ref Memory<T> oldValue, ref Memory<T> newValue, ref (IMemoryOwner<T>, int) output)
         {
             oldValue.CopyTo(newValue);
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref Memory<T> input, ref (IMemoryOwner<T>, int) output, ref Memory<T> value)
+        public override bool InPlaceUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output)
         {
             // The default implementation of IPU simply writes input to destination, if there is space
             return ConcurrentWriter(ref key, ref input, ref value);

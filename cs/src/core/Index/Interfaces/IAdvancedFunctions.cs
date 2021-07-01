@@ -61,9 +61,9 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key">The key for this record</param>
         /// <param name="input">The user input to be used for computing the updated <paramref name="value"/></param>
-        /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="value">The destination to be updated; because this is an insert, there is no previous value there.</param>
-        void InitialUpdater(ref Key key, ref Input input, ref Output output, ref Value value);
+        /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
+        void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output);
 
         /// <summary>
         /// Whether we need to invoke copy-update for RMW
@@ -82,21 +82,21 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key">The key for this record</param>
         /// <param name="input">The user input to be used for computing <paramref name="newValue"/> from <paramref name="oldValue"/></param>
-        /// <param name="output">The location where <paramref name="newValue"/> is to be copied</param>
         /// <param name="oldValue">The previous value to be copied/updated</param>
         /// <param name="newValue">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
-        void CopyUpdater(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue);
+        /// <param name="output">The location where <paramref name="newValue"/> is to be copied</param>
+        void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output);
 
         /// <summary>
         /// In-place update for RMW
         /// </summary>
         /// <param name="key">The key for this record</param>
         /// <param name="input">The user input to be used for computing the updated <paramref name="value"/></param>
-        /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="value">The destination to be updated; because this is an in-place update, there is a previous value there.</param>
+        /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="recordInfo">A reference to the header of the record; may be used by <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
         /// <param name="address">The logical address of the record being updated; used as a RecordId by indexing</param>
-        bool InPlaceUpdater(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address);
+        bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address);
 
         /// <summary>
         /// Non-concurrent reader. 
