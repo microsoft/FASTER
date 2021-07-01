@@ -199,7 +199,8 @@ class PendingReadContext : public AsyncPendingReadContext<typename RC::key_t> {
     return read_context().key().size();
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    write_deep_key_at_helper<kIsShallowKey>::execute(read_context().key(), dst);
+    // this should never be called
+    assert(false);
   }
   inline KeyHash get_key_hash() const final {
     return read_context().key().GetHash();
@@ -533,7 +534,8 @@ class PendingExistsContext : public AsyncPendingExistsContext<typename MC::key_t
     return exists_context().key().size();
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    write_deep_key_at_helper<kIsShallowKey>::execute(exists_context().key(), dst);
+    // this should never be called
+    assert(false);
   }
   inline KeyHash get_key_hash() const final {
     return exists_context().key().GetHash();
