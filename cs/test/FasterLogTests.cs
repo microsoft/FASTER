@@ -876,20 +876,6 @@ namespace FASTER.test
             var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 };
             log = await FasterLog.CreateAsync(logSettings);
 
-
-
-
-
-
-            //*#*#*# TO DO: Get this working without Sleeps - unstable to run
-            return;
-            //*#*#*# TO DO: Get this working without Sleeps
-
-
-
-
-
-
             // make it small since launching each on separate threads 
             const int entryLength = 10;
             int expectedEntries = 3; // Not entry length because this is number of enqueues called
