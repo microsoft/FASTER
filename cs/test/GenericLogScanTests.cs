@@ -12,7 +12,7 @@ namespace FASTER.test
     {
         private FasterKV<MyKey, MyValue> fht;
         private IDevice log, objlog;
-        const int totalRecords = 200;
+        const int totalRecords = 50;
         private string path;
 
         [SetUp]
@@ -40,7 +40,7 @@ namespace FASTER.test
             }
             catch { }
 
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.DeleteDirectory(path);
         }
 
         [Test]
