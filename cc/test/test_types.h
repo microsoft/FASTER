@@ -136,6 +136,8 @@ class SimpleAtomicLargeValue {
   T extra[992];
 };
 
+// Variable size keys / values
+
 class NonCopyable
 {
   public:
@@ -158,14 +160,8 @@ class NonMovable
   ~NonMovable() = default;
 };
 
-// Variable size keys / values
-
 class VariableSizeKey : NonCopyable, NonMovable {
  public:
-  // Copy constructor
-  //VariableSizeKey(const VariableSizeKey& other) {
-  //    Create(this, key_length_, other.buffer());
-  //}
 
   static uint32_t size(uint32_t key_length) {
     return static_cast<uint32_t>(sizeof(VariableSizeKey) + key_length * sizeof(uint32_t));

@@ -503,6 +503,37 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
       Value output;
   };
 
+  class DeleteContext : public IAsyncContext {
+  public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    explicit DeleteContext(uint32_t* key, uint32_t key_length)
+      : key_{ key, key_length }
+    {}
+
+    /// Copy (and deep-copy) constructor.
+    DeleteContext(const DeleteContext& other)
+            : key_{ other.key_ } {
+    }
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const ShallowKey& key() const {
+      return key_;
+    }
+    inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+
+  protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+   private:
+    ShallowKey key_;
+  };
+
+
   typedef FasterKv<Key, Value, FASTER::device::NullDisk> faster_t;
   faster_t store { 1024, (1 << 30), "", 0.0625 }; // 64 MB of mutable region
   int numRecords = 12500; // will occupy ~512 MB space in store
@@ -543,22 +574,41 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
     // All upserts should have inserts (non-atomic).
     ASSERT_EQ(idx, context.output.value);
   }
-  // Update half
+  // Update one third
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
-    if (idx % 2 == 0) continue;
-    auto callback = [](IAsyncContext* ctxt, Status result) {
-        // In-memory test.
-        ASSERT_TRUE(false);
-    };
-    // Create the key as a variable length array
-    uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-    for (size_t j = 0; j < idx; ++j) {
-      key[j] = j;
-    }
+    if (idx % 3 == 0) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+          // In-memory test.
+          ASSERT_TRUE(false);
+      };
+      // Create the key as a variable length array
+      uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      for (size_t j = 0; j < idx; ++j) {
+        key[j] = j;
+      }
 
-    UpsertContext context{ key, idx, 2*idx };
-    Status result = store.Upsert(context, callback, 1);
-    ASSERT_EQ(Status::Ok, result);
+      UpsertContext context{ key, idx, 2*idx };
+      Status result = store.Upsert(context, callback, 1);
+      ASSERT_EQ(Status::Ok, result);
+    }
+  }
+  // Delete another one third
+  for(uint32_t idx = 1; idx <= numRecords; ++idx) {
+    if (idx % 3 == 1) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+          // In-memory test.
+          ASSERT_TRUE(false);
+      };
+      // Create the key as a variable length array
+      uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      for (size_t j = 0; j < idx; ++j) {
+        key[j] = j;
+      }
+
+      DeleteContext context{ key, idx };
+      Status result = store.Delete(context, callback, 1);
+      ASSERT_EQ(Status::Ok, result);
+    }
   }
   store.CompletePending(true);
 
@@ -584,12 +634,15 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
 
     ReadContext context{ key, idx };
     Status result = store.Read(context, callback, 1);
-    ASSERT_EQ(Status::Ok, result);
     // All upserts should have updates (atomic).
-    if (idx % 2 == 0) {
-      ASSERT_EQ(idx, context.output.value);
-    } else {
+    if (idx % 3 == 0) {
+      ASSERT_EQ(Status::Ok, result);
       ASSERT_EQ(2*idx, context.output.value);
+    } else if (idx % 3 == 1) {
+      ASSERT_EQ(Status::NotFound, result);
+    } else {
+      ASSERT_EQ(Status::Ok, result);
+      ASSERT_EQ(idx, context.output.value);
     }
   }
   store.StopSession();
@@ -1025,6 +1078,36 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
       Value output;
   };
 
+  class DeleteContext : public IAsyncContext {
+  public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    explicit DeleteContext(uint32_t* key, uint32_t key_length)
+      : key_{ key, key_length }
+    {}
+
+    /// Copy (and deep-copy) constructor.
+    DeleteContext(const DeleteContext& other)
+            : key_{ other.key_ } {
+    }
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const ShallowKey& key() const {
+      return key_;
+    }
+    inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+
+  protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+   private:
+    ShallowKey key_;
+  };
+
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t;
   typedef FasterKv<Key, Value, disk_t> faster_t;
 
@@ -1078,22 +1161,41 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
       }
     }
   }
-  // Update half
+  // Update one thrid
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
-    if (idx % 2 == 0) continue;
-    auto callback = [](IAsyncContext* ctxt, Status result) {
-        // Writes do not go pending in normal operation
-        ASSERT_TRUE(false);
-    };
-    // Create the key as a variable length array
-    uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-    for (size_t j = 0; j < idx; ++j) {
-      key[j] = j;
-    }
+    if (idx % 3 == 0) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+          // Writes do not go pending in normal operation
+          ASSERT_TRUE(false);
+      };
+      // Create the key as a variable length array
+      uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      for (size_t j = 0; j < idx; ++j) {
+        key[j] = j;
+      }
 
-    UpsertContext context{ key, idx, 2*idx };
-    Status result = store.Upsert(context, callback, 1);
-    ASSERT_EQ(Status::Ok, result);
+      UpsertContext context{ key, idx, 2*idx };
+      Status result = store.Upsert(context, callback, 1);
+      ASSERT_EQ(Status::Ok, result);
+    }
+  }
+  // Delete another one third
+  for(uint32_t idx = 1; idx <= numRecords; ++idx) {
+    if (idx % 3 == 1) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+          // In-memory test.
+          ASSERT_TRUE(false);
+      };
+      // Create the key as a variable length array
+      uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      for (size_t j = 0; j < idx; ++j) {
+        key[j] = j;
+      }
+
+      DeleteContext context{ key, idx };
+      Status result = store.Delete(context, callback, 1);
+      ASSERT_EQ(Status::Ok, result);
+    }
   }
   store.CompletePending(true);
 
@@ -1108,14 +1210,18 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
   // Read again.
   for(uint32_t idx = 1; idx <= numRecords ; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
-        ASSERT_EQ(Status::Ok, result);
         CallbackContext<ReadContext> context{ ctxt };
-
-        if (context->key().key_length_ % 2 == 0) {
-          ASSERT_EQ(context->output.value, context->key().key_length_);
-        } else {
+        // check request result & value
+        if (context->key().key_length_ % 3 == 0) {
+          ASSERT_EQ(Status::Ok, result);
           ASSERT_EQ(context->output.value, 2 * context->key().key_length_);
+        } else if (context->key().key_length_ % 3 == 1) {
+          ASSERT_EQ(Status::NotFound, result);
+        } else { // key_length_ % 3 == 2
+          ASSERT_EQ(Status::Ok, result);
+          ASSERT_EQ(context->output.value, context->key().key_length_);
         }
+        // verify that key match the requested key
         for (size_t j = 0; j < context->key().key_length_; ++j) {
           ASSERT_EQ(context->key().key_data_[j], j);
         }
@@ -1128,16 +1234,21 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
 
     ReadContext context{ key, idx };
     Status result = store.Read(context, callback, 1);
-    ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+    ASSERT_TRUE(result == Status::Ok || result == Status::Pending ||
+                result == Status::NotFound);
     if (result == Status::Ok) {
-      if (idx % 2 == 0) {
-        ASSERT_EQ(idx, context.output.value);
-      } else {
+      if (idx % 3 == 0) {
         ASSERT_EQ(2 * idx, context.output.value);
+      } else if (idx % 3 == 2) {
+        ASSERT_EQ(idx, context.output.value);
       }
+      else ASSERT_TRUE(false);
       for (size_t j = 0; j < context.key().key_length_; ++j) {
         ASSERT_EQ(context.key().key_data_[j], j);
       }
+    }
+    else if (result == Status::NotFound) {
+      ASSERT_TRUE(idx % 3 == 1);
     }
   }
   store.CompletePending(true);
