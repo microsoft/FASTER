@@ -61,7 +61,7 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="persisted"></param>
         /// <param name="deps"></param>
-        void ReportNewPersistentVersion(WorkerVersion persisted, IEnumerable<WorkerVersion> deps);
+        void ReportNewPersistentVersion(long worldLine, WorkerVersion persisted, IEnumerable<WorkerVersion> deps);
         
         /// <summary>
         /// Refreshes the local view of the system. This method must be called periodically to receive up-to-date

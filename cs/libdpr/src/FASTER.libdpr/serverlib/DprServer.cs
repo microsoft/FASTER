@@ -4,13 +4,10 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using System.Threading.Tasks;
 using FASTER.core;
 
 namespace FASTER.libdpr
 {
-
-
     /// <summary>
     /// Maintains per-worker state for DPR version-tracking.
     ///
@@ -27,7 +24,7 @@ namespace FASTER.libdpr
             versions = new ConcurrentDictionary<long, LightDependencySet>();
             dependencySetPool = new SimpleObjectPool<LightDependencySet>(() => new LightDependencySet());
         }
-        
+
         internal readonly IDprFinder dprFinder;
 
         internal readonly SimpleVersionScheme worldlineTracker;
@@ -35,11 +32,11 @@ namespace FASTER.libdpr
         internal readonly ConcurrentDictionary<long, LightDependencySet> versions;
         internal readonly SimpleObjectPool<LightDependencySet> dependencySetPool;
         internal readonly Worker me;
-        
+
         internal Stopwatch sw = Stopwatch.StartNew();
         internal long lastCheckpointMilli = 0, lastRefreshMilli = 0;
     }
-    
+
     /// <summary>
     /// DprManager is the primary interface between an underlying state object and the libDPR layer. libDPR expects
     /// to be called before and after every batch execution.
@@ -53,10 +50,9 @@ namespace FASTER.libdpr
         private readonly TStateObject stateObject;
         private SimpleObjectPool<DprBatchVersionTracker> trackers;
         private byte[] depSerializationArray;
-        
+
         public DprServer(IDprFinder dprFinder, Worker me, TStateObject stateObject)
         {
-         
             state = new DprWorkerState(dprFinder, me);
             this.stateObject = stateObject;
             trackers = new SimpleObjectPool<DprBatchVersionTracker>(() => new DprBatchVersionTracker());
@@ -84,18 +80,20 @@ namespace FASTER.libdpr
         public void TryRefreshAndCheckpoint(long checkpointPeriodMilli, long refreshPeriodMilli)
         {
             var currentTime = state.sw.ElapsedMilliseconds;
-            
+
             var lastCommitted = state.dprFinder.SafeVersion(state.me);
-            
+
             if (state.lastRefreshMilli + refreshPeriodMilli < currentTime)
             {
                 state.dprFinder.Refresh();
                 Utility.MonotonicUpdate(ref state.lastRefreshMilli, currentTime, out _);
+                TryAdvanceWorldLineTo(state.dprFinder.SystemWorldLine());
             }
-            
+
             if (state.lastCheckpointMilli + checkpointPeriodMilli <= currentTime)
             {
-                stateObject.BeginCheckpoint(ComputeDependency, Math.Max(stateObject.Version() + 1, state.dprFinder.GlobalMaxVersion()));
+                stateObject.BeginCheckpoint(ComputeDependency,
+                    Math.Max(stateObject.Version() + 1, state.dprFinder.GlobalMaxVersion()));
                 Utility.MonotonicUpdate(ref state.lastCheckpointMilli, currentTime, out _);
             }
 
@@ -105,24 +103,21 @@ namespace FASTER.libdpr
             {
                 state.versions.TryRemove(i, out var deps);
                 state.dependencySetPool.Return(deps);
-                // TODO(Tianyu): Also signal to underlying state object that commit can be erased
+                stateObject.PruneVersion(i);
             }
         }
-     
+
         private void TryAdvanceWorldLineTo(long targetWorldline)
         {
-            while (state.worldlineTracker.Version() != targetWorldline)
+            state.worldlineTracker.TryAdvanceVersion(_ =>
             {
-                state.worldlineTracker.AdvanceVersion(_ =>
-                {
-                    state.rollbackProgress = new ManualResetEventSlim();
-                    stateObject.BeginRestore(state.dprFinder.SafeVersion(state.me));
-                    // Wait for user to signal end of restore;
-                    state.rollbackProgress.Wait();
-                });
-            }
+                state.rollbackProgress = new ManualResetEventSlim();
+                stateObject.BeginRestore(state.dprFinder.SafeVersion(state.me));
+                // Wait for user to signal end of restore;
+                state.rollbackProgress.Wait();
+            }, targetWorldline);
         }
-        
+
         /// <summary>
         /// Invoke before beginning processing of a batch. If the function returns false, the batch must not be
         /// executed to preserve DPR consistency, and the caller should return the error response (written in the
@@ -134,7 +129,8 @@ namespace FASTER.libdpr
         /// <param name="response">Dpr response message that will be returned to user in case of failure</param>
         /// <param name="tracker">Tracker to use for batch execution</param>
         /// <returns>Whether the batch can be executed</returns>
-        public unsafe bool RequestBatchBegin(ref DprBatchRequestHeader request, ref DprBatchResponseHeader response, out DprBatchVersionTracker tracker)
+        public unsafe bool RequestBatchBegin(ref DprBatchRequestHeader request, ref DprBatchResponseHeader response,
+            out DprBatchVersionTracker tracker)
         {
             // Wait for worker version to catch up to largest in batch (minimum version where all operations
             // can be safely executed), taking checkpoints if necessary.
@@ -147,24 +143,24 @@ namespace FASTER.libdpr
             // Enter protected region for world-lines. Because we validate requests batch-at-a-time, the world-line
             // must not shift while a batch is being processed, otherwise a message from an older world-line may be
             // processed in a new one. 
-            state.worldlineTracker.Enter();
+            var wl = state.worldlineTracker.Enter();
             // If the worker world-line is behind, wait for worker to recover up to the same point as the client,
             // so client operation is not lost in a rollback that the client has already observed.
-            while (request.worldLine > state.dprFinder.SystemWorldLine())
+            while (request.worldLine > wl)
             {
                 state.worldlineTracker.Leave();
                 TryAdvanceWorldLineTo(request.worldLine);
-                state.worldlineTracker.Enter();
+                wl = state.worldlineTracker.Enter();
             }
-            
+
             // If the worker world-line is newer, the request must be rejected so the client can observe failure
             // and rollback. Populate response with this information and signal failure to upper layers so the batch
             // is not executed.
-            if (request.worldLine < state.dprFinder.SystemWorldLine())
+            if (request.worldLine < wl)
             {
                 response.sessionId = request.sessionId;
                 // Use negative to signal that there was a mismatch, which would prompt error handling on client side
-                response.worldLine = -state.dprFinder.SystemWorldLine();
+                response.worldLine = -wl;
                 response.batchId = request.batchId;
                 state.worldlineTracker.Leave();
                 tracker = default;
@@ -174,8 +170,8 @@ namespace FASTER.libdpr
             tracker = trackers.Checkout();
             // At this point, we are certain that the request world-line and worker world-line match, and worker
             // world-line will not advance until this thread refreshes the epoch. We can proceed to batch execution.
-            Debug.Assert(request.worldLine == state.dprFinder.SystemWorldLine());
-            
+            Debug.Assert(request.worldLine == wl);
+
             // Update batch dependencies to the current worker-version. This is an over-approximation, as the batch
             // could get processed at a future version instead due to thread timing. However, this is not a correctness
             // issue, nor do we lose much precision as batch-level dependency tracking is already an approximation.
@@ -188,6 +184,7 @@ namespace FASTER.libdpr
                     deps.Update(wv.Worker, wv.Version);
                 }
             }
+
             // Exit without releasing epoch, as protection is supposed to extend until end of batch.
             return true;
         }
@@ -201,23 +198,25 @@ namespace FASTER.libdpr
         /// <param name="response">Dpr response message that will be returned to user</param>
         /// <param name="tracker">Tracker used in batch processing</param>
         /// <returns> size of header if successful, negative size required to hold response if supplied byte span is too small</returns>
-        public int SignalBatchFinish(ref DprBatchRequestHeader request, Span<byte> response, DprBatchVersionTracker tracker)
+        public int SignalBatchFinish(ref DprBatchRequestHeader request, Span<byte> response,
+            DprBatchVersionTracker tracker)
         {
-            ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
+            ref var dprResponse =
+                ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
             var responseSize = DprBatchResponseHeader.HeaderSize + tracker.EncodingSize();
             if (response.Length < responseSize) return -responseSize;
-            
+
             // Signal batch finished so world-lines can advance. Need to make sure not double-invoked, therefore only
             // called after size validation.
             state.worldlineTracker.Leave();
-            
+
             // Populate response
             dprResponse.sessionId = request.sessionId;
             dprResponse.worldLine = request.worldLine;
             dprResponse.batchId = request.batchId;
             dprResponse.batchSize = responseSize;
             tracker.AppendOntoResponse(ref dprResponse);
-            
+
             trackers.Return(tracker);
             return responseSize;
         }

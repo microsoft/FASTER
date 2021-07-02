@@ -75,7 +75,7 @@ namespace FASTER.libdpr
             return new GlobalMinDprStateSnapshot(globalSafeVersionNum);
         }
 
-        public void ReportNewPersistentVersion(WorkerVersion persisted, IEnumerable<WorkerVersion> deps)
+        public void ReportNewPersistentVersion(long worldLine, WorkerVersion persisted, IEnumerable<WorkerVersion> deps)
         {
             workerVersion = persisted.Version;
             backend.Update(me, persisted.Version);

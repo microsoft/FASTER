@@ -1,5 +1,7 @@
 
 using System;
+using System.Collections;
+using System.Collections.Generic;
 
 namespace FASTER.libdpr
 {
@@ -41,5 +43,9 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="version">Unique checkpoint for the state object to recover to</param>
         void BeginRestore(long version);
+
+        void PruneVersion(long version);
+
+        IEnumerable<(long, byte[])> GetUnprunedVersions();
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -71,16 +72,16 @@ namespace DprCounters
             // checkpoints earlier than the committed version in the DPR cut. We can therefore rely on a (relatively
             // small) stash of in-memory snapshots to quickly handle this call.
             value = prevCounters[version];
-            
-            // Remove any cached versions larger than the restored ones because those are rolled back.
-            PruneCachedVersions(v => v > version);
+        }
+        
+        public override void PruneVersion(long version)
+        {
+            prevCounters.TryRemove(version, out _);
         }
 
-        public void PruneCachedVersions(Predicate<long> versionPredicate)
+        public override IEnumerable<(long, byte[])> GetUnprunedVersions()
         {
-            var matchingKeys = prevCounters.Keys.Where(versionPredicate.Invoke).ToArray();
-            foreach (var key in matchingKeys)
-                prevCounters.TryRemove(key, out _);
+            throw new NotImplementedException();
         }
     }
 }

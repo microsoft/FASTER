@@ -22,9 +22,11 @@ namespace FASTER.libdpr
         /// <param name="token">unique token that identifies the checkpoint associated with the version</param>
         public void OnVersionPersistent(long version)
         {
+            var worldLine = state.worldlineTracker.Enter();
             var deps = state.versions[version];
             var workerVersion = new WorkerVersion(state.me, version);
-            state.dprFinder.ReportNewPersistentVersion(workerVersion, deps);
+            state.dprFinder.ReportNewPersistentVersion(worldLine, workerVersion, deps);
+            state.worldlineTracker.Leave();
         }
 
         /// <summary>

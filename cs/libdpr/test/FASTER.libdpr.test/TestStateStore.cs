@@ -51,6 +51,16 @@ namespace FASTER.libdpr
                 return new HashSet<(int, int)>(opLog.GetRange(0, persistedPrefix));
             }
         }
+
+        public override void PruneVersion(long version)
+        {
+            
+        }
+
+        public override IEnumerable<(long, byte[])> GetUnprunedVersions()
+        {
+            throw new NotImplementedException();
+        }
     }
     
     public class TestStateStore

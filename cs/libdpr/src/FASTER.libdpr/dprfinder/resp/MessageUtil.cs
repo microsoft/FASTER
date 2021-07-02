@@ -82,6 +82,14 @@ namespace FASTER.libdpr
             }
         }
 
+        
+        internal static int SendGraphReconstruction(this Socket socket, Worker worker, long worldLine,
+            IStateObject stateObject)
+        {
+            // TODO(Tianyu): compose a pipelined list of Redis calls and return the number of OKs to wait for.
+            return 42;
+        }
+
         internal static void SendAddWorkerCommand(this Socket socket, Worker worker)
         {
             var buf = reusableMessageBuffers.Checkout();

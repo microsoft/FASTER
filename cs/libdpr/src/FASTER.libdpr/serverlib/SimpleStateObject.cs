@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace FASTER.libdpr
 {
@@ -38,7 +39,11 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="token">Checkpoint to recover to</param>
         protected abstract void RestoreCheckpoint(long version);
-        
+
+        public abstract void PruneVersion(long version);
+
+        public abstract IEnumerable<(long, byte[])> GetUnprunedVersions();
+
         /// <inheritdoc/>
         public void Register(DprWorkerCallbacks callbacks)
         {
@@ -54,7 +59,7 @@ namespace FASTER.libdpr
         /// <inheritdoc/>
         public void BeginCheckpoint(IStateObject.DepsProvider depsProvider, long targetVersion = -1)
         {
-            versionScheme.AdvanceVersion(v =>
+            versionScheme.TryAdvanceVersion(v =>
             {
                 var deps = depsProvider(v);
                 PerformCheckpoint(v, deps, () =>
@@ -68,7 +73,7 @@ namespace FASTER.libdpr
         /// <inheritdoc/>
         public void BeginRestore(long version)
         {
-            versionScheme.AdvanceVersion(_ =>
+            versionScheme.TryAdvanceVersion(_ =>
             {
                 RestoreCheckpoint(version);
                 callbacks.OnRollbackComplete();

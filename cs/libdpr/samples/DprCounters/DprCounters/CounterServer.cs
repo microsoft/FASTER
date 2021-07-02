@@ -56,8 +56,6 @@ namespace DprCounters
                     Thread.Sleep(10);
                     // A DprServer has built-in timers to rate-limit checkpoints and refreshes if needed
                     dprServer.TryRefreshAndCheckpoint(100, 10);
-                    // Truncate any committed versions from in-memory mapping reserved for rollbacks
-                    dprServer.StateObject().PruneCachedVersions(v => v < dprFinder.SafeVersion(me));
                 }
             });
             backgroundThread.Start();

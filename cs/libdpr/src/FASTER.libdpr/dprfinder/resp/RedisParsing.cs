@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Net.Http.Headers;
-using System.Threading;
-using FASTER.core;
+
 
 namespace FASTER.libdpr
 {
@@ -48,7 +46,8 @@ namespace FASTER.libdpr
             REPORT_RECOVERY,
             ADD_WORKER,
             DELETE_WORKER,
-            SYNC
+            SYNC,
+            GRAPH_RESENT
         }
 
         internal Type commandType;
@@ -179,6 +178,12 @@ namespace FASTER.libdpr
                                 currentCommand.commandType = DprFinderCommand.Type.SYNC;
                                 commandParserState = CommandParserState.NONE;
                                 return true;
+                            case 'G':
+                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
+                                    .Equals("GraphResent"));
+                                currentCommand.commandType = DprFinderCommand.Type.GRAPH_RESENT;
+                                commandParserState = CommandParserState.ARG_WV;
+                                break;
                             default:
                                 throw new NotImplementedException("Unrecognized command type");
                         }
@@ -213,6 +218,10 @@ namespace FASTER.libdpr
                         else if (currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY)
                         {
                             commandParserState = CommandParserState.ARG_WL;
+                        }
+                        else if (currentCommand.commandType == DprFinderCommand.Type.GRAPH_RESENT)
+                        {
+                            return true;
                         }
                         else
                         {
