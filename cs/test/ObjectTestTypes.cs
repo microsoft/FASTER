@@ -88,7 +88,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
+        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyOutput output) => true;
 
         public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output)
         {
@@ -146,7 +146,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
+        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyOutput output) => true;
 
         public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output)
         {
@@ -214,7 +214,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref int key, ref MyInput input, ref MyValue oldValue) => true;
+        public override bool NeedCopyUpdate(ref int key, ref MyInput input, ref MyValue oldValue, ref MyOutput output) => true;
 
         public override void CopyUpdater(ref int key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output)
         {

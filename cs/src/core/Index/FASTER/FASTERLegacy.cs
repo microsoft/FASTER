@@ -334,8 +334,8 @@ namespace FASTER.core
 
             public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
 
-            public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
-                => _fasterKV._functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
+            public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
+                => _fasterKV._functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
             {

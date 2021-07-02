@@ -69,7 +69,7 @@ namespace FASTER.test.recovery.sumstore
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output) => true;
 
         public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output)
         {

@@ -1032,8 +1032,8 @@ namespace FASTER.core
                 }
             }
 
-            public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
-                => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
+            public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
+                => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
             {

@@ -30,8 +30,8 @@ namespace FASTER.server
         public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
             => functions.ConcurrentWriter(ref key, ref src, ref dst);
 
-        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
-            => functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
+        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
+            => functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
         public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
             => functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);

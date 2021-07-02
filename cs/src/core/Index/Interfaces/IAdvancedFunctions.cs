@@ -71,7 +71,8 @@ namespace FASTER.core
         /// <param name="key">The key for this record</param>
         /// <param name="input">The user input to be used for computing the updated value</param>
         /// <param name="oldValue">The existing value that would be copied.</param>
-        bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
+        /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="oldValue"/> is to be copied</param>
+        bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
 #if NETSTANDARD2_1 || NET
             => true
 #endif

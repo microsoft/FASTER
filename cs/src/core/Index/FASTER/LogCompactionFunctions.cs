@@ -36,7 +36,7 @@ namespace FASTER.core
 
         public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => true;
 
-        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue) => true;
+        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
 
         public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
 

@@ -34,7 +34,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) { }
         /// <inheritdoc/>
-        public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue) => true;
+        public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
         /// <inheritdoc/>
         public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output) { }
         /// <inheritdoc/>
@@ -144,7 +144,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) { }
         /// <inheritdoc/>
-        public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue) => true;
+        public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
         /// <inheritdoc/>
         public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output) { }
         /// <inheritdoc/>

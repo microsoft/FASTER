@@ -84,7 +84,7 @@ namespace FASTER.test.recovery.objectstore
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref Input input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref Input input, ref NumClicks oldValue, ref Output output) => true;
 
         public override void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output)
         {
