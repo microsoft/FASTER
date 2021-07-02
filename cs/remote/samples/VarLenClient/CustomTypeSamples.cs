@@ -23,12 +23,16 @@ namespace VarLenClient
             // Create a session to FasterKV server
             // Sessions are mono-threaded, similar to normal FasterKV sessions
             using var session = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
+            using var subSession = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
 
             // Explicit version of NewSession call, where you provide all types, callback functions, and serializer
             // using var session = client.NewSession<long, long, long, Functions, BlittableParameterSerializer<long, long, long, long>>(new Functions(), new BlittableParameterSerializer<long, long, long, long>());
 
             // Samples using sync client API
             SyncVarLenSamples(session);
+
+            // Samples using sync client API
+            SyncVarLenSubscriptionSamples(session, subSession);
 
             // Samples using async client API
             AsyncVarLenSamples(session).Wait();
@@ -62,21 +66,7 @@ namespace VarLenClient
             session.Upsert(new CustomType(23), new CustomType(2300));
             session.CompletePending(true);
 
-            for (int i = 0; i < 100; i++)
-                session.Upsert(new CustomType(i), new CustomType(i + 10000));
-
-            // Flushes partially filled batches, does not wait for responses
-            session.Flush();
-
-            session.Read(new CustomType(23));
-            session.CompletePending(true);
-
-            for (int i = 100; i < 200; i++)
-                session.Upsert(new CustomType(i), new CustomType(i + 10000));
-
-            session.Flush();
-
-            session.CompletePending(true);
+            System.Threading.Thread.Sleep(1000);
         }
 
 
