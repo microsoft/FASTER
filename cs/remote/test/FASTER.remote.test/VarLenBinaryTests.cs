@@ -44,8 +44,8 @@ namespace FASTER.remote.test
         public void SubscribeTest()
         {
             Random r = new Random(23);
-            using var session = client.GetSession();
-            using var subSession = client.GetSession();
+            var session = client.GetSession();
+            var subSession = client.GetSession();
             var key = new Memory<int>(new int[2 + r.Next(50)]);
             var value = new Memory<int>(new int[1 + r.Next(50)]);
             key.Span[0] = r.Next(100);
@@ -64,8 +64,8 @@ namespace FASTER.remote.test
         public void PSubscribeTest()
         {
             Random r = new Random(23);
-            using var session = client.GetSession();
-            using var subSession = client.GetSession();
+            var session = client.GetSession();
+            var subSession = client.GetSession();
             var key = new Memory<int>(new int[2 + r.Next(50)]);
             var value = new Memory<int>(new int[1 + r.Next(50)]);
             int randomNum = r.Next(100);            
