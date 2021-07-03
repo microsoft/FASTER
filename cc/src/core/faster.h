@@ -2991,7 +2991,7 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
   int remaining = n_threads - 1;
   while (remaining > 0) {
     for (int idx = 0; idx < n_threads - 1; ++idx) {
-      if (threads_context.done[idx]->load() && threads[idx].joinable()) {
+      if (threads_context.done[idx].load() && threads[idx].joinable()) {
         threads[idx].join();
         --remaining;
       }
@@ -3069,7 +3069,9 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
   record_t* record;
   pending_record_entry_t* record_info;
   uint8_t pending_record_entry [sizeof(pending_record_entry_t)];
-  LogPage<F> page; // first GetNext() will return false
+  LogPageCollection<F> pages (
+    LogPageCollection<F>::kDefaultNumPages,
+    hlog.sector_size); // first GetNext() will return false
 
   // Start session for each spawned thread
   if (thread_idx >= 0) {
@@ -3086,7 +3088,7 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
     else if (pages_available) {
       // get next record from hybrid log
       HashBucketEntry expected_entry;
-      record = page.GetNext(record_address);
+      record = pages.GetNextRecord(record_address);
 
       if (record == nullptr) {
         // No more records in this page
@@ -3100,7 +3102,7 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
         }
         // Try to get next page
         Refresh();
-        if(!ct_ctx->iter->GetNextPage(page)) {
+        if(!ct_ctx->iter->GetNextPage(pages)) {
           // No more pages
           pages_available = false;
         }
@@ -3183,7 +3185,7 @@ complete_pending:
   if (thread_idx >= 0) {
     StopSession();
     // Mark thread as finished
-    ct_ctx->done[thread_idx]->store(true);
+    ct_ctx->done[thread_idx].store(true);
   }
 }
 

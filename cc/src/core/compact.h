@@ -18,14 +18,14 @@ struct CompactionThreadsContext {
   CompactionThreadsContext(LogPageIterator<F>* iter_, int n_threads)
     : iter{ iter_ } {
       for (int i = 0; i < n_threads; i++) {
-        done.emplace_back(std::make_unique<std::atomic<bool>>(false));
+        done.emplace_back(false);
       }
     }
   // non-copyable
   CompactionThreadsContext(const CompactionThreadsContext&) = delete;
 
   LogPageIterator<F>* iter;
-  std::vector<std::unique_ptr<std::atomic<bool>>> done;
+  std::deque<std::atomic<bool>> done;
 };
 
 /// Holds the record info when a compaction request goes async
