@@ -53,7 +53,7 @@ namespace FASTER.server
 
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status)
         {
-            serverNetworkSession.CompleteRMW(ctx, status);
+            serverNetworkSession.CompleteRMW(ref output, ctx, status);
             functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
         }
 

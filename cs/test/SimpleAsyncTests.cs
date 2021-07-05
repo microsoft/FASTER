@@ -299,9 +299,9 @@ namespace FASTER.test.async
             using var s1 = fht1.NewSession(new RMWSimpleFunctions<long, long>((a, b) => a + b));
             for (key = 0; key < numOps; key++)
             {
-                (status, output) = (await s1.RMWAsync(key, key)).Complete();
-                Assert.AreNotEqual(Status.PENDING, status);
-                Assert.AreEqual(key, output);
+                var asyncResult = await (await s1.RMWAsync(key, key)).CompleteAsync();
+                Assert.AreNotEqual(Status.PENDING, asyncResult.Status);
+                Assert.AreEqual(key, asyncResult.Output);
             }
 
             for (key = 0; key < numOps; key++)
