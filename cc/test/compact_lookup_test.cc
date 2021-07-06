@@ -18,6 +18,9 @@ using FASTER::test::SimpleAtomicValue;
 using FASTER::test::SimpleAtomicMediumValue;
 using FASTER::test::SimpleAtomicLargeValue;
 
+using FASTER::test::GenLock;
+using FASTER::test::AtomicGenLock;
+
 using Key = FixedSizeKey<uint64_t>;
 using MediumValue = SimpleAtomicMediumValue<uint64_t>;
 using LargeValue = SimpleAtomicLargeValue<uint64_t>;
@@ -543,8 +546,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
   // Insert.
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
-        // In-memory test.
-        ASSERT_TRUE(false);
+      ASSERT_TRUE(false); // upserts do not go pending
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
@@ -559,8 +561,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
   // Read.
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
-        // In-memory test.
-        ASSERT_TRUE(false);
+      ASSERT_TRUE(false); // In-memory test.
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
@@ -571,15 +572,13 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
     ReadContext context{ key, idx };
     Status result = store.Read(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
-    // All upserts should have inserts (non-atomic).
     ASSERT_EQ(idx, context.output.value);
   }
   // Update one third
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     if (idx % 3 == 0) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
-          // In-memory test.
-          ASSERT_TRUE(false);
+        ASSERT_TRUE(false); // upserts do not go pending
       };
       // Create the key as a variable length array
       uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
@@ -596,8 +595,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     if (idx % 3 == 1) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
-          // In-memory test.
-          ASSERT_TRUE(false);
+        ASSERT_TRUE(false); // deletes do no go pending
       };
       // Create the key as a variable length array
       uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
@@ -623,8 +621,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
   // Read again.
   for(uint32_t idx = 1; idx <= numRecords ; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
-        // In-memory test.
-        ASSERT_TRUE(false);
+      ASSERT_TRUE(false); // In-memory test.
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
@@ -643,6 +640,238 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
     } else {
       ASSERT_EQ(Status::Ok, result);
       ASSERT_EQ(idx, context.output.value);
+    }
+  }
+  store.StopSession();
+}
+
+TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
+  using Key = FixedSizeKey<uint32_t>;
+
+  class UpsertContext;
+  class ReadContext;
+
+  class Value {
+   public:
+    Value()
+      : gen_lock_{ 0 }
+      , size_{ 0 }
+      , length_{ 0 } {
+    }
+
+    inline uint32_t size() const {
+      return size_;
+    }
+
+    friend class UpsertContext;
+    friend class ReadContext;
+
+   private:
+    AtomicGenLock gen_lock_;
+    uint32_t size_;
+    uint32_t length_;
+
+    inline const uint8_t* buffer() const {
+      return reinterpret_cast<const uint8_t*>(this + 1);
+    }
+    inline uint8_t* buffer() {
+      return reinterpret_cast<uint8_t*>(this + 1);
+    }
+  };
+
+  class UpsertContext : public IAsyncContext {
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    UpsertContext(uint32_t key, uint32_t *value, uint32_t value_length)
+      : key_{ key }
+      , value_{ value }
+      , value_length_{ value_length } {
+    }
+    /// Copy (and deep-copy) constructor.
+    UpsertContext(const UpsertContext& other)
+      : key_{ other.key_ }
+      , value_{ other.value_ }
+      , value_length_{ other.value_length_ } {
+    }
+
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const Key& key() const {
+      return key_;
+    }
+    inline uint32_t value_size() const {
+      return sizeof(Value) + value_length_ * sizeof(uint32_t);
+    }
+    /// Non-atomic and atomic Put() methods.
+    inline void Put(Value& value) {
+      value.gen_lock_.store(0);
+      value.size_ = value_size();
+      value.length_ = value_length_;
+      std::memcpy(value.buffer(), value_, value_length_ * sizeof(uint32_t));
+    }
+    inline bool PutAtomic(Value& value) {
+      bool replaced;
+      while(!value.gen_lock_.try_lock(replaced) && !replaced) {
+        std::this_thread::yield();
+      }
+      if(replaced) {
+        // Some other thread replaced this record.
+        return false;
+      }
+      if(value.size_ < value_size()) {
+        // Current value is too small for in-place update.
+        value.gen_lock_.unlock(true);
+        return false;
+      }
+      // In-place update overwrites length and buffer, but not size.
+      value.length_ = value_length_;
+      std::memcpy(value.buffer(), value_, value_length_ * sizeof(uint32_t));
+      value.gen_lock_.unlock(false);
+      return true;
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+   private:
+    Key key_;
+    uint32_t* value_;
+    uint32_t value_length_;
+  };
+
+  class ReadContext : public IAsyncContext {
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    ReadContext(uint32_t key)
+      : key_{ key }
+      , output{ nullptr }
+      , output_length{ 0 } {
+    }
+
+    /// Copy (and deep-copy) constructor.
+    ReadContext(const ReadContext& other)
+      : key_{ other.key_ }
+      , output{ nullptr }
+      , output_length{ 0 } {
+    }
+
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const Key& key() const {
+      return key_;
+    }
+    inline void Get(const Value& value) {
+      output_length = value.length_;
+      if (output == nullptr) {
+        output = (uint32_t*) malloc(output_length * sizeof(uint32_t));
+      }
+      std::memcpy(output, value.buffer(), output_length * sizeof(uint32_t));
+    }
+    inline void GetAtomic(const Value& value) {
+      GenLock before, after;
+      do {
+        before = value.gen_lock_.load();
+        output_length = value.length_;
+        if (output == nullptr) {
+          output = (uint32_t*) malloc(output_length * sizeof(uint32_t));
+        }
+        std::memcpy(output, value.buffer(), output_length * sizeof(uint32_t));
+        after = value.gen_lock_.load();
+      } while(before.gen_number != after.gen_number);
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+   private:
+    Key key_;
+   public:
+    uint32_t *output;
+    uint32_t output_length;
+  };
+
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> faster_t;
+  faster_t store { 1024, (1 << 30), "", 0.0625 }; // 64 MB of mutable region
+  uint32_t numRecords = 12500; // will occupy ~512 MB space in store
+
+  store.StartSession();
+
+  // Insert.
+  for(uint32_t idx = 1; idx <= numRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false); // upserts do not go pending
+    };
+    // Create the value as a variable length array
+    uint32_t* value = (uint32_t*) malloc(idx * sizeof(uint32_t));
+    for (size_t j = 0; j < idx; ++j) {
+      value[j] = idx;
+    }
+
+    UpsertContext context{ idx, value, idx};
+    Status result = store.Upsert(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+  // Read.
+  for(uint32_t idx = 1; idx <= numRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false); // In-memory test.
+    };
+
+    ReadContext context{ idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+    // check each position of the var-len value
+    for (size_t j = 0; j < idx; ++j) {
+      ASSERT_EQ(context.output[j], idx);
+    }
+  }
+  // Update half
+  for(uint32_t idx = 1; idx <= numRecords; ++idx) {
+    if (idx % 2 == 0) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        ASSERT_TRUE(false); // upserts do not go pending
+      };
+      // Create the value as a variable length array
+      uint32_t* value = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      for (size_t j = 0; j < idx; ++j) {
+        value[j] = 2 * idx;
+      }
+
+      UpsertContext context{ idx, value, idx }; // double the value_id
+      Status result = store.Upsert(context, callback, 1);
+      ASSERT_EQ(Status::Ok, result);
+    }
+  }
+
+  // perform compaction (with or without shift begin address)
+  uint64_t until_address = store.hlog.safe_read_only_address.control();
+  bool shift_begin_address = GetParam();
+  ASSERT_TRUE(
+    store.CompactWithLookup(until_address, shift_begin_address));
+  if (shift_begin_address)
+    ASSERT_EQ(until_address, store.hlog.begin_address.control());
+
+  // Read again.
+  for(uint32_t idx = 1; idx <= numRecords ; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false); // In-memory test.
+    };
+
+    ReadContext context{ idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_EQ(result, Status::Ok);
+    // check each position of the var-len value
+    uint32_t value_id = (idx % 2 == 0) ? 2*idx : idx;
+    for (size_t j = 0; j < idx; ++j) {
+      ASSERT_EQ(context.output[j], value_id);
     }
   }
   store.StopSession();
@@ -1121,8 +1350,8 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
   // Insert.
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
-        // Writes do not go pending in normal operation
-        ASSERT_TRUE(false);
+      // Writes do not go pending in normal operation
+      ASSERT_TRUE(false);
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
@@ -1137,13 +1366,13 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
   // Read.
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
-        ASSERT_EQ(Status::Ok, result);
-        CallbackContext<ReadContext> context{ ctxt };
+      ASSERT_EQ(Status::Ok, result);
+      CallbackContext<ReadContext> context{ ctxt };
 
-        ASSERT_EQ(context->output.value, context->key().key_length_);
-        for (size_t j = 0; j < context->key().key_length_; ++j) {
-          ASSERT_EQ(context->key().key_data_[j], j);
-        }
+      ASSERT_EQ(context->output.value, context->key().key_length_);
+      for (size_t j = 0; j < context->key().key_length_; ++j) {
+        ASSERT_EQ(context->key().key_data_[j], j);
+      }
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
@@ -1165,8 +1394,8 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     if (idx % 3 == 0) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
-          // Writes do not go pending in normal operation
-          ASSERT_TRUE(false);
+        // Writes do not go pending in normal operation
+        ASSERT_TRUE(false);
       };
       // Create the key as a variable length array
       uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
@@ -1183,8 +1412,7 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     if (idx % 3 == 1) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
-          // In-memory test.
-          ASSERT_TRUE(false);
+        ASSERT_TRUE(false); // deletes do not go pending
       };
       // Create the key as a variable length array
       uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
@@ -1210,21 +1438,21 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
   // Read again.
   for(uint32_t idx = 1; idx <= numRecords ; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
-        CallbackContext<ReadContext> context{ ctxt };
-        // check request result & value
-        if (context->key().key_length_ % 3 == 0) {
-          ASSERT_EQ(Status::Ok, result);
-          ASSERT_EQ(context->output.value, 2 * context->key().key_length_);
-        } else if (context->key().key_length_ % 3 == 1) {
-          ASSERT_EQ(Status::NotFound, result);
-        } else { // key_length_ % 3 == 2
-          ASSERT_EQ(Status::Ok, result);
-          ASSERT_EQ(context->output.value, context->key().key_length_);
-        }
-        // verify that key match the requested key
-        for (size_t j = 0; j < context->key().key_length_; ++j) {
-          ASSERT_EQ(context->key().key_data_[j], j);
-        }
+      CallbackContext<ReadContext> context{ ctxt };
+      // check request result & value
+      if (context->key().key_length_ % 3 == 0) {
+        ASSERT_EQ(Status::Ok, result);
+        ASSERT_EQ(context->output.value, 2 * context->key().key_length_);
+      } else if (context->key().key_length_ % 3 == 1) {
+        ASSERT_EQ(Status::NotFound, result);
+      } else { // key_length_ % 3 == 2
+        ASSERT_EQ(Status::Ok, result);
+        ASSERT_EQ(context->output.value, context->key().key_length_);
+      }
+      // verify that key match the requested key
+      for (size_t j = 0; j < context->key().key_length_; ++j) {
+        ASSERT_EQ(context->key().key_data_[j], j);
+      }
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
@@ -1257,6 +1485,261 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
   std::experimental::filesystem::remove_all("tmp_store");
 }
 
+
+TEST_P(CompactLookupParametrizedTestFixture, VariableLengthValue) {
+  using Key = FixedSizeKey<uint32_t>;
+
+  class UpsertContext;
+  class ReadContext;
+
+  class Value {
+   public:
+    Value()
+      : gen_lock_{ 0 }
+      , size_{ 0 }
+      , length_{ 0 } {
+    }
+
+    inline uint32_t size() const {
+      return size_;
+    }
+
+    friend class UpsertContext;
+    friend class ReadContext;
+
+   private:
+    AtomicGenLock gen_lock_;
+    uint32_t size_;
+    uint32_t length_;
+
+    inline const uint8_t* buffer() const {
+      return reinterpret_cast<const uint8_t*>(this + 1);
+    }
+    inline uint8_t* buffer() {
+      return reinterpret_cast<uint8_t*>(this + 1);
+    }
+  };
+
+  class UpsertContext : public IAsyncContext {
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    UpsertContext(uint32_t key, uint32_t *value, uint32_t value_length)
+      : key_{ key }
+      , value_{ value }
+      , value_length_{ value_length } {
+    }
+    /// Copy (and deep-copy) constructor.
+    UpsertContext(const UpsertContext& other)
+      : key_{ other.key_ }
+      , value_{ other.value_ }
+      , value_length_{ other.value_length_ } {
+    }
+
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const Key& key() const {
+      return key_;
+    }
+    inline uint32_t value_size() const {
+      return sizeof(Value) + value_length_ * sizeof(uint32_t);
+    }
+    /// Non-atomic and atomic Put() methods.
+    inline void Put(Value& value) {
+      value.gen_lock_.store(0);
+      value.size_ = value_size();
+      value.length_ = value_length_;
+      std::memcpy(value.buffer(), value_, value_length_ * sizeof(uint32_t));
+    }
+    inline bool PutAtomic(Value& value) {
+      bool replaced;
+      while(!value.gen_lock_.try_lock(replaced) && !replaced) {
+        std::this_thread::yield();
+      }
+      if(replaced) {
+        // Some other thread replaced this record.
+        return false;
+      }
+      if(value.size_ < value_size()) {
+        // Current value is too small for in-place update.
+        value.gen_lock_.unlock(true);
+        return false;
+      }
+      // In-place update overwrites length and buffer, but not size.
+      value.length_ = value_length_;
+      std::memcpy(value.buffer(), value_, value_length_ * sizeof(uint32_t));
+      value.gen_lock_.unlock(false);
+      return true;
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+   private:
+    Key key_;
+    uint32_t* value_;
+    uint32_t value_length_;
+  };
+
+  class ReadContext : public IAsyncContext {
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    ReadContext(uint32_t key)
+      : key_{ key }
+      , output{ nullptr }
+      , output_length{ 0 } {
+    }
+
+    /// Copy (and deep-copy) constructor.
+    ReadContext(const ReadContext& other)
+      : key_{ other.key_ }
+      , output{ nullptr }
+      , output_length{ 0 } {
+    }
+
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const Key& key() const {
+      return key_;
+    }
+    inline void Get(const Value& value) {
+      output_length = value.length_;
+      if (output == nullptr) {
+        output = (uint32_t*) malloc(output_length * sizeof(uint32_t));
+      }
+      std::memcpy(output, value.buffer(), output_length * sizeof(uint32_t));
+    }
+    inline void GetAtomic(const Value& value) {
+      GenLock before, after;
+      do {
+        before = value.gen_lock_.load();
+        output_length = value.length_;
+        if (output == nullptr) {
+          output = (uint32_t*) malloc(output_length * sizeof(uint32_t));
+        }
+        std::memcpy(output, value.buffer(), output_length * sizeof(uint32_t));
+        after = value.gen_lock_.load();
+      } while(before.gen_number != after.gen_number);
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+   private:
+    Key key_;
+   public:
+    uint32_t *output;
+    uint32_t output_length;
+  };
+
+  typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t;
+  typedef FasterKv<Key, Value, disk_t> faster_t;
+
+  std::experimental::filesystem::create_directories("tmp_store");
+
+  faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
+  uint32_t numRecords = 12500; // will occupy ~512 MB space in store
+
+  store.StartSession();
+
+  // Insert.
+  for(uint32_t idx = 1; idx <= numRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false); // upserts do not go pending
+    };
+    // Create the value as a variable length array
+    uint32_t* value = (uint32_t*) malloc(idx * sizeof(uint32_t));
+    for (size_t j = 0; j < idx; ++j) {
+      value[j] = idx;
+    }
+
+    UpsertContext context{ idx, value, idx};
+    Status result = store.Upsert(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+  // Read.
+  for(uint32_t idx = 1; idx <= numRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_EQ(Status::Ok, result);
+      CallbackContext<ReadContext> context{ ctxt };
+
+      ASSERT_EQ(context->output_length, context->key().key);
+      for (uint32_t j = 0; j < context->output_length; ++j) {
+        ASSERT_EQ(context->output[j], context->key().key);
+      }
+    };
+
+    ReadContext context{ idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+    if (result == Status::Ok) {
+      for (size_t j = 0; j < idx; ++j) {
+        ASSERT_EQ(context.output[j], idx);
+      }
+    }
+  }
+  // Update half
+  for(uint32_t idx = 1; idx <= numRecords; ++idx) {
+    if (idx % 2 == 0) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        ASSERT_TRUE(false); // upserts do not go pending
+      };
+      // Create the value as a variable length array
+      uint32_t* value = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      for (size_t j = 0; j < idx; ++j) {
+        value[j] = 2 * idx;
+      }
+
+      UpsertContext context{ idx, value, idx }; // double the value_id
+      Status result = store.Upsert(context, callback, 1);
+      ASSERT_EQ(Status::Ok, result);
+    }
+  }
+  store.CompletePending(true);
+
+  // perform compaction (with or without shift begin address)
+  uint64_t until_address = store.hlog.safe_read_only_address.control();
+  bool shift_begin_address = GetParam();
+  ASSERT_TRUE(
+    store.CompactWithLookup(until_address, shift_begin_address));
+  if (shift_begin_address)
+    ASSERT_EQ(until_address, store.hlog.begin_address.control());
+
+  // Read again.
+  for(uint32_t idx = 1; idx <= numRecords ; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_EQ(Status::Ok, result);
+      CallbackContext<ReadContext> context{ ctxt };
+
+      ASSERT_EQ(context->output_length, context->key().key);
+      uint32_t value_id = (context->key().key % 2 == 0)
+                              ? 2 * context->key().key
+                              : context->key().key;
+      for (uint32_t j = 0; j < context->output_length; ++j) {
+        ASSERT_EQ(context->output[j], value_id);
+      }
+    };
+
+    ReadContext context{ idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+    if (result == Status::Ok) {
+      uint32_t value_id = (idx % 2 == 0) ? 2*idx : idx;
+      for (size_t j = 0; j < idx; ++j) {
+        ASSERT_EQ(context.output[j], value_id);
+      }
+    }
+  }
+  store.StopSession();
+  std::experimental::filesystem::remove_all("tmp_store");
+}
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
