@@ -22,7 +22,7 @@ namespace FASTER.server
         
         public abstract void CompleteRead(ref Output output, long ctx, Status status);
         public abstract void CompleteRMW(long ctx, Status status);
-
+        public abstract unsafe void Publish(int sid, Status status, ref Output output, ref Key key, bool prefix);
         public override void Dispose()
         {
             session.Dispose();

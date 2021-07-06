@@ -246,14 +246,11 @@ namespace FASTER.server
             }
         }
 
-        public unsafe override void Publish(int sid, Status status, byte* outputPtr, int lengthOutput, byte* keyPtr, bool prefix)
+        public unsafe override void Publish(int sid, Status status, ref Output output, ref Key key, bool prefix)
         {
             MessageType message = MessageType.SubscribeKV;
             if (prefix)
                 message = MessageType.PSubscribeKV;
-
-            ref Key key = ref serializer.ReadKeyByRef(ref keyPtr);
-            ref Output output = ref serializer.AsRefOutput(outputPtr, (int)(lengthOutput));
 
             GetResponseObject();
 

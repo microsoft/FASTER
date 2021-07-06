@@ -24,8 +24,6 @@ namespace FASTER.server
         /// </summary>
         /// <param name="bytesRead"></param>
         void AddBytesRead(int bytesRead);
-
-        unsafe void Publish(int sid, Status status, byte* outputPtr, int lengthOutput, byte* keyPtr, bool prefix);
     }
 
 }

@@ -95,9 +95,6 @@ namespace FASTER.server
             }
         }
 
-        public unsafe abstract void Publish(int sid, Status status, byte* output, int outputLength, byte* key, bool prefix);
-
-
         /// <summary>
         /// Dispose
         /// </summary>

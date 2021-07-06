@@ -4,6 +4,7 @@ using FASTER.common;
 using FASTER.core;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 
 namespace FASTER.server
 {
@@ -25,8 +26,7 @@ namespace FASTER.server
         readonly ParameterSerializer serializer;
         readonly MaxSizeSettings maxSizeSettings;
         readonly ClientSession<Key, Value, Input, Output, long, Functions> subscriptionSession;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>> subscribedSessions;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>> prefixSubscribedSessions;
+        private ConcurrentDictionary<IServerSession, FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>> serverSessions;
 
         /// <summary>
         /// Create FasterKV backend
@@ -42,14 +42,23 @@ namespace FASTER.server
             this.serializer = serializer;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
             this.subscriptionSession = store.For(functionsGen(WireFormat.DefaultVarLenKV)).NewSession<Functions>();
-            this.subscribedSessions = new ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>();
-            this.prefixSubscribedSessions = new ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>();
+            this.serverSessions = new ConcurrentDictionary<IServerSession, FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>>();
         }
 
         /// <inheritdoc />
         public IServerSession GetSession(WireFormat wireFormat, Socket socket, SubscribeKVBroker subscribeKVBroker)
         {
-            return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, wireFormat, subscribeKVBroker);
+            FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> serverSession;
+            serverSession = new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, wireFormat, subscribeKVBroker);
+            return serverSession;
+        }
+
+        public unsafe void RemoveServerSession(IServerSession serverSession)
+        {
+            if (serverSessions.ContainsKey(serverSession))
+            {
+                serverSessions.TryRemove(serverSession, out _);
+            }
         }
 
         public unsafe bool CheckSubKeyMatch(ref byte* subKeyPtr, ref byte* keyPtr)
@@ -90,11 +99,11 @@ namespace FASTER.server
                     var session = subSessionTuple.Item1;
                     var sid = subSessionTuple.Item2;
                     var prefix = subSessionTuple.Item3;
-                    //session.Publish(sid, status, outputPtr, outputBytes.Length, publishKeyPtr, prefix);
-                    session.Publish(sid, status, publishOutputPtr, serializer.GetLength(ref output), publishKeyPtr, prefix);
+                    ref Key key = ref serializer.ReadKeyByRef(ref publishKeyPtr);
+                    if (serverSessions.TryGetValue(session, out var serverSession))
+                        serverSession.Publish(sid, status, ref output, ref key, prefix);
                 }
             }
-            subscribedSessions.Clear();
         }
     }
 }
