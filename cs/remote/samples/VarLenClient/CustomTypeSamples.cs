@@ -22,8 +22,8 @@ namespace VarLenClient
 
             // Create a session to FasterKV server
             // Sessions are mono-threaded, similar to normal FasterKV sessions
-            using var session = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
-            using var subSession = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
+            var session = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
+            var subSession = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
 
             // Explicit version of NewSession call, where you provide all types, callback functions, and serializer
             // using var session = client.NewSession<long, long, long, Functions, BlittableParameterSerializer<long, long, long, long>>(new Functions(), new BlittableParameterSerializer<long, long, long, long>());
@@ -63,7 +63,19 @@ namespace VarLenClient
             session2.SubscribeKV(new CustomType(23));
             session2.CompletePending(true);
 
+            session2.SubscribeKV(new CustomType(24));
+            session2.CompletePending(true);
+
+            session2.PSubscribeKV(new CustomType(25));
+            session2.CompletePending(true);
+
             session.Upsert(new CustomType(23), new CustomType(2300));
+            session.CompletePending(true);
+
+            session.Upsert(new CustomType(24), new CustomType(2400));
+            session.CompletePending(true);
+
+            session.Upsert(new CustomType(25), new CustomType(2500));
             session.CompletePending(true);
 
             System.Threading.Thread.Sleep(1000);

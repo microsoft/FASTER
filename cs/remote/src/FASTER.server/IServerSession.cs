@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.common;
+using FASTER.core;
 using System;
 
 namespace FASTER.server
@@ -22,6 +24,8 @@ namespace FASTER.server
         /// </summary>
         /// <param name="bytesRead"></param>
         void AddBytesRead(int bytesRead);
+
+        unsafe void Publish(int sid, Status status, byte* outputPtr, int lengthOutput, byte* keyPtr, bool prefix);
     }
 
 }

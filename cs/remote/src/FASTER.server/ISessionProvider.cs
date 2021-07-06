@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Net.Sockets;
 using FASTER.common;
+using FASTER.core;
 
 namespace FASTER.server
 {
@@ -22,8 +24,11 @@ namespace FASTER.server
         /// Remove all subscriptions made by a particular session.
         /// </summary>
         /// <param name="session">Session whose subscriptions to be removed</param>
-        public void RemoveSubscriptions(IServerSession session);
 
-        IServerSession GetSession(WireFormat wireFormat, Socket socket);
+        IServerSession GetSession(WireFormat wireFormat, Socket socket, SubscribeKVBroker subscribeKVBroker);
+
+        public unsafe bool CheckSubKeyMatch(ref byte* subKeyPtr, ref byte* keyPtr);
+
+        public unsafe void ReadAndPublish(byte* keyPtr, List<(IServerSession, int, bool)> subSessions);
     }
 }

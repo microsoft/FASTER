@@ -11,88 +11,73 @@ using FASTER.core;
 
 namespace FASTER.server
 {
-    internal sealed class SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer>
-        where Functions : IFunctions<Key, Value, Input, Output, long>
-        where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
+    public sealed class SubscribeKVBroker
     {
-        readonly ParameterSerializer serializer;
-        readonly ClientSession<Key, Value, Input, Output, long, Functions> subscriptionSession;
         private int sid = 0;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>> subscriptions;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>> psubscriptions;
+        private ConcurrentDictionary<byte[], ConcurrentDictionary<ISessionProvider, List<(IServerSession, int)>>> subscriptionProviders;
+        private ConcurrentDictionary<byte[], ConcurrentDictionary<ISessionProvider, List<(IServerSession, int)>>> prefixSubscriptionProviders;
+        private FasterServer server;
         private AsyncQueue<byte[]> publishQueue;
 
-        public SubscribeKVBroker(ParameterSerializer serializer, ClientSession<Key, Value, Input, Output, long, Functions> subscriptionSession)
+        public SubscribeKVBroker(FasterServer server)
         {
-            this.serializer = serializer;
-            this.subscriptionSession = subscriptionSession;
+            this.server = server;
         }
 
-        public void removeSubscription(FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> session)
+        public void removeSubscription(IServerSession session)
         {
-            if (subscriptions == null && psubscriptions == null)
+            if (subscriptionProviders == null && prefixSubscriptionProviders == null)
                 return;
 
-            if (subscriptions != null)
+            if (subscriptionProviders != null)
             {
-                foreach (var key in subscriptions.Keys)
+                foreach (var key in subscriptionProviders.Keys)
                 {
-                    foreach (var subscribedSession in subscriptions[key].Keys)
+                    bool found = false;
+                    foreach (var providerSession in subscriptionProviders[key].Keys)
                     {
-                        if (subscribedSession == session)
+                        foreach (var subscribedSession in subscriptionProviders[key][providerSession])
                         {
-                            subscriptions[key].TryRemove(subscribedSession, out _);
+                            if (subscribedSession.Item1 == session)
+                            {
+                                subscriptionProviders[key][providerSession].Remove(subscribedSession);
+                                found = true;                                
+                                break;
+                            }
                         }
+                        if (found)
+                            break;
                     }
                 }
             }
 
-            if (psubscriptions != null)
+            if (prefixSubscriptionProviders != null)
             {
-                foreach (var key in psubscriptions.Keys)
+                foreach (var key in prefixSubscriptionProviders.Keys)
                 {
-                    foreach (var subscribedSession in psubscriptions[key].Keys)
+                    bool found = false;
+                    foreach (var providerSession in prefixSubscriptionProviders[key].Keys)
                     {
-                        if (subscribedSession == session)
+                        foreach (var subscribedSession in prefixSubscriptionProviders[key][providerSession])
                         {
-                            psubscriptions[key].TryRemove(subscribedSession, out _);
+                            if (subscribedSession.Item1 == session)
+                            {
+                                found = true;
+                                prefixSubscriptionProviders[key][providerSession].Remove(subscribedSession);
+                                break;
+                            }
                         }
+                        if (found)
+                            break;
                     }
                 }
             }
-        }
-
-        public unsafe (Status, Output) ReadBeforePublish(ref byte* keyBytePtr, ref Input input, ref byte* outputBytePtr, int lengthOutput, int sid)
-        {
-            MessageType message = MessageType.SubscribeKV;
-
-            ref Key key = ref serializer.ReadKeyByRef(ref keyBytePtr);
-            ref Output output = ref serializer.AsRefOutput(outputBytePtr, (int)(lengthOutput));
-
-            long ctx = ((long)message << 32) | (long)sid;
-            var status = subscriptionSession.Read(ref key, ref input, ref output, ctx, 0);
-            if (status == Status.PENDING)
-                subscriptionSession.CompletePending(true);
-
-            return (status, output);
-        }
-
-        unsafe bool CheckSubKeyMatch(ref byte* subKeyPtr, ref byte* keyPtr)
-        {
-            ref Key key = ref serializer.ReadKeyByRef(ref keyPtr);
-            ref Key subKey = ref serializer.ReadKeyByRef(ref subKeyPtr);
-            if (serializer.Match(ref key, ref subKey) == true)
-                return true;
-            return false;
         }
 
         public async Task Start()
         {
-            Input input = default;
             var uniqueKeys = new HashSet<byte[]>(new ByteArrayComparer());
-
-            byte[] outputBytes = new byte[1024];
-            List<(FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int, bool)> subscribedSessions = new List<(FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int, bool)>();
+            var providerSubs = new Dictionary<ISessionProvider, List<(IServerSession, int, bool)>>();
 
             while (true) {
 
@@ -107,106 +92,117 @@ namespace FASTER.server
 
                 unsafe
                 {
-                    foreach (var byteKey in uniqueKeys)
+                    foreach (var keyBytes in uniqueKeys)
                     {
-                        fixed (byte* ptr1 = &byteKey[0], ptr2 = &outputBytes[0])
+                        fixed (byte* ptr = &keyBytes[0])
                         {
-                            byte* keyPtr = ptr1;
-                            byte* outputPtr = ptr2;
-
-                            bool foundSubscription = subscriptions.TryGetValue(byteKey, out var subSessionDict);
+                            byte* keyPtr = ptr;
+                            bool foundSubscription = subscriptionProviders.TryGetValue(keyBytes, out var subSessionDict);
                             if (foundSubscription)
                             {
-                                foreach (var session in subSessionDict.Keys)
+                                foreach (var provider in subSessionDict.Keys)
                                 {
-                                    subSessionDict.TryGetValue(session, out int sid);
-                                    subscribedSessions.Add((session, sid, false));
+                                    var subs = subSessionDict[provider];
+                                    var providerSubList = new List<(IServerSession, int, bool)>();
+                                    foreach (var sub in subs)
+                                    {
+                                        var subTuple = (sub.Item1, sub.Item2, false);
+                                        providerSubList.Add(subTuple);
+                                    }
+                                    providerSubs.Add(provider, providerSubList);
                                 }
                             }
 
-                            foreach (var subscribedPrefixBytes in psubscriptions.Keys)
+                            foreach (var subscribedPrefixBytes in prefixSubscriptionProviders.Keys)
                             {
                                 fixed (byte* subscribedPrefixPtr = &subscribedPrefixBytes[0])
                                 {
                                     byte* subPrefixPtr = subscribedPrefixPtr;
-                                    byte* reqKeyPtr = ptr1;
+                                    byte* reqKeyPtr = ptr;
 
-                                    bool match = CheckSubKeyMatch(ref subPrefixPtr, ref reqKeyPtr);
-                                    if (match)
+                                    prefixSubscriptionProviders.TryGetValue(subscribedPrefixBytes, out var sessionDict);
+                                    foreach (var provider in sessionDict.Keys)
                                     {
-                                        psubscriptions.TryGetValue(subscribedPrefixBytes, out var sessionDict);
-                                        foreach (var session in sessionDict.Keys)
-                                        {
-                                            sessionDict.TryGetValue(session, out int sid);
-                                            subscribedSessions.Add((session, sid, true));
+                                        bool match = provider.CheckSubKeyMatch(ref subPrefixPtr, ref reqKeyPtr);
+                                        if (match) {
+                                            var subs = sessionDict[provider];
+                                            var providerSubList = new List<(IServerSession, int, bool)>();
+                                            foreach (var sub in subs)
+                                            {
+                                                var subTuple = (sub.Item1, sub.Item2, true);
+                                                providerSubList.Add(subTuple);
+                                            }
+                                            if (providerSubs.ContainsKey(provider))
+                                                providerSubs[provider].AddRange(providerSubList);
+                                            else
+                                                providerSubs.Add(provider, providerSubList);
                                         }
                                     }
                                 }
                             }
 
-
-                            if (subscribedSessions.Count > 0)
+                            if (providerSubs.Count > 0)
                             {
-                                var (status, output) = ReadBeforePublish(ref keyPtr, ref input, ref outputPtr, outputBytes.Length, 0);
-                                foreach (var subSessionTuple in subscribedSessions)
-                                {
-                                    var session = subSessionTuple.Item1;
-                                    var sid = subSessionTuple.Item2;
-                                    var prefix = subSessionTuple.Item3;
-                                    byte* publishKeyPtr = ptr1;
-                                    session.Publish(sid, status, ref output, ref serializer.ReadKeyByRef(ref publishKeyPtr), prefix);
-                                }
+                                foreach(var provider in providerSubs.Keys)
+                                    provider.ReadAndPublish(keyPtr, providerSubs[provider]);
                             }
                         }
-                        subscribedSessions.Clear();
+                        providerSubs.Clear();
                     }
                     uniqueKeys.Clear();
                 }
             }
         }
 
-        public unsafe int Subscribe(ref byte* key, BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer> session)
+        public unsafe int Subscribe(ref byte* key, int keyLength, IServerSession session, WireFormat wireFormat)
         {
             var start = key;
-            serializer.ReadKeyByRef(ref key);
+            var end = key + keyLength;
+            //serializer.ReadKeyByRef(ref key);
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
-                this.subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
-                this.psubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
+                subscriptionProviders = new ConcurrentDictionary<byte[], ConcurrentDictionary<ISessionProvider, List<(IServerSession, int)>>>(new ByteArrayComparer());
+                prefixSubscriptionProviders = new ConcurrentDictionary<byte[], ConcurrentDictionary<ISessionProvider, List<(IServerSession, int)>>>(new ByteArrayComparer());
                 Task.Run(() => Start());
             }
-            var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
-            subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>());
-            subscriptions[subscriptionKey].TryAdd(session, id);
+            var subscriptionKey = new Span<byte>(start, (int)(end - start)).ToArray();
+            var provider = this.server.sessionProviders[wireFormat];
+            bool added = subscriptionProviders.TryAdd(subscriptionKey, new ConcurrentDictionary<ISessionProvider, List<(IServerSession, int)>>());
+            subscriptionProviders[subscriptionKey].TryAdd(provider, new List<(IServerSession, int)>());
+            subscriptionProviders[subscriptionKey][provider].Add((session, sid));
             return id;
         }
 
-        public unsafe int PSubscribe(ref byte* prefix, BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer> session)
+        public unsafe int PSubscribe(ref byte* prefix, int prefixLength, IServerSession session, WireFormat wireFormat)
         {
             var start = prefix;
-            serializer.ReadKeyByRef(ref prefix);
+            var end = prefix + prefixLength;
+            //serializer.ReadKeyByRef(ref prefix);
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
-                this.subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
-                this.psubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>>(new ByteArrayComparer());
+                subscriptionProviders = new ConcurrentDictionary<byte[], ConcurrentDictionary<ISessionProvider, List<(IServerSession, int)>>>(new ByteArrayComparer());
+                prefixSubscriptionProviders = new ConcurrentDictionary<byte[], ConcurrentDictionary<ISessionProvider, List<(IServerSession, int)>>>(new ByteArrayComparer());
                 Task.Run(() => Start());
             }
-            var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
-            psubscriptions.TryAdd(subscriptionPrefix, new ConcurrentDictionary<FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, int>());
-            psubscriptions[subscriptionPrefix].TryAdd(session, id);
+            var subscriptionPrefix = new Span<byte>(start, (int)(end - start)).ToArray();
+            var provider = this.server.sessionProviders[wireFormat];
+            prefixSubscriptionProviders.TryAdd(subscriptionPrefix, new ConcurrentDictionary<ISessionProvider, List<(IServerSession, int)>>());
+            prefixSubscriptionProviders[subscriptionPrefix].TryAdd(provider, new List<(IServerSession, int)>());
+            prefixSubscriptionProviders[subscriptionPrefix][provider].Add((session, sid));
             return id;
         }
 
 
-        public unsafe void Publish(byte* key)
+        public unsafe void Publish(byte* key, int keyLength)
         {
-            if (subscriptions == null && psubscriptions == null) return;
+            if (subscriptionProviders == null && prefixSubscriptionProviders == null) return;
 
             var start = key;
-            ref Key k = ref serializer.ReadKeyByRef(ref key);
-            var keyBytes= new Span<byte>(start, (int)(key - start)).ToArray();
+            var end = key + keyLength;
+            //ref Key k = ref serializer.ReadKeyByRef(ref key);
+            var keyBytes= new Span<byte>(start, (int)(end - start)).ToArray();
 
             publishQueue.Enqueue(keyBytes);
         }

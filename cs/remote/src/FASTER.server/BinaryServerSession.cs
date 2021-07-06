@@ -19,13 +19,15 @@ namespace FASTER.server
 
         int seqNo, pendingSeqNo, msgnum, start;
         byte* dcurr;
+        public WireFormat wireFormat;
 
-        readonly SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeKVBroker;
+        readonly SubscribeKVBroker subscribeKVBroker;
 
-        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, Input, Output, Functions, ParameterSerializer> subscribeKVBroker)
+        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, WireFormat wireFormat, SubscribeKVBroker subscribeKVBroker)
             : base(socket, store, functions, serializer, maxSizeSettings)
         {
             this.subscribeKVBroker = subscribeKVBroker;
+            this.wireFormat = wireFormat;
 
             readHead = 0;
 
@@ -134,12 +136,15 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
-                            var keyptr = src;
-                            status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src));
+                            var keyPtr = src;
+                            ref Key key = ref serializer.ReadKeyByRef(ref src);
+                            var keyPtrEnd = src;
+
+                            status = session.Upsert(ref key, ref serializer.ReadValueByRef(ref src));
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            subscribeKVBroker.Publish(keyptr);
+                            subscribeKVBroker.Publish(keyPtr, (int)(keyPtrEnd - keyPtr));
                             break;
 
                         case MessageType.Read:
@@ -165,16 +170,19 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
-                            keyptr = src;
+                            keyPtr = src;
+                            key = ref serializer.ReadKeyByRef(ref src);
+                            keyPtrEnd = src;
+
                             ctx = ((long)message << 32) | (long)pendingSeqNo;
-                            status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src), ctx);
+                            status = session.RMW(ref key, ref serializer.ReadInputByRef(ref src), ctx);
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
                             if (status == Status.PENDING)
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
 
-                            subscribeKVBroker.Publish(keyptr);
+                            subscribeKVBroker.Publish(keyPtr, (int)(keyPtrEnd - keyPtr));
                             break;
 
                         case MessageType.Delete:
@@ -182,19 +190,25 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
-                            keyptr = src;
-                            status = session.Delete(ref serializer.ReadKeyByRef(ref src));
+                            keyPtr = src;
+                            key = ref serializer.ReadKeyByRef(ref src);
+                            keyPtrEnd = src;
+
+                            status = session.Delete(ref key);
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            subscribeKVBroker.Publish(keyptr);
+                            subscribeKVBroker.Publish(keyPtr, (int)(keyPtrEnd - keyPtr));
                             break;
 
                         case MessageType.SubscribeKV:
                             if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
 
-                            int sid = subscribeKVBroker.Subscribe(ref src, this);
+                            var keyStart = src;
+                            serializer.ReadKeyByRef(ref src);
+
+                            int sid = subscribeKVBroker.Subscribe(ref keyStart, (int)(src - keyStart), this, wireFormat);
                             status = Status.PENDING;
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
@@ -205,7 +219,10 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
 
-                            sid = subscribeKVBroker.PSubscribe(ref src, this);
+                            keyStart = src;
+                            serializer.ReadKeyByRef(ref src);
+
+                            sid = subscribeKVBroker.PSubscribe(ref keyStart, (int)(src - keyStart), this, wireFormat);
                             status = Status.PENDING;
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
@@ -229,11 +246,14 @@ namespace FASTER.server
             }
         }
 
-        public override void Publish(int sid, Status status, ref Output output, ref Key key, bool prefix)
+        public unsafe override void Publish(int sid, Status status, byte* outputPtr, int lengthOutput, byte* keyPtr, bool prefix)
         {
             MessageType message = MessageType.SubscribeKV;
             if (prefix)
                 message = MessageType.PSubscribeKV;
+
+            ref Key key = ref serializer.ReadKeyByRef(ref keyPtr);
+            ref Output output = ref serializer.AsRefOutput(outputPtr, (int)(lengthOutput));
 
             GetResponseObject();
 

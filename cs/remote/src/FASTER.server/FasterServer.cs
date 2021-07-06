@@ -10,6 +10,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Collections.Concurrent;
 using System.Threading;
+using System.Collections.Generic;
 
 namespace FASTER.server
 {
@@ -23,7 +24,10 @@ namespace FASTER.server
         readonly MaxSizeSettings maxSizeSettings;
         readonly int networkBufferSize;
         readonly ConcurrentDictionary<IServerSession, byte> activeSessions;
-        readonly ConcurrentDictionary<WireFormat, ISessionProvider> sessionProviders;
+        public readonly ConcurrentDictionary<WireFormat, ISessionProvider> sessionProviders;
+        public SubscribeKVBroker subscribeKVBroker;
+
+        //public ConcurrentDictionary<ISessionProvider, List<(IServerSession, byte)>> providerServerSessions; 
         // readonly ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte> activeSessions;
         // readonly ClientSession<Key, Value, Input, Output, long, ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>> session;
 
@@ -40,6 +44,7 @@ namespace FASTER.server
         {
             activeSessions = new ConcurrentDictionary<IServerSession, byte>();
             sessionProviders = new ConcurrentDictionary<WireFormat, ISessionProvider>();
+            subscribeKVBroker = new SubscribeKVBroker(this);
             activeSessionCount = 0;
             disposed = false;
 
@@ -199,7 +204,7 @@ namespace FASTER.server
                 throw new FasterException($"Unsupported wire format {protocol}");
             }
 
-            connArgs.session = provider.GetSession(protocol, connArgs.socket);
+            connArgs.session = provider.GetSession(protocol, connArgs.socket, subscribeKVBroker);
 
             if (activeSessions.TryAdd(connArgs.session, default))
                 Interlocked.Increment(ref activeSessionCount);
@@ -226,9 +231,7 @@ namespace FASTER.server
             {
                 if (activeSessions.TryRemove(_session, out _))
                 {
-                    foreach (var provider in sessionProviders)
-                        provider.Value.RemoveSubscriptions(_session);
-
+                    subscribeKVBroker.removeSubscription(_session);
                     _session.Dispose();
                     Interlocked.Decrement(ref activeSessionCount);
                 }
