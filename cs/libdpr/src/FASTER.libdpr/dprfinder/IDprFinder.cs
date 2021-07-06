@@ -67,7 +67,7 @@ namespace FASTER.libdpr
         /// Refreshes the local view of the system. This method must be called periodically to receive up-to-date
         /// information about the rest of the cluster.
         /// </summary>
-        void Refresh();
+        bool Refresh();
 
         /// <summary>
         /// Reports to the rest of the cluster that this worker has recovered from the failure that resulted in the
@@ -77,7 +77,9 @@ namespace FASTER.libdpr
         /// <param name="latestRecoveredVersion"></param>
         void ReportRecovery(long worldLine, WorkerVersion latestRecoveredVersion);
 
-        long NewWorker(Worker id);
+        void ResendGraph(Worker worker, IStateObject stateObject);
+
+        long NewWorker(Worker id, IStateObject stateObject);
 
         void DeleteWorker(Worker id);
     }

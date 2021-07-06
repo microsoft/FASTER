@@ -32,7 +32,8 @@ namespace DprCounters
             // Each DPR worker should be backed by one state object. The state object exposes some methods 
             // for the DPR logic to invoke when necessary, but DPR does not otherwise mediate user interactions
             // with it. 
-            var v = dprFinder.NewWorker(me);
+            // TODO(Tianyu): Fix initialization order
+            var v = dprFinder.NewWorker(me, stateObject);
             var stateObject = new CounterStateObject(checkpointDir, v);
             // A DPR server provides DPR methods that the users should invoke at appropriate points of execution. There
             // should be one DPR server per worker in the cluster

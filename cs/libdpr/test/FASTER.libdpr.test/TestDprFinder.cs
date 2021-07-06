@@ -81,15 +81,21 @@ namespace FASTER.libdpr
             backend.Update(me, persisted.Version);
         }
 
-        public void Refresh()
+        public bool Refresh()
         {
             var (newMin, newMax) = backend.ComputeCut();
             globalMaxVersionNum = newMax;
             globalSafeVersionNum = newMin;
+            return true;
+        }
+
+        public void ResendGraph(Worker worker, IStateObject stateObject)
+        {
+            throw new NotImplementedException();
         }
 
         // Test Dpr Finder does not support failure handling and do not care about a dynamic cluster 
-        public long NewWorker(Worker id) => 0;
+        public long NewWorker(Worker id, IStateObject stateObject) => 0;
         public void DeleteWorker(Worker id) {}
     }
 }

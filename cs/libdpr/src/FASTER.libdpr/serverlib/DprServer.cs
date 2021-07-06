@@ -85,7 +85,8 @@ namespace FASTER.libdpr
 
             if (state.lastRefreshMilli + refreshPeriodMilli < currentTime)
             {
-                state.dprFinder.Refresh();
+                if (!state.dprFinder.Refresh())
+                    state.dprFinder.ResendGraph(state.me, stateObject);
                 Utility.MonotonicUpdate(ref state.lastRefreshMilli, currentTime, out _);
                 TryAdvanceWorldLineTo(state.dprFinder.SystemWorldLine());
             }

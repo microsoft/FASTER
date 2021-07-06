@@ -153,7 +153,7 @@ namespace FASTER.libdpr
                                 Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
                                     .Equals("NewCheckpoint"));
                                 currentCommand.commandType = DprFinderCommand.Type.NEW_CHECKPOINT;
-                                commandParserState = CommandParserState.ARG_WV;
+                                commandParserState = CommandParserState.ARG_WL;
                                 break;
                             case 'R':
                                 Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
@@ -237,12 +237,23 @@ namespace FASTER.libdpr
                     {
                         Debug.Assert(size == sizeof(long));
                         Debug.Assert(currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY);
-                        currentCommand.worldLine = BitConverter.ToInt64(buf, stringStart);
-                        commandParserState = CommandParserState.NONE;
+                        currentCommand.worldLine = BitConverter.ToInt64(buf, stringStart); 
                         size = -1;
-                        return true;
-                    }
+                        if (currentCommand.commandType == DprFinderCommand.Type.NEW_CHECKPOINT)
+                        {
+                            commandParserState = CommandParserState.ARG_WV;
+                        }
+                        else if (currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY)
+                        {
 
+                            commandParserState = CommandParserState.NONE;
+                            return true;
+                        }
+                        else
+                        {
+                            Debug.Assert(false);
+                        }
+                    }
                     return false;
                 case CommandParserState.ARG_DEPS:
                     if (ProcessRedisBulkString(readHead, buf))

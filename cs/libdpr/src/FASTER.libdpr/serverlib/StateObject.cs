@@ -46,6 +46,6 @@ namespace FASTER.libdpr
 
         void PruneVersion(long version);
 
-        IEnumerable<(long, byte[])> GetUnprunedVersions();
+        IEnumerable<(byte[], int)> GetUnprunedVersions();
     }
 }

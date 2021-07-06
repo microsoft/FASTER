@@ -79,7 +79,7 @@ namespace DprCounters
             prevCounters.TryRemove(version, out _);
         }
 
-        public override IEnumerable<(long, byte[])> GetUnprunedVersions()
+        public override IEnumerable<(byte[], int)> GetUnprunedVersions()
         {
             throw new NotImplementedException();
         }

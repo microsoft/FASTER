@@ -42,7 +42,7 @@ namespace FASTER.libdpr
 
         public abstract void PruneVersion(long version);
 
-        public abstract IEnumerable<(long, byte[])> GetUnprunedVersions();
+        public abstract IEnumerable<(byte[], int)> GetUnprunedVersions();
 
         /// <inheritdoc/>
         public void Register(DprWorkerCallbacks callbacks)

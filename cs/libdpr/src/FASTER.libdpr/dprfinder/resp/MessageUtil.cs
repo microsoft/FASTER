@@ -83,11 +83,32 @@ namespace FASTER.libdpr
         }
 
         
-        internal static int SendGraphReconstruction(this Socket socket, Worker worker, long worldLine,
-            IStateObject stateObject)
+        internal static int SendGraphReconstruction(this Socket socket, Worker worker,IStateObject stateObject)
         {
-            // TODO(Tianyu): compose a pipelined list of Redis calls and return the number of OKs to wait for.
-            return 42;
+            var buf = reusableMessageBuffers.Checkout();
+            var head = 0;
+            var checkpoints = stateObject.GetUnprunedVersions();
+            var minVersion = long.MaxValue;
+            var numRequests = 0;
+            foreach (var (bytes, offset) in checkpoints)
+            {
+                SerializationUtil.DeserializeCheckpointMetadata(bytes, offset,
+                    out var worldLine, out var wv, out var deps);
+                head += RespUtil.WriteRedisArrayHeader(4, buf, 0);
+                head += RespUtil.WriteRedisBulkString("NewCheckpoint", buf, head);
+                head += RespUtil.WriteRedisBulkString(worldLine, buf, head);
+                head += RespUtil.WriteRedisBulkString(wv, buf, head);
+                head += RespUtil.WriteRedisBulkString(deps, buf, head);
+                if (minVersion > wv.Version) minVersion = wv.Version;
+                numRequests++;
+            }
+
+            head += RespUtil.WriteRedisArrayHeader(2, buf, head);
+            head += RespUtil.WriteRedisBulkString("GraphResent", buf, head);
+            var committedVersion = new WorkerVersion(worker, minVersion == long.MaxValue ? 0 : minVersion);
+            head += RespUtil.WriteRedisBulkString(committedVersion, buf, head);
+            socket.Send(new Span<byte>(buf, 0, head));
+            return ++numRequests;
         }
 
         internal static void SendAddWorkerCommand(this Socket socket, Worker worker)
@@ -110,12 +131,13 @@ namespace FASTER.libdpr
             reusableMessageBuffers.Return(buf);
         }
 
-        internal static void SendNewCheckpointCommand(this Socket socket, WorkerVersion checkpointed,
+        internal static void SendNewCheckpointCommand(this Socket socket, long worldLine, WorkerVersion checkpointed,
             IEnumerable<WorkerVersion> deps)
         {
             var buf = reusableMessageBuffers.Checkout();
-            var head = RespUtil.WriteRedisArrayHeader(3, buf, 0);
+            var head = RespUtil.WriteRedisArrayHeader(4, buf, 0);
             head += RespUtil.WriteRedisBulkString("NewCheckpoint", buf, head);
+            head += RespUtil.WriteRedisBulkString(worldLine, buf, head);
             head += RespUtil.WriteRedisBulkString(checkpointed, buf, head);
             head += RespUtil.WriteRedisBulkString(deps, buf, head);
             socket.Send(new Span<byte>(buf, 0, head));

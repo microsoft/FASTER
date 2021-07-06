@@ -71,14 +71,14 @@ namespace FASTER.libdpr
         {
             lock (dprFinderConn)
             {
-                dprFinderConn.SendNewCheckpointCommand(persisted, deps);
+                dprFinderConn.SendNewCheckpointCommand(worldLine, persisted, deps);
                 var received = dprFinderConn.Receive(recvBuffer);
                 Debug.Assert(received == 5 && Encoding.ASCII.GetString(recvBuffer, 0, received).Equals("+OK\r\n"));
             }
         }
 
         /// <inheritdoc/>
-        public void Refresh()
+        public bool Refresh()
         {
             lock (dprFinderConn)
             {
@@ -90,6 +90,8 @@ namespace FASTER.libdpr
                 Interlocked.Exchange(ref lastKnownState, newState);
             }
 
+            // GraphDprFinder will never request that workers resend dependency information
+            return true;
         }
 
         private void ProcessRespResponse()
@@ -116,7 +118,7 @@ namespace FASTER.libdpr
             }
         }
 
-        public long NewWorker(Worker id)
+        public long NewWorker(Worker id, IStateObject stateObject)
         {
             lock (dprFinderConn)
             {
@@ -136,6 +138,11 @@ namespace FASTER.libdpr
                 var received = dprFinderConn.Receive(recvBuffer);
                 Debug.Assert(received == 5 && Encoding.ASCII.GetString(recvBuffer, 0, received).Equals("+OK\r\n"));
             }
+        }
+
+        public void ResendGraph(Worker worker, IStateObject stateObject)
+        {
+            // Nothing to do here
         }
     }
 }

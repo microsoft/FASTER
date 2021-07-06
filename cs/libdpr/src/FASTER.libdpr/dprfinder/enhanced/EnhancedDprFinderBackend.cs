@@ -25,7 +25,9 @@ namespace FASTER.libdpr
             BitConverter.TryWriteBytes(new Span<byte>(serializedResponse, 0, sizeof(long)),
                 clusterState.currentWorldLine);
             recoveryStateEnd = RespUtil.SerializeDictionary(clusterState.worldLineDivergencePoint, serializedResponse, sizeof(long));
-            responseEnd = recoveryStateEnd;
+            // In the absence of a cut, set cut to a special unknown value.
+            BitConverter.TryWriteBytes(new Span<byte>(serializedResponse, recoveryStateEnd, sizeof(long)), -1L);
+            responseEnd = recoveryStateEnd + sizeof(long);
         }
 
         internal void UpdateCut(Dictionary<Worker, long> newCut)
@@ -55,11 +57,13 @@ namespace FASTER.libdpr
             worldLineDivergencePoint = new Dictionary<Worker, long>();
         }
 
-        public ClusterState(byte[] buf, int offset)
+        public static ClusterState FromBuffer(byte[] buf, int offset, out int head)
         {
-            currentWorldLine = BitConverter.ToInt64(buf, offset);
-            worldLineDivergencePoint = new Dictionary<Worker, long>();
-            RespUtil.ReadDictionaryFromBytes(buf, offset + sizeof(long), worldLineDivergencePoint);
+            var result = new ClusterState();
+            result.currentWorldLine = BitConverter.ToInt64(buf, offset);
+            result.worldLineDivergencePoint = new Dictionary<Worker, long>();
+            head = RespUtil.ReadDictionaryFromBytes(buf, offset + sizeof(long), result.worldLineDivergencePoint);
+            return result;
         }
     }
     
@@ -73,13 +77,19 @@ namespace FASTER.libdpr
             private CountdownEvent countdown;
             private ConcurrentDictionary<Worker, byte> workersUnaccontedFor = new ConcurrentDictionary<Worker, byte>();
 
-            public RecoveryState(EnhancedDprFinderBackend backend, ClusterState recoveredState)
+            public RecoveryState(EnhancedDprFinderBackend backend)
             {
                 this.backend = backend;
+                if (backend.volatileClusterState.worldLineDivergencePoint.Count == 0)
+                {
+                    backend.GetPrecomputedResponse().UpdateCut(backend.currentCut);
+                    recoveryComplete = true;
+                    return;
+                }
                 recoveryComplete = false;
                 // Mark all previously known worker as unaccounted for --- we cannot make any statements about the
                 // current state of the cluster until we are sure we have up-to-date information from all of them
-                foreach (var w in recoveredState.worldLineDivergencePoint.Keys)
+                foreach (var w in backend.volatileClusterState.worldLineDivergencePoint.Keys)
                     workersUnaccontedFor.TryAdd(w, 0);
                 countdown = new CountdownEvent(workersUnaccontedFor.Count);
             }
@@ -128,18 +138,15 @@ namespace FASTER.libdpr
             this.persistentStorage = persistentStorage;
             if (persistentStorage.ReadLatestCompleteWrite(out var buf))
             {
-                volatileClusterState = new ClusterState(buf, 0);
-                // TODO(Tianyu): Set up recovery state
-
+                volatileClusterState = ClusterState.FromBuffer(buf, 0, out _);
             }
             else
             {
                 volatileClusterState = new ClusterState();
             }
+            recoveryState = new RecoveryState(this);
             syncResponse = new PrecomputedSyncResponse(volatileClusterState);
         }
-        
-        
 
         private bool TryCommitWorkerVersion(WorkerVersion wv)
         {
@@ -160,8 +167,7 @@ namespace FASTER.libdpr
                 visited.Clear();
                 frontier.Clear();
                 frontier.Enqueue(wv);
-
-
+                
                 while (frontier.Count != 0)
                 {
                     var node = frontier.Dequeue();
@@ -247,10 +253,16 @@ namespace FASTER.libdpr
 
         public void MarkWorkerAccountedFor(Worker worker, long earliestUncommittedVersion)
         {
+            // Should not be invoked if recovery is underway
+            Debug.Assert(!recoveryState.RecoveryComplete());
             // Lock here because can be accessed from multiple threads. No need to lock once all workers are accounted
             // for as then only the graph traversal thread will update current cut
             lock (currentCut)
+            {
+                Debug.Assert(earliestUncommittedVersion <= volatileClusterState.worldLineDivergencePoint[worker]);
                 currentCut[worker] = earliestUncommittedVersion;
+            }
+
             recoveryState.MarkWorkerAccountedFor(worker);
         }
 
