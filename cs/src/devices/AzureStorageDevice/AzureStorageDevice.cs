@@ -55,7 +55,7 @@ namespace FASTER.devices
         public AzureStorageDevice(CloudBlobDirectory cloudBlobDirectory, string blobName, IBlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
             : base($"{cloudBlobDirectory}/{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
         {
-            this.blobs = new ConcurrentDictionary<int, BlobEntry>();
+            this.blobs = new();
             this.blobDirectory = cloudBlobDirectory;
             this.blobName = blobName;
             this.underLease = underLease;
@@ -90,7 +90,7 @@ namespace FASTER.devices
             var container = client.GetContainerReference(containerName);
             container.CreateIfNotExists();
 
-            this.blobs = new ConcurrentDictionary<int, BlobEntry>();
+            this.blobs = new();
             this.blobDirectory = container.GetDirectoryReference(directoryName);
             this.blobName = blobName;
             this.underLease = underLease;
@@ -388,7 +388,7 @@ namespace FASTER.devices
 
             if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry))
             {
-                BlobEntry entry = new BlobEntry(this.BlobManager);
+                BlobEntry entry = new(this.BlobManager);
                 if (blobs.TryAdd(segmentId, entry))
                 {
                     CloudPageBlob pageBlob = this.blobDirectory.GetPageBlobReference(GetSegmentBlobName(segmentId));

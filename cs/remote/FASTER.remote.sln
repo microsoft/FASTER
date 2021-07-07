@@ -35,6 +35,30 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{8CF11B91-A
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.remote.test", "test\FASTER.remote.test\FASTER.remote.test.csproj", "{2238A430-8D61-40A3-A23B-B1163A4CCBC6}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{48000B9F-171C-44ED-950D-ED575F83ED7A}"
+	ProjectSection(SolutionItems) = preProject
+		..\..\docs\_docs\01-quick-start-guide.md = ..\..\docs\_docs\01-quick-start-guide.md
+		..\..\docs\_docs\02-faqs.md = ..\..\docs\_docs\02-faqs.md
+		..\..\docs\_docs\20-fasterkv-basics.md = ..\..\docs\_docs\20-fasterkv-basics.md
+		..\..\docs\_docs\23-fasterkv-tuning.md = ..\..\docs\_docs\23-fasterkv-tuning.md
+		..\..\docs\_docs\25-fasterkv-recovery.md = ..\..\docs\_docs\25-fasterkv-recovery.md
+		..\..\docs\_docs\26-fasterkv-samples.md = ..\..\docs\_docs\26-fasterkv-samples.md
+		..\..\docs\_docs\29-fasterkv-cpp.md = ..\..\docs\_docs\29-fasterkv-cpp.md
+		..\..\docs\_docs\40-fasterlog-basics.md = ..\..\docs\_docs\40-fasterlog-basics.md
+		..\..\docs\_docs\43-fasterlog-tuning.md = ..\..\docs\_docs\43-fasterlog-tuning.md
+		..\..\docs\_docs\46-fasterlog-samples.md = ..\..\docs\_docs\46-fasterlog-samples.md
+		..\..\docs\_docs\50-remote-basics.md = ..\..\docs\_docs\50-remote-basics.md
+		..\..\docs\_docs\80-build-and-test.md = ..\..\docs\_docs\80-build-and-test.md
+		..\..\docs\_docs\82-code-structure.md = ..\..\docs\_docs\82-code-structure.md
+		..\..\docs\_docs\84-roadmap.md = ..\..\docs\_docs\84-roadmap.md
+		..\..\docs\_docs\90-td-introduction.md = ..\..\docs\_docs\90-td-introduction.md
+		..\..\docs\_docs\95-research-papers.md = ..\..\docs\_docs\95-research-papers.md
+		..\..\docs\_docs\96-slides-videos.md = ..\..\docs\_docs\96-slides-videos.md
+		..\..\docs\_config.yml = ..\..\docs\_config.yml
+		..\..\docs\_pages\home.md = ..\..\docs\_pages\home.md
+		..\..\docs\_data\navigation.yml = ..\..\docs\_data\navigation.yml
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

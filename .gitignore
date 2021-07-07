@@ -193,3 +193,8 @@ packages/
 *.lib
 nativebin/
 /cs/**/launchSettings.json
+
+# JetBrains
+cs/.idea/
+cs/remote/.idea
+cs/libdpr/.idea

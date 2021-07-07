@@ -169,7 +169,7 @@ namespace FASTER.core
         /// <param name="segment"></param>
         public virtual void RemoveSegment(int segment)
         {
-            ManualResetEventSlim completionEvent = new ManualResetEventSlim(false);
+            ManualResetEventSlim completionEvent = new(false);
             RemoveSegmentAsync(segment, r => completionEvent.Set(), null);
             completionEvent.Wait();
         }
@@ -189,7 +189,7 @@ namespace FASTER.core
                 callback(result);
                 return;
             }
-            CountdownEvent countdown = new CountdownEvent(toSegment - oldStart);
+            CountdownEvent countdown = new(toSegment - oldStart);
             // This action needs to be epoch-protected because readers may be issuing reads to the deleted segment, unaware of the delete.
             // Because of earlier compare-and-swap, the caller has exclusive access to the range [oldStartSegment, newStartSegment), and there will
             // be no double deletes.
@@ -214,7 +214,7 @@ namespace FASTER.core
         /// <param name="toSegment"></param>
         public void TruncateUntilSegment(int toSegment)
         {
-            using (ManualResetEventSlim completionEvent = new ManualResetEventSlim(false))
+            using (ManualResetEventSlim completionEvent = new(false))
             {
                 TruncateUntilSegmentAsync(toSegment, r => completionEvent.Set(), null);
                 completionEvent.Wait();
@@ -239,7 +239,7 @@ namespace FASTER.core
         /// <param name="toAddress"></param>
         public virtual void TruncateUntilAddress(long toAddress)
         {
-            using (ManualResetEventSlim completionEvent = new ManualResetEventSlim(false))
+            using (ManualResetEventSlim completionEvent = new(false))
             {
                 TruncateUntilAddressAsync(toAddress, r => completionEvent.Set(), null);
                 completionEvent.Wait();

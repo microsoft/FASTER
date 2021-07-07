@@ -31,7 +31,7 @@ namespace FixedLenClient
 
             // Create a client session to the FasterKV server.
             // Sessions are mono-threaded, similar to normal FasterKV sessions.
-            using var session = client.NewSession(new Functions());
+            using var session = client.NewSession(new Functions()); // Uses protocol WireFormat.DefaultFixedLenKV by default
 
             // Explicit version of NewSession call, where you provide all types, callback functions, and serializer
             // using var session = client.NewSession<long, long, byte, Functions, FixedLenSerializer<long, long, long, long>>(new Functions(), new FixedLenSerializer<long, long, long, long>());

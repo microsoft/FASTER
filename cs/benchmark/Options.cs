@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using CommandLine;
+using FASTER.core;
 
 namespace FASTER.benchmark
 {
@@ -57,15 +58,46 @@ namespace FASTER.benchmark
             HelpText = "Use synthetic data")]
         public bool UseSyntheticData { get; set; }
 
-        [Option("runsec", Required = false, Default = YcsbConstants.kRunSeconds,
+        [Option("runsec", Required = false, Default = 30,
             HelpText = "Number of seconds to execute experiment")]
         public int RunSeconds { get; set; }
+
+        [Option("sd", Required = false, Default = false,
+            HelpText = "Use SmallData in experiment")]
+        public bool UseSmallData { get; set; }
+
+        [Option("sm", Required = false, Default = false,
+            HelpText = "Use Small Memory log in experiment")]
+        public bool UseSmallMemoryLog { get; set; }
+
+        [Option("noaff", Required = false, Default = false,
+            HelpText = "Do not use thread affinitization in experiment")]
+        public bool NoThreadAffinity { get; set; }
+
+        [Option("chkptms", Required = false, Default = 0,
+            HelpText = "If > 0, the number of milliseconds between checkpoints in experiment (else checkpointing is not done")]
+        public int PeriodicCheckpointMilliseconds { get; set; }
+
+        [Option("chkptsnap", Required = false, Default = false,
+            HelpText = "Use Snapshot checkpoint if doing periodic checkpoints (default is FoldOver")]
+        public bool PeriodicCheckpointUseSnapshot { get; set; }
+
+        [Option("chkptincr", Required = false, Default = false,
+            HelpText = "Try incremental checkpoint if doing periodic checkpoints (default is false")]
+        public bool PeriodicCheckpointTryIncremental { get; set; }
+
+        [Option("dumpdist", Required = false, Default = false,
+            HelpText = "Dump the distribution of each non-empty bucket in the hash table")]
+        public bool DumpDistribution { get; set; }
+
+        internal CheckpointType PeriodicCheckpointType => this.PeriodicCheckpointUseSnapshot ? CheckpointType.Snapshot : CheckpointType.FoldOver;
 
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
             return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockImpl}; i: {IterationCount};"
-                        + $" sd: {boolStr(YcsbConstants.kUseSmallData)}; sm: {boolStr(YcsbConstants.kSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}";
+                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; noaff: {boolStr(this.NoThreadAffinity)};"
+                        + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")}; chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
         }
     }
 }

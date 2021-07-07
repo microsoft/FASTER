@@ -33,8 +33,8 @@ namespace FASTER.core
         public ReadStatus[] readStatus;
         public FlushStatus[] flushStatus;
 
-        private readonly SemaphoreSlim readSemaphore = new SemaphoreSlim(0);
-        private readonly SemaphoreSlim flushSemaphore = new SemaphoreSlim(0);
+        private readonly SemaphoreSlim readSemaphore = new(0);
+        private readonly SemaphoreSlim flushSemaphore = new(0);
 
         public RecoveryStatus(int capacity,
                               long startPage,

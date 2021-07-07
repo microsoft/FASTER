@@ -133,7 +133,9 @@ namespace FASTER.test.recovery.sumstore
                     for (int i = 0; i < segmentIds.Count; i++)
                     {
                         var segmentId = segmentIds[i];
+#pragma warning disable CA1416 // populateLogHandles will be false for non-windows
                         var handle = LocalStorageDevice.CreateHandle(segmentId, disableFileBuffering: false, deleteOnClose: true, preallocateFile: false, segmentSize: -1, fileName: deviceFileName, IntPtr.Zero);
+#pragma warning restore CA1416
                         initialHandles[i] = new KeyValuePair<int, SafeFileHandle>(segmentId, handle);
                     }
                 }
