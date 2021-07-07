@@ -73,7 +73,7 @@ namespace FASTER.test
             path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait:true);
+            TestUtils.DeleteDirectory(path, wait: true);
 
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
             manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(path));
@@ -182,7 +182,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask FasterLogTest1([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask FasterLogTest1([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
@@ -234,7 +234,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values]LogChecksumType logChecksum)
+        public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values] LogChecksumType logChecksum)
         {
             CancellationToken cancellationToken = default;
 
@@ -275,120 +275,118 @@ namespace FASTER.test
 
             commit.Join();
         }
-        /*  *#*#*# TO DO: Fix this so don't have Sleeps *#*#*#
-                [Test]
-                [Category("FasterLog")]
-                public void CommitNoSpinWait()
+
+        [Test]
+        [Category("FasterLog")]
+        public void CommitNoSpinWait()
+        {
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager });
+
+            int commitFalseEntries = 100;
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < commitFalseEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+
+            // Main point of the test ... If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.
+            // There won't be that much difference from True to False here as the True case is so quick. However, it is a good basic check
+            // to make sure it isn't crashing and that it does actually commit it
+            // Seen timing issues on CI machine when doing false to true ... so just take a second to let it settle
+            log.Commit(false);
+            Thread.Sleep(4000);
+
+            // Read the log - Look for the flag so know each entry is unique
+            int currentEntry = 0;
+            using (var iter = log.Scan(0, 100_000_000))
+            {
+                while (iter.GetNext(out byte[] result, out _, out _))
                 {
-                    log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager });
-
-                    int commitFalseEntries = 100;
-
-                    byte[] entry = new byte[entryLength];
-                    for (int i = 0; i < entryLength; i++)
-                        entry[i] = (byte)i;
-
-                    for (int i = 0; i < commitFalseEntries; i++)
+                    if (currentEntry < entryLength)
                     {
-                        log.Enqueue(entry);
-                    }
+                        Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  currentEntry:" + currentEntry);
 
-                    // Main point of the test ... If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.
-                    // There won't be that much difference from True to False here as the True case is so quick. However, it is a good basic check
-                    // to make sure it isn't crashing and that it does actually commit it
-                    // Seen timing issues on CI machine when doing false to true ... so just take a second to let it settle
-                    log.Commit(false);
-                    Thread.Sleep(4000);
-
-                    // Read the log - Look for the flag so know each entry is unique
-                    int currentEntry = 0;
-                    using (var iter = log.Scan(0, 100_000_000))
-                    {
-                        while (iter.GetNext(out byte[] result, out _, out _))
-                        {
-                            if (currentEntry < entryLength)
-                            {
-                                Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  currentEntry:" + currentEntry);
-
-                                currentEntry++;
-                            }
-                        }
-                    }
-
-                    // Make sure expected length is same as current - also makes sure that data verification was not skipped
-                    Assert.AreEqual(entryLength, currentEntry);
-
-                    log.Dispose();
-                }
-        */
-                /*  *#*#*# TO DO: Fix this so don't have Sleeps *#*#*#
-                [Test]
-                [Category("FasterLog")]
-                public async ValueTask CommitAsyncPrevTask()
-                {
-                    CancellationTokenSource cts = new CancellationTokenSource();
-                    CancellationToken token = cts.Token;
-
-                    var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager };
-                    log = await FasterLog.CreateAsync(logSettings);
-
-                    // make it small since launching each on separate threads 
-                    int entryLength = 10;
-                    int expectedEntries = 3; // Not entry length because this is number of enqueues called
-
-                    // Set Default entry data
-                    for (int i = 0; i < entryLength; i++)
-                    {
-                        entry[i] = (byte)i;
-                    }
-
-                    // Enqueue and AsyncCommit in a separate thread (wait there until commit is done though).
-                    Task currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
-
-                    // Give all a second or so to queue up and to help with timing issues - shouldn't need but timing issues
-                    Thread.Sleep(2000);
-
-                    // Commit to the log
-                    currentTask.Wait(4000, token);
-
-                    // double check to make sure finished - seen cases where timing kept running even after commit done
-                    bool wasCanceled = false;
-                    if (currentTask.Status != TaskStatus.RanToCompletion)
-                    {
-                        wasCanceled = true;
-                        Console.WriteLine("currentTask failed to complete; canceling");
-                        cts.Cancel();
-                    }
-
-                    // Read the log to make sure all entries are put in
-                    int currentEntry = 0;
-                    using (var iter = log.Scan(0, 100_000_000))
-                    {
-                        while (iter.GetNext(out byte[] result, out _, out _))
-                        {
-                            if (currentEntry < entryLength)
-                            {
-
-                                Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + " not match expected:" + currentEntry);
-
-                                currentEntry++;
-                            }
-                        }
-                    }
-
-                    // Make sure expected entries is same as current - also makes sure that data verification was not skipped
-                    Assert.AreEqual(expectedEntries, currentEntry);
-
-                    // NOTE: seeing issues where task is not running to completion on Release builds
-                    // This is a final check to make sure task finished. If didn't then assert
-                    // One note - if made it this far, know that data was Enqueue and read properly, so just
-                    // case of task not stopping
-                    if (currentTask.Status != TaskStatus.RanToCompletion)
-                    {
-                        Assert.Fail($"Final Status check Failure -- Task should be 'RanToCompletion' but current Status is: {currentTask.Status}; wasCanceled = {wasCanceled}");
+                        currentEntry++;
                     }
                 }
-                */
+            }
+
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
+
+            log.Dispose();
+        }
+
+        [Test]
+        [Category("FasterLog")]
+        public async ValueTask CommitAsyncPrevTask()
+        {
+            CancellationTokenSource cts = new CancellationTokenSource();
+            CancellationToken token = cts.Token;
+
+            var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager };
+            log = await FasterLog.CreateAsync(logSettings);
+
+            // make it small since launching each on separate threads 
+            int entryLength = 10;
+            int expectedEntries = 3; // Not entry length because this is number of enqueues called
+
+            // Set Default entry data
+            for (int i = 0; i < entryLength; i++)
+            {
+                entry[i] = (byte)i;
+            }
+
+            // Enqueue and AsyncCommit in a separate thread (wait there until commit is done though).
+            Task currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
+
+            // Give all a second or so to queue up and to help with timing issues - shouldn't need but timing issues
+            Thread.Sleep(2000);
+
+            // Commit to the log
+            currentTask.Wait(4000, token);
+
+            // double check to make sure finished - seen cases where timing kept running even after commit done
+            bool wasCanceled = false;
+            if (currentTask.Status != TaskStatus.RanToCompletion)
+            {
+                wasCanceled = true;
+                Console.WriteLine("currentTask failed to complete; canceling");
+                cts.Cancel();
+            }
+
+            // Read the log to make sure all entries are put in
+            int currentEntry = 0;
+            using (var iter = log.Scan(0, 100_000_000))
+            {
+                while (iter.GetNext(out byte[] result, out _, out _))
+                {
+                    if (currentEntry < entryLength)
+                    {
+
+                        Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + " not match expected:" + currentEntry);
+
+                        currentEntry++;
+                    }
+                }
+            }
+
+            // Make sure expected entries is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(expectedEntries, currentEntry);
+
+            // NOTE: seeing issues where task is not running to completion on Release builds
+            // This is a final check to make sure task finished. If didn't then assert
+            // One note - if made it this far, know that data was Enqueue and read properly, so just
+            // case of task not stopping
+            if (currentTask.Status != TaskStatus.RanToCompletion)
+            {
+                Assert.Fail($"Final Status check Failure -- Task should be 'RanToCompletion' but current Status is: {currentTask.Status}; wasCanceled = {wasCanceled}");
+            }
+        }
 
         [Test]
         [Category("FasterLog")]
@@ -520,7 +518,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         [Category("Smoke")]
 
-        public async ValueTask TryEnqueue2([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
+        public async ValueTask TryEnqueue2([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
             string filename = path + "TryEnqueue2" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
@@ -593,7 +591,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         [Category("Smoke")]
 
-        public async ValueTask TruncateUntilBasic([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
+        public async ValueTask TruncateUntilBasic([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
             string filename = path + "TruncateUntilBasic" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
@@ -637,7 +635,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         [Category("Smoke")]
 
-        public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values]LogChecksumType logChecksum, [Values] TestUtils.DeviceType deviceType)
+        public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values] LogChecksumType logChecksum, [Values] TestUtils.DeviceType deviceType)
         {
             CancellationToken cancellationToken = default;
 
@@ -683,7 +681,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask TruncateUntil2([Values] LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask TruncateUntil2([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
@@ -815,127 +813,125 @@ namespace FASTER.test
         }
 
 
-        /*  *#*#*# TO DO: Fix this so don't have Sleeps *#*#*#
-                [Test]
-                [Category("FasterLog")]
-                [Category("Smoke")]
-                public void CommitNoSpinWait([Values] TestUtils.DeviceType deviceType)
+        [Test]
+        [Category("FasterLog")]
+        [Category("Smoke")]
+        public void CommitNoSpinWait([Values] TestUtils.DeviceType deviceType)
+        {
+            string filename = path + "CommitNoSpinWait" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 });
+
+            int commitFalseEntries = 100;
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < commitFalseEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+
+            // Main point of the test ... If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.
+            // There won't be that much difference from True to False here as the True case is so quick. However, it is a good basic check
+            // to make sure it isn't crashing and that it does actually commit it
+            // Seen timing issues on CI machine when doing false to true ... so just take a second to let it settle
+            log.Commit(false);
+            Thread.Sleep(5000);
+
+            // Read the log - Look for the flag so know each entry is unique
+            int currentEntry = 0;
+            using (var iter = log.Scan(0, 100_000_000))
+            {
+                while (iter.GetNext(out byte[] result, out _, out _))
                 {
-                    string filename = path + "CommitNoSpinWait" + deviceType.ToString() + ".log";
-                    device = TestUtils.CreateTestDevice(deviceType, filename);
-                    log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 });
-
-                    int commitFalseEntries = 100;
-
-                    byte[] entry = new byte[entryLength];
-                    for (int i = 0; i < entryLength; i++)
-                        entry[i] = (byte)i;
-
-                    for (int i = 0; i < commitFalseEntries; i++)
+                    if (currentEntry < entryLength)
                     {
-                        log.Enqueue(entry);
-                    }
+                        Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  currentEntry:" + currentEntry);
 
-                    // Main point of the test ... If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.
-                    // There won't be that much difference from True to False here as the True case is so quick. However, it is a good basic check
-                    // to make sure it isn't crashing and that it does actually commit it
-                    // Seen timing issues on CI machine when doing false to true ... so just take a second to let it settle
-                    log.Commit(false);
-                    Thread.Sleep(5000);
-
-                    // Read the log - Look for the flag so know each entry is unique
-                    int currentEntry = 0;
-                    using (var iter = log.Scan(0, 100_000_000))
-                    {
-                        while (iter.GetNext(out byte[] result, out _, out _))
-                        {
-                            if (currentEntry < entryLength)
-                            {
-                                Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  currentEntry:" + currentEntry);
-
-                                currentEntry++;
-                            }
-                        }
-                    }
-
-                    log.Dispose();
-
-                    // Make sure expected length is same as current - also makes sure that data verification was not skipped
-                    Assert.AreEqual(entryLength, currentEntry);
-
-                }
-        */
-        /*  *#*#*# TO DO: Fix this so don't have Sleeps *#*#*#
-
-                [Test]
-                [Category("FasterLog")]
-                [Category("Smoke")]
-                public async ValueTask CommitAsyncPrevTask([Values] TestUtils.DeviceType deviceType)
-                {
-                    CancellationTokenSource cts = new CancellationTokenSource();
-                    CancellationToken token = cts.Token;
-
-                    string filename = $"{path}/CommitAsyncPrevTask_{deviceType}.log";
-                    device = TestUtils.CreateTestDevice(deviceType, filename);
-                    var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 };
-                    log = await FasterLog.CreateAsync(logSettings);
-
-                    // make it small since launching each on separate threads 
-                    const int entryLength = 10;
-                    int expectedEntries = 3; // Not entry length because this is number of enqueues called
-
-                    // Set Default entry data
-                    for (int i = 0; i < entryLength; i++)
-                    {
-                        entry[i] = (byte)i;
-                    }
-
-                    // Enqueue and AsyncCommit in a separate thread (wait there until commit is done though).
-                    Task currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
-
-                    // Give all a second or so to queue up and to help with timing issues - shouldn't need but timing issues
-                    Thread.Sleep(2000);
-
-                    // Commit to the log
-                    currentTask.Wait(4000, token);
-
-                    // double check to make sure finished - seen cases where timing kept running even after commit done
-                    bool wasCanceled = false;
-                    if (currentTask.Status != TaskStatus.RanToCompletion)
-                    {
-                        wasCanceled = true;
-                        Console.WriteLine("currentTask failed to complete; canceling");
-                        cts.Cancel();
-                    }
-
-                    // Read the log to make sure all entries are put in
-                    int currentEntry = 0;
-                    using (var iter = log.Scan(0, 100_000_000))
-                    {
-                        while (iter.GetNext(out byte[] result, out _, out _))
-                        {
-                            if (currentEntry < entryLength)
-                            {
-                                Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + " not match expected:" + currentEntry);
-
-                                currentEntry++;
-                            }
-                        }
-                    }
-
-                    // Make sure expected entries is same as current - also makes sure that data verification was not skipped
-                    Assert.AreEqual(expectedEntries, currentEntry);
-
-                    // NOTE: seeing issues where task is not running to completion on Release builds
-                    // This is a final check to make sure task finished. If didn't then assert
-                    // One note - if made it this far, know that data was Enqueue and read properly, so just
-                    // case of task not stopping
-                    if (currentTask.Status != TaskStatus.RanToCompletion)
-                    {
-                        Assert.Fail($"Final Status check Failure -- Task should be 'RanToCompletion' but current Status is: {currentTask.Status}; wasCanceled = {wasCanceled}");
+                        currentEntry++;
                     }
                 }
-        */
+            }
+
+            log.Dispose();
+
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
+
+        }
+
+
+        [Test]
+        [Category("FasterLog")]
+        [Category("Smoke")]
+        public async ValueTask CommitAsyncPrevTask([Values] TestUtils.DeviceType deviceType)
+        {
+            CancellationTokenSource cts = new CancellationTokenSource();
+            CancellationToken token = cts.Token;
+
+            string filename = $"{path}/CommitAsyncPrevTask_{deviceType}.log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 };
+            log = await FasterLog.CreateAsync(logSettings);
+
+            // make it small since launching each on separate threads 
+            const int entryLength = 10;
+            int expectedEntries = 3; // Not entry length because this is number of enqueues called
+
+            // Set Default entry data
+            for (int i = 0; i < entryLength; i++)
+            {
+                entry[i] = (byte)i;
+            }
+
+            // Enqueue and AsyncCommit in a separate thread (wait there until commit is done though).
+            Task currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
+
+            // Give all a second or so to queue up and to help with timing issues - shouldn't need but timing issues
+            Thread.Sleep(2000);
+
+            // Commit to the log
+            currentTask.Wait(4000, token);
+
+            // double check to make sure finished - seen cases where timing kept running even after commit done
+            bool wasCanceled = false;
+            if (currentTask.Status != TaskStatus.RanToCompletion)
+            {
+                wasCanceled = true;
+                Console.WriteLine("currentTask failed to complete; canceling");
+                cts.Cancel();
+            }
+
+            // Read the log to make sure all entries are put in
+            int currentEntry = 0;
+            using (var iter = log.Scan(0, 100_000_000))
+            {
+                while (iter.GetNext(out byte[] result, out _, out _))
+                {
+                    if (currentEntry < entryLength)
+                    {
+                        Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + " not match expected:" + currentEntry);
+
+                        currentEntry++;
+                    }
+                }
+            }
+
+            // Make sure expected entries is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(expectedEntries, currentEntry);
+
+            // NOTE: seeing issues where task is not running to completion on Release builds
+            // This is a final check to make sure task finished. If didn't then assert
+            // One note - if made it this far, know that data was Enqueue and read properly, so just
+            // case of task not stopping
+            if (currentTask.Status != TaskStatus.RanToCompletion)
+            {
+                Assert.Fail($"Final Status check Failure -- Task should be 'RanToCompletion' but current Status is: {currentTask.Status}; wasCanceled = {wasCanceled}");
+            }
+        }
+
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
