@@ -321,6 +321,7 @@ namespace FASTER.test
             log.Dispose();
         }
 
+        /*
         [Test]
         [Category("FasterLog")]
         public async ValueTask CommitAsyncPrevTask()
@@ -387,7 +388,7 @@ namespace FASTER.test
                 Assert.Fail($"Final Status check Failure -- Task should be 'RanToCompletion' but current Status is: {currentTask.Status}; wasCanceled = {wasCanceled}");
             }
         }
-
+        */
         [Test]
         [Category("FasterLog")]
         public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType)
@@ -862,7 +863,7 @@ namespace FASTER.test
 
         }
 
-
+/*
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
@@ -931,7 +932,7 @@ namespace FASTER.test
                 Assert.Fail($"Final Status check Failure -- Task should be 'RanToCompletion' but current Status is: {currentTask.Status}; wasCanceled = {wasCanceled}");
             }
         }
-
+*/
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
