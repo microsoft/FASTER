@@ -539,7 +539,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
 
   typedef FasterKv<Key, Value, FASTER::device::NullDisk> faster_t;
   faster_t store { 1024, (1 << 30), "", 0.0625 }; // 64 MB of mutable region
-  int numRecords = 12500; // will occupy ~512 MB space in store
+  uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
   store.StartSession();
 
@@ -550,13 +550,14 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-    for (size_t j = 0; j < idx; ++j) {
+    for (uint32_t j = 0; j < idx; ++j) {
       key[j] = j;
     }
 
     UpsertContext context{ key, idx, idx};
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
+    free(key);
   }
   // Read.
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
@@ -565,7 +566,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-    for (size_t j = 0; j < idx; ++j) {
+    for (uint32_t j = 0; j < idx; ++j) {
       key[j] = j;
     }
 
@@ -573,6 +574,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
     Status result = store.Read(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
     ASSERT_EQ(idx, context.output.value);
+    free(key);
   }
   // Update one third
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
@@ -582,13 +584,14 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
       };
       // Create the key as a variable length array
       uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-      for (size_t j = 0; j < idx; ++j) {
+      for (uint32_t j = 0; j < idx; ++j) {
         key[j] = j;
       }
 
       UpsertContext context{ key, idx, 2*idx };
       Status result = store.Upsert(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
+      free(key);
     }
   }
   // Delete another one third
@@ -599,13 +602,14 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
       };
       // Create the key as a variable length array
       uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-      for (size_t j = 0; j < idx; ++j) {
+      for (uint32_t j = 0; j < idx; ++j) {
         key[j] = j;
       }
 
       DeleteContext context{ key, idx };
       Status result = store.Delete(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
+      free(key);
     }
   }
   store.CompletePending(true);
@@ -625,7 +629,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-    for (size_t j = 0; j < idx; ++j) {
+    for (uint32_t j = 0; j < idx; ++j) {
       key[j] = j;
     }
 
@@ -641,6 +645,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
       ASSERT_EQ(Status::Ok, result);
       ASSERT_EQ(idx, context.output.value);
     }
+    free(key);
   }
   store.StopSession();
 }
@@ -648,8 +653,8 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
 TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
   using Key = FixedSizeKey<uint32_t>;
 
-  class UpsertContext;
-  class ReadContext;
+  class UpsertContextVLV;
+  class ReadContextVLV;
 
   class Value {
    public:
@@ -663,8 +668,8 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
       return size_;
     }
 
-    friend class UpsertContext;
-    friend class ReadContext;
+    friend class UpsertContextVLV;
+    friend class ReadContextVLV;
 
    private:
     AtomicGenLock gen_lock_;
@@ -679,18 +684,18 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
     }
   };
 
-  class UpsertContext : public IAsyncContext {
+  class UpsertContextVLV : public IAsyncContext {
    public:
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(uint32_t key, uint32_t *value, uint32_t value_length)
+    UpsertContextVLV(uint32_t key, uint32_t *value, uint32_t value_length)
       : key_{ key }
       , value_{ value }
       , value_length_{ value_length } {
     }
     /// Copy (and deep-copy) constructor.
-    UpsertContext(const UpsertContext& other)
+    UpsertContextVLV(const UpsertContextVLV& other)
       : key_{ other.key_ }
       , value_{ other.value_ }
       , value_length_{ other.value_length_ } {
@@ -743,22 +748,28 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
     uint32_t value_length_;
   };
 
-  class ReadContext : public IAsyncContext {
+  class ReadContextVLV : public IAsyncContext {
    public:
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext(uint32_t key)
+    ReadContextVLV(uint32_t key)
       : key_{ key }
       , output{ nullptr }
       , output_length{ 0 } {
     }
 
     /// Copy (and deep-copy) constructor.
-    ReadContext(const ReadContext& other)
+    ReadContextVLV(const ReadContextVLV& other)
       : key_{ other.key_ }
-      , output{ nullptr }
-      , output_length{ 0 } {
+      , output{ other.output }
+      , output_length{ other.output_length }
+    { }
+
+    ~ReadContextVLV() {
+      if (output != nullptr) {
+        free(output);
+      }
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
@@ -798,6 +809,9 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
     uint32_t output_length;
   };
 
+  using UpsertContext = UpsertContextVLV;
+  using ReadContext = ReadContextVLV;
+
   typedef FasterKv<Key, Value, FASTER::device::NullDisk> faster_t;
   faster_t store { 1024, (1 << 30), "", 0.0625 }; // 64 MB of mutable region
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
@@ -811,13 +825,14 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
     };
     // Create the value as a variable length array
     uint32_t* value = (uint32_t*) malloc(idx * sizeof(uint32_t));
-    for (size_t j = 0; j < idx; ++j) {
+    for (uint32_t j = 0; j < idx; ++j) {
       value[j] = idx;
     }
 
     UpsertContext context{ idx, value, idx};
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
+    free(value);
   }
   // Read.
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
@@ -829,7 +844,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
     Status result = store.Read(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
     // check each position of the var-len value
-    for (size_t j = 0; j < idx; ++j) {
+    for (uint32_t j = 0; j < idx; ++j) {
       ASSERT_EQ(context.output[j], idx);
     }
   }
@@ -841,13 +856,14 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
       };
       // Create the value as a variable length array
       uint32_t* value = (uint32_t*) malloc(idx * sizeof(uint32_t));
-      for (size_t j = 0; j < idx; ++j) {
+      for (uint32_t j = 0; j < idx; ++j) {
         value[j] = 2 * idx;
       }
 
       UpsertContext context{ idx, value, idx }; // double the value_id
       Status result = store.Upsert(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
+      free(value);
     }
   }
 
@@ -870,7 +886,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
     ASSERT_EQ(result, Status::Ok);
     // check each position of the var-len value
     uint32_t value_id = (idx % 2 == 0) ? 2*idx : idx;
-    for (size_t j = 0; j < idx; ++j) {
+    for (uint32_t j = 0; j < idx; ++j) {
       ASSERT_EQ(context.output[j], value_id);
     }
   }
@@ -1343,7 +1359,7 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
   std::experimental::filesystem::create_directories("tmp_store");
 
   faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
-  int numRecords = 12500; // will occupy ~512 MB space in store
+  uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
   store.StartSession();
 
@@ -1355,13 +1371,14 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-    for (size_t j = 0; j < idx; ++j) {
+    for (uint32_t j = 0; j < idx; ++j) {
       key[j] = j;
     }
 
     UpsertContext context{ key, idx, idx};
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
+    free(key);
   }
   // Read.
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
@@ -1373,10 +1390,11 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
       for (size_t j = 0; j < context->key().key_length_; ++j) {
         ASSERT_EQ(context->key().key_data_[j], j);
       }
+      free(context->key().key_data_);
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-    for (size_t j = 0; j < idx; ++j) {
+    for (uint32_t j = 0; j < idx; ++j) {
       key[j] = j;
     }
 
@@ -1385,9 +1403,10 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
     ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
     if (result == Status::Ok) {
       ASSERT_EQ(idx, context.output.value);
-      for (size_t j = 0; j < context.output.value; ++j) {
+      for (uint32_t j = 0; j < context.output.value; ++j) {
         ASSERT_EQ(context.key().key_data_[j], j);
       }
+      free(key);
     }
   }
   // Update one thrid
@@ -1399,13 +1418,14 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
       };
       // Create the key as a variable length array
       uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-      for (size_t j = 0; j < idx; ++j) {
+      for (uint32_t j = 0; j < idx; ++j) {
         key[j] = j;
       }
 
       UpsertContext context{ key, idx, 2*idx };
       Status result = store.Upsert(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
+      free(key);
     }
   }
   // Delete another one third
@@ -1416,13 +1436,14 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
       };
       // Create the key as a variable length array
       uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-      for (size_t j = 0; j < idx; ++j) {
+      for (uint32_t j = 0; j < idx; ++j) {
         key[j] = j;
       }
 
       DeleteContext context{ key, idx };
       Status result = store.Delete(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
+      free(key);
     }
   }
   store.CompletePending(true);
@@ -1450,13 +1471,14 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
         ASSERT_EQ(context->output.value, context->key().key_length_);
       }
       // verify that key match the requested key
-      for (size_t j = 0; j < context->key().key_length_; ++j) {
+      for (uint32_t j = 0; j < context->key().key_length_; ++j) {
         ASSERT_EQ(context->key().key_data_[j], j);
       }
+      free(context->key().key_data_);
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
-    for (size_t j = 0; j < idx; ++j) {
+    for (uint32_t j = 0; j < idx; ++j) {
       key[j] = j;
     }
 
@@ -1471,12 +1493,14 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
         ASSERT_EQ(idx, context.output.value);
       }
       else ASSERT_TRUE(false);
-      for (size_t j = 0; j < context.key().key_length_; ++j) {
+      for (uint32_t j = 0; j < context.key().key_length_; ++j) {
         ASSERT_EQ(context.key().key_data_[j], j);
       }
+      free(key);
     }
     else if (result == Status::NotFound) {
       ASSERT_TRUE(idx % 3 == 1);
+      free(key);
     }
   }
   store.CompletePending(true);
@@ -1489,8 +1513,8 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
 TEST_P(CompactLookupParametrizedTestFixture, VariableLengthValue) {
   using Key = FixedSizeKey<uint32_t>;
 
-  class UpsertContext;
-  class ReadContext;
+  class UpsertContextVLV;
+  class ReadContextVLV;
 
   class Value {
    public:
@@ -1504,8 +1528,8 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthValue) {
       return size_;
     }
 
-    friend class UpsertContext;
-    friend class ReadContext;
+    friend class UpsertContextVLV;
+    friend class ReadContextVLV;
 
    private:
     AtomicGenLock gen_lock_;
@@ -1520,18 +1544,18 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthValue) {
     }
   };
 
-  class UpsertContext : public IAsyncContext {
+  class UpsertContextVLV : public IAsyncContext {
    public:
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(uint32_t key, uint32_t *value, uint32_t value_length)
+    UpsertContextVLV(uint32_t key, uint32_t *value, uint32_t value_length)
       : key_{ key }
       , value_{ value }
       , value_length_{ value_length } {
     }
     /// Copy (and deep-copy) constructor.
-    UpsertContext(const UpsertContext& other)
+    UpsertContextVLV(const UpsertContextVLV& other)
       : key_{ other.key_ }
       , value_{ other.value_ }
       , value_length_{ other.value_length_ } {
@@ -1584,22 +1608,28 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthValue) {
     uint32_t value_length_;
   };
 
-  class ReadContext : public IAsyncContext {
+  class ReadContextVLV : public IAsyncContext {
    public:
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext(uint32_t key)
+    ReadContextVLV(uint32_t key)
       : key_{ key }
       , output{ nullptr }
       , output_length{ 0 } {
     }
 
     /// Copy (and deep-copy) constructor.
-    ReadContext(const ReadContext& other)
+    ReadContextVLV(const ReadContextVLV& other)
       : key_{ other.key_ }
-      , output{ nullptr }
-      , output_length{ 0 } {
+      , output{ other.output }
+      , output_length{ other.output_length }
+    { }
+
+    ~ReadContextVLV() {
+      if (output != nullptr) {
+        free(output);
+      }
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
@@ -1639,6 +1669,9 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthValue) {
     uint32_t output_length;
   };
 
+  using UpsertContext = UpsertContextVLV;
+  using ReadContext = ReadContextVLV;
+
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t;
   typedef FasterKv<Key, Value, disk_t> faster_t;
 
@@ -1656,13 +1689,14 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthValue) {
     };
     // Create the value as a variable length array
     uint32_t* value = (uint32_t*) malloc(idx * sizeof(uint32_t));
-    for (size_t j = 0; j < idx; ++j) {
+    for (uint32_t j = 0; j < idx; ++j) {
       value[j] = idx;
     }
 
     UpsertContext context{ idx, value, idx};
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
+    free(value);
   }
   // Read.
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
@@ -1680,7 +1714,7 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthValue) {
     Status result = store.Read(context, callback, 1);
     ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
     if (result == Status::Ok) {
-      for (size_t j = 0; j < idx; ++j) {
+      for (uint32_t j = 0; j < idx; ++j) {
         ASSERT_EQ(context.output[j], idx);
       }
     }
@@ -1693,13 +1727,14 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthValue) {
       };
       // Create the value as a variable length array
       uint32_t* value = (uint32_t*) malloc(idx * sizeof(uint32_t));
-      for (size_t j = 0; j < idx; ++j) {
+      for (uint32_t j = 0; j < idx; ++j) {
         value[j] = 2 * idx;
       }
 
       UpsertContext context{ idx, value, idx }; // double the value_id
       Status result = store.Upsert(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
+      free(value);
     }
   }
   store.CompletePending(true);
@@ -1732,7 +1767,7 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthValue) {
     ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
     if (result == Status::Ok) {
       uint32_t value_id = (idx % 2 == 0) ? 2*idx : idx;
-      for (size_t j = 0; j < idx; ++j) {
+      for (uint32_t j = 0; j < idx; ++j) {
         ASSERT_EQ(context.output[j], value_id);
       }
     }

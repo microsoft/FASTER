@@ -303,8 +303,5 @@ class AtomicGenLock {
 };
 static_assert(sizeof(AtomicGenLock) == 8, "sizeof(AtomicGenLock) != 8");
 
-
-
-
 }
 } // namespace FASTER::test

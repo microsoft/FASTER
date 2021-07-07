@@ -255,9 +255,9 @@ class LogPageIterator {
   }
 
   inline void IssueReadAsyncRequest(LogPage<F>& page, Address& page_addr, Address& start_addr) {
-    uint64_t bytes_to_read = (page_addr + hlog_t::kPageSize <= until)
+    uint32_t bytes_to_read = (page_addr + hlog_t::kPageSize <= until)
                                 ? hlog_t::kPageSize
-                                : (until - page_addr).control();
+                                : static_cast<uint32_t>((until - page_addr).control());
 
     if (start_addr >= hlog->head_address.load()) {
       // Copy page contents from memory
