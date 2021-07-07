@@ -49,14 +49,8 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteRead([Values] TestUtils.DeviceType deviceType)
+        public void NativeInMemWriteRead()
         {
-            // Reset all the log and fht values since using all deviceType
-            string filename = path + "NativeInMemWriteRead" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 });
-            session = fht.For(new Functions()).NewSession<Functions>();
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -83,7 +77,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteReadDelete([Values] TestUtils.DeviceType deviceType)
+        public void NativeInMemWriteReadDelete()
         {
             InputStruct input = default;
             OutputStruct output = default;
@@ -139,7 +133,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteReadDelete2([Values] TestUtils.DeviceType deviceType)
+        public void NativeInMemWriteReadDelete2()
         {
             const int count = 10;
 
@@ -199,7 +193,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public unsafe void NativeInMemWriteRead2([Values] TestUtils.DeviceType deviceType)
+        public unsafe void NativeInMemWriteRead2()
         {
             int count = 200;
 
