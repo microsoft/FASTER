@@ -28,6 +28,10 @@ namespace FASTER.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path, wait: true);
 
+            log = Devices.CreateLogDevice(path + "/BasicFasterTests.log", deleteOnClose: true);
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+            session = fht.For(new Functions()).NewSession<Functions>();
         }
 
         [TearDown]
@@ -47,6 +51,7 @@ namespace FASTER.test
         [Category("Smoke")]
         public void NativeInMemWriteRead([Values] TestUtils.DeviceType deviceType)
         {
+            // Reset all the log and fht values since using all deviceType
             string filename = path + "NativeInMemWriteRead" + deviceType.ToString() + ".log";
             log = TestUtils.CreateTestDevice(deviceType, filename);
             fht = new FasterKV<KeyStruct, ValueStruct>
@@ -77,15 +82,8 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void NativeInMemWriteReadDelete([Values] TestUtils.DeviceType deviceType)
+        public void NativeInMemWriteReadDelete()
         {
-            string filename = path + "NativeInMemWriteReadDelete" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 });
-            session = fht.For(new Functions()).NewSession<Functions>();
-
             InputStruct input = default;
             OutputStruct output = default;
 
@@ -139,16 +137,9 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void NativeInMemWriteReadDelete2([Values] TestUtils.DeviceType deviceType)
+        public void NativeInMemWriteReadDelete2()
         {
             const int count = 10;
-
-            string filename = path + "NativeInMemWriteReadDelete2" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -205,21 +196,12 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public unsafe void NativeInMemWriteRead2([Values] TestUtils.DeviceType deviceType)
+        public unsafe void NativeInMemWriteRead2()
         {
-            int count = 200;
-
-            string filename = path + "NativeInMemWriteRead2" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
-
             InputStruct input = default;
 
             Random r = new Random(10);
-            for (int c = 0; c < count; c++)
+            for (int c = 0; c < 1000; c++)
             {
                 var i = r.Next(10000);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
@@ -229,7 +211,7 @@ namespace FASTER.test
 
             r = new Random(10);
 
-            for (int c = 0; c < count; c++)
+            for (int c = 0; c < 1000; c++)
             {
                 var i = r.Next(10000);
                 OutputStruct output = default;
@@ -249,7 +231,7 @@ namespace FASTER.test
             fht.Log.ShiftBeginAddress(fht.Log.TailAddress);
 
             r = new Random(10);
-            for (int c = 0; c < count; c++)
+            for (int c = 0; c < 1000; c++)
             {
                 var i = r.Next(10000);
                 OutputStruct output = default;
@@ -260,21 +242,12 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public unsafe void TestShiftHeadAddress([Values] TestUtils.DeviceType deviceType)
+        public unsafe void TestShiftHeadAddress()
         {
             InputStruct input = default;
-            int count = 200;
-
-            string filename = path + "TestShiftHeadAddress" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
-
 
             Random r = new Random(10);
-            for (int c = 0; c < count; c++)
+            for (int c = 0; c < 1000; c++)
             {
                 var i = r.Next(10000);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
@@ -284,7 +257,7 @@ namespace FASTER.test
 
             r = new Random(10);
 
-            for (int c = 0; c < count; c++)
+            for (int c = 0; c < 1000; c++)
             {
                 var i = r.Next(10000);
                 OutputStruct output = default;
@@ -304,7 +277,7 @@ namespace FASTER.test
             fht.Log.FlushAndEvict(true);
 
             r = new Random(10);
-            for (int c = 0; c < count; c++)
+            for (int c = 0; c < 1000; c++)
             {
                 var i = r.Next(10000);
                 OutputStruct output = default;
@@ -317,16 +290,9 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public unsafe void NativeInMemRMWRefKeys([Values] TestUtils.DeviceType deviceType)
+        public unsafe void NativeInMemRMWRefKeys()
         {
             InputStruct input = default;
-
-            string filename = path + "NativeInMemRMWRefKeys" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
 
             var nums = Enumerable.Range(0, 1000).ToArray();
             var rnd = new Random(11);
@@ -396,16 +362,9 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public unsafe void NativeInMemRMWNoRefKeys([Values] TestUtils.DeviceType deviceType)
+        public unsafe void NativeInMemRMWNoRefKeys()
         {
             InputStruct input = default;
-
-            string filename = path + "NativeInMemRMWNoRefKeys" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
 
             var nums = Enumerable.Range(0, 1000).ToArray();
             var rnd = new Random(11);
@@ -475,17 +434,10 @@ namespace FASTER.test
         // Tests the overload of .Read(key, input, out output,  context, serialNo)
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void ReadNoRefKeyInputOutput([Values] TestUtils.DeviceType deviceType)
+        public void ReadNoRefKeyInputOutput()
         {
             InputStruct input = default;
             OutputStruct output = default;
-
-            string filename = path + "ReadNoRefKeyInputOutput" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -513,16 +465,8 @@ namespace FASTER.test
         // Test the overload call of .Read (key, out output, userContext, serialNo)
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void ReadNoRefKey([Values] TestUtils.DeviceType deviceType)
+        public void ReadNoRefKey()
         {
-
-            string filename = path + "ReadNoRefKey" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
-
             OutputStruct output = default;
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
@@ -551,16 +495,8 @@ namespace FASTER.test
         // Test the overload call of .Read (ref key, ref output, userContext, serialNo)
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void ReadWithoutInput([Values] TestUtils.DeviceType deviceType)
+        public void ReadWithoutInput()
         {
-
-            string filename = path + "ReadWithoutInput" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
-
             OutputStruct output = default;
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
@@ -589,15 +525,8 @@ namespace FASTER.test
         // Test the overload call of .Read (ref key, ref input, ref output, ref recordInfo, userContext: context)
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void ReadWithoutSerialID([Values] TestUtils.DeviceType deviceType)
+        public void ReadWithoutSerialID()
         {
-            string filename = path + "ReadWithoutSerialID" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
-
             InputStruct input = default;
             OutputStruct output = default;
 
@@ -626,16 +555,8 @@ namespace FASTER.test
         // Test the overload call of .Read (key)
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void ReadBareMinParams([Values] TestUtils.DeviceType deviceType)
+        public void ReadBareMinParams()
         {
-            string filename = path + "ReadBareMinParams" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
-
-
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
@@ -661,15 +582,8 @@ namespace FASTER.test
         // Test the ReadAtAddress where ReadFlags = ReadFlags.none
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void ReadAtAddressReadFlagsNone([Values] TestUtils.DeviceType deviceType)
+        public void ReadAtAddressReadFlagsNone()
         {
-            string filename = path + "ReadAtAddressReadFlagsNone" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
-
             InputStruct input = default;
             OutputStruct output = default;
 
@@ -699,20 +613,15 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void ReadAtAddressReadFlagsSkipReadCache([Values] TestUtils.DeviceType deviceType)
+        public void ReadAtAddressReadFlagsSkipReadCache()
         {
-            string filename = path + "ReadAtAddressReadFlagsSkipReadCache" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
-
             InputStruct input = default;
             OutputStruct output = default;
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
             var readAtAddress = fht.Log.BeginAddress;
+
+
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
             //**** TODO: When Bug Fixed ... use the invalidAddress line
@@ -749,15 +658,8 @@ namespace FASTER.test
         // Simple Upsert test where ref key and ref value but nothing else set
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void UpsertDefaultsTest([Values] TestUtils.DeviceType deviceType)
+        public void UpsertDefaultsTest()
         {
-            string filename = path + "UpsertDefaultsTest" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
-
             InputStruct input = default;
             OutputStruct output = default;
 
@@ -786,15 +688,8 @@ namespace FASTER.test
         // Simple Upsert test of overload where not using Ref for key and value and setting all parameters
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void UpsertNoRefNoDefaultsTest([Values] TestUtils.DeviceType deviceType)
+        public void UpsertNoRefNoDefaultsTest()
         {
-            string filename = path + "UpsertNoRefNoDefaultsTest" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
-
             InputStruct input = default;
             OutputStruct output = default;
 
@@ -821,14 +716,8 @@ namespace FASTER.test
         // Upsert Test using Serial Numbers ... based on the VersionedRead Sample
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
-        public void UpsertSerialNumberTest([Values] TestUtils.DeviceType deviceType)
+        public void UpsertSerialNumberTest()
         {
-            string filename = path + "UpsertSerialNumberTest" + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
-            session = fht.For(new Functions()).NewSession<Functions>();
 
             int numKeys = 100;
             int keyMod = 10;
