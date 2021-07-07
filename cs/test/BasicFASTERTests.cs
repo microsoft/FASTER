@@ -82,7 +82,8 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void NativeInMemWriteReadDelete()
+        [Category("Smoke")]
+        public void NativeInMemWriteReadDelete([Values] TestUtils.DeviceType deviceType)
         {
             InputStruct input = default;
             OutputStruct output = default;
@@ -137,7 +138,8 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void NativeInMemWriteReadDelete2()
+        [Category("Smoke")]
+        public void NativeInMemWriteReadDelete2([Values] TestUtils.DeviceType deviceType)
         {
             const int count = 10;
 
@@ -196,12 +198,15 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public unsafe void NativeInMemWriteRead2()
+        [Category("Smoke")]
+        public unsafe void NativeInMemWriteRead2([Values] TestUtils.DeviceType deviceType)
         {
+            int count = 200;
+
             InputStruct input = default;
 
             Random r = new Random(10);
-            for (int c = 0; c < 1000; c++)
+            for (int c = 0; c < count; c++)
             {
                 var i = r.Next(10000);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
@@ -211,7 +216,7 @@ namespace FASTER.test
 
             r = new Random(10);
 
-            for (int c = 0; c < 1000; c++)
+            for (int c = 0; c < count; c++)
             {
                 var i = r.Next(10000);
                 OutputStruct output = default;
@@ -231,7 +236,7 @@ namespace FASTER.test
             fht.Log.ShiftBeginAddress(fht.Log.TailAddress);
 
             r = new Random(10);
-            for (int c = 0; c < 1000; c++)
+            for (int c = 0; c < count; c++)
             {
                 var i = r.Next(10000);
                 OutputStruct output = default;
@@ -242,12 +247,14 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public unsafe void TestShiftHeadAddress()
         {
             InputStruct input = default;
+            int count = 200;
 
             Random r = new Random(10);
-            for (int c = 0; c < 1000; c++)
+            for (int c = 0; c < count; c++)
             {
                 var i = r.Next(10000);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
@@ -257,7 +264,7 @@ namespace FASTER.test
 
             r = new Random(10);
 
-            for (int c = 0; c < 1000; c++)
+            for (int c = 0; c < count; c++)
             {
                 var i = r.Next(10000);
                 OutputStruct output = default;
@@ -277,7 +284,7 @@ namespace FASTER.test
             fht.Log.FlushAndEvict(true);
 
             r = new Random(10);
-            for (int c = 0; c < 1000; c++)
+            for (int c = 0; c < count; c++)
             {
                 var i = r.Next(10000);
                 OutputStruct output = default;
@@ -290,6 +297,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public unsafe void NativeInMemRMWRefKeys()
         {
             InputStruct input = default;
@@ -362,6 +370,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public unsafe void NativeInMemRMWNoRefKeys()
         {
             InputStruct input = default;
@@ -434,6 +443,7 @@ namespace FASTER.test
         // Tests the overload of .Read(key, input, out output,  context, serialNo)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ReadNoRefKeyInputOutput()
         {
             InputStruct input = default;
@@ -465,6 +475,7 @@ namespace FASTER.test
         // Test the overload call of .Read (key, out output, userContext, serialNo)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ReadNoRefKey()
         {
             OutputStruct output = default;
@@ -495,6 +506,7 @@ namespace FASTER.test
         // Test the overload call of .Read (ref key, ref output, userContext, serialNo)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ReadWithoutInput()
         {
             OutputStruct output = default;
@@ -525,6 +537,7 @@ namespace FASTER.test
         // Test the overload call of .Read (ref key, ref input, ref output, ref recordInfo, userContext: context)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ReadWithoutSerialID()
         {
             InputStruct input = default;
@@ -555,6 +568,7 @@ namespace FASTER.test
         // Test the overload call of .Read (key)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ReadBareMinParams()
         {
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
@@ -582,6 +596,7 @@ namespace FASTER.test
         // Test the ReadAtAddress where ReadFlags = ReadFlags.none
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ReadAtAddressReadFlagsNone()
         {
             InputStruct input = default;
@@ -613,6 +628,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ReadAtAddressReadFlagsSkipReadCache()
         {
             InputStruct input = default;
@@ -658,6 +674,7 @@ namespace FASTER.test
         // Simple Upsert test where ref key and ref value but nothing else set
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void UpsertDefaultsTest()
         {
             InputStruct input = default;
@@ -688,6 +705,7 @@ namespace FASTER.test
         // Simple Upsert test of overload where not using Ref for key and value and setting all parameters
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void UpsertNoRefNoDefaultsTest()
         {
             InputStruct input = default;
@@ -716,6 +734,7 @@ namespace FASTER.test
         // Upsert Test using Serial Numbers ... based on the VersionedRead Sample
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void UpsertSerialNumberTest()
         {
 
