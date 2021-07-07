@@ -28,13 +28,10 @@ namespace DprCounters
         /// version to start at. If version is not 0, CounterStateObject will attempt to restore
         /// state from corresponding checkpoint
         /// </param>
-        public CounterStateObject(string checkpointDirectory, long version)
+        public CounterStateObject(string checkpointDirectory)
         {
-            
             this.checkpointDirectory = checkpointDirectory;
             Directory.CreateDirectory(checkpointDirectory);
-            if (version != 0)
-                RestoreCheckpoint(version);
         }
         
         // With SimpleStateObject, CounterStateObject only needs to implement a single-threaded
@@ -67,11 +64,14 @@ namespace DprCounters
         // With SimpleStateObject, CounterStateObject can just implement a single-threaded blocking recovery function
         protected override void RestoreCheckpoint(long version)
         {
-            // RestoreCheckpoint is only called on machines that did not physically go down (otherwise they will simply
+            // This is for machines that did not physically go down (otherwise they will simply
             // load the surviving version on restart). libDPR will additionally never request a worker to restore
             // checkpoints earlier than the committed version in the DPR cut. We can therefore rely on a (relatively
             // small) stash of in-memory snapshots to quickly handle this call.
-            value = prevCounters[version];
+            if (!prevCounters.TryGetValue(version, out value))
+            {
+                // TODO(Tianyu): Otherwise, load from disk
+            }
         }
         
         public override void PruneVersion(long version)

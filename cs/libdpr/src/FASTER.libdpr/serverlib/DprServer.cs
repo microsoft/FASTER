@@ -60,6 +60,23 @@ namespace FASTER.libdpr
             depSerializationArray = new byte[2 * LightDependencySet.MaxClusterSize * sizeof(long)];
         }
 
+        public void ConnectToCluster()
+        {
+            var v = state.dprFinder.NewWorker(state.me, stateObject);
+            // This worker is recovering from some failure and we need to load said checkpoint
+            state.worldlineTracker.TryAdvanceVersion(_ =>
+            {
+                if (v != 0)
+                {
+                    // If worker is recovering from failure, need to load a previous checkpoint
+                    state.rollbackProgress = new ManualResetEventSlim();
+                    stateObject.BeginRestore(state.dprFinder.SafeVersion(state.me));
+                    // Wait for user to signal end of restore;
+                    state.rollbackProgress.Wait();
+                }
+            }, state.dprFinder.SystemWorldLine());
+        }
+
         public TStateObject StateObject() => stateObject;
 
         private ReadOnlySpan<byte> ComputeDependency(long version)

@@ -186,12 +186,10 @@ namespace FASTER.libdpr
                             }
                             offset++;
                         }
-
                         Utility.MonotonicUpdate(ref clientVersion, maxVersion, out _);
                     }
                 }
-
-
+                
                 lock (deps)
                 {
                     fixed (byte* d = request.deps)

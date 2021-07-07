@@ -109,6 +109,7 @@ namespace FASTER.libdpr
                 dprFinderConn.SendAddWorkerCommand(id);
                 ProcessRespResponse();
                 lastKnownClusterState ??= new ClusterState();
+                lastKnownClusterState.currentWorldLine = BitConverter.ToInt64(recvBuffer, parser.stringStart);
                 return BitConverter.ToInt64(recvBuffer, parser.stringStart + sizeof(long));
             }
         }
