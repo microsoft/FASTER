@@ -53,6 +53,19 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Constructor using given IMemoryOwner and length
+        /// </summary>
+        /// <param name="memory"></param>
+        /// <param name="length"></param>
+        public SpanByteAndMemory(IMemoryOwner<byte> memory, int length)
+        {
+            SpanByte = default;
+            SpanByte.Invalid = true;
+            Memory = memory;
+            SpanByte.Length = length;
+        }
+
+        /// <summary>
         /// View a fixed Span&lt;byte&gt; as a SpanByteAndMemory
         /// </summary>
         /// <param name="span"></param>
