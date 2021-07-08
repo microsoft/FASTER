@@ -92,7 +92,6 @@ namespace FASTER.test
 
             bool deleteOnClose = false;
 
-
             switch (testDeviceType)
             {
 #if WINDOWS
@@ -103,7 +102,7 @@ namespace FASTER.test
                         device = new LocalStorageDevice(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort);
                     break;
                 case DeviceType.EmulatedAzure:
-                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, "fasterlogblob", deleteOnClose: true);
+                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, "fasterlogblob", deleteOnClose: false);
                     break;
 #endif
                 case DeviceType.MLSD:
