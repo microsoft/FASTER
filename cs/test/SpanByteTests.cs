@@ -14,6 +14,7 @@ namespace FASTER.test
     {
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public unsafe void SpanByteTest1()
         {
             Span<byte> output = stackalloc byte[20];
@@ -56,6 +57,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public unsafe void MultiReadSpanByteKeyTest()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

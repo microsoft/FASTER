@@ -59,6 +59,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
+        [Category("Smoke")]
         public void RecoverReadOnlyAsyncBasicTest()
         {
             using var cts = new CancellationTokenSource();

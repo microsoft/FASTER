@@ -54,6 +54,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
+        [Category("Smoke")]
         public void ManagedLocalStoreBasicTest()
         {
             int entryLength = 20;

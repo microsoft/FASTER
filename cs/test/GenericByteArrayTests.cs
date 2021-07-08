@@ -54,6 +54,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ByteArrayBasicTest()
         {
             const int totalRecords = 2000;

@@ -29,7 +29,10 @@ namespace FASTER.test.recovery.objects
         }
 
         [Test]
-        [Category("FasterKV"), Category("CheckpointRestore")]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async ValueTask ObjectRecoveryTest2(
             [Values]CheckpointType checkpointType,
             [Range(100, 700, 300)] int iterations,

@@ -46,6 +46,8 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
+
         public void DiskDeleteBasicTest1()
         {
             const int totalRecords = 2000;

@@ -47,7 +47,9 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
-        [Category("FasterKV"), Category("CheckpointRestore")]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
         public void StateMachineTest1()
         {
             Prepare(out var f, out var s1, out var s2);

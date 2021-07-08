@@ -17,6 +17,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public unsafe void VariableLengthTest1()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

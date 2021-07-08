@@ -158,7 +158,6 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        [Category("Smoke")]
         public void ScanNoDefaultTest([Values] TestUtils.DeviceType deviceType)
         {
 

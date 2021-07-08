@@ -41,6 +41,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void MixedTest1()
         {
             using var session = fht.For(new MixedFunctions()).NewSession<MixedFunctions>();

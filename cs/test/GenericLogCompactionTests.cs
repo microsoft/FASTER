@@ -117,6 +117,8 @@ namespace FASTER.test
         // Basic test where DO NOT shift begin address to untilAddress after compact 
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
+        [Category("Smoke")]
         public void LogCompactNotShiftBeginAddrTest()
         {
             MyInput input = new MyInput();
@@ -159,6 +161,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
         public void LogCompactTestNewEntries()
         {
             MyInput input = new MyInput();
@@ -211,6 +214,8 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
+        [Category("Smoke")]
         public void LogCompactAfterDeleteTest()
         {
             MyInput input = new MyInput();
@@ -267,6 +272,8 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
+
         public void LogCompactBasicCustomFctnTest()
         {
             MyInput input = new MyInput();
@@ -319,6 +326,8 @@ namespace FASTER.test
         // Same as basic test of Custom Functions BUT this will NOT shift begin address to untilAddress after compact
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
+
         public void LogCompactCustomFctnNotShiftBeginTest()
         {
             MyInput input = new MyInput();
@@ -374,6 +383,8 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
+
         public void LogCompactCopyInPlaceCustomFctnTest()
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace

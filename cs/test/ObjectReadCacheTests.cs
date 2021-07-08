@@ -42,6 +42,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ObjectDiskWriteReadCache()
         {
             using var session = fht.NewSession(new MyFunctions());

@@ -409,7 +409,6 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
         public unsafe void NativeInMemRMWNoRefKeys([Values] TestUtils.DeviceType deviceType)
         {
             InputStruct input = default;
@@ -524,7 +523,6 @@ namespace FASTER.test
         // Test the overload call of .Read (key, out output, userContext, serialNo)
         [Test]
         [Category("FasterKV")]
-        [Category("Smoke")]
         public void ReadNoRefKey([Values] TestUtils.DeviceType deviceType)
         {
             string filename = path + "ReadNoRefKey" + deviceType.ToString() + ".log";

@@ -66,7 +66,10 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         }
 
         [Test]
-        [Category("FasterKV"), Category("CheckpointRestore")]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async ValueTask RecoverContinueTest([Values]bool isAsync)
         {
             long sno = 0;

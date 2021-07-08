@@ -22,6 +22,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void PageBlobWriteRead()
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
@@ -30,6 +31,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void PageBlobWriteReadWithLease()
         {
             if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
@@ -38,6 +40,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void TieredWriteRead()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
@@ -60,6 +63,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ShardedWriteRead()
         {
             IDevice localDevice1 = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests1.log", deleteOnClose: true, capacity: 1 << 30);

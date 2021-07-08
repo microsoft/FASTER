@@ -36,6 +36,8 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
+
         public void MemoryLogCompactionTest1()
         {
             using var session = fht.For(new MemoryCompaction()).NewSession<MemoryCompaction>();

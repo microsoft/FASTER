@@ -34,6 +34,7 @@ namespace FASTER.test.async
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void SessionTest1()
         {
             using var session = fht.NewSession(new Functions());

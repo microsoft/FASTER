@@ -34,6 +34,8 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
+        [Category("Smoke")]
+
         public void BlittableLogCompactionTest1()
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -200,6 +202,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
+        [Category("Smoke")]
 
         public void BlittableLogCompactionCustomFunctionsTest1()
         {

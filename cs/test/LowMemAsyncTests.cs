@@ -22,7 +22,6 @@ namespace FASTER.test.async
             path = TestUtils.MethodTestDir;
             TestUtils.DeleteDirectory(path, wait: true);
             log = new LocalMemoryDevice(1L << 30, 1L << 25, 1, latencyMs: 20);
-            // log = Devices.CreateLogDevice(path + "Async.log", deleteOnClose: true);
             Directory.CreateDirectory(path);
             fht1 = new FasterKV<long, long>
                 (1L << 10,
@@ -68,8 +67,9 @@ namespace FASTER.test.async
         }
 
         [Test]
-        [Category("FasterKV"), Category("Stress")]
-        public async Task ConcurrentUpsertReadAsyncTest()
+        [Category("FasterKV")]
+        [Category("Stress")]
+        public async Task LowMemConcurrentUpsertReadAsyncTest()
         {
             await Task.Yield();
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
@@ -89,8 +89,9 @@ namespace FASTER.test.async
         }
 
         [Test]
-        [Category("FasterKV"), Category("Stress")]
-        public async Task ConcurrentUpsertRMWReadAsyncTest()
+        [Category("FasterKV")]
+        [Category("Stress")]
+        public async Task LowMemConcurrentUpsertRMWReadAsyncTest()
         {
             await Task.Yield();
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));

@@ -50,6 +50,7 @@ namespace FASTER.test.async
         // Test that does .ReadAsync with minimum parameters (ref key)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public async Task ReadAsyncMinParamTest()
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
@@ -91,6 +92,7 @@ namespace FASTER.test.async
         // Test that does .ReadAsync no ref key (key)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public async Task ReadAsyncNoRefKeyTest()
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
@@ -175,6 +177,7 @@ namespace FASTER.test.async
         // Test that does .UpsertAsync, .ReadAsync, .DeleteAsync, .ReadAsync with minimum parameters passed by reference (ref key)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public async Task UpsertReadDeleteReadAsyncMinParamByRefTest()
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
@@ -207,6 +210,7 @@ namespace FASTER.test.async
         // Test that does .UpsertAsync, .ReadAsync, .DeleteAsync, .ReadAsync with minimum parameters passed by value (key)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public async Task UpsertReadDeleteReadAsyncMinParamByValueTest()
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
@@ -343,6 +347,8 @@ namespace FASTER.test.async
         // Test that does both UpsertAsync and RMWAsync to populate the FasterKV and update it, possibly after flushing it from memory.
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
+
         public async Task UpsertAsyncAndRMWAsyncTest([Values] bool useRMW, [Values] bool doFlush, [Values] bool completeAsync)
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());

@@ -63,7 +63,10 @@ namespace FASTER.test.recovery.sumstore.simple
         }
 
         [Test]
-        [Category("FasterKV"), Category("CheckpointRestore")]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async ValueTask LocalDeviceSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] bool isAsync)
         {
             checkpointManager = new DeviceLogCommitCheckpointManager(

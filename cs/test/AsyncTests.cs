@@ -23,6 +23,8 @@ namespace FASTER.test.async
         [TestCase(CheckpointType.FoldOver)]
         [TestCase(CheckpointType.Snapshot)]
         [Category("FasterKV"), Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async Task AsyncRecoveryTest1(CheckpointType checkpointType)
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);

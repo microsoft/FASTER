@@ -42,6 +42,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ObjectInMemWriteRead()
         {
             using var session = fht.NewSession(new MyFunctions());
@@ -85,6 +86,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ObjectDiskWriteRead()
         {
             using var session = fht.NewSession(new MyFunctions());

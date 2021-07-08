@@ -47,6 +47,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
+        [Category("Smoke")]
         public void DeviceAndLogConfig()
         {
             int entryLength = 10;

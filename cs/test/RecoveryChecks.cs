@@ -80,7 +80,10 @@ namespace FASTER.test.recovery
         public void TearDown() => BaseTearDown();
 
         [Test]
-        [Category("FasterKV"), Category("CheckpointRestore")]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async ValueTask RecoveryCheck1([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1<<10)]int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -414,7 +417,8 @@ namespace FASTER.test.recovery
         public void TearDown() => BaseTearDown();
 
         [Test]
-        [Category("FasterKV"), Category("CheckpointRestore")]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck5([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -507,7 +511,9 @@ namespace FASTER.test.recovery
         public void TearDown() => BaseTearDown();
 
         [Test]
-        [Category("FasterKV"), Category("CheckpointRestore")]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
         public async ValueTask IncrSnapshotRecoveryCheck([Values] DeviceMode deviceMode)
         {
             ICheckpointManager checkpointManager;
