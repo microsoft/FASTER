@@ -82,6 +82,10 @@ namespace FixedLenClient
             session.Read(23, userContext: 1);
             session.CompletePending(true);
 
+            // Now we illustrate Output from RMW directly, again using userContext to control verification - see Functions.cs
+            session.RMW(23, 25, userContext: 1);
+            session.CompletePending(true);
+
             for (int i = 100; i < 200; i++)
                 session.Upsert(i, i + 10000);
 
@@ -116,31 +120,38 @@ namespace FixedLenClient
 
             await session.DeleteAsync(25);
 
-            (status, _) = await session.ReadAsync(25);
+            long key = 25;
+            (status, _) = await session.ReadAsync(key);
             if (status != Status.NOTFOUND)
-                throw new Exception("Error!");
+                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
 
+            key = 9999;
             (status, _) = await session.ReadAsync(9999);
             if (status != Status.NOTFOUND)
-                throw new Exception("Error!");
+                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
 
-            await session.DeleteAsync(9998);
+            key = 9998;
+            await session.DeleteAsync(key);
 
-            status = await session.RMWAsync(9998, 10);
+            (status, _) = await session.ReadAsync(9998);
             if (status != Status.NOTFOUND)
-                throw new Exception("Error!");
+                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
 
-            (status, output) = await session.ReadAsync(9998);
+            (status, output) = await session.RMWAsync(9998, 10);
+            if (status != Status.NOTFOUND || output != 10)
+                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}; output = expected {10}, actual {output}");
+
+            (status, output) = await session.ReadAsync(key);
             if (status != Status.OK || output != 10)
-                throw new Exception("Error!");
+                throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status}; output = expected {10}, actual {output}");
 
-            status = await session.RMWAsync(9998, 10);
-            if (status != Status.OK)
-                throw new Exception("Error!");
-
-            (status, output) = await session.ReadAsync(9998);
+            (status, output) = await session.RMWAsync(key, 10);
             if (status != Status.OK || output != 20)
-                throw new Exception("Error!");
+                throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status} output = expected {10}, actual {output}");
+
+            (status, output) = await session.ReadAsync(key);
+            if (status != Status.OK || output != 20)
+                throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status}, output = expected {10}, actual {output}");
         }
     }
 }

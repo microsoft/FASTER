@@ -110,7 +110,7 @@ namespace FASTER.test.readaddress
                 }
             }
 
-            public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status)
+            public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status)
             {
                 if (ctx is not null)
                 {
@@ -118,7 +118,7 @@ namespace FASTER.test.readaddress
                     ctx.recordInfo = default;
                     ctx.status = status;
                 }
-                base.RMWCompletionCallback(ref key, ref input, ctx, status);
+                base.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
             }
         }
 
