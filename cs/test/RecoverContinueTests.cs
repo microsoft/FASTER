@@ -168,20 +168,20 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
         {
             value = input.numClicks;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output) => true;
 
-        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }
