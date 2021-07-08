@@ -5,7 +5,7 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    internal static class RespUtil
+    public static class RespUtil
     {
         internal static unsafe int LongToDecimalString(long a, byte[] buf, int offset)
         {
@@ -184,7 +184,7 @@ namespace FASTER.libdpr
             return head;
         }
 
-        internal static int ReadDictionaryFromBytes(byte[] buf, int head, IDictionary<Worker, long> result)
+        public static int ReadDictionaryFromBytes(byte[] buf, int head, IDictionary<Worker, long> result)
         {
             var size = BitConverter.ToInt32(buf, head);
             head += sizeof(int);

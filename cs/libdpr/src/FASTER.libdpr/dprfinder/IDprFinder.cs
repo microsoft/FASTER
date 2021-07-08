@@ -77,10 +77,27 @@ namespace FASTER.libdpr
         /// <param name="latestRecoveredVersion"></param>
         void ReportRecovery(long worldLine, WorkerVersion latestRecoveredVersion);
 
+        /// <summary>
+        /// Resend locally stored dependency graph (if applicable) of the given state object
+        /// </summary>
+        /// <param name="worker"> worker </param>
+        /// <param name="stateObject"> state object </param>
         void ResendGraph(Worker worker, IStateObject stateObject);
 
+        /// <summary>
+        /// Registers the given worker and state object combination with the cluster. Worker id must be unique within
+        /// the cluster. Must be invoked before performing any operation on the state object.
+        /// </summary>
+        /// <param name="id"> id of the worker </param>
+        /// <param name="stateObject"> state object associated with the worker</param>
+        /// <returns> the version state object should recover to before beginning execution, or 0 if no recovery is required </returns>
         long NewWorker(Worker id, IStateObject stateObject);
 
+        /// <summary>
+        /// Removes the given worker from the cluster. It is up to caller to ensure that the deleted worker is not
+        /// currently accepting operations and no other worker has outstanding dependencies on the deleted worker.
+        /// </summary>
+        /// <param name="id"></param>
         void DeleteWorker(Worker id);
     }
 }
