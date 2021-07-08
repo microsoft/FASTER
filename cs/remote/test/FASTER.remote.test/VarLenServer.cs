@@ -20,8 +20,10 @@ namespace FASTER.remote.test
             // We use blittable structs Key and Value to construct a costomized server for fixed-length types
             store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
 
+            var broker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
+
             // Create session provider for VarLen
-            var provider = new FasterKVProvider<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>(store, wp => new SpanByteFunctionsForServer<long>(wp), new SpanByteServerSerializer());
+            var provider = new FasterKVProvider<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>(store, wp => new SpanByteFunctionsForServer<long>(wp), broker, new SpanByteServerSerializer());
 
             server = new FasterServer(address, port);
             server.Register(WireFormat.DefaultVarLenKV, provider);

@@ -10,7 +10,6 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Collections.Concurrent;
 using System.Threading;
-using System.Collections.Generic;
 
 namespace FASTER.server
 {
@@ -21,16 +20,9 @@ namespace FASTER.server
     {
         readonly SocketAsyncEventArgs acceptEventArg;
         readonly Socket servSocket;
-        readonly MaxSizeSettings maxSizeSettings;
         readonly int networkBufferSize;
         readonly ConcurrentDictionary<IServerSession, byte> activeSessions;
-        public readonly ConcurrentDictionary<WireFormat, ISessionProvider> sessionProviders;
-        public SubscribeKVBroker subscribeKVBroker;
-
-        //public ConcurrentDictionary<ISessionProvider, List<(IServerSession, byte)>> providerServerSessions; 
-        // readonly ConcurrentDictionary<ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>, byte> activeSessions;
-        // readonly ClientSession<Key, Value, Input, Output, long, ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>> session;
-
+        readonly ConcurrentDictionary<WireFormat, ISessionProvider> sessionProviders;
         int activeSessionCount;
         bool disposed;
 
@@ -44,7 +36,6 @@ namespace FASTER.server
         {
             activeSessions = new ConcurrentDictionary<IServerSession, byte>();
             sessionProviders = new ConcurrentDictionary<WireFormat, ISessionProvider>();
-            subscribeKVBroker = new SubscribeKVBroker(this);
             activeSessionCount = 0;
             disposed = false;
 
@@ -159,7 +150,7 @@ namespace FASTER.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HandleReceiveCompletion(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs) e.UserToken;
+            var connArgs = (ConnectionArgs)e.UserToken;
             if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || disposed)
             {
                 DisposeConnectionSession(e);
@@ -180,7 +171,7 @@ namespace FASTER.server
 
         private unsafe bool CreateSession(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs) e.UserToken;
+            var connArgs = (ConnectionArgs)e.UserToken;
 
             if (e.BytesTransferred < 4) return false;
 
@@ -204,7 +195,7 @@ namespace FASTER.server
                 throw new FasterException($"Unsupported wire format {protocol}");
             }
 
-            connArgs.session = provider.GetSession(protocol, connArgs.socket, subscribeKVBroker);
+            connArgs.session = provider.GetSession(protocol, connArgs.socket);
 
             if (activeSessions.TryAdd(connArgs.session, default))
                 Interlocked.Increment(ref activeSessionCount);
@@ -216,14 +207,12 @@ namespace FASTER.server
                 DisposeConnectionSession(e);
                 return false;
             }
-
-
             return true;
         }
 
         private void DisposeConnectionSession(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs) e.UserToken;
+            var connArgs = (ConnectionArgs)e.UserToken;
             connArgs.socket.Dispose();
             e.Dispose();
             var _session = connArgs.session;
@@ -231,7 +220,6 @@ namespace FASTER.server
             {
                 if (activeSessions.TryRemove(_session, out _))
                 {
-                    subscribeKVBroker.removeSubscription(_session);
                     _session.Dispose();
                     Interlocked.Decrement(ref activeSessionCount);
                 }

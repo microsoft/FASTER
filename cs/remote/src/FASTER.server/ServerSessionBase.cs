@@ -4,7 +4,6 @@
 using System;
 using System.Net.Sockets;
 using FASTER.common;
-using FASTER.core;
 
 namespace FASTER.server
 {
@@ -35,7 +34,7 @@ namespace FASTER.server
 
         private readonly NetworkSender messageManager;
         private readonly int serverBufferSize;
-        
+
 
         /// <summary>
         /// Create new instance
@@ -94,6 +93,15 @@ namespace FASTER.server
                 responseObject.Dispose();
             }
         }
+
+        /// <summary>
+        /// Publish an update to a key to all the subscribers of the key
+        /// </summary>
+        /// <param name="keyPtr"></param>
+        /// <param name="keyLength"></param>
+        /// <param name="sid"></param>
+        /// <param name="prefix"></param>
+        public abstract unsafe void Publish(ref byte* keyPtr, int keyLength, int sid, bool prefix);
 
         /// <summary>
         /// Dispose
