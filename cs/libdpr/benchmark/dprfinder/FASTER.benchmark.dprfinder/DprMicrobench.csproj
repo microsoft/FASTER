@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>netcoreapp3.1</TargetFramework>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="CommandLineParser" Version="2.9.0-preview1" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\src\core\FASTER.core.csproj" />
+      <ProjectReference Include="..\..\src\devices\AzureStorageDevice\FASTER.devices.AzureStorageDevice.csproj" />
+      <ProjectReference Include="..\..\src\serverless\FASTER.serverless\FASTER.serverless.csproj" />
+    </ItemGroup>
+
+</Project>
