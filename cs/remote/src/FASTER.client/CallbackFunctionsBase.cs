@@ -20,7 +20,7 @@ namespace FASTER.client
         /// <inheritdoc/>
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
         /// <inheritdoc/>
-        public virtual void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
+        public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
         /// <inheritdoc/>
         public virtual void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         /// <inheritdoc/>

@@ -53,7 +53,7 @@ namespace FASTER.remote.test
         }
 
         /// <inheritdoc />
-        public virtual void RMWCompletionCallback(ref ReadOnlyMemory<int> key, ref ReadOnlyMemory<int> input, long ctx, Status status) { }
+        public virtual void RMWCompletionCallback(ref ReadOnlyMemory<int> key, ref ReadOnlyMemory<int> input, ref (IMemoryOwner<int>, int) output, long ctx, Status status) { }
 
         /// <inheritdoc />
         public virtual void UpsertCompletionCallback(ref ReadOnlyMemory<int> key, ref ReadOnlyMemory<int> value, long ctx) { }

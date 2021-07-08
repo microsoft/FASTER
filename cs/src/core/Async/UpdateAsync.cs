@@ -66,13 +66,6 @@ namespace FASTER.core
             /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
             void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext);
-
-            /// <summary>
-            /// Returns the current status of the <paramref name="asyncResult"/>; usually examined for whether it <see cref="Status.PENDING"/> or not.
-            /// </summary>
-            /// <param name="asyncResult"></param>
-            /// <returns>The current status of the <paramref name="asyncResult"/></returns>
-            Status GetStatus(TAsyncResult asyncResult);
         }
 
         internal sealed class UpdateAsyncInternal<Input, Output, Context, TAsyncOperation, TAsyncResult>
@@ -116,7 +109,7 @@ namespace FASTER.core
                 return _asyncOperation.DoSlowOperation(_fasterKV, _fasterSession, _currentCtx, _pendingContext, flushEvent, token);
             }
 
-            internal Status Complete()
+            internal TAsyncResult Complete()
             {
                 if (!TryCompleteAsyncState(asyncOp: false, out CompletionEvent flushEvent, out TAsyncResult asyncResult))
                 {
@@ -130,7 +123,7 @@ namespace FASTER.core
                             flushEvent.Wait();
                     }
                 }
-                return _asyncOperation.GetStatus(asyncResult);
+                return asyncResult;
             }
 
             private bool TryCompleteAsyncState(bool asyncOp, out CompletionEvent flushEvent, out TAsyncResult asyncResult)
