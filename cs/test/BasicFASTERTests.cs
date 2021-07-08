@@ -30,11 +30,6 @@ namespace FASTER.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path, wait: true);
 
-          //  log = Devices.CreateLogDevice(path + "/BasicFasterTests.log", deleteOnClose: true);
-  //          fht = new FasterKV<KeyStruct, ValueStruct>
-    //            (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });  // original settings for all tests
-                    //(128, new LogSettings { LogDevice = log, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 });  // possible new settings for tests that use all four device types
-      //      session = fht.For(new Functions()).NewSession<Functions>();
         }
 
         [TearDown]
@@ -52,16 +47,13 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteRead()
+        public void NativeInMemWriteRead([Values] TestUtils.DeviceType deviceType)
         {
-            // Set this way until ready to put [VALUES] parameter in the test for all the types of device types
-            deviceType = TestUtils.DeviceType.MLSD;
 
             string filename = path + "NativeInMemWriteRead" + deviceType.ToString() + ".log";
             log = TestUtils.CreateTestDevice(deviceType, filename);
             fht = new FasterKV<KeyStruct, ValueStruct>
-                //(128, new LogSettings { LogDevice = log, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 });
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+                (128, new LogSettings { LogDevice = log, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 });
             session = fht.For(new Functions()).NewSession<Functions>();
 
             InputStruct input = default;
@@ -89,17 +81,13 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteReadDelete()
+        public void NativeInMemWriteReadDelete([Values] TestUtils.DeviceType deviceType)
         {
-
-            // Set this way until ready to put [VALUES] parameter in the test for all the types of device types
-            deviceType = TestUtils.DeviceType.MLSD;
 
             string filename = path + "NativeInMemWriteReadDelete" + deviceType.ToString() + ".log";
             log = TestUtils.CreateTestDevice(deviceType, filename);
             fht = new FasterKV<KeyStruct, ValueStruct>
-                //(128, new LogSettings { LogDevice = log, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 });
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+                (128, new LogSettings { LogDevice = log, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 });
             session = fht.For(new Functions()).NewSession<Functions>();
 
             InputStruct input = default;
