@@ -81,10 +81,17 @@ namespace FASTER.test
             LocalMemory
         }
 
-
         internal static IDevice CreateTestDevice(DeviceType testDeviceType, string filename, int latencyMs = 20)  // latencyMs works only for DeviceType = LocalMemory
         {
             IDevice device = null;
+            bool preallocateFile = false;
+            long capacity = -1; // Capacity unspecified
+            bool recoverDevice = false;
+            bool useIoCompletionPort = false;
+            bool disableFileBuffering = true;
+
+            bool deleteOnClose = false;
+
 
             switch (testDeviceType)
             {
@@ -93,14 +100,14 @@ namespace FASTER.test
 #if NETSTANDARD || NET
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))    // avoids CA1416 // Validate platform compatibility
 #endif
-                        device = new LocalStorageDevice(filename, false, deleteOnClose: true, true, -1, false, false);
+                        device = new LocalStorageDevice(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort);
                     break;
                 case DeviceType.EmulatedAzure:
                     device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, "fasterlogblob", deleteOnClose: true);
                     break;
 #endif
                 case DeviceType.MLSD:
-                    device = new ManagedLocalStorageDevice(filename, deleteOnClose: true);
+                    device = new ManagedLocalStorageDevice(filename, preallocateFile, deleteOnClose, capacity, recoverDevice);
                     break;
                 // Emulated higher latency storage device - takes a disk latency arg (latencyMs) and emulates an IDevice using main memory, serving data at specified latency
                 case DeviceType.LocalMemory:  

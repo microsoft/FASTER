@@ -30,7 +30,7 @@ namespace FASTER.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path, wait: true);
 
-//            log = Devices.CreateLogDevice(path + "/BasicFasterTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(path + "/BasicFasterTests.log", deleteOnClose: true);
   //          fht = new FasterKV<KeyStruct, ValueStruct>
     //            (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });  // original settings for all tests
                     //(128, new LogSettings { LogDevice = log, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 });  // possible new settings for tests that use all four device types
