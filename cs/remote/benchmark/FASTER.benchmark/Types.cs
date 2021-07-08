@@ -58,7 +58,7 @@ namespace FASTER.benchmark
         {
         }
 
-        public void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
         {
         }
 

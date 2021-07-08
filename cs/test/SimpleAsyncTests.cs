@@ -10,7 +10,6 @@ using System.Threading;
 
 namespace FASTER.test.async
 {
-
     [TestFixture]
     public class SimpleAsyncTests
     {
@@ -124,7 +123,8 @@ namespace FASTER.test.async
             for (key = 0; key < numOps; key++)
             {
                 (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
 
             key = 0;
@@ -136,7 +136,8 @@ namespace FASTER.test.async
             (await t2).Complete(); // should trigger RMW re-do
 
             (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-            Assert.IsTrue(status == Status.OK && output == key + input + input);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(key + input + input, output);
         }
 
 
@@ -148,16 +149,19 @@ namespace FASTER.test.async
             Status status;
             long key = default, input = default, output = default;
 
-            using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
+            using var s1 = fht1.NewSession(new RMWSimpleFunctions<long, long>((a, b) => a + b));
             for (key = 0; key < numOps; key++)
             {
-                (await s1.RMWAsync(ref key, ref key,Empty.Default)).Complete();
+                (status, output) = (await s1.RMWAsync(ref key, ref key, Empty.Default)).Complete();
+                Assert.AreNotEqual(Status.PENDING, status);
+                Assert.AreEqual(key, output);
             }
 
             for (key = 0; key < numOps; key++)
             {
                 (status, output) = (await s1.ReadAsync(key, output)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
 
             key = 0;
@@ -169,7 +173,8 @@ namespace FASTER.test.async
             (await t2).Complete(); // should trigger RMW re-do
 
             (status, output) = (await s1.ReadAsync(key, output,Empty.Default, 129)).Complete();
-            Assert.IsTrue(status == Status.OK && output == key + input + input);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(key + input + input, output);
         }
 
         // Test that does .UpsertAsync, .ReadAsync, .DeleteAsync, .ReadAsync with minimum parameters passed by reference (ref key)
@@ -234,8 +239,6 @@ namespace FASTER.test.async
             }
         }
 
-        /* ** TO DO: Using StartAddress in ReadAsync is now obsolete - might be design change etc but until then, commenting out test **
-         * 
         // Test that uses StartAddress parameter
         // (ref key, ref input, StartAddress,  userContext, serialNo, CancellationToken)
         [Test]
@@ -243,20 +246,29 @@ namespace FASTER.test.async
         public async Task AsyncStartAddressParamTest()
         {
             Status status;
-            CancellationToken cancellationToken;
             long key = default, input = default, output = default;
-            var readAtAddress = fht1.Log.BeginAddress;
 
-            using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
+            var addresses = new long[numOps];
+            long recordSize = fht1.Log.FixedRecordSize;
+
+            using var s1 = fht1.NewSession(new AdvancedRMWSimpleFunctions<long, long>((a, b) => a + b));
             for (key = 0; key < numOps; key++)
             {
-                (await s1.RMWAsync(ref key, ref key)).Complete();
+                // We can predict the address as TailAddress because we're single-threaded, *unless* a page was allocated;
+                // in that case the new address is at the start of the newly-allocated page. Since we can't predict that,
+                // we take advantage of knowing we have fixed-length records and that TailAddress is open-ended, so we
+                // subtract after the insert to get record start address.
+                (status, output) = (await s1.RMWAsync(ref key, ref key)).Complete();
+                addresses[key] = fht1.Log.TailAddress - recordSize;
+                Assert.AreNotEqual(Status.PENDING, status);
+                Assert.AreEqual(key, output);
             }
 
             for (key = 0; key < numOps; key++)
             {
-                (status, output) = (await s1.ReadAsync(ref key, ref output, readAtAddress, ReadFlags.None)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                (status, output) = (await s1.ReadAsync(ref key, ref output, addresses[key], ReadFlags.None)).Complete();
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
 
             key = 0;
@@ -267,10 +279,14 @@ namespace FASTER.test.async
             (await t1).Complete();
             (await t2).Complete(); // should trigger RMW re-do
 
-            (status, output) = (await s1.ReadAsync(ref key, ref output, readAtAddress, ReadFlags.None, Empty.Default, 129, cancellationToken)).Complete();
-            Assert.IsTrue(status == Status.OK && output == key + input + input);
+            // Because of our small log-memory size, RMW of key 0 causes an RCW (Read-Copy-Write) and an insertion at the tail
+            // of the log. Use the same pattern as above to get the new record address.
+            addresses[key] = fht1.Log.TailAddress - recordSize;
+
+            (status, output) = (await s1.ReadAsync(ref key, ref output, addresses[key], ReadFlags.None, Empty.Default, 129)).Complete();
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(key + input + input, output);
         }
-        */
 
         // Test of RMWAsync where No ref used
         [Test]
@@ -280,17 +296,19 @@ namespace FASTER.test.async
             Status status;
             long key = default, input = default, output = default;
 
-            using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
+            using var s1 = fht1.NewSession(new RMWSimpleFunctions<long, long>((a, b) => a + b));
             for (key = 0; key < numOps; key++)
             {
-                status = (await s1.RMWAsync(key, key)).Complete();
-                Assert.AreNotEqual(Status.PENDING, status);
+                var asyncResult = await (await s1.RMWAsync(key, key)).CompleteAsync();
+                Assert.AreNotEqual(Status.PENDING, asyncResult.Status);
+                Assert.AreEqual(key, asyncResult.Output);
             }
 
             for (key = 0; key < numOps; key++)
             {
                 (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
 
             key = 0;
@@ -302,7 +320,8 @@ namespace FASTER.test.async
             (await t2).Complete(); // should trigger RMW re-do
 
             (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-            Assert.IsTrue(status == Status.OK && output == key + input + input);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(key + input + input, output);
         }
 
         // Test of ReadyToCompletePendingAsync
@@ -325,7 +344,8 @@ namespace FASTER.test.async
             for (key = 0; key < numOps; key++)
             {
                 (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
 
             key = 0;
@@ -337,7 +357,8 @@ namespace FASTER.test.async
             (await t2).Complete(); // should trigger RMW re-do
 
             (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-            Assert.IsTrue(status == Status.OK && output == key + input + input);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(key + input + input, output);
         }
 
         // Test that does both UpsertAsync and RMWAsync to populate the FasterKV and update it, possibly after flushing it from memory.
