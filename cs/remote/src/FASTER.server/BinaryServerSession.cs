@@ -334,7 +334,6 @@ namespace FASTER.server
         public override void Dispose()
         {
             subscribeKVBroker.RemoveSubscription(this);
-            base.Dispose();
         }
     }
 }
