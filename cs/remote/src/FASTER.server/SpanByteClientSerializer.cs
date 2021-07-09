@@ -6,7 +6,7 @@ using FASTER.common;
 using FASTER.core;
 using System.Buffers;
 
-namespace FASTER.client
+namespace FASTER.server
 {
     /// <summary>
     /// Serializer for SpanByte (can be used on client side)
