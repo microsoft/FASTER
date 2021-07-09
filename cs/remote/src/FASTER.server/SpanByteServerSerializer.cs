@@ -14,7 +14,6 @@ namespace FASTER.server
     /// </summary>
     public unsafe sealed class SpanByteServerSerializer : IServerSerializer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory>
     {
-        readonly SpanByteVarLenStruct settings;
         readonly int keyLength;
         readonly int valueLength;
 
@@ -28,7 +27,6 @@ namespace FASTER.server
         /// <param name="maxValueLength">Max value length</param>
         public SpanByteServerSerializer(int maxKeyLength = 512, int maxValueLength = 512)
         {
-            settings = new SpanByteVarLenStruct();
             keyLength = maxKeyLength;
             valueLength = maxValueLength;
         }
@@ -38,7 +36,7 @@ namespace FASTER.server
         public ref SpanByte ReadKeyByRef(ref byte* src)
         {
             ref var ret = ref Unsafe.AsRef<SpanByte>(src);
-            src += settings.GetLength(ref ret);
+            src += ret.TotalSize;
             return ref ret;
         }
 
@@ -47,7 +45,7 @@ namespace FASTER.server
         public ref SpanByte ReadValueByRef(ref byte* src)
         {
             ref var ret = ref Unsafe.AsRef<SpanByte>(src);
-            src += settings.GetLength(ref ret);
+            src += ret.TotalSize;
             return ref ret;
         }
 
@@ -56,19 +54,9 @@ namespace FASTER.server
         public ref SpanByte ReadInputByRef(ref byte* src)
         {
             ref var ret = ref Unsafe.AsRef<SpanByte>(src);
-            src += settings.GetLength(ref ret);
+            src += ret.TotalSize;
             return ref ret;
         }
-
-        /// <inheritdoc />
-        public bool Write(ref SpanByte k, ref byte* dst, int length)
-        {
-            if (k.Length > length) return false;
-            k.CopyTo(dst);
-            dst += (k.Length + sizeof(int));
-            return true;
-        }
-
 
         /// <inheritdoc />
         public bool Write(ref SpanByteAndMemory k, ref byte* dst, int length)
@@ -77,13 +65,9 @@ namespace FASTER.server
 
             var dest = new SpanByte(length, (IntPtr)dst);
             if (k.IsSpanByte)
-            {
                 k.SpanByte.CopyTo(ref dest);
-                Debug.WriteLine(*(dst + sizeof(int)));
-            }
             else
                 k.Memory.Memory.Span.CopyTo(dest.AsSpan());
-
             return true;
         }
 

@@ -23,7 +23,6 @@ namespace FASTER.client
         /// <param name="memoryPool"></param>
         public SpanByteClientSerializer(MemoryPool<byte> memoryPool = default)
         {
-            settings = new SpanByteVarLenStruct();
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
 
@@ -35,15 +34,6 @@ namespace FASTER.client
             new ReadOnlySpan<byte>(src + sizeof(int), length).CopyTo(mem.Memory.Span);
             src += length + sizeof(int);
             return new SpanByteAndMemory(mem, length);
-        }
-
-        /// <inheritdoc />
-        public SpanByte ReadKey(ref byte* src)
-        {
-            int length = *(int*)src;
-            byte* mem = src;
-            src += length + sizeof(int);
-            return SpanByte.FromPointer((mem + sizeof(int)), length);
         }
 
         /// <inheritdoc />
