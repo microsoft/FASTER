@@ -28,6 +28,7 @@ namespace FASTER.core
         /// <param name="spanByte"></param>
         public SpanByteAndMemory(SpanByte spanByte)
         {
+            if (spanByte.Serialized) throw new Exception("Cannot create new SpanByteAndMemory using serialized SpanByte");
             SpanByte = spanByte;
             Memory = default;
         }
