@@ -11,17 +11,17 @@ namespace FASTER.remote.test
         readonly string folderName;
         readonly FasterServer server;
         readonly FasterKV<SpanByte, SpanByte> store;
+        readonly SpanByteFasterKVProvider provider;
 
         public VarLenServer(string folderName, string address = "127.0.0.1", int port = 33278)
         {
             this.folderName = folderName;
             GetSettings(folderName, out var logSettings, out var checkpointSettings, out var indexSize);
 
-            // We use blittable structs Key and Value to construct a costomized server for fixed-length types
             store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
 
             // Create session provider for VarLen
-            var provider = new SpanByteFasterKVProvider(store);
+            provider = new SpanByteFasterKVProvider(store);
 
             server = new FasterServer(address, port);
             server.Register(WireFormat.DefaultVarLenKV, provider);
@@ -31,6 +31,7 @@ namespace FASTER.remote.test
         public void Dispose()
         {
             server.Dispose();
+            provider.Dispose();
             store.Dispose();
             new DirectoryInfo(folderName).Delete(true);
         }
