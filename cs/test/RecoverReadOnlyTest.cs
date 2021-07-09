@@ -70,7 +70,9 @@ namespace FASTER.test
             // Run consumer on SEPARATE read-only FasterLog instance
             var consumer = SeparateConsumerAsync(cts.Token);
 
-            // Give it some time to run a bit - similar to waiting for things to run before hitting cancel
+            //** Give it some time to run a bit
+            //** Acceptable use of using sleep for this spot
+            //** Similar to waiting for things to run before manually hitting cancel from a command prompt
             Thread.Sleep(3000);
             cts.Cancel();
 

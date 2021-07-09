@@ -636,7 +636,6 @@ namespace FASTER.test
 
         }
 
-/*
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
@@ -662,9 +661,6 @@ namespace FASTER.test
 
             // Enqueue and AsyncCommit in a separate thread (wait there until commit is done though).
             Task currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
-
-            // Give all a second or so to queue up and to help with timing issues - shouldn't need but timing issues
-            Thread.Sleep(2000);
 
             // Commit to the log
             currentTask.Wait(4000, token);
@@ -705,7 +701,8 @@ namespace FASTER.test
                 Assert.Fail($"Final Status check Failure -- Task should be 'RanToCompletion' but current Status is: {currentTask.Status}; wasCanceled = {wasCanceled}");
             }
         }
-*/
+
+
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
