@@ -101,11 +101,15 @@ namespace FASTER.test.recovery.sumstore
                 new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.Snapshot }
             );
 
-            //*#*#*# TO DO: Figure Out why this DeviceType fails - For FASTER Log, need to add 'LogCommitDir = path' to log settings   *#*#*#
+
+            //*** Bug #143433 - RecoveryTestFullCheckpoint - LocalMemory only - only reading 1 item when other devices reading all 16384 items
             if (deviceType == TestUtils.DeviceType.LocalMemory)
             {
                 return;
             }
+            //*** Bug #143433 - RecoveryTestFullCheckpoint - LocalMemory only - only reading 1 item when other devices reading all 16384 items
+
+
 
             Populate(FullCheckpointAction);
 
@@ -220,8 +224,7 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < numUniqueKeys; i++)
             {
                 var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                //Assert.IsTrue(status == Status.OK,"Expected status=OK but found:"+status.ToString()+ " at index:" + i.ToString());
-                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(status == Status.OK,"Expected status=OK but found status:"+status.ToString()+ " at index:" + i.ToString());
                 inputArray[i].numClicks = output.value;
             }
 

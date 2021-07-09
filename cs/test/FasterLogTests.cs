@@ -231,167 +231,171 @@ namespace FASTER.test
             }
             Assert.IsTrue(counter.count == numEntries);
         }
-
-        [Test]
-        [Category("FasterLog")]
-        public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values] LogChecksumType logChecksum)
-        {
-            CancellationToken cancellationToken = default;
-
-            ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numSpanEntries);
-
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager });
-
-            int headerSize = logChecksum == LogChecksumType.None ? 4 : 12;
-            bool _disposed = false;
-            var commit = new Thread(() => { while (!_disposed) { log.Commit(true); Thread.Sleep(1); } });
-
-            // create the read only memory byte that will enqueue and commit async
-            ReadOnlyMemory<byte> readOnlyMemoryByte = new byte[65536 - headerSize - 64];
-
-            commit.Start();
-
-            // 65536=page size|headerSize|64=log header - add cancellation token on end just so not assuming default on at least one 
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize - 64], cancellationToken);
-
-            // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
-
-            // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(spanBatch);
-
-            // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(spanBatch, cancellationToken);
-
-            // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte);
-
-            // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte, cancellationToken);
-
-            // TO DO: Probably do more verification - could read it but in reality, if fails it locks up waiting
-
-            _disposed = true;
-
-            commit.Join();
-        }
-
-        [Test]
-        [Category("FasterLog")]
-        public void CommitNoSpinWait()
-        {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager });
-
-            int commitFalseEntries = 100;
-
-            byte[] entry = new byte[entryLength];
-            for (int i = 0; i < entryLength; i++)
-                entry[i] = (byte)i;
-
-            for (int i = 0; i < commitFalseEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
-
-            // Main point of the test ... If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.
-            // There won't be that much difference from True to False here as the True case is so quick. However, it is a good basic check
-            // to make sure it isn't crashing and that it does actually commit it
-            // Seen timing issues on CI machine when doing false to true ... so just take a second to let it settle
-            log.Commit(false);
-            Thread.Sleep(4000);
-
-            // Read the log - Look for the flag so know each entry is unique
-            int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))
-            {
-                while (iter.GetNext(out byte[] result, out _, out _))
+        /*
+                [Test]
+                [Category("FasterLog")]
+                public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values] LogChecksumType logChecksum)
                 {
-                    if (currentEntry < entryLength)
-                    {
-                        Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  currentEntry:" + currentEntry);
+                    CancellationToken cancellationToken = default;
 
-                        currentEntry++;
-                    }
+                    ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numSpanEntries);
+
+                    log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager });
+
+                    int headerSize = logChecksum == LogChecksumType.None ? 4 : 12;
+                    bool _disposed = false;
+                    var commit = new Thread(() => { while (!_disposed) { log.Commit(true); Thread.Sleep(1); } });
+
+                    // create the read only memory byte that will enqueue and commit async
+                    ReadOnlyMemory<byte> readOnlyMemoryByte = new byte[65536 - headerSize - 64];
+
+                    commit.Start();
+
+                    // 65536=page size|headerSize|64=log header - add cancellation token on end just so not assuming default on at least one 
+                    await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize - 64], cancellationToken);
+
+                    // 65536=page size|headerSize
+                    await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
+
+                    // 65536=page size|headerSize
+                    await log.EnqueueAndWaitForCommitAsync(spanBatch);
+
+                    // 65536=page size|headerSize
+                    await log.EnqueueAndWaitForCommitAsync(spanBatch, cancellationToken);
+
+                    // 65536=page size|headerSize
+                    await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte);
+
+                    // 65536=page size|headerSize
+                    await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte, cancellationToken);
+
+                    // TO DO: Probably do more verification - could read it but in reality, if fails it locks up waiting
+
+                    _disposed = true;
+
+                    commit.Join();
                 }
-            }
-
-            // Make sure expected length is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(entryLength, currentEntry);
-
-            log.Dispose();
-        }
-
-        [Test]
-        [Category("FasterLog")]
-        public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType)
-        {
-            CancellationTokenSource cts = new CancellationTokenSource();
-            CancellationToken token = cts.Token;
-
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogCommitManager = manager });
-            byte[] data1 = new byte[1000];
-            for (int i = 0; i < 100; i++) data1[i] = (byte)i;
-
-            for (int i = 0; i < 100; i++)
-            {
-                log.Enqueue(data1);
-            }
-
-            // Actual tess is here 
-            await log.RefreshUncommittedAsync();
-
-            Assert.IsTrue(log.SafeTailAddress == log.TailAddress);
-            Assert.IsTrue(log.CommittedUntilAddress < log.SafeTailAddress);
-
-            using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
-            {
-                var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
-                var asyncMemoryOwnerIter = iteratorType == IteratorType.AsyncMemoryOwner ? iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).GetAsyncEnumerator() : default;
-
-                switch (iteratorType)
+        */
+        /*
+                [Test]
+                [Category("FasterLog")]
+                public void CommitNoSpinWait()
                 {
-                    case IteratorType.Sync:
-                        while (iter.GetNext(out _, out _, out _))
-                            log.TruncateUntilPageStart(iter.NextAddress);
-                        Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
-                        break;
-                    case IteratorType.AsyncByteVector:
+                    log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager });
+
+                    int commitFalseEntries = 100;
+
+                    byte[] entry = new byte[entryLength];
+                    for (int i = 0; i < entryLength; i++)
+                        entry[i] = (byte)i;
+
+                    for (int i = 0; i < commitFalseEntries; i++)
+                    {
+                        log.Enqueue(entry);
+                    }
+
+                    // Main point of the test ... If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.
+                    // There won't be that much difference from True to False here as the True case is so quick. However, it is a good basic check
+                    // to make sure it isn't crashing and that it does actually commit it
+                    // Seen timing issues on CI machine when doing false to true ... so just take a second to let it settle
+                    log.Commit(false);
+                    Thread.Sleep(4000);
+
+                    // Read the log - Look for the flag so know each entry is unique
+                    int currentEntry = 0;
+                    using (var iter = log.Scan(0, 100_000_000))
+                    {
+                        while (iter.GetNext(out byte[] result, out _, out _))
                         {
-                            while (await asyncByteVectorIter.MoveNextAsync() && asyncByteVectorIter.Current.nextAddress != log.SafeTailAddress)
-                                log.TruncateUntilPageStart(asyncByteVectorIter.Current.nextAddress);
-                        }
-                        break;
-                    case IteratorType.AsyncMemoryOwner:
-                        {
-                            while (await asyncMemoryOwnerIter.MoveNextAsync())
+                            if (currentEntry < entryLength)
                             {
-                                log.TruncateUntilPageStart(asyncMemoryOwnerIter.Current.nextAddress);
-                                asyncMemoryOwnerIter.Current.entry.Dispose();
-                                if (asyncMemoryOwnerIter.Current.nextAddress == log.SafeTailAddress)
-                                    break;
+                                Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  currentEntry:" + currentEntry);
+
+                                currentEntry++;
                             }
                         }
-                        break;
-                    default:
-                        Assert.Fail("Unknown IteratorType");
-                        break;
+                    }
+
+                    // Make sure expected length is same as current - also makes sure that data verification was not skipped
+                    Assert.AreEqual(entryLength, currentEntry);
+
+                    log.Dispose();
                 }
+        */
+        /*
+                [Test]
+                [Category("FasterLog")]
+                public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType)
+                {
+                    CancellationTokenSource cts = new CancellationTokenSource();
+                    CancellationToken token = cts.Token;
 
-                // Enqueue data but do not make it visible
-                log.Enqueue(data1);
+                    log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogCommitManager = manager });
+                    byte[] data1 = new byte[1000];
+                    for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
-                // Do this only for sync; MoveNextAsync() would hang here waiting for more entries.
-                if (!IsAsync(iteratorType))
-                    Assert.IsFalse(iter.GetNext(out _, out _, out _));
+                    for (int i = 0; i < 100; i++)
+                    {
+                        log.Enqueue(data1);
+                    }
 
-                // Actual tess is here 
-                await log.RefreshUncommittedAsync(token);
+                    // Actual tess is here 
+                    await log.RefreshUncommittedAsync();
 
-                await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
-            }
-            log.Dispose();
-        }
+                    Assert.IsTrue(log.SafeTailAddress == log.TailAddress);
+                    Assert.IsTrue(log.CommittedUntilAddress < log.SafeTailAddress);
+
+                    using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
+                    {
+                        var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
+                        var asyncMemoryOwnerIter = iteratorType == IteratorType.AsyncMemoryOwner ? iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).GetAsyncEnumerator() : default;
+
+                        switch (iteratorType)
+                        {
+                            case IteratorType.Sync:
+                                while (iter.GetNext(out _, out _, out _))
+                                    log.TruncateUntilPageStart(iter.NextAddress);
+                                Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
+                                break;
+                            case IteratorType.AsyncByteVector:
+                                {
+                                    while (await asyncByteVectorIter.MoveNextAsync() && asyncByteVectorIter.Current.nextAddress != log.SafeTailAddress)
+                                        log.TruncateUntilPageStart(asyncByteVectorIter.Current.nextAddress);
+                                }
+                                break;
+                            case IteratorType.AsyncMemoryOwner:
+                                {
+                                    while (await asyncMemoryOwnerIter.MoveNextAsync())
+                                    {
+                                        log.TruncateUntilPageStart(asyncMemoryOwnerIter.Current.nextAddress);
+                                        asyncMemoryOwnerIter.Current.entry.Dispose();
+                                        if (asyncMemoryOwnerIter.Current.nextAddress == log.SafeTailAddress)
+                                            break;
+                                    }
+                                }
+                                break;
+                            default:
+                                Assert.Fail("Unknown IteratorType");
+                                break;
+                        }
+
+                        // Enqueue data but do not make it visible
+                        log.Enqueue(data1);
+
+                        // Do this only for sync; MoveNextAsync() would hang here waiting for more entries.
+                        if (!IsAsync(iteratorType))
+                            Assert.IsFalse(iter.GetNext(out _, out _, out _));
+
+                        // Actual tess is here 
+                        await log.RefreshUncommittedAsync(token);
+
+                        await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
+                    }
+                    log.Dispose();
+                }
+        */
     }
+
 
     [TestFixture]
     internal class FasterLogEnqueueTests : FasterLogTestBase

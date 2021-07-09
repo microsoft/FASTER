@@ -51,16 +51,19 @@ namespace FASTER.test
         [Category("Smoke")]
         public void DeltaLogTest1([Values] TestUtils.DeviceType deviceType)
         {
-            int TotalCount = 1000;
+            int TotalCount = 200; 
             string filename = path + "delta" + deviceType.ToString() + ".log";
             TestUtils.DeleteDirectory(path, wait: true);
             DirectoryInfo di = Directory.CreateDirectory(path);
 
-            //*#*#*# TO DO: Figure Out why this DeviceType fails - For FASTER Log, need to add 'LogCommitDir = path' to log settings so maybe something similar with deltalog   *#*#*#
+
+            //*** Bug #143432 - DeltaLogTest on LocalMemory is only returning 50 items when should be returning 200
             if (deviceType == TestUtils.DeviceType.LocalMemory)
             {
-                return;
+                 return;
             }
+            //*** Bug #143432 - DeltaLogTest on LocalMemory is only returning 50 items when should be returning 200
+
 
             using (device = TestUtils.CreateTestDevice(deviceType, filename))
             {
@@ -103,7 +106,7 @@ namespace FASTER.test
                     }
                     i++;
                 }
-                Assert.IsTrue(i == TotalCount);
+                Assert.IsTrue(i == TotalCount,$"i={i} and TotalCount={TotalCount}");
                 bufferPool.Free();
             }
             while (true)
@@ -115,7 +118,6 @@ namespace FASTER.test
                 }
                 catch { }
             }
-            //TestUtils.DeleteDirectory(path);
         }
     }
 }

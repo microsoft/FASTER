@@ -55,12 +55,6 @@ namespace FASTER.test
             log = TestUtils.CreateTestDevice(deviceType, logfilename);
             objlog = TestUtils.CreateTestDevice(deviceType, objlogfilename);
 
-            //*#*#*# TO DO: Figure Out why this DeviceType fails - For FASTER Log, need to add 'LogCommitDir = path' to log settings   *#*#*#
-            if (deviceType == TestUtils.DeviceType.LocalMemory)
-            {
-                return;
-            }
-
             fht = new FasterKV<string, string>(
                     1L << 20, // size of hash table in #cache lines; 64 bytes per cache line
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9, SegmentSizeBits = 22 } // log device
@@ -68,8 +62,7 @@ namespace FASTER.test
 
             session = fht.For(new MyFuncs()).NewSession<MyFuncs>();
 
-
-            const int totalRecords = 500;
+            const int totalRecords = 200;
             for (int i = 0; i < totalRecords; i++)
             {
                 var _key = $"{i}";

@@ -51,7 +51,7 @@ namespace FASTER.test
 
 
 #if WINDOWS
-            //*#*#*# Bug #143131 - fht.Log.Scan failing to get proper value on EmulatedAzure only  *#*#*#
+            //*** Bug #143131 - fht.Log.Scan failing to get proper value on EmulatedAzure only  ***
             if (deviceType == TestUtils.DeviceType.EmulatedAzure)
             {
                 return;
