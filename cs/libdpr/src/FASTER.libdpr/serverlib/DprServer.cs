@@ -8,6 +8,7 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
+
     /// <summary>
     /// Maintains per-worker state for DPR version-tracking.
     ///
@@ -64,7 +65,7 @@ namespace FASTER.libdpr
         {
             var v = state.dprFinder.NewWorker(state.me, stateObject);
             // This worker is recovering from some failure and we need to load said checkpoint
-            state.worldlineTracker.TryAdvanceVersion(_ =>
+            state.worldlineTracker.TryAdvanceVersion((vOld, vNew) =>
             {
                 if (v != 0)
                 {
@@ -118,16 +119,12 @@ namespace FASTER.libdpr
             // Can prune dependency information of committed versions
             var newCommitted = state.dprFinder.SafeVersion(state.me);
             for (var i = lastCommitted + 1; i < newCommitted; i++)
-            {
-                state.versions.TryRemove(i, out var deps);
-                state.dependencySetPool.Return(deps);
                 stateObject.PruneVersion(i);
-            }
         }
 
         private void TryAdvanceWorldLineTo(long targetWorldline)
         {
-            state.worldlineTracker.TryAdvanceVersion(_ =>
+            state.worldlineTracker.TryAdvanceVersion((vOld, vNew) =>
             {
                 state.rollbackProgress = new ManualResetEventSlim();
                 stateObject.BeginRestore(state.dprFinder.SafeVersion(state.me));
@@ -193,7 +190,7 @@ namespace FASTER.libdpr
             // Update batch dependencies to the current worker-version. This is an over-approximation, as the batch
             // could get processed at a future version instead due to thread timing. However, this is not a correctness
             // issue, nor do we lose much precision as batch-level dependency tracking is already an approximation.
-            var deps = state.versions.GetOrAdd(stateObject.Version(), version => state.dependencySetPool.Checkout());
+            var deps = state.versions[stateObject.Version()];
             fixed (byte* depValues = request.deps)
             {
                 for (var i = 0; i < request.numDeps; i++)
@@ -206,6 +203,7 @@ namespace FASTER.libdpr
             // Exit without releasing epoch, as protection is supposed to extend until end of batch.
             return true;
         }
+        
 
         /// <summary>
         /// Invoke after processing of a batch is complete, and dprBatchHeader has been populated with a batch offset ->

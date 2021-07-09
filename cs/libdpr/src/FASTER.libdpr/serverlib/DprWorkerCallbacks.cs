@@ -1,4 +1,6 @@
 
+using System.Diagnostics;
+
 namespace FASTER.libdpr
 {
     /// <summary>
@@ -16,6 +18,23 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
+        /// Invoked when a new version is created. This method should be invoked and allowed to finish before any
+        /// operation is issued to the new version and before future version is created.
+        /// </summary>
+        /// <param name="version"></param>
+        /// <param name="previousVersion"></param>
+        public void BeforeNewVersion(long version, long previousVersion)
+        {
+            var worldLine = state.worldlineTracker.Enter();
+            var deps = state.dependencySetPool.Checkout();
+            if (previousVersion != 0)
+                deps.Update(state.me, previousVersion);
+            var success = state.versions.TryAdd(version, deps);
+            Debug.Assert(success);
+            state.worldlineTracker.Leave();
+        }
+
+        /// <summary>
         /// Invoked when a version is persistent.
         /// </summary>
         /// <param name="version">Version number of the finished version</param>
@@ -23,9 +42,10 @@ namespace FASTER.libdpr
         public void OnVersionPersistent(long version)
         {
             var worldLine = state.worldlineTracker.Enter();
-            var deps = state.versions[version];
+            state.versions.TryRemove(version, out var deps);
             var workerVersion = new WorkerVersion(state.me, version);
             state.dprFinder.ReportNewPersistentVersion(worldLine, workerVersion, deps);
+            state.dependencySetPool.Return(deps);
             state.worldlineTracker.Leave();
         }
 
@@ -35,6 +55,8 @@ namespace FASTER.libdpr
         /// </summary>
         public void OnRollbackComplete()
         {
+            // When rolling back, any currently unreported dependencies are lost anyways. Can safely discard.
+            state.versions.Clear();
             state.rollbackProgress.Set();
         }
     }

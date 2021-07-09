@@ -101,14 +101,12 @@ namespace FASTER.libdpr
             var id = tested.IssueNewOp(0);
             tested.ResolveOp(id);
             
-
             cluster[new Worker(0)].dprServer.TryRefreshAndCheckpoint(10, 10);
 
             var id1 = tested.IssueNewOp(0);
             var id2 = tested.IssueNewOp(1); 
             var id3 = tested.IssueNewOp(2);
 
-            
             tested.ResolveOp(id1);
             tested.ResolveOp(id2);
             tested.ResolveOp(id3);
@@ -118,7 +116,6 @@ namespace FASTER.libdpr
             
             client.RefreshDprView();
 
-            
             var commitPoint = tested.session.GetCommitPoint();
             Assert.AreEqual(4, commitPoint.UntilSerialNo);
             Assert.AreEqual(1, commitPoint.ExcludedSerialNos.Count);

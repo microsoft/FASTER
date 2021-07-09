@@ -57,7 +57,7 @@ namespace FASTER.libdpr
             processThread = new Thread(() =>
             {
                 while (!termination.IsSet)
-                    backend.TryFindDprCut();
+                    backend.Process();
             });
             processThread.Start();
 

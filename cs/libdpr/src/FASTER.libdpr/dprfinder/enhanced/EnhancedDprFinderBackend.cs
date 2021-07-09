@@ -5,20 +5,20 @@ using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.libdpr
 {
     public class PrecomputedSyncResponse
     {
         public ReaderWriterLockSlim rwLatch;
-        public long worldLine, serialNum;
+        public long worldLine;
         public byte[] serializedResponse = new byte[1 << 15];
         public int recoveryStateEnd, responseEnd;
 
-        public PrecomputedSyncResponse(ClusterState clusterState, long serialNum)
+        public PrecomputedSyncResponse(ClusterState clusterState)
         {
             rwLatch = new ReaderWriterLockSlim();
-            this.serialNum = serialNum;
             worldLine = clusterState.currentWorldLine;
             var serializedSize = sizeof(long) + RespUtil.DictionarySerializedSize(clusterState.worldLinePrefix);
             if (serializedSize > serializedResponse.Length)
@@ -26,7 +26,8 @@ namespace FASTER.libdpr
 
             BitConverter.TryWriteBytes(new Span<byte>(serializedResponse, 0, sizeof(long)),
                 clusterState.currentWorldLine);
-            recoveryStateEnd = RespUtil.SerializeDictionary(clusterState.worldLinePrefix, serializedResponse, sizeof(long));
+            recoveryStateEnd =
+                RespUtil.SerializeDictionary(clusterState.worldLinePrefix, serializedResponse, sizeof(long));
             // In the absence of a cut, set cut to a special unknown value.
             BitConverter.TryWriteBytes(new Span<byte>(serializedResponse, recoveryStateEnd, sizeof(long)), -1L);
             responseEnd = recoveryStateEnd + sizeof(long);
@@ -47,7 +48,7 @@ namespace FASTER.libdpr
             rwLatch.ExitWriteLock();
         }
     }
-    
+
     public class ClusterState
     {
         public long currentWorldLine;
@@ -55,7 +56,7 @@ namespace FASTER.libdpr
 
         public ClusterState()
         {
-            currentWorldLine = 0;
+            currentWorldLine = 1;
             worldLinePrefix = new Dictionary<Worker, long>();
         }
 
@@ -68,7 +69,7 @@ namespace FASTER.libdpr
             return result;
         }
     }
-    
+
 
     public class EnhancedDprFinderBackend
     {
@@ -88,6 +89,7 @@ namespace FASTER.libdpr
                     recoveryComplete = true;
                     return;
                 }
+
                 recoveryComplete = false;
                 // Mark all previously known worker as unaccounted for --- we cannot make any statements about the
                 // current state of the cluster until we are sure we have up-to-date information from all of them
@@ -105,12 +107,14 @@ namespace FASTER.libdpr
                 // At this point, we have all information that is at least as up-to-date as when we crashed. We can
                 // traverse the graph and be sure to reach a conclusion that's at least as up-to-date as the guarantees
                 // we may have given out before we crashed.
-                backend.TryFindDprCut(true);
+                backend.cutChanged = true;
+                backend.TryCommitVersions(true);
+                
                 // Only mark recovery complete after we have reached that conclusion
                 recoveryComplete = true;
             }
         }
-        
+
         private long maxVersion = 0;
         private Dictionary<Worker, long> currentCut = new Dictionary<Worker, long>();
         private bool cutChanged;
@@ -132,24 +136,25 @@ namespace FASTER.libdpr
 
         private PingPongDevice persistentStorage;
         private PrecomputedSyncResponse syncResponse;
-        private long responseSerialNum = 0;
+
+        // Used to send add/delete worker requests to processing thread
+        private ConcurrentQueue<(Worker, Action<(long, long)>)> addQueue =
+            new ConcurrentQueue<(Worker, Action<(long, long)>)>();
+
+        private ConcurrentQueue<(Worker, Action)> deleteQueue = new ConcurrentQueue<(Worker, Action)>();
 
         // Only used during DprFinder recovery
         private RecoveryState recoveryState;
-        
+
         public EnhancedDprFinderBackend(PingPongDevice persistentStorage)
         {
             this.persistentStorage = persistentStorage;
             if (persistentStorage.ReadLatestCompleteWrite(out var buf))
-            {
                 volatileClusterState = ClusterState.FromBuffer(buf, 0, out _);
-            }
             else
-            {
                 volatileClusterState = new ClusterState();
-            }
 
-            syncResponse = new PrecomputedSyncResponse(volatileClusterState, responseSerialNum++);
+            syncResponse = new PrecomputedSyncResponse(volatileClusterState);
             recoveryState = new RecoveryState(this);
         }
 
@@ -172,7 +177,7 @@ namespace FASTER.libdpr
                 visited.Clear();
                 frontier.Clear();
                 frontier.Enqueue(wv);
-                
+
                 while (frontier.Count != 0)
                 {
                     var node = frontier.Dequeue();
@@ -203,31 +208,72 @@ namespace FASTER.libdpr
             }
         }
 
-        public void TryFindDprCut(bool tryCommitAll = false)
+        public void Process()
         {
             // Unable to make commit progress until we rebuild precedence graph from worker's persistent storage
             if (!recoveryState.RecoveryComplete()) return;
-            // Go through the unprocessed wvs and traverse the graph, but give up after a while
-            var threshold = tryCommitAll ? outstandingWvs.Count : 50;
+
+            if (!addQueue.IsEmpty || !deleteQueue.IsEmpty)
+            {
+                // Because this code-path is rare, ok to allocate new data structures here
+                var callbacks = new List<Action>();
+
+                // Need to grab an exclusive lock to ensure that if a rollback is triggered, there are no concurrent
+                // NewCheckpoint calls that can pollute the graph with rolled back versions
+                clusterChangeLatch.EnterWriteLock();
+
+                // Process cluster change requests
+                while (addQueue.TryDequeue(out var entry))
+                {
+                    var result = ProcessAddWorker(entry.Item1);
+                    callbacks.Add(() => entry.Item2(result));
+                }
+
+                while (deleteQueue.TryDequeue(out var entry))
+                {
+                    ProcessDeleteWorker(entry.Item1);
+                    callbacks.Add(() => entry.Item2());
+                }
+
+                // serialize new cluster state and persist
+                var newResponse = new PrecomputedSyncResponse(volatileClusterState);
+                persistentStorage.WriteReliably(newResponse.serializedResponse, 0, newResponse.recoveryStateEnd);
+                newResponse.UpdateCut(currentCut);
+                syncResponse = newResponse;
+                clusterChangeLatch.ExitWriteLock();
+
+                foreach (var callback in callbacks)
+                    callback();
+            }
+
+            TryCommitVersions();
+        }
+
+        private void TryCommitVersions(bool tryCommitAll = false)
+        {
+            // Go through the unprocessed wvs and traverse the graph, unless instructed otherwise, give up after a while
+            // to return control to the calling thread 
+            var threshold = tryCommitAll ? outstandingWvs.Count : 100;
             for (var i = 0; i < threshold; i++)
             {
                 if (!outstandingWvs.TryDequeue(out var wv)) break;
                 if (!TryCommitWorkerVersion(wv))
                     outstandingWvs.Enqueue(wv);
             }
-            
-            clusterChangeLatch.EnterReadLock();
-            // Compute a new syncResponse for consumption
+
             if (cutChanged)
             {
+                clusterChangeLatch.EnterReadLock();
+                // Compute a new syncResponse for consumption
+
                 // We need to make sure we are not writing a newer guarantee to an older world-line, but I am pretty
                 // convinced this will never happen because the graph can only continue to evolve when the new world-line
                 // is published (as part of the new syncResponse)
                 Debug.Assert(syncResponse.worldLine == volatileClusterState.currentWorldLine);
                 syncResponse.UpdateCut(currentCut);
                 cutChanged = false;
+                clusterChangeLatch.ExitReadLock();
             }
-            clusterChangeLatch.ExitReadLock();
         }
 
         public void NewCheckpoint(long worldLine, WorkerVersion wv, IEnumerable<WorkerVersion> deps)
@@ -248,13 +294,11 @@ namespace FASTER.libdpr
                     return;
                 var list = objectPool.Checkout();
                 list.Clear();
-                var prev = versionTable[wv.Worker];
-                list.Add(new WorkerVersion(wv.Worker, prev));
                 Debug.Assert(deps.Select(d => d.Worker).All(versionTable.ContainsKey));
                 list.AddRange(deps);
                 maxVersion = Math.Max(wv.Version, maxVersion);
                 outstandingWvs.Enqueue(wv);
-                versionTable.TryUpdate(wv.Worker, wv.Version, prev);
+                versionTable.AddOrUpdate(wv.Worker, wv.Version, (w, old) => Math.Max(old, wv.Version));
                 precedenceGraph.TryAdd(wv, list);
             }
             finally
@@ -263,7 +307,7 @@ namespace FASTER.libdpr
             }
         }
 
-        public void MarkWorkerAccountedFor(Worker worker, long earliestUncommittedVersion)
+        public void MarkWorkerAccountedFor(Worker worker, long earliestPresentVersion)
         {
             // Should not be invoked if recovery is underway
             Debug.Assert(!recoveryState.RecoveryComplete());
@@ -271,20 +315,23 @@ namespace FASTER.libdpr
             // for as then only the graph traversal thread will update current cut
             lock (currentCut)
             {
-                Debug.Assert(earliestUncommittedVersion <= volatileClusterState.worldLinePrefix[worker]);
-                currentCut[worker] = earliestUncommittedVersion;
+                Debug.Assert(earliestPresentVersion <= volatileClusterState.worldLinePrefix[worker]);
+                // We don't know if a present version is committed or not, but all pruned versions must be committed.
+                currentCut[worker] = Math.Max(0, earliestPresentVersion - 1);
             }
 
             recoveryState.MarkWorkerAccountedFor(worker);
         }
 
-        public (long, long) AddWorker(Worker worker, Action<(long, long)> callback)
+        public void AddWorker(Worker worker, Action<(long, long)> callback = null) =>
+            addQueue.Enqueue(ValueTuple.Create(worker, callback));
+
+        private (long, long) ProcessAddWorker(Worker worker)
         {
             // Before adding a worker, make sure all workers have already reported all (if any) locally outstanding 
             // checkpoints. We require this to be able to process the request.
             if (!recoveryState.RecoveryComplete()) throw new InvalidOperationException();
 
-            clusterChangeLatch.EnterWriteLock();
             versionTable.TryAdd(worker, 0);
             (long, long) result;
             if (volatileClusterState.worldLinePrefix.TryAdd(worker, 0))
@@ -311,49 +358,23 @@ namespace FASTER.libdpr
                 result = (volatileClusterState.currentWorldLine, survivingVersion);
             }
 
-            var newResponse = new PrecomputedSyncResponse(volatileClusterState, responseSerialNum++);
-            persistentStorage.WriteReliablyAsync(newResponse.serializedResponse, 0, newResponse.recoveryStateEnd, () =>
-            {
-                clusterChangeLatch.EnterWriteLock();
-                if (syncResponse.serialNum < newResponse.serialNum)
-                {
-                    newResponse.UpdateCut(currentCut);
-                    syncResponse = newResponse;
-                }
-                clusterChangeLatch.ExitWriteLock();
-                callback?.Invoke(result);
-            });
-            clusterChangeLatch.ExitWriteLock();
             return result;
         }
 
-        public void DeleteWorker(Worker worker, Action callback = null)
+        public void DeleteWorker(Worker worker, Action callback = null) =>
+            deleteQueue.Enqueue(ValueTuple.Create(worker, callback));
+
+        private void ProcessDeleteWorker(Worker worker)
         {
             // Before adding a worker, make sure all workers have already reported all (if any) locally outstanding 
             // checkpoints. We require this to be able to process the request.
             if (!recoveryState.RecoveryComplete()) throw new InvalidOperationException();
-            
-            clusterChangeLatch.EnterWriteLock();
 
             currentCut.Remove(worker);
             cutChanged = true;
             volatileClusterState.worldLinePrefix.Remove(worker);
             volatileClusterState.worldLinePrefix.Remove(worker);
             versionTable.TryRemove(worker, out _);
-
-            var newResponse = new PrecomputedSyncResponse(volatileClusterState, responseSerialNum++);
-            persistentStorage.WriteReliablyAsync(newResponse.serializedResponse, 0, newResponse.recoveryStateEnd, () =>
-            {
-                clusterChangeLatch.EnterWriteLock();
-                if (syncResponse.serialNum < newResponse.serialNum)
-                {
-                    newResponse.UpdateCut(currentCut);
-                    syncResponse = newResponse;
-                }
-                clusterChangeLatch.ExitWriteLock();
-                callback?.Invoke();
-            });
-            clusterChangeLatch.ExitWriteLock();
         }
 
         public PrecomputedSyncResponse GetPrecomputedResponse() => syncResponse;

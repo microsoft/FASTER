@@ -48,6 +48,7 @@ namespace FASTER.libdpr
         public void Register(DprWorkerCallbacks callbacks)
         {
             this.callbacks = callbacks;
+            callbacks.BeforeNewVersion(1, 0);
         }
 
         /// <inheritdoc/>
@@ -59,13 +60,14 @@ namespace FASTER.libdpr
         /// <inheritdoc/>
         public void BeginCheckpoint(IStateObject.DepsProvider depsProvider, long targetVersion = -1)
         {
-            versionScheme.TryAdvanceVersion(v =>
+            versionScheme.TryAdvanceVersion((vOld, vNew) =>
             {
-                var deps = depsProvider(v);
-                PerformCheckpoint(v, deps, () =>
+                var deps = depsProvider(vOld);
+                PerformCheckpoint(vOld, deps, () =>
                 {
-                    callbacks.OnVersionPersistent(v);
+                    callbacks.OnVersionPersistent(vOld);
                 });
+                callbacks.BeforeNewVersion(vNew, vOld);
             }, targetVersion);
             
         }
@@ -73,10 +75,11 @@ namespace FASTER.libdpr
         /// <inheritdoc/>
         public void BeginRestore(long version)
         {
-            versionScheme.TryAdvanceVersion(_ =>
+            versionScheme.TryAdvanceVersion((vOld, vNew) =>
             {
                 RestoreCheckpoint(version);
                 callbacks.OnRollbackComplete();
+                callbacks.BeforeNewVersion(vNew, version);
             });
         }
     }

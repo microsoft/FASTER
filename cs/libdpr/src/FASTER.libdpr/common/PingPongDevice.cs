@@ -58,7 +58,7 @@ namespace FASTER.libdpr
             }
         }
 
-        public unsafe void WriteReliablyAsync(byte[] buf, int offset, int size, Action callback = null)
+        public unsafe void WriteReliably(byte[] buf, int offset, int size)
         {
             var header = new MetadataHeader();
             header.size = size;
@@ -72,13 +72,8 @@ namespace FASTER.libdpr
             frontDevice.WriteAsync((IntPtr) header.bytes, 0, 0, (uint) sizeof(MetadataHeader),
                 (e, n, o) =>
                 {
-                    if (countdown.Signal())
-                    {
-                        (frontDevice, backDevice) = (backDevice, frontDevice);
-                        callback?.Invoke();
-                        countdown.Dispose();
-                    }
-                        
+                    countdown.Signal();
+
                 }, null);
             
             var handle = GCHandle.Alloc(buf, GCHandleType.Pinned);
@@ -86,22 +81,13 @@ namespace FASTER.libdpr
             frontDevice.WriteAsync(handle.AddrOfPinnedObject(), 0,  frontDevice.SectorSize, (uint) size,
                 (e, n, o) =>
                 {
-                    if (countdown.Signal())
-                    {
-                        (frontDevice, backDevice) = (backDevice, frontDevice);
-                        callback?.Invoke();
-                        countdown.Dispose();
-                    }
+                    countdown.Signal();
                     handle.Free();
                 }, null);
-        }
-
-        public void WriteReliably(byte[] buf, int offset, int size)
-        {
-            var completion = new ManualResetEventSlim();
-            WriteReliablyAsync(buf, offset, size, completion.Set);
-            completion.Wait();
-            completion.Dispose();
+            
+            countdown.Wait();
+            (frontDevice, backDevice) = (backDevice, frontDevice);
+            countdown.Dispose();
         }
         
         private unsafe long ReadFromDevice(IDevice device, out byte[] buf)

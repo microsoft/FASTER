@@ -77,7 +77,7 @@ namespace FASTER.libdpr
         public void Process(Span<byte> dprHeader, Span<byte> response, (int, int) op)
         {
             ref var dprRequest =
-                ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(response));
+                ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(dprHeader));
             ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
 
             if (dprServer.RequestBatchBegin(ref dprRequest, ref dprResponse, out var tracker))

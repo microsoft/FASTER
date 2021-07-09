@@ -72,7 +72,7 @@ namespace FASTER.libdpr
         /// <param name="criticalSection"> The logic to execute in a critical section </param>
         /// <param name="targetVersion"> The version to advance to, or -1 for the immediate next version</param>
         /// <returns> Whether the advance was successful </returns>
-        public bool TryAdvanceVersion(Action<long> criticalSection, long targetVersion = -1)
+        public bool TryAdvanceVersion(Action<long, long> criticalSection, long targetVersion = -1)
         {
             if (targetVersion != -1 && targetVersion <= version) return false;
 
@@ -95,7 +95,7 @@ namespace FASTER.libdpr
             count.Wait();
             
             version = targetVersion == -1 ? version + 1 : targetVersion;
-            criticalSection(original);
+            criticalSection(original, version);
             // Complete the version change
             count.Reset();
             ev.Set();

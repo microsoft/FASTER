@@ -62,7 +62,7 @@ namespace FASTER.libdpr
                 {C, 0}
             });
             
-            testedBackend.NewCheckpoint(A2, new []{ B2 });
+            testedBackend.NewCheckpoint(A2, new []{ A1, B2 });
             testedBackend.TryFindDprCut();
             testedBackend.PersistState();
             CheckPersistedDprCut(testedBackend, new Dictionary<Worker, long>
@@ -72,7 +72,7 @@ namespace FASTER.libdpr
                 {C, 0}
             });
             
-            testedBackend.NewCheckpoint(B2, new []{ C2 });
+            testedBackend.NewCheckpoint(B2, new []{ B1, C2 });
             testedBackend.TryFindDprCut();
             testedBackend.PersistState();
             CheckPersistedDprCut(testedBackend, new Dictionary<Worker, long>
@@ -136,7 +136,7 @@ namespace FASTER.libdpr
                 {C, 0}
             });
             
-            testedBackend.NewCheckpoint(B1, new[] {A1});
+            testedBackend.NewCheckpoint(B1, new[] { A1 });
             testedBackend.TryFindDprCut();
             testedBackend.PersistState();
             CheckPersistedDprCut(testedBackend, new Dictionary<Worker, long>
@@ -146,7 +146,7 @@ namespace FASTER.libdpr
                 {C, 0}
             });
             
-            testedBackend.NewCheckpoint(A2, new []{ B2 });
+            testedBackend.NewCheckpoint(A2, new []{ A1, B2 });
             testedBackend.TryFindDprCut();
             testedBackend.PersistState();
             CheckPersistedDprCut(testedBackend, new Dictionary<Worker, long>
@@ -156,7 +156,7 @@ namespace FASTER.libdpr
                 {C, 0}
             });
             
-            testedBackend.NewCheckpoint(B2, new []{ C2 });
+            testedBackend.NewCheckpoint(B2, new []{ B1, C2 });
             testedBackend.TryFindDprCut();
             testedBackend.PersistState();
             CheckPersistedDprCut(testedBackend, new Dictionary<Worker, long>
@@ -180,7 +180,7 @@ namespace FASTER.libdpr
                 {C, 1}
             });
             
-            testedBackend.NewCheckpoint(A3, new []{ C3 });
+            testedBackend.NewCheckpoint(A3, new []{ A2, C3 });
             testedBackend.TryFindDprCut();
             testedBackend.PersistState();
             CheckPersistedDprCut(testedBackend, new Dictionary<Worker, long>
@@ -191,7 +191,7 @@ namespace FASTER.libdpr
             });
             
             // Eventually, become normal
-            testedBackend.NewCheckpoint(B3, new []{ C3 });
+            testedBackend.NewCheckpoint(B3, new []{ B2, C3 });
             testedBackend.TryFindDprCut();
             testedBackend.PersistState();
             CheckPersistedDprCut(testedBackend, new Dictionary<Worker, long>

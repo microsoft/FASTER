@@ -347,7 +347,7 @@ namespace FASTER.libdpr
             lock (volatileState)
             {
                 var currentWorldLines = volatileState.GetCurrentWorldLines();
-                var latestWorldLine = currentWorldLines.Count == 0 ? 0 : currentWorldLines.Select(e => e.Value).Max();
+                var latestWorldLine = currentWorldLines.Count == 0 ? 1 : currentWorldLines.Select(e => e.Value).Max();
 
                 (long, long) result;
                 if (volatileState.GetCurrentCut().TryAdd(worker, 0))
