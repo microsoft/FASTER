@@ -3,10 +3,10 @@
 
 #pragma once
 
-#include "core/async.h"
-
-#include "log_scan.h"
+#include "async.h"
 #include "hash_bucket.h"
+#include "internal_contexts.h"
+#include "log_scan.h"
 #include "record.h"
 
 namespace FASTER {
@@ -120,37 +120,45 @@ class CompactionExists : public IAsyncContext {
 
 /// Copy to tail context used by compaction algorithm.
 template <class K, class V>
-class CompactionCopyToTailContext {
+class CompactionCopyToTailContext : CopyToTailContextBase<K> {
  public:
   typedef K key_t;
   typedef V value_t;
   typedef Record<key_t, value_t> record_t;
 
   /// Constructs and returns a context given a pointer to a record.
-  CompactionCopyToTailContext(record_t* record_)
-   : record{ record_ }
+  CompactionCopyToTailContext(record_t* record)
+   : record_{ record }
   {}
   /// Copy constructor deleted; copy to tail request doesn't go async
   CompactionCopyToTailContext(const CompactionCopyToTailContext& from) = delete;
 
   /// Accessor for the key
-  inline const key_t& key() const {
-    return record->key();
+  inline const key_t& key() const final {
+    return record_->key();
   }
-  inline uint32_t key_size() const {
-    return record->key().size();
+  inline uint32_t key_size() const final {
+    return record_->key().size();
   }
-  inline KeyHash get_key_hash() const {
-    return record->key().GetHash();
+  inline KeyHash get_key_hash() const final {
+    return record_->key().GetHash();
   }
-  inline bool is_key_equal(const key_t& other) const {
-    return record->key() == other;
+  inline bool is_key_equal(const key_t& other) const final {
+    return record_->key() == other;
   }
-  inline uint32_t value_size() const {
-    return record->value().size();
+  inline uint32_t value_size() const final {
+    return record_->value().size();
+  }
+  inline bool copy_at(void* dest, uint32_t alloc_size) const final {
+    if (alloc_size != record_->size()) {
+      return false;
+    }
+    memcpy(dest, record_, alloc_size);
+    return true;
   }
 
-  record_t* record;
+ private:
+  record_t* record_;
 };
 
 

@@ -550,6 +550,22 @@ class PendingExistsContext : public AsyncPendingExistsContext<typename MC::key_t
   }
 };
 
+
+/// FASTER's internal ConditionalCopyToTail() base context.
+/// Used in Compaction and HC's Rmw operation
+template<class K>
+class CopyToTailContextBase {
+ public:
+  typedef K key_t;
+
+  virtual inline const key_t& key() const = 0;
+  virtual uint32_t key_size() const = 0;
+  virtual KeyHash get_key_hash() const = 0;
+  virtual bool is_key_equal(const key_t& other) const = 0;
+  virtual uint32_t value_size() const = 0;
+  virtual bool copy_at(void* dest, uint32_t alloc_size) const = 0;
+};
+
 class AsyncIOContext;
 
 /// Per-thread execution context. (Just the stuff that's checkpointed to disk.)
