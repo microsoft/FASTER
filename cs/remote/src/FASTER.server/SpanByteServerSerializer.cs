@@ -5,7 +5,6 @@ using System;
 using System.Runtime.CompilerServices;
 using FASTER.core;
 using FASTER.common;
-using System.Diagnostics;
 
 namespace FASTER.server
 {

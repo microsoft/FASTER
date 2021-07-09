@@ -1,11 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using FASTER.common;
 using FASTER.core;
-using System;
 using System.Buffers;
-using System.Runtime.InteropServices;
 
 namespace FASTER.client
 {
@@ -15,7 +14,6 @@ namespace FASTER.client
     public unsafe class SpanByteClientSerializer : IClientSerializer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory>
     {
         readonly MemoryPool<byte> memoryPool;
-        readonly SpanByteVarLenStruct settings;
 
         /// <summary>
         /// Constructor
@@ -39,7 +37,7 @@ namespace FASTER.client
         /// <inheritdoc />
         public bool Write(ref SpanByte k, ref byte* dst, int length)
         {
-            var len = settings.GetLength(ref k);
+            var len = k.TotalSize;
             if (length < len) return false;
             k.CopyTo(dst);
             dst += len;
