@@ -75,7 +75,6 @@ namespace FASTER.test
                 {
                     while (!disposeCommitThread)
                     {
-                        Thread.Sleep(10);
                         log.Commit(true);
                     }
                 });
