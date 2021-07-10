@@ -1811,27 +1811,15 @@ namespace FASTER.core
         internal OperationStatus InternalCopyToTail<Input, Output, Context, FasterSession>(
                                             ref Key key, ref Value value,
                                             ref RecordInfo recordInfo,
-                                            long foundLogicalAddress,
-                                            FasterSession fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx,
-                                            bool noReadCache = false)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-            => InternalCopyToTail(currentCtx, ref key, ref value, ref recordInfo, foundLogicalAddress, fasterSession, currentCtx, noReadCache);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalCopyToTail<Input, Output, Context, FasterSession>(
-                                            FasterExecutionContext<Input, Output, Context> opCtx,
-                                            ref Key key, ref Value value,
-                                            ref RecordInfo recordInfo,
                                             long expectedLogicalAddress,
                                             FasterSession fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx,
                                             bool noReadCache = false)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
+        { 
             OperationStatus internalStatus;
             do
-                internalStatus = InternalTryCopyToTail(opCtx, ref key, ref value, ref recordInfo, expectedLogicalAddress, fasterSession, currentCtx, noReadCache);
+                internalStatus = InternalTryCopyToTail(currentCtx, ref key, ref value, ref recordInfo, expectedLogicalAddress, fasterSession, currentCtx, noReadCache);
             while (internalStatus == OperationStatus.RETRY_NOW);
             return internalStatus;
         }
@@ -1924,17 +1912,10 @@ namespace FASTER.core
             if (logicalAddress > expectedLogicalAddress || logicalAddress < hlog.BeginAddress)
             {
                 // We give up early.
+                // Note: In Compact, expectedLogicalAddress may not exactly match the source of this copy operation,
+                // but instead only an upper bound.
                 return OperationStatus.NOTFOUND;
             }
-
-#if DEBUG
-            // While copying from disk to tail, the expected address may be in read cache.
-            // Otherwise, the logicalAddress should match the expected.
-            HashBucketEntry debugEntry = default;
-            debugEntry.word = expectedLogicalAddress;
-            Debug.Assert(logicalAddress == expectedLogicalAddress || debugEntry.ReadCache);
-#endif
-
             #region Create new copy in mutable region
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
 
@@ -1981,6 +1962,8 @@ namespace FASTER.core
             if (foundEntry.word != entry.word)
             {
                 if (!copyToReadCache) hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                // Note: only Compact actually retries;
+                // other operations, i.e., copy to tail during reads, just give up if the first try fails
                 return OperationStatus.RETRY_NOW;
             }
             else

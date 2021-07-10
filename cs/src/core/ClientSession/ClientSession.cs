@@ -900,12 +900,12 @@ namespace FASTER.core
         /// <param name="foundLogicalAddress"></param>
         /// <param name="noReadCache"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyToTail(ref Key key, ref Value desiredValue, ref RecordInfo recordInfo, long foundLogicalAddress, bool noReadCache)
+        internal void CopyToTail(ref Key key, ref Value desiredValue, ref RecordInfo recordInfo, long foundLogicalAddress)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                fht.InternalCopyToTail(ref key, ref desiredValue, ref recordInfo, foundLogicalAddress, FasterSession, ctx, noReadCache);
+                fht.InternalCopyToTail(ref key, ref desiredValue, ref recordInfo, foundLogicalAddress, FasterSession, ctx, noReadCache: true);
             }
             finally
             {

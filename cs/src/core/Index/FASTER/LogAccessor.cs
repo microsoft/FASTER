@@ -325,10 +325,6 @@ namespace FASTER.core
 
             using (var tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings))
             using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
-#if DEBUG
-            using (var tempKaddr = new FasterKV<Key, long>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettingsKaddr))
-            using (var tempKaddrSession = tempKaddr.NewSession<long, long, Empty, SimpleFunctions<Key, long>>(new SimpleFunctions<Key, long>()))
-#endif
             {
                 using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
                 {
@@ -340,17 +336,10 @@ namespace FASTER.core
                         if (recordInfo.Tombstone || cf.IsDeleted(key, value))
                         {
                             tempKvSession.Delete(ref key, default, 0);
-#if DEBUG
-                            tempKaddrSession.Delete(ref key, default, 0);
-#endif
                         }
                         else
                         {
                             tempKvSession.Upsert(ref key, ref value, default, 0);
-#if DEBUG
-                            long addr = iter1.CurrentAddress;
-                            tempKaddrSession.Upsert(ref key, ref addr, default, 0);
-#endif
                             // below is to get and preserve information in RecordInfo, if we need.
                             /*tempKvSession.ContainsKeyInMemory(ref key, out long logicalAddress);
                             long physicalAddress = tempKv.hlog.GetPhysicalAddress(logicalAddress);
@@ -403,11 +392,10 @@ namespace FASTER.core
                             // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
                             continue;
                         }
-#if DEBUG
-                        var status = tempKaddrSession.Read(ref iter3.GetKey(), ref expectedAddress);
-                        Debug.Assert(status == Status.OK);
-#endif
-                        fhtSession.CopyToTail(ref iter3.GetKey(), ref iter3.GetValue(), ref recordInfo, expectedAddress, noReadCache : true);
+                        // Note: we use untilAddress as expectedAddress here.
+                        // As long as there's no record of the same key whose address is greater than untilAddress,
+                        // i.e., the last address that this compact covers, we are safe to copy the old record to the tail.
+                        fhtSession.CopyToTail(ref iter3.GetKey(), ref iter3.GetValue(), ref recordInfo, expectedAddress);
                     }
                 }
             }
