@@ -15,8 +15,7 @@ namespace DprMicrobench
         private double delayProb;
         private Random random = new Random();
 
-        private SortedList<long, long> versionPersistent;
-        private SortedList<long, long> versionRecoverable;
+        private Dictionary<long, long> versionPersistent, versionRecoverable;
         private Stopwatch stopwatch;
         
         public SimulatedDprWorker(IDprFinder dprFinder, IWorkloadGenerator generator, 
@@ -36,10 +35,10 @@ namespace DprMicrobench
         {
             var result = new List<long>(versionRecoverable.Count);
 
-            for (var i = 0; i < versionRecoverable.Count; i++)
+            foreach (var entry in versionRecoverable)
             {
-                Debug.Assert(versionPersistent.Keys[i] == versionRecoverable.Keys[i]);
-                result.Add(versionRecoverable.Values[i] - versionPersistent.Values[i]);
+                if (!versionPersistent.TryGetValue(entry.Key, out var startTime)) continue;
+                result.Add(entry.Value - startTime);
             }
 
             return result;
@@ -47,8 +46,8 @@ namespace DprMicrobench
 
         public void RunContinuously(int runSeconds, int averageMilli, int delayMilli)
         {
-            versionPersistent = new SortedList<long, long>(runSeconds * 1000 / averageMilli);
-            versionRecoverable = new SortedList<long, long>(runSeconds * 1000 / averageMilli);
+            versionPersistent = new Dictionary<long, long>(runSeconds * 1000 / averageMilli);
+            versionRecoverable = new Dictionary<long, long>(runSeconds * 1000 / averageMilli);
             stopwatch = new Stopwatch();
             stopwatch.Start();
             var currentVersion = 1L;
@@ -57,20 +56,22 @@ namespace DprMicrobench
             {
                 var elapsed = stopwatch.ElapsedMilliseconds;
                 if (elapsed > runSeconds * 1000) break;
+                
                 dprFinder.Refresh();
                 var currentSafeVersion = dprFinder.SafeVersion(me);
                 for (var i = safeVersion + 1; i <= currentSafeVersion; i++)
                 {
-                    if (versionPersistent.Keys[versionRecoverable.Count] == i)
-                        versionRecoverable.Add(i, elapsed);
+                    versionRecoverable.Add(i, elapsed);
                 }
+
                 safeVersion = currentSafeVersion;
+                
                 var expectedVersion = 1 + elapsed / averageMilli;
                 if (expectedVersion > currentVersion)
                 {
                     var deps = generator.GenerateDependenciesOneRun(workers, me, currentVersion);
-                    if (random.NextDouble() < delayProb)
-                        Thread.Sleep(delayMilli);
+                    // if (random.NextDouble() < delayProb)
+                    //     Thread.Sleep(delayMilli);
                     elapsed = stopwatch.ElapsedMilliseconds;
                     versionPersistent.Add(currentVersion, elapsed);
                     dprFinder.ReportNewPersistentVersion(1, new WorkerVersion(me, currentVersion), deps);

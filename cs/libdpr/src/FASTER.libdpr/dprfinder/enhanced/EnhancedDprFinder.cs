@@ -21,12 +21,14 @@ namespace FASTER.libdpr
         public EnhancedDprFinder(Socket dprFinderConn)
         {
             this.dprFinderConn = dprFinderConn;
+            dprFinderConn.NoDelay = true;
         }
 
         public EnhancedDprFinder(string ip, int port)
         {
             var ipEndpoint = new IPEndPoint(IPAddress.Parse(ip), port);
             dprFinderConn = new Socket(ipEndpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            dprFinderConn.NoDelay = true;
             dprFinderConn.Connect(ipEndpoint);
         }
         

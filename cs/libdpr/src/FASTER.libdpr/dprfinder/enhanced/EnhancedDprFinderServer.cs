@@ -92,6 +92,7 @@ namespace FASTER.libdpr
                 return false;
             }
 
+            e.AcceptSocket.NoDelay = true;
             // Set up listening events
             var saea = new SocketAsyncEventArgs();
             saea.SetBuffer(new byte[BatchInfo.MaxHeaderSize], 0, BatchInfo.MaxHeaderSize);
