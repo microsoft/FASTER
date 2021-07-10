@@ -21,14 +21,14 @@ namespace FASTER.benchmark
             simulatedWorkers = new List<SimulatedDprWorker>();
         }
 
-        private IDprFinder GetDprFinder(BenchmarkConfiguration config, Worker worker)
+        private IDprFinder GetDprFinder(BenchmarkConfiguration config)
         {
-            // if (config.dprType.Equals("v1"))
-            //     return new AzureSqlDprManagerV1(config.connString, worker);
-            // if (config.dprType.Equals("v2"))
-            //     return new AzureSqlDprManagerV2(config.connString, worker);
-            // if (config.dprType.Equals("v3"))
-            //     return new AzureSqlDprManagerV3(config.connString, worker);
+            var coordinatorIp = DprCoordinator.clusterConfig.coordinatorIp;
+            var coordinatorPort = DprCoordinator.clusterConfig.coordinatorPort;
+            if (config.dprType.Equals("basic"))
+                return new GraphDprFinder(coordinatorIp, coordinatorPort);
+            if (config.dprType.Equals("enhanced"))
+                return new EnhancedDprFinder(coordinatorIp, coordinatorPort);
             throw new Exception("Unrecognized argument");
         }
 
@@ -59,7 +59,7 @@ namespace FASTER.benchmark
             var startSignal = new ManualResetEventSlim();
             foreach (var worker in config.assignment[workerId])
             {
-                var simulatedWorker = new SimulatedDprWorker(GetDprFinder(config, worker),
+                var simulatedWorker = new SimulatedDprWorker(GetDprFinder(config),
                     GetWorkloadGenerator(config), config.workers, worker, config.delayProb);
                 simulatedWorkers.Add(simulatedWorker);
                 var thread = new Thread(() =>

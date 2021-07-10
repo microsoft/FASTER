@@ -23,6 +23,8 @@ namespace DprMicrobench
         public List<WorkerVersion> GenerateDependenciesOneRun(IList<Worker> workers, Worker me,long currentVersion)
         {
             dependecies.Clear();
+            if (currentVersion != 1)
+                dependecies.Add(new WorkerVersion(me, currentVersion - 1));
             foreach (var worker in workers)
             {
                 if (worker.Equals(me)) continue;
@@ -52,6 +54,8 @@ namespace DprMicrobench
         public List<WorkerVersion> GenerateDependenciesOneRun(IList<Worker> workers, Worker me,long currentVersion)
         {
             dependecies.Clear();
+            if (currentVersion != 1)
+                dependecies.Add(new WorkerVersion(me, currentVersion - 1));
             foreach (var worker in workers)
             {
                 if (worker.Equals(me)) continue;

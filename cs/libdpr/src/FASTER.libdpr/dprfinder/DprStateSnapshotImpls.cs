@@ -19,7 +19,7 @@ namespace FASTER.libdpr
     /// </summary>
     public class DictionaryDprStateSnapshot : IDprStateSnapshot
     {
-        private readonly Dictionary<Worker, long> dprTableSnapshot;
+        private Dictionary<Worker, long> dprTableSnapshot;
 
         /// <summary>
         /// Constructs a new DprStateSnapshot backed by the given dictionary
@@ -35,7 +35,8 @@ namespace FASTER.libdpr
         {
             if (dprTableSnapshot == null) return 0;
 
-            return !dprTableSnapshot.TryGetValue(worker, out var safeVersion) ? 0 : safeVersion;
+            lock (dprTableSnapshot)
+                return !dprTableSnapshot.TryGetValue(worker, out var safeVersion) ? 0 : safeVersion;
         }
     }
 

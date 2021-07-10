@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -20,6 +21,13 @@ namespace FASTER.libdpr
         public EnhancedDprFinder(Socket dprFinderConn)
         {
             this.dprFinderConn = dprFinderConn;
+        }
+
+        public EnhancedDprFinder(string ip, int port)
+        {
+            var ipEndpoint = new IPEndPoint(IPAddress.Parse(ip), port);
+            dprFinderConn = new Socket(ipEndpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            dprFinderConn.Connect(ipEndpoint);
         }
         
         
@@ -65,7 +73,8 @@ namespace FASTER.libdpr
                 Interlocked.Exchange(ref lastKnownClusterState, newState);
                 // Cut is unavailable, signal a resend.
                 if (BitConverter.ToInt32(recvBuffer, head) == -1) return false;
-                RespUtil.ReadDictionaryFromBytes(recvBuffer, head, lastKnownCut);
+                lock (lastKnownCut)
+                    RespUtil.ReadDictionaryFromBytes(recvBuffer, head, lastKnownCut);
             }
 
             return true;
@@ -103,7 +112,8 @@ namespace FASTER.libdpr
         
         public long NewWorker(Worker id, IStateObject stateObject)
         {
-            ResendGraph(id, stateObject);
+            if (stateObject != null)
+                ResendGraph(id, stateObject);
             lock (dprFinderConn)
             {
                 dprFinderConn.SendAddWorkerCommand(id);

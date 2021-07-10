@@ -23,6 +23,8 @@ namespace DprMicrobench
             IList<Worker> workers, Worker me,
             double delayProb)
         {
+            var v= dprFinder.NewWorker(me, null);
+            Debug.Assert(v == 0);
             this.dprFinder = dprFinder;
             this.generator = generator;
             this.workers = workers;
@@ -71,7 +73,7 @@ namespace DprMicrobench
                         Thread.Sleep(delayMilli);
                     elapsed = stopwatch.ElapsedMilliseconds;
                     versionPersistent.Add(currentVersion, elapsed);
-                    dprFinder.ReportNewPersistentVersion(0, new WorkerVersion(me, currentVersion), deps);
+                    dprFinder.ReportNewPersistentVersion(1, new WorkerVersion(me, currentVersion), deps);
                     currentVersion = expectedVersion;
                 }
             }

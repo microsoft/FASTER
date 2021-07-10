@@ -209,7 +209,7 @@ namespace FASTER.libdpr
                         // TODO(Tianyu): Call WorkerVersion relevant methods instead of hard-coded deserialization
                         Debug.Assert(size == sizeof(WorkerVersion));
                         var workerId = BitConverter.ToInt64(buf, stringStart);
-                        var version = BitConverter.ToInt64(buf, stringStart + sizeof(int));
+                        var version = BitConverter.ToInt64(buf, stringStart + sizeof(long));
                         currentCommand.wv = new WorkerVersion(workerId, version);
                         if (currentCommand.commandType == DprFinderCommand.Type.NEW_CHECKPOINT)
                         {

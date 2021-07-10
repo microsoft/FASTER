@@ -20,6 +20,8 @@ namespace FASTER.benchmark
     
     public class ClusterConfiguration
     {
+        internal string coordinatorIp;
+        internal int coordinatorPort;
         internal List<WorkerInfo> pods = new List<WorkerInfo>();
 
         public ClusterConfiguration AddWorker(string ip, int port)
@@ -32,15 +34,6 @@ namespace FASTER.benchmark
         public WorkerInfo GetInfoForId(int id)
         {
             return pods[id];
-        }
-        
-        // TODO(Tianyu): Populate this from the DPR table instead of hard-coded
-        public ConcurrentDictionary<Worker, WorkerInfo> GetRoutingTable()
-        {
-            var result = new ConcurrentDictionary<Worker, WorkerInfo>();
-            foreach (var worker in pods)
-                result.TryAdd(worker.worker, worker);
-            return result;
         }
     }
 }

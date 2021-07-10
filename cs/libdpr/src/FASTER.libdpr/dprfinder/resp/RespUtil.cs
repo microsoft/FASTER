@@ -194,7 +194,7 @@ namespace FASTER.libdpr
                 head += sizeof(long);
                 var val = BitConverter.ToInt64(buf, head);
                 head += sizeof(long);
-                result.TryAdd(new Worker(workerId), val);
+                result[new Worker(workerId)] = val;
             }
 
             return head;

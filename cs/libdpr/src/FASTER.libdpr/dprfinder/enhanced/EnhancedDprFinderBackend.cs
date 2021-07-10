@@ -367,7 +367,6 @@ namespace FASTER.libdpr
                 // on the process thread or during recovery. No cluster change can interleave.
                 syncResponse.UpdateCut(currentCut);
                 cutChanged = false;
-                clusterChangeLatch.ExitReadLock();
             }
         }
 

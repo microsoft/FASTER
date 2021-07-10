@@ -1,8 +1,11 @@
+using System;
+
 namespace FASTER.libdpr
 {
     /// <summary>
     /// A worker in the system manipulates uniquely exactly one state object. 
     /// </summary>
+    [Serializable]
     public struct Worker
     {
         /// <summary>

@@ -6,6 +6,8 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using FASTER.core;
+using FASTER.libdpr;
 
 namespace FASTER.benchmark
 {
@@ -15,42 +17,50 @@ namespace FASTER.benchmark
         static DprCoordinator()
         {
             clusterConfig = new ClusterConfiguration();
-            clusterConfig.AddWorker("10.0.1.8", 15721)
-            .AddWorker("10.0.1.9", 15721)
-            .AddWorker("10.0.1.11", 15721)
-            .AddWorker("10.0.1.10", 15721)
-            .AddWorker("10.0.1.12", 15721)
-            .AddWorker("10.0.1.13", 15721)
-            .AddWorker("10.0.1.14", 15721)
-            .AddWorker("10.0.1.15", 15721);
+            clusterConfig.coordinatorIp = "127.0.0.1";
+            clusterConfig.coordinatorPort = 15721;
+            
+            clusterConfig.AddWorker("127.0.0.1", 15445);
         }
         
         private BenchmarkConfiguration benchmarkConfig;
+        private IDisposable dprFinderServer;
 
         public DprCoordinator(BenchmarkConfiguration benchmarkConfig)
         {
             this.benchmarkConfig = benchmarkConfig;
         }
 
+        private void RunDprFinderServer()
+        {
+            var localDevice1 = new LocalStorageDevice("dpr1.dat", deleteOnClose: true);
+            var localDevice2 = new LocalStorageDevice("dpr2.dat", deleteOnClose: true);
+            var device = new PingPongDevice(localDevice1, localDevice2);
+            if (benchmarkConfig.dprType.Equals("basic"))
+            {
+                var backend = new GraphDprFinderBackend(device);
+                var server =
+                    new GraphDprFinderServer(clusterConfig.coordinatorIp, clusterConfig.coordinatorPort, backend);
+                server.StartServer();
+                dprFinderServer = server;
+            }
+            else if (benchmarkConfig.dprType.Equals("enhanced"))
+            {
+                var backend = new EnhancedDprFinderBackend(device);
+                var server =
+                    new EnhancedDprFinderServer(clusterConfig.coordinatorIp, clusterConfig.coordinatorPort, backend);
+                server.StartServer();
+                dprFinderServer = server;
+            }
+            else
+            {
+                throw new Exception("Unrecognized argument");
+            }
+        }
+
         public void Run()
         {
-            // foreach (var workerInfo in clusterConfig.pods)
-            // {
-            //     var ip = IPAddress.Parse(workerInfo.GetAddress());
-            //     var endPoint = new IPEndPoint(ip, 15000);
-            //     var sender = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            //     sender.NoDelay = true;
-            //     sender.Connect(endPoint);
-            //     sender.Close();
-            // }
-
-            // Thread.Sleep(5000);
-            
-            var conn = new SqlConnection(benchmarkConfig.connString);
-            conn.Open();
-            var deleteCommand = new SqlCommand("EXEC cleanup", conn);
-            deleteCommand.ExecuteNonQuery();
-            conn.Close();
+            RunDprFinderServer();
             
             var workerResults = new List<long>();
             var handlerThreads = new List<Thread>();
@@ -99,11 +109,9 @@ namespace FASTER.benchmark
                 handlerThreads.Add(handlerThread);
                 handlerThread.Start();
             }
-            
-            
+
             foreach (var thread in handlerThreads)
                 thread.Join();
-            conn.Dispose();
 
             workerResults.Sort();
             var avg = workerResults.Average();
@@ -111,6 +119,7 @@ namespace FASTER.benchmark
             Console.WriteLine($"######reported average commit latency {avg}, p99 latency {p99}, {benchmarkConfig}");
             // foreach (var datapoint in workerResults)
                 // Console.WriteLine(datapoint);
+            dprFinderServer?.Dispose();
         }
     }
 }
