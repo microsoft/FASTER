@@ -558,12 +558,22 @@ class CopyToTailContextBase {
  public:
   typedef K key_t;
 
+ protected:
+  CopyToTailContextBase(HashBucketEntry expected_entry_, void* dest_store_)
+    : expected_entry{ expected_entry_ }
+    , dest_store{ dest_store_ }
+  {}
+
   virtual inline const key_t& key() const = 0;
   virtual uint32_t key_size() const = 0;
   virtual KeyHash get_key_hash() const = 0;
   virtual bool is_key_equal(const key_t& other) const = 0;
   virtual uint32_t value_size() const = 0;
   virtual bool copy_at(void* dest, uint32_t alloc_size) const = 0;
+
+ public:
+  HashBucketEntry expected_entry;
+  void* dest_store;
 };
 
 class AsyncIOContext;

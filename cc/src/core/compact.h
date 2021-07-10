@@ -120,15 +120,16 @@ class CompactionExists : public IAsyncContext {
 
 /// Copy to tail context used by compaction algorithm.
 template <class K, class V>
-class CompactionCopyToTailContext : CopyToTailContextBase<K> {
+class CompactionCopyToTailContext : public CopyToTailContextBase<K> {
  public:
   typedef K key_t;
   typedef V value_t;
   typedef Record<key_t, value_t> record_t;
 
   /// Constructs and returns a context given a pointer to a record.
-  CompactionCopyToTailContext(record_t* record)
-   : record_{ record }
+  CompactionCopyToTailContext(record_t* record, const HashBucketEntry& expected_entry, void* dest_store)
+   : CopyToTailContextBase<K>(expected_entry, dest_store)
+   , record_{ record }
   {}
   /// Copy constructor deleted; copy to tail request doesn't go async
   CompactionCopyToTailContext(const CompactionCopyToTailContext& from) = delete;

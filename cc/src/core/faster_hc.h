@@ -42,7 +42,7 @@ class HotColdContext : public IAsyncContext {
   uint64_t serial_num;
 };
 
-/// Context used to hold caller context for Read request in HC
+/// Context that holds user context for Read request
 template <class RC>
 class HotColdReadContext : public HotColdContext <typename RC::key_t> {
  public:
@@ -243,8 +243,9 @@ class HotColdRmwCopyContext: public CopyToTailContextBase<typename MC::key_t> {
   typedef Record<key_t, value_t> record_t;
   constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
-  HotColdRmwCopyContext(rmw_context_t* rmw_context)
-    : rmw_context_{ rmw_context }
+  HotColdRmwCopyContext(rmw_context_t* rmw_context, HashBucketEntry& expected_entry, void* dest_store)
+    : CopyToTailContextBase<key_t>(expected_entry, dest_store)
+    , rmw_context_{ rmw_context }
   {}
   /// Copy constructor deleted; copy to tail request doesn't go async
   HotColdRmwCopyContext(const HotColdRmwCopyContext& from) = delete;
@@ -368,8 +369,10 @@ public:
   bool GrowIndex(GrowState::callback_t caller_callback);
   */
 
-  bool CompactHotLog(uint64_t until_address, bool shift_begin_address, int n_threads = 4);
-  bool CompactColdLog(uint64_t until_address, bool shift_begin_address, int n_threads = 4);
+  bool CompactHotLog(uint64_t until_address, bool shift_begin_address,
+                      int n_threads = faster_t::kNumCompactionThreads);
+  bool CompactColdLog(uint64_t until_address, bool shift_begin_address,
+                      int n_threads = faster_t::kNumCompactionThreads);
 
   /// Statistics
   inline uint64_t Size() const {
@@ -428,7 +431,9 @@ template<class K, class V, class D>
 inline bool FasterKvHC<K, V, D>::CompletePending(bool wait) {
   do {
     CompleteRmwRetryRequests();
-    if(hot_store.CompletePending(wait) && cold_store.CompletePending(wait) && retry_rmw_requests.empty()) {
+    if(hot_store.CompletePending(wait) &&
+        cold_store.CompletePending(wait) &&
+        retry_rmw_requests.empty()) {
       return true;
     }
   } while(wait);
@@ -486,8 +491,8 @@ inline Status FasterKvHC<K, V, D>::Rmw(MC& context, AsyncCallback callback,
                                         uint64_t monotonic_serial_num) {
   typedef MC rmw_context_t;
   typedef HotColdRmwContext<rmw_context_t> hc_rmw_context_t;
-  typedef HotColdRmwReadContext<K, V, hc_rmw_context_t> rmw_read_context_t;
-  typedef HotColdRmwCopyContext<MC> rmw_copy_context_t;
+  typedef HotColdRmwReadContext<K, V, hc_rmw_context_t> hc_rmw_read_context_t;
+  typedef HotColdRmwCopyContext<MC> hc_rmw_copy_context_t;
 
   auto hot_store_retry_if_not_found_callback = [](IAsyncContext* ctxt, Status result) {
     CallbackContext<hc_rmw_context_t> context{ ctxt };
@@ -502,14 +507,15 @@ inline Status FasterKvHC<K, V, D>::Rmw(MC& context, AsyncCallback callback,
   };
 
   auto cold_store_read_callback = [](IAsyncContext* ctxt, Status result) {
-    CallbackContext<rmw_read_context_t> rmw_read_context{ ctxt };
+    CallbackContext<hc_rmw_read_context_t> rmw_read_context{ ctxt };
     CallbackContext<hc_rmw_context_t> context { &rmw_read_context->hot_cold_rmw_context() };
     faster_hc_t* faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
 
     if (result == Status::Ok) {
-      // Conditional copy to hot-cold
-      rmw_copy_context_t copy_context{ &context->rmw_context() };
-      Status status = faster_hc->hot_store.ConditionalCopyToTail(copy_context, context->expected_entry);
+      // Conditional copy to hot-log
+      hc_rmw_copy_context_t copy_context{ &context->rmw_context(), context->expected_entry,
+                                      static_cast<void*>(&faster_hc->hot_store) };
+      Status status = faster_hc->hot_store.ConditionalCopyToTail(copy_context);
       if (status == Status::Pending) {
         // add to retry queue
         faster_hc->retry_rmw_requests.push(context.get());
@@ -553,13 +559,14 @@ inline Status FasterKvHC<K, V, D>::Rmw(MC& context, AsyncCallback callback,
     // issue read request to cold log
     faster_hc_t * faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
 
-    rmw_read_context_t rmw_read_context { context->key(), context.get() };
+    hc_rmw_read_context_t rmw_read_context { context->key(), context.get() };
     Status read_status = faster_hc->cold_store.Read(rmw_read_context,
                                   context->cold_store_read_callback, context->serial_num);
     if (read_status == Status::Ok) {
       // Conditional copy to hot-cold
-      rmw_copy_context_t copy_context{ &context->rmw_context() };
-      Status status = faster_hc->hot_store.ConditionalCopyToTail(copy_context, context->expected_entry);
+      hc_rmw_copy_context_t copy_context{ &context->rmw_context(), context->expected_entry,
+                                        static_cast<void*>(&faster_hc->hot_store) };
+      Status status = faster_hc->hot_store.ConditionalCopyToTail(copy_context);
       if (status == Status::Pending) {
         // add to retry queue
         context.async = true;
@@ -605,13 +612,14 @@ inline Status FasterKvHC<K, V, D>::Rmw(MC& context, AsyncCallback callback,
   }
 
   // Entry not found in hot log - issue read request to cold log
-  rmw_read_context_t rmw_read_context { context.key(), &hc_rmw_context };
+  hc_rmw_read_context_t rmw_read_context { context.key(), &hc_rmw_context };
   Status read_status = cold_store.Read(rmw_read_context, cold_store_read_callback,
                                         monotonic_serial_num);
   if (read_status == Status::Ok) {
     // Conditional copy to hot log
-    rmw_copy_context_t copy_context{ &context };
-    Status status = hot_store.ConditionalCopyToTail(copy_context, hc_rmw_context.expected_entry);
+    hc_rmw_copy_context_t copy_context{ &context, hc_rmw_context.expected_entry,
+                                    static_cast<void*>(&hot_store) };
+    Status status = hot_store.ConditionalCopyToTail(copy_context);
     if (status == Status::Pending) {
       // add to retry rmw queue
       retry_rmw_requests.push(&hc_rmw_context);
@@ -663,25 +671,35 @@ inline bool FasterKvHC<K, V, D>::Checkpoint(IndexPersistenceCallback index_persi
 }
 
 template<class K, class V, class D>
-inline bool FasterKvHC<K, V, D>::CompactColdLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
-  throw std::logic_error{ "Not implemented yet! "};
+inline bool FasterKvHC<K, V, D>::CompactHotLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
+  return hot_store.CompactWithLookup(until_address, shift_begin_address, n_threads, &cold_store);
 }
 
 template<class K, class V, class D>
-inline bool FasterKvHC<K, V, D>::CompactHotLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
-  throw std::logic_error{ "Not implemented yet! "};
+inline bool FasterKvHC<K, V, D>::CompactColdLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
+  return cold_store.CompactWithLookup(until_address, shift_begin_address, n_threads);
 }
 
 template<class K, class V, class D>
 inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
+  Address until_address;
+
   while( true ) {
     if (hot_store.Size() > hot_log_disk_size_limit_) {
       // perform hot-cold compaction
-      throw std::logic_error{ "Not implemented yet! "};
+      until_address = Address(hot_store.hlog.GetTailAddress().control() - hot_log_disk_size_limit_);
+      bool success = CompactHotLog(until_address, true);
+      if (!success) {
+        fprintf(stderr, "warn: hot-cold compaction not successful\n");
+      }
     }
     if (cold_store.Size() > cold_log_disk_size_limit_) {
       // perform cold-cold compaction
-      throw std::logic_error{ "Not implemented yet! "};
+      until_address = Address(cold_store.hlog.GetTailAddress().control() - cold_log_disk_size_limit_);
+      bool success = CompactColdLog(until_address, true);
+      if (!success) {
+        fprintf(stderr, "warn: cold-cold compaction not successful\n");
+      }
     }
 
     std::this_thread::sleep_for(compaction_check_interval_);
