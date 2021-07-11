@@ -396,11 +396,12 @@ namespace FASTER.libdpr
                 list.Clear();
                 list.AddRange(deps);
                 maxVersion = Math.Max(wv.Version, maxVersion);
-                outstandingWvs.Enqueue(wv);
                 // wv may be duplicate as workers retry sending dependencies. Need to guard against this.
                 versionTable.AddOrUpdate(wv.Worker, wv.Version, (w, old) => Math.Max(old, wv.Version));
                 if (!precedenceGraph.TryAdd(wv, list))
                     objectPool.Return(list);
+                else
+                    outstandingWvs.Enqueue(wv);
             }
             finally
             {
