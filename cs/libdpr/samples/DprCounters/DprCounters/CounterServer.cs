@@ -45,6 +45,8 @@ namespace DprCounters
 
         public void RunServer()
         {
+            dprServer.ConnectToCluster();
+            
             termination = new ManualResetEventSlim();
             // DprServer must be continually refreshed and checkpointed for the system to make progress. It is easiest
             // to simply spawn a background thread to do that. 

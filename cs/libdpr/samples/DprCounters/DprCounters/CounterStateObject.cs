@@ -68,10 +68,14 @@ namespace DprCounters
             // load the surviving version on restart). libDPR will additionally never request a worker to restore
             // checkpoints earlier than the committed version in the DPR cut. We can therefore rely on a (relatively
             // small) stash of in-memory snapshots to quickly handle this call.
-            if (!prevCounters.TryGetValue(version, out value))
-            {
-                // TODO(Tianyu): Otherwise, load from disk
-            }
+            if (prevCounters.TryGetValue(version, out value)) return;
+            
+            var fileName = Path.Join(checkpointDirectory, version.ToString());
+            using var fs = File.Open(fileName, FileMode.Open, FileAccess.Read, FileShare.None);
+
+            var bytes = new byte[sizeof(long)];
+            fs.Read(bytes, 0, sizeof(long));
+            value = BitConverter.ToInt64(bytes, 0);
         }
         
         public override void PruneVersion(long version)
