@@ -35,6 +35,7 @@ namespace FASTER.test
             fht = null;
             log?.Dispose();
             log = null;
+            TestUtils.DeleteDirectory(path, wait: true);
         }
 
         const int numRecords = 1000;
