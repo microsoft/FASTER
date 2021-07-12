@@ -20,9 +20,9 @@ namespace VarLenClient
                 ip = args[0];
             if (args.Length > 1 && args[1] != "-")
                 port = int.Parse(args[1]);
-            
-            //new MemoryBenchmark().Run(ip, port);
-            //new MemorySamples().Run(ip, port);
+
+            new MemoryBenchmark().Run(ip, port);
+            new MemorySamples().Run(ip, port);
             new CustomTypeSamples().Run(ip, port);
             Console.WriteLine("Success!");
         }

@@ -25,17 +25,14 @@ namespace VarLenClient
             var session = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
             var subSession = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
 
-            // Explicit version of NewSession call, where you provide all types, callback functions, and serializer
-            // using var session = client.NewSession<long, long, long, Functions, BlittableParameterSerializer<long, long, long, long>>(new Functions(), new BlittableParameterSerializer<long, long, long, long>());
-
             // Samples using sync client API
-            //SyncVarLenSamples(session);
+            SyncVarLenSamples(session);
 
             // Samples using sync client API
             SyncVarLenSubscriptionSamples(session, subSession);
 
             // Samples using async client API
-            //AsyncVarLenSamples(session).Wait();
+            AsyncVarLenSamples(session).Wait();
         }
 
         void SyncVarLenSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session)
