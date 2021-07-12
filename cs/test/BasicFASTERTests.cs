@@ -334,6 +334,7 @@ namespace FASTER.test
         public unsafe void NativeInMemRMWRefKeys([Values] TestUtils.DeviceType deviceType)
         {
             InputStruct input = default;
+            OutputStruct output = default;
 
             string filename = path + "NativeInMemRMWRefKeys" + deviceType.ToString() + ".log";
             log = TestUtils.CreateTestDevice(deviceType, filename);
@@ -363,10 +364,17 @@ namespace FASTER.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                session.RMW(ref key1, ref input, Empty.Default, 0);
+                if (session.RMW(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
+                {
+                    session.CompletePending(true);
+                }
+                else
+                {
+                    Assert.AreEqual(2 * i, output.value.vfield1);
+                    Assert.AreEqual(2 * (i + 1), output.value.vfield2);
+                }
             }
 
-            OutputStruct output = default;
             Status status;
             KeyStruct key;
 

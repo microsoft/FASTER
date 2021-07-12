@@ -20,7 +20,7 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref long input, ref RefCountedValue value)
+        public override void InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output)
         {
             Interlocked.Increment(ref InitialCount);
 
@@ -28,7 +28,7 @@ namespace FASTER.test
             value.ReferenceCount = 1;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value)
+        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -37,7 +37,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue)
+        public override void CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output)
         {
             Interlocked.Increment(ref CopyCount);
 
@@ -52,7 +52,7 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value)
+        public override void InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output)
         {
             Interlocked.Increment(ref InitialCount);
 
@@ -60,7 +60,7 @@ namespace FASTER.test
             value.ReferenceCount = 0;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value)
+        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -70,7 +70,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue)
+        public override void CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output)
         {
             Interlocked.Increment(ref CopyCount);
 

@@ -148,7 +148,22 @@ namespace FASTER.client
         /// <param name="serialNo">Serial number</param>
         /// <returns>Status of operation</returns>
         public Status RMW(ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
-            => InternalRMW(MessageType.RMW, ref key, ref input, userContext, serialNo);
+        {
+            Output output = default;
+            return InternalRMW(MessageType.RMW, ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// RMW (read-modify-write) operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="output">Output</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public Status RMW(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
+            => InternalRMW(MessageType.RMW, ref key, ref input, ref output, userContext, serialNo);
 
         /// <summary>
         /// RMW (read-modify-write) operation
@@ -159,7 +174,25 @@ namespace FASTER.client
         /// <param name="serialNo">Serial number</param>
         /// <returns>Status of operation</returns>
         public Status RMW(Key key, Input input, Context userContext = default, long serialNo = 0)
-            => InternalRMW(MessageType.RMW, ref key, ref input, userContext, serialNo);
+        {
+            Output output = default;
+            return InternalRMW(MessageType.RMW, ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// RMW (read-modify-write) operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="output">Output</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public Status RMW(Key key, Input input, out Output output, Context userContext = default, long serialNo = 0)
+        {
+            output = default;
+            return InternalRMW(MessageType.RMW, ref key, ref input, ref output, userContext, serialNo);
+        }
 
         /// <summary>
         /// Delete operation
@@ -323,13 +356,18 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
-                                if (status == Status.PENDING)
+                                if (status == Status.OK || status == Status.NOTFOUND)
+                                {
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
+                                }
+                                else if (status == Status.PENDING)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingContext.Add(p, result);
                                 }
                                 else
-                                    functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, result.Item4, status);
+                                    functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
                                 break;
                             }
                         case MessageType.RMWAsync:
@@ -337,7 +375,9 @@ namespace FASTER.client
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
-                                if (status == Status.PENDING)
+                                if (status == Status.OK || status == Status.NOTFOUND)
+                                    tcs.SetResult((status, serializer.ReadOutput(ref src)));
+                                else if (status == Status.PENDING)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingTcs.Add(p, tcs);
@@ -427,7 +467,13 @@ namespace FASTER.client
                         readRmwPendingContext.TryGetValue(p, out var result);
                         readRmwPendingContext.Remove(p);
 #endif
-                        functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, result.Item4, status);
+                        if (status == Status.OK || status == Status.NOTFOUND)
+                        {
+                            result.Item3 = serializer.ReadOutput(ref src);
+                            functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
+                        }
+                        else
+                            functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
                         break;
                     }
                 case MessageType.RMWAsync:
@@ -439,7 +485,10 @@ namespace FASTER.client
                         readRmwPendingTcs.TryGetValue(p, out var result);
                         readRmwPendingTcs.Remove(p);
 #endif
-                        result.SetResult((status, default));
+                        if (status == Status.OK || status == Status.NOTFOUND)
+                            result.SetResult((status, serializer.ReadOutput(ref src)));
+                        else
+                            result.SetResult((status, default));
                         break;
                     }
                 default:
@@ -528,7 +577,7 @@ namespace FASTER.client
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe Status InternalRMW(MessageType messageType, ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
+        private unsafe Status InternalRMW(MessageType messageType, ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
             while (true)
             {
@@ -540,7 +589,7 @@ namespace FASTER.client
                         {
                             numMessages++;
                             offset = curr;
-                            readrmwQueue.Enqueue((key, input, default, userContext));
+                            readrmwQueue.Enqueue((key, input, output, userContext));
                             return Status.PENDING;
                         }
                 Flush();

@@ -129,7 +129,7 @@ namespace FASTER.test
 
     public class MemoryCompaction : MemoryFunctions<ReadOnlyMemory<int>, int, int>
     {
-        public override void RMWCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, int ctx, Status status)
+        public override void RMWCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
         }
