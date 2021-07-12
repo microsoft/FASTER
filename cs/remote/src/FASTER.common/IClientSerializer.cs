@@ -38,7 +38,7 @@ namespace FASTER.common
         /// <param name="length">Space (bytes) available at destination</param>
         /// <returns>True if write succeeded, false if not (insufficient space)</returns>
         bool Write(ref Input i, ref byte* dst, int length);
-        
+
         /// <summary>
         /// Read output from source memory location, increment pointer by amount read
         /// </summary>

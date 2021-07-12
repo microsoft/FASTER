@@ -71,12 +71,5 @@ namespace FASTER.common
         /// </summary>
         /// <param name="src">Memory location</param>
         void SkipOutput(ref byte* src);
-
-        /// <summary>
-        /// Match pattern with key used for pub-sub
-        /// </summary>
-        /// <param name="k">key to be published</param>
-        /// <param name="pattern">pattern to check</param>
-        bool Match(ref Key k, ref Key pattern);
     }
 }

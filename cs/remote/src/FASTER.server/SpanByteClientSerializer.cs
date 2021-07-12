@@ -35,6 +35,13 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
+        public SpanByte ReadKey(ref byte* src)
+        {
+            int length = *(int*)src;
+            return SpanByte.FromPointer(src, length);
+        }
+
+        /// <inheritdoc />
         public bool Write(ref SpanByte k, ref byte* dst, int length)
         {
             var len = k.TotalSize;
