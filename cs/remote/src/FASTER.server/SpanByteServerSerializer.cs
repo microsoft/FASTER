@@ -13,10 +13,9 @@ namespace FASTER.server
     /// </summary>
     public unsafe sealed class SpanByteServerSerializer : IServerSerializer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory>
     {
-        readonly SpanByteVarLenStruct settings;
         readonly int keyLength;
         readonly int valueLength;
-        
+
         [ThreadStatic]
         static SpanByteAndMemory output;
 
@@ -27,7 +26,6 @@ namespace FASTER.server
         /// <param name="maxValueLength">Max value length</param>
         public SpanByteServerSerializer(int maxKeyLength = 512, int maxValueLength = 512)
         {
-            settings = new SpanByteVarLenStruct();
             keyLength = maxKeyLength;
             valueLength = maxValueLength;
         }
@@ -37,7 +35,7 @@ namespace FASTER.server
         public ref SpanByte ReadKeyByRef(ref byte* src)
         {
             ref var ret = ref Unsafe.AsRef<SpanByte>(src);
-            src += settings.GetLength(ref ret);
+            src += ret.TotalSize;
             return ref ret;
         }
 
@@ -46,7 +44,7 @@ namespace FASTER.server
         public ref SpanByte ReadValueByRef(ref byte* src)
         {
             ref var ret = ref Unsafe.AsRef<SpanByte>(src);
-            src += settings.GetLength(ref ret);
+            src += ret.TotalSize;
             return ref ret;
         }
 
@@ -55,7 +53,7 @@ namespace FASTER.server
         public ref SpanByte ReadInputByRef(ref byte* src)
         {
             ref var ret = ref Unsafe.AsRef<SpanByte>(src);
-            src += settings.GetLength(ref ret);
+            src += ret.TotalSize;
             return ref ret;
         }
 
@@ -63,8 +61,9 @@ namespace FASTER.server
         public bool Write(ref SpanByte k, ref byte* dst, int length)
         {
             if (k.Length > length) return false;
-            k.CopyTo(dst);
-            dst += (k.Length + sizeof(int));
+
+            var dest = new SpanByte(length, (IntPtr)dst);
+            k.SpanByte.CopyTo(ref dest);
             return true;
         }
 
@@ -95,23 +94,5 @@ namespace FASTER.server
 
         /// <inheritdoc />
         public int GetLength(ref SpanByteAndMemory o) => o.Length;
-
-        /// <inheritdoc />
-        public bool Match(ref SpanByte k, ref SpanByte pattern)
-        {
-            if (pattern.Length > k.Length)
-                return false;
-
-            byte[] kByte = k.ToByteArray();
-            byte[] patternByte = pattern.ToByteArray();
-
-            for (int i = 0; i < patternByte.Length; i++)
-            {
-                if (kByte[i] != patternByte[i])
-                    return false;
-            }
-
-            return true;
-        }
     }
 }

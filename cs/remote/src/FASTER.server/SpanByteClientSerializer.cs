@@ -1,13 +1,12 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using FASTER.common;
 using FASTER.core;
-using System;
 using System.Buffers;
-using System.Runtime.InteropServices;
 
-namespace FASTER.client
+namespace FASTER.server
 {
     /// <summary>
     /// Serializer for SpanByte (can be used on client side)
@@ -15,7 +14,6 @@ namespace FASTER.client
     public unsafe class SpanByteClientSerializer : IClientSerializer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory>
     {
         readonly MemoryPool<byte> memoryPool;
-        readonly SpanByteVarLenStruct settings;
 
         /// <summary>
         /// Constructor
@@ -23,7 +21,6 @@ namespace FASTER.client
         /// <param name="memoryPool"></param>
         public SpanByteClientSerializer(MemoryPool<byte> memoryPool = default)
         {
-            settings = new SpanByteVarLenStruct();
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
 
@@ -38,18 +35,9 @@ namespace FASTER.client
         }
 
         /// <inheritdoc />
-        public SpanByte ReadKey(ref byte* src)
-        {
-            int length = *(int*)src;
-            byte* mem = src;
-            src += length + sizeof(int);
-            return SpanByte.FromPointer((mem + sizeof(int)), length);
-        }
-
-        /// <inheritdoc />
         public bool Write(ref SpanByte k, ref byte* dst, int length)
         {
-            var len = settings.GetLength(ref k);
+            var len = k.TotalSize;
             if (length < len) return false;
             k.CopyTo(dst);
             dst += len;
