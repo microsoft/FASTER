@@ -3,101 +3,107 @@
 
 using System;
 using System.Net.Sockets;
-using System.Runtime.CompilerServices;
 using FASTER.common;
-using FASTER.core;
 
 namespace FASTER.server
 {
-    internal abstract class ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> : IDisposable
-        where Functions : IFunctions<Key, Value, Input, Output, long>
-        where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
+    /// <summary>
+    /// Abstract base class for server session provider
+    /// </summary>
+    public abstract class ServerSessionBase : IServerSession
     {
+        /// <summary>
+        /// Socket
+        /// </summary>
         protected readonly Socket socket;
-        protected readonly ClientSession<Key, Value, Input, Output, long, ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>> session;
-        protected readonly ParameterSerializer serializer;
+
+        /// <summary>
+        /// Max size settings
+        /// </summary>
         protected readonly MaxSizeSettings maxSizeSettings;
+
+        /// <summary>
+        /// Response object
+        /// </summary>
+        protected ReusableObject<SeaaBuffer> responseObject;
+
+        /// <summary>
+        /// Bytes read
+        /// </summary>
+        protected int bytesRead;
 
         private readonly NetworkSender messageManager;
         private readonly int serverBufferSize;
         
-        protected ReusableObject<SeaaBuffer> responseObject;
-        protected int bytesRead;
 
-        public ServerSessionBase(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
+        /// <summary>
+        /// Create new instance
+        /// </summary>
+        /// <param name="socket"></param>
+        /// <param name="maxSizeSettings"></param>
+        public ServerSessionBase(Socket socket, MaxSizeSettings maxSizeSettings)
         {
             this.socket = socket;
-            session = store.For(new ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>(functions, this)).NewSession<ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>>();
             this.maxSizeSettings = maxSizeSettings;
             serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
             messageManager = new NetworkSender(serverBufferSize);
-            this.serializer = serializer;
-
             bytesRead = 0;
         }
 
+        /// <inheritdoc />
         public abstract int TryConsumeMessages(byte[] buf);
-        public abstract void CompleteRead(ref Output output, long ctx, core.Status status);
-        public abstract void CompleteRMW(long ctx, core.Status status);
 
+        /// <inheritdoc />
+        public void AddBytesRead(int bytesRead) => this.bytesRead += bytesRead;
+
+        /// <summary>
+        /// Get response object
+        /// </summary>
         protected void GetResponseObject() { if (responseObject.obj == null) responseObject = messageManager.GetReusableSeaaBuffer(); }
 
-        protected void SendResponse(int size) => messageManager.Send(socket, responseObject, 0, size);
-        protected void SendResponse(int offset, int size) => messageManager.Send(socket, responseObject, offset, size);
-
-        private void AddBytesRead(int bytesRead) => this.bytesRead += bytesRead;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool HandleReceiveCompletion(SocketAsyncEventArgs e)
+        /// <summary>
+        /// Send response
+        /// </summary>
+        /// <param name="size"></param>
+        protected void SendResponse(int size)
         {
-            var connArgs = (ConnectionArgs<Key, Value, Input, Output, Functions, ParameterSerializer>)e.UserToken;
-            if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success)
+            try
             {
-                connArgs.socket.Dispose();
-                e.Dispose();
-                connArgs.session?.Dispose();
-                connArgs.session = null;
-                return false;
+                messageManager.Send(socket, responseObject, 0, size);
             }
-
-            if (connArgs.session == null)
+            catch
             {
-                if (e.BytesTransferred < 4)
-                {
-                    e.SetBuffer(0, e.Buffer.Length);
-                    return true;
-                }
-
-                if (e.Buffer[3] > 127)
-                    connArgs.session = new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(connArgs.socket, connArgs.store, connArgs.functionsGen(WireFormat.Binary), connArgs.serializer, connArgs.maxSizeSettings);
-                else
-                    throw new FasterException("Unexpected wire format");
+                responseObject.Dispose();
             }
-
-            connArgs.session.AddBytesRead(e.BytesTransferred);
-            var newHead = connArgs.session.TryConsumeMessages(e.Buffer);
-            e.SetBuffer(newHead, e.Buffer.Length - newHead);
-            return true;
         }
 
-        public static void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
+        /// <summary>
+        /// Send response
+        /// </summary>
+        /// <param name="offset"></param>
+        /// <param name="size"></param>
+        protected void SendResponse(int offset, int size)
         {
-            var connArgs = (ConnectionArgs<Key, Value, Input, Output, Functions, ParameterSerializer>)e.UserToken;
-            do
+            try
             {
-                // No more things to receive
-                if (!HandleReceiveCompletion(e)) break;
-            } while (!connArgs.socket.ReceiveAsync(e));
+                messageManager.Send(socket, responseObject, offset, size);
+            }
+            catch
+            {
+                responseObject.Dispose();
+            }
         }
 
+        
         /// <summary>
         /// Dispose
         /// </summary>
         public virtual void Dispose()
         {
-            session.Dispose();
+            socket.Dispose();
+            if (responseObject.obj != null)
+                responseObject.Dispose();
             messageManager.Dispose();
         }
     }
-
 }

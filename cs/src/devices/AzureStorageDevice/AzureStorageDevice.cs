@@ -55,7 +55,7 @@ namespace FASTER.devices
         public AzureStorageDevice(CloudBlobDirectory cloudBlobDirectory, string blobName, IBlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
             : base($"{cloudBlobDirectory}/{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
         {
-            this.blobs = new ConcurrentDictionary<int, BlobEntry>();
+            this.blobs = new();
             this.blobDirectory = cloudBlobDirectory;
             this.blobName = blobName;
             this.underLease = underLease;
@@ -90,7 +90,7 @@ namespace FASTER.devices
             var container = client.GetContainerReference(containerName);
             container.CreateIfNotExists();
 
-            this.blobs = new ConcurrentDictionary<int, BlobEntry>();
+            this.blobs = new();
             this.blobDirectory = container.GetDirectoryReference(directoryName);
             this.blobName = blobName;
             this.underLease = underLease;
@@ -200,20 +200,18 @@ namespace FASTER.devices
 
                 if (this.underLease)
                 {
-                    this.BlobManager.ConfirmLeaseAsync().GetAwaiter().GetResult();
+                    this.BlobManager.ConfirmLeaseAsync().GetAwaiter().GetResult();  // REVIEW: this method cannot avoid GetAwaiter
                 }
 
                 if (!this.BlobManager.CancellationToken.IsCancellationRequested)
                 {
-                    pageBlob.DeleteAsync(cancellationToken: this.BlobManager.CancellationToken)
-                       .ContinueWith((Task t) =>
-                       {
-                           if (t.IsFaulted)
-                           {
-                               this.BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
-                           }
-                           callback(result);
-                       });
+                    var t = pageBlob.DeleteAsync(cancellationToken: this.BlobManager.CancellationToken);
+                    t.GetAwaiter().GetResult();                                     // REVIEW: this method cannot avoid GetAwaiter
+                    if (t.IsFaulted)
+                    {
+                        this.BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
+                    }
+                    callback(result);
                 }
             }
         }
@@ -238,7 +236,7 @@ namespace FASTER.devices
         {
             try
             {
-                await BlobManager.AsyncStorageWriteMaxConcurrency.WaitAsync();
+                await BlobManager.AsyncStorageWriteMaxConcurrency.WaitAsync().ConfigureAwait(false);
 
                 int numAttempts = 0;
                 long streamPosition = stream.Position;
@@ -265,7 +263,7 @@ namespace FASTER.devices
                     {
                         TimeSpan nextRetryIn = TimeSpan.FromSeconds(1 + Math.Pow(2, (numAttempts - 1)));
                         this.BlobManager?.HandleBlobError(nameof(WritePortionToBlobAsync), $"could not write to page blob, will retry in {nextRetryIn}s", blob?.Name, e, false);
-                        await Task.Delay(nextRetryIn);
+                        await Task.Delay(nextRetryIn).ConfigureAwait(false);
                         stream.Seek(streamPosition, SeekOrigin.Begin);  // must go back to original position before retrying
                         continue;
                     }
@@ -294,7 +292,7 @@ namespace FASTER.devices
 
             try
             {
-                await BlobManager.AsyncStorageReadMaxConcurrency.WaitAsync();
+                await BlobManager.AsyncStorageReadMaxConcurrency.WaitAsync().ConfigureAwait(false);
 
                 int numAttempts = 0;
 
@@ -329,7 +327,7 @@ namespace FASTER.devices
                     {
                         TimeSpan nextRetryIn = TimeSpan.FromSeconds(1 + Math.Pow(2, (numAttempts - 1)));
                         this.BlobManager?.HandleBlobError(nameof(ReadFromBlobAsync), $"could not write to page blob, will retry in {nextRetryIn}s", blob?.Name, e, false);
-                        await Task.Delay(nextRetryIn);
+                        await Task.Delay(nextRetryIn).ConfigureAwait(false);
                         stream.Seek(0, SeekOrigin.Begin); // must go back to original position before retrying
                         continue;
                     }
@@ -390,7 +388,7 @@ namespace FASTER.devices
 
             if (!blobs.TryGetValue(segmentId, out BlobEntry blobEntry))
             {
-                BlobEntry entry = new BlobEntry(this.BlobManager);
+                BlobEntry entry = new(this.BlobManager);
                 if (blobs.TryAdd(segmentId, entry))
                 {
                     CloudPageBlob pageBlob = this.blobDirectory.GetPageBlobReference(GetSegmentBlobName(segmentId));

@@ -111,7 +111,7 @@ namespace FASTER.core
         /// <summary>
         /// HeadOFfset lag address
         /// </summary>
-        protected long HeadOffsetLagAddress;
+        internal long HeadOffsetLagAddress;
 
         /// <summary>
         /// Log mutable fraction
@@ -224,7 +224,7 @@ namespace FASTER.core
         /// <summary>
         /// Error handling
         /// </summary>
-        private readonly ErrorList errorList = new ErrorList();
+        private readonly ErrorList errorList = new();
 
         /// <summary>
         /// Observer for records entering read-only region
@@ -237,14 +237,9 @@ namespace FASTER.core
         internal IObserver<IFasterScanIterator<Key, Value>> OnEvictionObserver;
 
         /// <summary>
-        /// The TaskCompletionSource for flush completion
+        /// The "event" to be waited on for flush completion by the initiator of an operation
         /// </summary>
-        private TaskCompletionSource<long> flushTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        /// <summary>
-        /// The task ato be waited on for flush completion by the initiator of an operation
-        /// </summary>
-        internal Task<long> FlushTask => flushTcs.Task;
+        internal CompletionEvent FlushEvent;
 
         #region Abstract methods
         /// <summary>
@@ -565,6 +560,9 @@ namespace FASTER.core
         /// <param name="page">Page number to be cleared</param>
         /// <param name="offset">Offset to clear from (if partial clear)</param>
         internal abstract void ClearPage(long page, int offset = 0);
+
+        internal abstract void FreePage(long page);
+
         /// <summary>
         /// Write page (async)
         /// </summary>
@@ -673,6 +671,7 @@ namespace FASTER.core
             }
             FlushCallback = flushCallback;
             PreallocateLog = settings.PreallocateLog;
+            this.FlushEvent.Initialize();
 
             if (settings.LogDevice is NullDevice)
                 IsNullDevice = true;
@@ -728,6 +727,11 @@ namespace FASTER.core
 
             AlignedPageSizeBytes = ((PageSize + (sectorSize - 1)) & ~(sectorSize - 1));
         }
+
+        /// <summary>
+        /// Number of extra overflow pages allocated
+        /// </summary>
+        internal abstract int OverflowPageCount { get; }
 
         /// <summary>
         /// Initialize allocator
@@ -791,6 +795,10 @@ namespace FASTER.core
             OnEvictionObserver?.OnCompleted();
         }
 
+        /// <summary>
+        /// Number of pages in circular buffer that are allocated
+        /// </summary>
+        public int AllocatedPageCount;
 
         /// <summary>
         /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
@@ -818,7 +826,7 @@ namespace FASTER.core
                 }
 
                 // Force eviction now if empty page count has increased
-                if (value > oldEPC)
+                if (value >= oldEPC)
                 {
                     bool prot = true;
                     if (!epoch.ThisInstanceProtected())
@@ -969,19 +977,21 @@ namespace FASTER.core
             #region HANDLE PAGE OVERFLOW
             if (localTailPageOffset.Offset > PageSize)
             {
+                int pageIndex = localTailPageOffset.Page + 1;
+
                 // All overflow threads try to shift addresses
-                long shiftAddress = ((long)(localTailPageOffset.Page + 1)) << LogPageSizeBits;
+                long shiftAddress = ((long)pageIndex) << LogPageSizeBits;
                 PageAlignedShiftReadOnlyAddress(shiftAddress);
                 PageAlignedShiftHeadAddress(shiftAddress);
 
                 if (offset > PageSize)
                 {
-                    if (NeedToWait(localTailPageOffset.Page + 1))
+                    if (NeedToWait(pageIndex))
                         return 0; // RETRY_LATER
                     return -1; // RETRY_NOW
                 }
 
-                if (NeedToWait(localTailPageOffset.Page + 1))
+                if (NeedToWait(pageIndex))
                 {
                     // Reset to end of page so that next attempt can retry
                     localTailPageOffset.Offset = PageSize;
@@ -990,7 +1000,7 @@ namespace FASTER.core
                 }
 
                 // The thread that "makes" the offset incorrect should allocate next page and set new tail
-                if (CannotAllocate(localTailPageOffset.Page + 1))
+                if (CannotAllocate(pageIndex))
                 {
                     // Reset to end of page so that next attempt can retry
                     localTailPageOffset.Offset = PageSize;
@@ -998,12 +1008,13 @@ namespace FASTER.core
                     return -1; // RETRY_NOW
                 }
 
+                // Allocate this page, if needed
+                if (!IsAllocated(pageIndex % BufferSize))
+                    AllocatePage(pageIndex % BufferSize);
+
                 // Allocate next page in advance, if needed
-                int nextPageIndex = (localTailPageOffset.Page + 2) % BufferSize;
-                if ((!IsAllocated(nextPageIndex)))
-                {
-                    AllocatePage(nextPageIndex);
-                }
+                if (!IsAllocated((pageIndex + 1) % BufferSize))
+                    AllocatePage((pageIndex + 1) % BufferSize);
 
                 localTailPageOffset.Page++;
                 localTailPageOffset.Offset = numSlots;
@@ -1028,7 +1039,7 @@ namespace FASTER.core
             var spins = 0;
             while (true)
             {
-                var flushTask = this.FlushTask;
+                var flushEvent = this.FlushEvent;
                 var logicalAddress = this.TryAllocate(numSlots);
                 if (logicalAddress > 0)
                     return logicalAddress;
@@ -1042,7 +1053,7 @@ namespace FASTER.core
                     try
                     {
                         epoch.Suspend();
-                        await flushTask.WithCancellationAsync(token);
+                        await flushEvent.WaitAsync(token).ConfigureAwait(false);
                     }
                     finally
                     {
@@ -1069,7 +1080,7 @@ namespace FASTER.core
             return logicalAddress;
         }
 
-        
+
         private bool CannotAllocate(int page) => page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits);
 
         private bool NeedToWait(int page) => page >= BufferSize + (FlushedUntilAddress >> LogPageSizeBits);
@@ -1123,7 +1134,7 @@ namespace FASTER.core
             var b = oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits;
 
             // Shift read-only address
-            var flushTask = FlushTask;
+            var flushEvent = FlushEvent;
             try
             {
                 epoch.Resume();
@@ -1145,8 +1156,8 @@ namespace FASTER.core
                     Thread.Yield();
                     continue;
                 }
-                flushTask.Wait();
-                flushTask = FlushTask;
+                flushEvent.Wait();
+                flushEvent = FlushEvent;
             }
 
             // Then shift head address
@@ -1236,10 +1247,7 @@ namespace FASTER.core
                     int closePage = (int)(closePageAddress >> LogPageSizeBits);
                     int closePageIndex = closePage % BufferSize;
 
-                    if (!IsAllocated(closePageIndex))
-                        AllocatePage(closePageIndex);
-                    else
-                        ClearPage(closePage);
+                    FreePage(closePage);
 
                     Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, closePageAddress + PageSize, out _);
                     ShiftClosedUntilAddress();
@@ -1379,16 +1387,7 @@ namespace FASTER.core
                             ErrorCode = errorCode
                         });
 
-                    var newFlushTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    while (true)
-                    {
-                        var _flushTcs = flushTcs;
-                        if (Interlocked.CompareExchange(ref flushTcs, newFlushTcs, _flushTcs) == _flushTcs)
-                        {
-                            _flushTcs.TrySetResult(errorCode);
-                            break;
-                        }
-                    }
+                    this.FlushEvent.Set();
 
                     if (errorList.Count > 0)
                     {

@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using FASTER.core;
 
 namespace FixedLenServer
@@ -54,8 +55,11 @@ namespace FixedLenServer
 
     public struct Functions : IFunctions<Key, Value, Input, Output, long>
     {
+        // No locking needed for atomic types such as Value
+        public bool SupportsLocking => false;
+
         // Callbacks
-        public void RMWCompletionCallback(ref Key key, ref Input input, long ctx, Status status) { }
+        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status) { }
 
         public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status) { }
 
@@ -86,16 +90,29 @@ namespace FixedLenServer
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitialUpdater(ref Key key, ref Input input, ref Value value) => value.value = input.value;
+        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
+        {
+            value.value = input.value;
+            output.value = value;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
         {
-            value.value += input.value;
+            Interlocked.Add(ref value.value, input.value);
+            output.value = value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) => newValue.value = input.value + oldValue.value;
+        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
+        {
+            newValue.value = input.value + oldValue.value;
+            output.value = newValue;
+        }
+
+        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) { }
+
+        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => true;
     }
 }

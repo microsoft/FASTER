@@ -1,9 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1;netstandard2.0;net461</TargetFrameworks>
+    <TargetFrameworks>net5.0;netstandard2.1;netstandard2.0;net461</TargetFrameworks>
     <Platforms>AnyCPU;x64</Platforms>
-    <LangVersion>8</LangVersion>
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -17,6 +17,7 @@
     <StartupObject />
     <AssemblyOriginatorKeyFile>../../FASTER.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
+	<EmbedUntrackedSources>true</EmbedUntrackedSources>
     <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
 
@@ -34,6 +35,7 @@
   
   <ItemGroup>
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="5.0.0" />
+	<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
   </ItemGroup>
   
   <ItemGroup Condition="'$(TargetFramework)' == 'net461'">

@@ -91,7 +91,7 @@ namespace FASTER.devices
                 };
             }
 
-            foreach (var entry in baseRef.ListBlobs().Where(b => b as CloudPageBlob != null)
+            foreach (var entry in baseRef.GetDirectoryReference(path).ListBlobs().Where(b => b as CloudPageBlob != null)
                 .OrderByDescending(f => ((CloudPageBlob)f).Properties.LastModified))
             {
                 yield return new FileDescriptor

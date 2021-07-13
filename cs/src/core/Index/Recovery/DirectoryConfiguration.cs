@@ -29,16 +29,16 @@ namespace FASTER.core
         {
             var directory = GetIndexCheckpointFolder(token);
             Directory.CreateDirectory(directory);
-            DirectoryInfo directoryInfo = new System.IO.DirectoryInfo(directory);
-            foreach (System.IO.FileInfo file in directoryInfo.GetFiles())
+            DirectoryInfo directoryInfo = new(directory);
+            foreach (FileInfo file in directoryInfo.GetFiles())
                 file.Delete();
         }
         public void CreateHybridLogCheckpointFolder(Guid token)
         {
             var directory = GetHybridLogCheckpointFolder(token);
             Directory.CreateDirectory(directory);
-            DirectoryInfo directoryInfo = new System.IO.DirectoryInfo(directory);
-            foreach (System.IO.FileInfo file in directoryInfo.GetFiles())
+            DirectoryInfo directoryInfo = new(directory);
+            foreach (FileInfo file in directoryInfo.GetFiles())
                 file.Delete();
         }
 

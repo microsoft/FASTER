@@ -38,9 +38,10 @@ namespace FASTER.client
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <param name="ctx"></param>
         /// <param name="status"></param>
-        void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status);
+        void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status);
 
         /// <summary>
         /// Delete completion
