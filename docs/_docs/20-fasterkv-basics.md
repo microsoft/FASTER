@@ -273,13 +273,14 @@ public static void Test()
 {
   using var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
   using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
-  using var s = store.NewSession(new SimpleFunctions<long, long>());
+  using var s = store.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
   long key = 1, value = 1, input = 10, output = 0;
   s.Upsert(ref key, ref value);
   s.Read(ref key, ref output);
   Debug.Assert(output == value);
   s.RMW(ref key, ref input);
-  s.RMW(ref key, ref input, ref output);
+  s.RMW(ref key, ref input);
+  s.Read(ref key, ref output);
   Debug.Assert(output == value + 20);
 }
 ```
