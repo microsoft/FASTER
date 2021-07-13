@@ -199,3 +199,8 @@ nativebin/
 .idea/
 
 
+
+# JetBrains
+cs/.idea/
+cs/remote/.idea
+cs/libdpr/.idea

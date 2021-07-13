@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Buffers;
+using FASTER.common;
 using FASTER.core;
 
 namespace FASTER.server
@@ -19,7 +20,7 @@ namespace FASTER.server
         /// </summary>
         /// <param name="wireFormat"></param>
         /// <param name="memoryPool"></param>
-        public SpanByteFunctionsForServer(WireFormat wireFormat = default, MemoryPool<byte> memoryPool = default)
+        public SpanByteFunctionsForServer(WireFormat wireFormat = default, MemoryPool<byte> memoryPool = default) : base(true)
         {
             this.wireFormat = wireFormat;
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
@@ -28,14 +29,14 @@ namespace FASTER.server
         /// <inheritdoc />
         public unsafe override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
         {
-            if (wireFormat == WireFormat.Binary)
+            if (wireFormat != WireFormat.ASCII)
                 CopyWithHeaderTo(ref value, ref dst, memoryPool);
         }
 
         /// <inheritdoc />
         public unsafe override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
         {
-            if (wireFormat == WireFormat.Binary)
+            if (wireFormat != WireFormat.ASCII)
                 CopyWithHeaderTo(ref value, ref dst, memoryPool);
         }
 

@@ -10,7 +10,7 @@ using FASTER.core;
 namespace FASTER.server
 {
     internal unsafe sealed class BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-        : ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>
+        : FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>
         where Functions : IFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
@@ -48,7 +48,7 @@ namespace FASTER.server
             return bytesRead;
         }
 
-        public override void CompleteRead(ref Output output, long ctx, core.Status status)
+        public override void CompleteRead(ref Output output, long ctx, Status status)
         {
             byte* d = responseObject.obj.bufferPtr;
             var dend = d + responseObject.obj.buffer.Length;
@@ -60,23 +60,25 @@ namespace FASTER.server
             hrw.Write((MessageType)(ctx >> 32), ref dcurr, (int)(dend - dcurr));
             Write((int)(ctx & 0xffffffff), ref dcurr, (int)(dend - dcurr));
             Write(ref status, ref dcurr, (int)(dend - dcurr));
-            if (status != core.Status.NOTFOUND)
+            if (status != Status.NOTFOUND)
                 serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
             msgnum++;
         }
 
-        public override void CompleteRMW(long ctx, core.Status status)
+        public override void CompleteRMW(ref Output output, long ctx, Status status)
         {
             byte* d = responseObject.obj.bufferPtr;
             var dend = d + responseObject.obj.buffer.Length;
 
-            if ((int)(dend - dcurr) < 7)
+            if ((int)(dend - dcurr) < 7 + maxSizeSettings.MaxOutputSize)
                 SendAndReset(ref d, ref dend);
 
             hrw.Write(MessageType.PendingResult, ref dcurr, (int)(dend - dcurr));
             hrw.Write((MessageType)(ctx >> 32), ref dcurr, (int)(dend - dcurr));
             Write((int)(ctx & 0xffffffff), ref dcurr, (int)(dend - dcurr));
             Write(ref status, ref dcurr, (int)(dend - dcurr));
+            if (status == Status.OK || status == Status.NOTFOUND)
+                serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
             msgnum++;
         }
 
@@ -113,13 +115,15 @@ namespace FASTER.server
 
                 var src = b;
                 ref var header = ref Unsafe.AsRef<BatchHeader>(src);
+                var num = header.NumMessages;
                 src += BatchHeader.Size;
-                core.Status status = default;
+                Status status = default;
 
                 dcurr += BatchHeader.Size;
                 start = 0;
                 msgnum = 0;
-                for (msgnum = 0; msgnum < header.numMessages; msgnum++)
+                
+                for (msgnum = 0; msgnum < num; msgnum++)
                 {
                     var message = (MessageType)(*src++);
                     switch (message)
@@ -146,24 +150,27 @@ namespace FASTER.server
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            if (status == core.Status.PENDING)
+                            if (status == Status.PENDING)
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                            else if (status == core.Status.OK)
+                            else if (status == Status.OK)
                                 serializer.SkipOutput(ref dcurr);
                             break;
 
                         case MessageType.RMW:
                         case MessageType.RMWAsync:
-                            if ((int)(dend - dcurr) < 2)
+                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
 
                             ctx = ((long)message << 32) | (long)pendingSeqNo;
-                            status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src), ctx);
+                            status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
+                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx);
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
-                            if (status == core.Status.PENDING)
+                            if (status == Status.PENDING)
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
+                            else if (status == Status.OK || status == Status.NOTFOUND)
+                                serializer.SkipOutput(ref dcurr);
                             break;
 
                         case MessageType.Delete:
@@ -193,7 +200,7 @@ namespace FASTER.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe bool Write(ref core.Status s, ref byte* dst, int length)
+        private unsafe bool Write(ref Status s, ref byte* dst, int length)
         {
             if (length < 1) return false;
             *dst++ = (byte)s;
@@ -224,8 +231,8 @@ namespace FASTER.server
         private void Send(byte* d)
         {
             var dstart = d + sizeof(int);
-            Unsafe.AsRef<BatchHeader>(dstart).numMessages = msgnum - start;
-            Unsafe.AsRef<BatchHeader>(dstart).seqNo = seqNo++;
+            Unsafe.AsRef<BatchHeader>(dstart).NumMessages = msgnum - start;
+            Unsafe.AsRef<BatchHeader>(dstart).SeqNo = seqNo++;
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header
             *(int*)responseObject.obj.bufferPtr = -(payloadSize - sizeof(int));

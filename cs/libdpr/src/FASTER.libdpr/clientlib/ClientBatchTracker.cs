@@ -45,11 +45,11 @@ namespace FASTER.libdpr
             
             public bool MoveNext()
             {
-                while (!tracker.buffers[i].allocated)
+                do
                 {
                     i++;
                     if (i >= tracker.buffers.Length) return false;
-                }
+                } while (!tracker.buffers[i].allocated);
 
                 return true;
             }

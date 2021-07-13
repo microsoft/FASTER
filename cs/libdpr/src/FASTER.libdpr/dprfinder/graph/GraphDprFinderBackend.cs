@@ -41,8 +41,8 @@ namespace FASTER.libdpr
                 var head = offset;
                 worldLines = new Dictionary<Worker, long>();
                 cut = new Dictionary<Worker, long>();
-                head = ReadDictionaryFromBytes(buf, head, cut);
-                ReadDictionaryFromBytes(buf, head, worldLines);
+                head = RespUtil.ReadDictionaryFromBytes(buf, head, cut);
+                RespUtil.ReadDictionaryFromBytes(buf, head, worldLines);
             }
 
             /// <summary>
@@ -75,40 +75,9 @@ namespace FASTER.libdpr
                 // Check that the buffer is large enough to hold the entries
                 size = sizeof(long) * 2 * (worldLines.Count + cut.Count) + 2 * sizeof(int);
                 if (buf.Length <size) return false;
-                head = SerializeDictionary(cut, buf, head);
-                SerializeDictionary(worldLines, buf, head);
+                head = RespUtil.SerializeDictionary(cut, buf, head);
+                RespUtil.SerializeDictionary(worldLines, buf, head);
                 return true;
-            }
-
-            private static int SerializeDictionary(IDictionary<Worker, long> dict, byte[] buf, int head)
-            {
-                BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(int)), dict.Count);
-                head += sizeof(int);
-                foreach (var (worker, val) in dict)
-                {
-                    BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), worker.guid);
-                    head += sizeof(long);
-                    BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val);
-                    head += sizeof(long);
-                }
-
-                return head;
-            }
-
-            private static int ReadDictionaryFromBytes(byte[] buf, int head, IDictionary<Worker, long> result)
-            {
-                var size = BitConverter.ToInt32(buf, head);
-                head += sizeof(int);
-                for (var i = 0; i < size; i++)
-                {
-                    var workerId = BitConverter.ToInt64(buf, head);
-                    head += sizeof(long);
-                    var val = BitConverter.ToInt64(buf, head);
-                    head += sizeof(long);
-                    result.TryAdd(new Worker(workerId), val);
-                }
-
-                return head;
             }
         }
 
@@ -353,7 +322,6 @@ namespace FASTER.libdpr
             versionTable.TryUpdate(wv.Worker, wv.Version, prev);
         }
 
-        // TODO(Tianyu): Need to rewrite recovery trigger logic
         /// <summary>
         /// Report a new recovery of a worker version. If the given worker is the special value of CLUSTER_MANAGER,
         /// this is treated as an external signal to start a recovery process. 
@@ -379,7 +347,7 @@ namespace FASTER.libdpr
             lock (volatileState)
             {
                 var currentWorldLines = volatileState.GetCurrentWorldLines();
-                var latestWorldLine = currentWorldLines.Count == 0 ? 0 : currentWorldLines.Select(e => e.Value).Max();
+                var latestWorldLine = currentWorldLines.Count == 0 ? 1 : currentWorldLines.Select(e => e.Value).Max();
 
                 (long, long) result;
                 if (volatileState.GetCurrentCut().TryAdd(worker, 0))
@@ -430,6 +398,7 @@ namespace FASTER.libdpr
         {
             lock (serializedPersistentState)
             {
+                // TODO(Tianyu): Not correct -- lock protection needs to extend to usage end rather than just method end
                 return ValueTuple.Create(serializedPersistentState, serializedPersistentStateSize);
             }
         }

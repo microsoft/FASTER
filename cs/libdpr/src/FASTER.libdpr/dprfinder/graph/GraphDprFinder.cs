@@ -11,31 +11,6 @@ using System.Threading;
 namespace FASTER.libdpr
 {
     /// <summary>
-    /// A DprStateSnapshot backed by a dictionary mapping from worker to version 
-    /// </summary>
-    public class DictionaryDprStateSnapshot : IDprStateSnapshot
-    {
-        private readonly Dictionary<Worker, long> dprTableSnapshot;
-
-        /// <summary>
-        /// Constructs a new DprStateSnapshot backed by the given dictionary
-        /// </summary>
-        /// <param name="dprTableSnapshot"> dictionary that encodes the DPR state </param>
-        public DictionaryDprStateSnapshot(Dictionary<Worker, long> dprTableSnapshot)
-        {
-            this.dprTableSnapshot = dprTableSnapshot;
-        }
-
-        /// <inheritdoc/>
-        public long SafeVersion(Worker worker)
-        {
-            if (dprTableSnapshot == null) return 0;
-
-            return !dprTableSnapshot.TryGetValue(worker, out var safeVersion) ? 0 : safeVersion;
-        }
-    }
-
-    /// <summary>
     /// DprFinder implementation backed by a simple server component <see cref="GraphDprFinderServer"/>
     /// The server needs to be provisioned, deployed, and kept alive separately for the DprFinder to work.
     /// </summary>
@@ -92,18 +67,18 @@ namespace FASTER.libdpr
         }
 
         /// <inheritdoc/>
-        public void ReportNewPersistentVersion(WorkerVersion persisted, IEnumerable<WorkerVersion> deps)
+        public void ReportNewPersistentVersion(long worldLine, WorkerVersion persisted, IEnumerable<WorkerVersion> deps)
         {
             lock (dprFinderConn)
             {
-                dprFinderConn.SendNewCheckpointCommand(persisted, deps);
+                dprFinderConn.SendNewCheckpointCommand(worldLine, persisted, deps);
                 var received = dprFinderConn.Receive(recvBuffer);
                 Debug.Assert(received == 5 && Encoding.ASCII.GetString(recvBuffer, 0, received).Equals("+OK\r\n"));
             }
         }
 
         /// <inheritdoc/>
-        public void Refresh()
+        public bool Refresh()
         {
             lock (dprFinderConn)
             {
@@ -115,6 +90,8 @@ namespace FASTER.libdpr
                 Interlocked.Exchange(ref lastKnownState, newState);
             }
 
+            // GraphDprFinder will never request that workers resend dependency information
+            return true;
         }
 
         private void ProcessRespResponse()
@@ -141,7 +118,7 @@ namespace FASTER.libdpr
             }
         }
 
-        public long NewWorker(Worker id)
+        public long NewWorker(Worker id, IStateObject stateObject)
         {
             lock (dprFinderConn)
             {
@@ -161,6 +138,11 @@ namespace FASTER.libdpr
                 var received = dprFinderConn.Receive(recvBuffer);
                 Debug.Assert(received == 5 && Encoding.ASCII.GetString(recvBuffer, 0, received).Equals("+OK\r\n"));
             }
+        }
+
+        public void ResendGraph(Worker worker, IStateObject stateObject)
+        {
+            // Nothing to do here
         }
     }
 }

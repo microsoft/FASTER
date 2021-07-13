@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -27,18 +28,15 @@ namespace DprCounters
         /// version to start at. If version is not 0, CounterStateObject will attempt to restore
         /// state from corresponding checkpoint
         /// </param>
-        public CounterStateObject(string checkpointDirectory, long version)
+        public CounterStateObject(string checkpointDirectory)
         {
-            
             this.checkpointDirectory = checkpointDirectory;
             Directory.CreateDirectory(checkpointDirectory);
-            if (version != 0)
-                RestoreCheckpoint(version);
         }
         
         // With SimpleStateObject, CounterStateObject only needs to implement a single-threaded
         // checkpoint scheme.
-        protected override void PerformCheckpoint(long version, Action onPersist)
+        protected override void PerformCheckpoint(long version, ReadOnlySpan<byte> deps, Action onPersist)
         {
             // Use a simple naming scheme to associate checkpoints with versions. A more sophisticated scheme may
             // store persistent mappings or use other schemes to do so.
@@ -66,21 +64,28 @@ namespace DprCounters
         // With SimpleStateObject, CounterStateObject can just implement a single-threaded blocking recovery function
         protected override void RestoreCheckpoint(long version)
         {
-            // RestoreCheckpoint is only called on machines that did not physically go down (otherwise they will simply
+            // This is for machines that did not physically go down (otherwise they will simply
             // load the surviving version on restart). libDPR will additionally never request a worker to restore
             // checkpoints earlier than the committed version in the DPR cut. We can therefore rely on a (relatively
             // small) stash of in-memory snapshots to quickly handle this call.
-            value = prevCounters[version];
+            if (prevCounters.TryGetValue(version, out value)) return;
             
-            // Remove any cached versions larger than the restored ones because those are rolled back.
-            PruneCachedVersions(v => v > version);
+            var fileName = Path.Join(checkpointDirectory, version.ToString());
+            using var fs = File.Open(fileName, FileMode.Open, FileAccess.Read, FileShare.None);
+
+            var bytes = new byte[sizeof(long)];
+            fs.Read(bytes, 0, sizeof(long));
+            value = BitConverter.ToInt64(bytes, 0);
+        }
+        
+        public override void PruneVersion(long version)
+        {
+            prevCounters.TryRemove(version, out _);
         }
 
-        public void PruneCachedVersions(Predicate<long> versionPredicate)
+        public override IEnumerable<(byte[], int)> GetUnprunedVersions()
         {
-            var matchingKeys = prevCounters.Keys.Where(versionPredicate.Invoke).ToArray();
-            foreach (var key in matchingKeys)
-                prevCounters.TryRemove(key, out _);
+            throw new NotImplementedException();
         }
     }
 }

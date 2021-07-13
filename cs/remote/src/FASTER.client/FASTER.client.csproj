@@ -1,37 +1,40 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1;netstandard2.0;net461</TargetFrameworks>
-	<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-	<Platforms>AnyCPU</Platforms>
-	<SignAssembly>true</SignAssembly>
-	<AssemblyOriginatorKeyFile>../../../FASTER.snk</AssemblyOriginatorKeyFile>
-	<DelaySign>false</DelaySign>
-	<DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
+    <TargetFrameworks>net5.0;netstandard2.1;netstandard2.0;net461</TargetFrameworks>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>AnyCPU</Platforms>
+    <LangVersion>latest</LangVersion>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>../../../FASTER.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-		<DefineConstants>TRACE;DEBUG</DefineConstants>
-		<DebugType>full</DebugType>
-		<OutputPath>bin\$(Platform)\Debug\</OutputPath>
-	</PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>TRACE;DEBUG</DefineConstants>
+    <DebugType>full</DebugType>
+    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
+  </PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
-		<DefineConstants>TRACE</DefineConstants>
-		<Optimize>true</Optimize>
-		<OutputPath>bin\$(Platform)\Release\</OutputPath>
-	</PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DefineConstants>TRACE</DefineConstants>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\$(Platform)\Release\</OutputPath>
+  </PropertyGroup>
 
-	<ItemGroup Condition="'$(TargetFramework)' == 'net461'">
-		<PackageReference Include="System.ValueTuple" Version="4.5.0" />
-	</ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net461'">
+    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
+  </ItemGroup>
 
-	<ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.1'">
-		<PackageReference Include="System.Memory" Version="4.5.4" />
-	</ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.1'">
+    <PackageReference Include="System.Memory" Version="4.5.4" />
+  </ItemGroup>
 
-	<ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\FASTER.common\FASTER.common.csproj" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All"/>
   </ItemGroup>
 
 </Project>

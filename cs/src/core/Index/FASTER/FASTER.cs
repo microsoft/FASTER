@@ -234,18 +234,8 @@ namespace FASTER.core
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
-        public bool TakeFullCheckpoint(out Guid token)
-        {
-            ISynchronizationTask backend;
-            if (FoldOverSnapshot)
-                backend = new FoldOverCheckpointTask();
-            else
-                backend = new SnapshotCheckpointTask();
-
-            var result = StartStateMachine(new FullCheckpointStateMachine(backend, -1));
-            token = _hybridLogCheckpointToken;
-            return result;
-        }
+        public bool TakeFullCheckpoint(out Guid token) 
+            => TakeFullCheckpoint(out token, this.FoldOverSnapshot ? CheckpointType.FoldOver : CheckpointType.Snapshot);
 
         /// <summary>
         /// Initiate full checkpoint
@@ -293,7 +283,7 @@ namespace FASTER.core
             var success = TakeFullCheckpoint(out Guid token, checkpointType);
 
             if (success)
-                await CompleteCheckpointAsync(cancellationToken);
+                await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
 
             return (success, token);
         }
@@ -327,7 +317,7 @@ namespace FASTER.core
             var success = TakeIndexCheckpoint(out Guid token);
 
             if (success)
-                await CompleteCheckpointAsync(cancellationToken);
+                await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
 
             return (success, token);
         }
@@ -359,9 +349,6 @@ namespace FASTER.core
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false)
         {
-            if (tryIncremental && checkpointType != CheckpointType.Snapshot)
-                throw new FasterException("Can use tryIncremental only with snapshot checkpoints");
-
             ISynchronizationTask backend;
             if (checkpointType == CheckpointType.FoldOver)
                 backend = new FoldOverCheckpointTask();
@@ -399,7 +386,7 @@ namespace FASTER.core
             var success = TakeHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental);
 
             if (success)
-                await CompleteCheckpointAsync(cancellationToken);
+                await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
 
             return (success, token);
         }
@@ -485,7 +472,7 @@ namespace FASTER.core
                     systemState.phase == Phase.IN_PROGRESS_GROW)
                     return;
 
-                List<ValueTask> valueTasks = new List<ValueTask>();
+                List<ValueTask> valueTasks = new();
                 
                 ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, valueTasks, token);
 
@@ -495,7 +482,7 @@ namespace FASTER.core
                 foreach (var task in valueTasks)
                 {
                     if (!task.IsCompleted)
-                        await task;
+                        await task.ConfigureAwait(false);
                 }
             }
         }
@@ -606,7 +593,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, Context context, FasterSession fasterSession, long serialNo,
+        internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
             FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -614,7 +601,7 @@ namespace FASTER.core
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalRMW(ref key, ref input, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+                internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             while (internalStatus == OperationStatus.RETRY_NOW);
 
             Status status;
@@ -819,11 +806,11 @@ namespace FASTER.core
             var ptable_ = state[version].tableAligned;
             long total_record_count = 0;
             long beginAddress = hlog.BeginAddress;
-            Dictionary<int, long> histogram = new Dictionary<int, long>();
+            Dictionary<int, long> histogram = new();
 
             for (long bucket = 0; bucket < table_size_; ++bucket)
             {
-                List<int> tags = new List<int>();
+                List<int> tags = new();
                 int cnt = 0;
                 HashBucket b = *(ptable_ + bucket);
                 while (true)

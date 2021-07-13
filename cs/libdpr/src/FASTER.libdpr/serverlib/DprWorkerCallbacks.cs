@@ -1,4 +1,6 @@
 
+using System.Diagnostics;
+
 namespace FASTER.libdpr
 {
     /// <summary>
@@ -16,15 +18,20 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Invoked when a version has been finalized --- i.e., no more operations can be a part of this version.
+        /// Invoked when a new version is created. This method should be invoked and allowed to finish before any
+        /// operation is issued to the new version and before future version is created.
         /// </summary>
-        /// <param name="version">Version number of the finished version</param>
-        /// <param name="token">unique token that identifies the checkpoint associated with the version</param>
-        public void OnVersionEnd(long oldVersion)
+        /// <param name="version"></param>
+        /// <param name="previousVersion"></param>
+        public void BeforeNewVersion(long version, long previousVersion)
         {
-            // Get or Add as some operations may have executed early in the next version, which would lead to a created
-            // entry for the version without a token.
-            var versionHandle = state.versions.GetOrAdd(oldVersion, v => new VersionHandle());
+            var worldLine = state.worldlineTracker.Enter();
+            var deps = state.dependencySetPool.Checkout();
+            if (previousVersion != 0)
+                deps.Update(state.me, previousVersion);
+            var success = state.versions.TryAdd(version, deps);
+            Debug.Assert(success);
+            state.worldlineTracker.Leave();
         }
 
         /// <summary>
@@ -34,11 +41,12 @@ namespace FASTER.libdpr
         /// <param name="token">unique token that identifies the checkpoint associated with the version</param>
         public void OnVersionPersistent(long version)
         {
-            var versionObject = state.versions[version];
+            var worldLine = state.worldlineTracker.Enter();
+            state.versions.TryRemove(version, out var deps);
             var workerVersion = new WorkerVersion(state.me, version);
-            // TODO(Tianyu): For performance, change IDprFinder code to only buffer this write and invoke expensive
-            // writes on refreshes.
-            state.dprFinder.ReportNewPersistentVersion(workerVersion, versionObject.deps);
+            state.dprFinder.ReportNewPersistentVersion(worldLine, workerVersion, deps);
+            state.dependencySetPool.Return(deps);
+            state.worldlineTracker.Leave();
         }
 
         /// <summary>
@@ -47,6 +55,8 @@ namespace FASTER.libdpr
         /// </summary>
         public void OnRollbackComplete()
         {
+            // When rolling back, any currently unreported dependencies are lost anyways. Can safely discard.
+            state.versions.Clear();
             state.rollbackProgress.Set();
         }
     }

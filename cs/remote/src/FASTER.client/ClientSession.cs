@@ -23,7 +23,7 @@ namespace FASTER.client
     /// <typeparam name="Context">Context</typeparam>
     /// <typeparam name="Functions">Functions</typeparam>
     /// <typeparam name="ParameterSerializer">Parameter Serializer</typeparam>
-    public unsafe partial class ClientSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer> : IDisposable
+    public unsafe sealed partial class ClientSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer> : IDisposable
             where Functions : ICallbackFunctions<Key, Value, Input, Output, Context>
             where ParameterSerializer : IClientSerializer<Key, Value, Input, Output>
     {
@@ -33,8 +33,10 @@ namespace FASTER.client
         readonly Socket sendSocket;
         readonly HeaderReaderWriter hrw;
         readonly int bufferSize;
+        readonly WireFormat wireFormat;
         readonly MaxSizeSettings maxSizeSettings;
 
+        bool disposed;
         ReusableObject<SeaaBuffer> sendObject;
         byte* offset;
         int numMessages;
@@ -50,15 +52,18 @@ namespace FASTER.client
         /// <param name="address">IP address</param>
         /// <param name="port">Port</param>
         /// <param name="functions">Client callback functions</param>
+        /// <param name="wireFormat"></param>
         /// <param name="serializer">Serializer</param>
         /// <param name="maxSizeSettings">Size settings</param>
-        public ClientSession(string address, int port, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
+        public ClientSession(string address, int port, Functions functions, WireFormat wireFormat, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
         {
             this.functions = functions;
             this.serializer = serializer;
+            this.wireFormat = wireFormat;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
             this.bufferSize = BufferSizeUtils.ClientBufferSize(this.maxSizeSettings);
             this.messageManager = new NetworkSender(bufferSize);
+            this.disposed = false;
 
             upsertQueue = new ElasticCircularBuffer<(Key, Value, Context)>();
             readrmwQueue = new ElasticCircularBuffer<(Key, Input, Output, Context)>();
@@ -143,7 +148,22 @@ namespace FASTER.client
         /// <param name="serialNo">Serial number</param>
         /// <returns>Status of operation</returns>
         public Status RMW(ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
-            => InternalRMW(MessageType.RMW, ref key, ref input, userContext, serialNo);
+        {
+            Output output = default;
+            return InternalRMW(MessageType.RMW, ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// RMW (read-modify-write) operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="output">Output</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public Status RMW(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
+            => InternalRMW(MessageType.RMW, ref key, ref input, ref output, userContext, serialNo);
 
         /// <summary>
         /// RMW (read-modify-write) operation
@@ -154,7 +174,25 @@ namespace FASTER.client
         /// <param name="serialNo">Serial number</param>
         /// <returns>Status of operation</returns>
         public Status RMW(Key key, Input input, Context userContext = default, long serialNo = 0)
-            => InternalRMW(MessageType.RMW, ref key, ref input, userContext, serialNo);
+        {
+            Output output = default;
+            return InternalRMW(MessageType.RMW, ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// RMW (read-modify-write) operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="output">Output</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public Status RMW(Key key, Input input, out Output output, Context userContext = default, long serialNo = 0)
+        {
+            output = default;
+            return InternalRMW(MessageType.RMW, ref key, ref input, ref output, userContext, serialNo);
+        }
 
         /// <summary>
         /// Delete operation
@@ -184,13 +222,22 @@ namespace FASTER.client
             if (offset > sendObject.obj.bufferPtr + sizeof(int) + BatchHeader.Size)
             {
                 int payloadSize = (int)(offset - sendObject.obj.bufferPtr);
-                ((BatchHeader*)(sendObject.obj.bufferPtr + sizeof(int)))->numMessages = numMessages;
+
+                ((BatchHeader*)(sendObject.obj.bufferPtr + sizeof(int)))->SetNumMessagesProtocol(numMessages, wireFormat);
                 Interlocked.Increment(ref numPendingBatches);
 
                 // Set packet size in header
                 *(int*)sendObject.obj.bufferPtr = -(payloadSize - sizeof(int));
 
-                messageManager.Send(sendSocket, sendObject, 0, payloadSize);
+                try
+                {
+                    messageManager.Send(sendSocket, sendObject, 0, payloadSize);
+                }
+                catch
+                {
+                    Dispose();
+                    throw;
+                }
                 sendObject = messageManager.GetReusableSeaaBuffer();
                 offset = sendObject.obj.bufferPtr + sizeof(int) + BatchHeader.Size;
                 numMessages = 0;
@@ -215,15 +262,27 @@ namespace FASTER.client
         /// </summary>
         public void Dispose()
         {
-            Flush();
+            disposed = true;
+            sendObject.Dispose();
+            sendSocket.Dispose();
             messageManager.Dispose();
         }
 
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        /// <param name="completePending">Complete pending operations before dispose</param>
+        public void Dispose(bool completePending)
+        {
+            if (completePending)
+                CompletePending(true);
+            Dispose();
+        }
+
+
         int lastSeqNo = -1;
-        readonly Dictionary<int, (Key, Input, Output, Context)> readRmwPendingContext =
-            new Dictionary<int, (Key, Input, Output, Context)>();
-        readonly Dictionary<int, TaskCompletionSource<(Status, Output)>> readRmwPendingTcs =
-            new Dictionary<int, TaskCompletionSource<(Status, Output)>>();
+        readonly Dictionary<int, (Key, Input, Output, Context)> readRmwPendingContext = new();
+        readonly Dictionary<int, TaskCompletionSource<(Status, Output)>> readRmwPendingTcs = new();
 
         internal void ProcessReplies(byte[] buf, int offset)
         {
@@ -231,8 +290,8 @@ namespace FASTER.client
             fixed (byte* b = &buf[offset])
             {
                 var src = b;
-                var seqNo = ((BatchHeader*)src)->seqNo;
-                var count = ((BatchHeader*)src)->numMessages;
+                var seqNo = ((BatchHeader*)src)->SeqNo;
+                var count = ((BatchHeader*)src)->NumMessages;
                 if (seqNo != lastSeqNo + 1)
                     throw new Exception("Out of order message within session");
                 lastSeqNo = seqNo;
@@ -297,13 +356,18 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
-                                if (status == Status.PENDING)
+                                if (status == Status.OK || status == Status.NOTFOUND)
+                                {
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
+                                }
+                                else if (status == Status.PENDING)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingContext.Add(p, result);
                                 }
                                 else
-                                    functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, result.Item4, status);
+                                    functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
                                 break;
                             }
                         case MessageType.RMWAsync:
@@ -311,7 +375,9 @@ namespace FASTER.client
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
-                                if (status == Status.PENDING)
+                                if (status == Status.OK || status == Status.NOTFOUND)
+                                    tcs.SetResult((status, serializer.ReadOutput(ref src)));
+                                else if (status == Status.PENDING)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingTcs.Add(p, tcs);
@@ -401,7 +467,13 @@ namespace FASTER.client
                         readRmwPendingContext.TryGetValue(p, out var result);
                         readRmwPendingContext.Remove(p);
 #endif
-                        functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, result.Item4, status);
+                        if (status == Status.OK || status == Status.NOTFOUND)
+                        {
+                            result.Item3 = serializer.ReadOutput(ref src);
+                            functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
+                        }
+                        else
+                            functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
                         break;
                     }
                 case MessageType.RMWAsync:
@@ -413,7 +485,10 @@ namespace FASTER.client
                         readRmwPendingTcs.TryGetValue(p, out var result);
                         readRmwPendingTcs.Remove(p);
 #endif
-                        result.SetResult((status, default));
+                        if (status == Status.OK || status == Status.NOTFOUND)
+                            result.SetResult((status, serializer.ReadOutput(ref src)));
+                        else
+                            result.SetResult((status, default));
                         break;
                     }
                 default:
@@ -455,7 +530,7 @@ namespace FASTER.client
             receiveEventArgs.SetBuffer(new byte[bufferSize], 0, bufferSize);
             receiveEventArgs.UserToken =
                 new ClientNetworkSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>(socket, this);
-            receiveEventArgs.Completed += ClientNetworkSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>.RecvEventArg_Completed;
+            receiveEventArgs.Completed += RecvEventArg_Completed;
             var response = socket.ReceiveAsync(receiveEventArgs);
             Debug.Assert(response);
             return socket;
@@ -502,7 +577,7 @@ namespace FASTER.client
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe Status InternalRMW(MessageType messageType, ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
+        private unsafe Status InternalRMW(MessageType messageType, ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
             while (true)
             {
@@ -514,7 +589,7 @@ namespace FASTER.client
                         {
                             numMessages++;
                             offset = curr;
-                            readrmwQueue.Enqueue((key, input, default, userContext));
+                            readrmwQueue.Enqueue((key, input, output, userContext));
                             return Status.PENDING;
                         }
                 Flush();
@@ -538,6 +613,38 @@ namespace FASTER.client
                     }
                 Flush();
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool HandleReceiveCompletion(SocketAsyncEventArgs e)
+        {
+            var connState = (ClientNetworkSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>)e.UserToken;
+            if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || disposed)
+            {
+                connState.socket.Dispose();
+                e.Dispose();
+                return false;
+            }
+
+            connState.AddBytesRead(e.BytesTransferred);
+            var newHead = connState.TryConsumeMessages(e.Buffer);
+            e.SetBuffer(newHead, e.Buffer.Length - newHead);
+            return true;
+        }
+
+        private void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
+        {
+            try
+            {
+                var connState = (ClientNetworkSession<Key, Value, Input, Output, Context, Functions, ParameterSerializer>)e.UserToken;
+                do
+                {
+                    // No more things to receive
+                    if (!HandleReceiveCompletion(e)) break;
+                } while (!connState.socket.ReceiveAsync(e));
+            }
+            // ignore session socket disposed due to client session dispose
+            catch (ObjectDisposedException) { }
         }
     }
 }

@@ -70,19 +70,26 @@ namespace FASTER.libdpr
             // Write of metadata block should be atomic
             Debug.Assert(frontDevice.SegmentSize >= sizeof(MetadataHeader));
             frontDevice.WriteAsync((IntPtr) header.bytes, 0, 0, (uint) sizeof(MetadataHeader),
-                (e, n, o) => countdown.Signal(), null);
+                (e, n, o) =>
+                {
+                    countdown.Signal();
 
-            fixed (byte* b = &buf[offset])
-            {
-                // Skip one segment to avoid clobbering with metadata header write
-                frontDevice.WriteAsync((IntPtr) b, 0, (uint) frontDevice.SectorSize, (uint) size,
-                    (e, n, o) => countdown.Signal(), null);
-                countdown.Wait();
-            }
-
+                }, null);
+            
+            var handle = GCHandle.Alloc(buf, GCHandleType.Pinned);
+            // Skip one segment to avoid clobbering with metadata header write
+            frontDevice.WriteAsync(handle.AddrOfPinnedObject(), 0,  frontDevice.SectorSize, (uint) size,
+                (e, n, o) =>
+                {
+                    countdown.Signal();
+                    handle.Free();
+                }, null);
+            
+            countdown.Wait();
             (frontDevice, backDevice) = (backDevice, frontDevice);
+            countdown.Dispose();
         }
-
+        
         private unsafe long ReadFromDevice(IDevice device, out byte[] buf)
         {
             var header = new MetadataHeader();

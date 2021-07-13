@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Net.Http.Headers;
-using System.Threading;
-using FASTER.core;
+
 
 namespace FASTER.libdpr
 {
@@ -27,7 +25,7 @@ namespace FASTER.libdpr
                     if (size == -1)
                     {
                         // Implicit message start at 0 always
-                        size = (int) MessageUtil.LongFromDecimalString(buf, 1, readHead - 1);
+                        size = (int) RespUtil.LongFromDecimalString(buf, 1, readHead - 1);
                         stringStart = readHead + 1;
                         return false;
                     }
@@ -48,7 +46,8 @@ namespace FASTER.libdpr
             REPORT_RECOVERY,
             ADD_WORKER,
             DELETE_WORKER,
-            SYNC
+            SYNC,
+            GRAPH_RESENT
         }
 
         internal Type commandType;
@@ -101,7 +100,7 @@ namespace FASTER.libdpr
         {
             result = default;
             if (buf[readHead - 1] != '\r' || buf[readHead] != '\n') return false;
-            result = MessageUtil.LongFromDecimalString(buf, currentFragmentStart + 1, readHead - 1);
+            result = RespUtil.LongFromDecimalString(buf, currentFragmentStart + 1, readHead - 1);
             // Fragment has ended
             currentFragmentStart = readHead + 1;
             return true;
@@ -122,7 +121,7 @@ namespace FASTER.libdpr
             {
                 // This is the first field, should read the size. The integer size field starts one past
                 // the message type byte and ends at '\r'
-                size = (int) MessageUtil.LongFromDecimalString(buf, currentFragmentStart + 1, readHead - 1);
+                size = (int) RespUtil.LongFromDecimalString(buf, currentFragmentStart + 1, readHead - 1);
 
                 if (size == -1) throw new NotImplementedException("Null Bulk String not supported");
 
@@ -154,7 +153,7 @@ namespace FASTER.libdpr
                                 Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
                                     .Equals("NewCheckpoint"));
                                 currentCommand.commandType = DprFinderCommand.Type.NEW_CHECKPOINT;
-                                commandParserState = CommandParserState.ARG_WV;
+                                commandParserState = CommandParserState.ARG_WL;
                                 break;
                             case 'R':
                                 Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
@@ -179,6 +178,12 @@ namespace FASTER.libdpr
                                 currentCommand.commandType = DprFinderCommand.Type.SYNC;
                                 commandParserState = CommandParserState.NONE;
                                 return true;
+                            case 'G':
+                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
+                                    .Equals("GraphResent"));
+                                currentCommand.commandType = DprFinderCommand.Type.GRAPH_RESENT;
+                                commandParserState = CommandParserState.ARG_WV;
+                                break;
                             default:
                                 throw new NotImplementedException("Unrecognized command type");
                         }
@@ -204,7 +209,7 @@ namespace FASTER.libdpr
                         // TODO(Tianyu): Call WorkerVersion relevant methods instead of hard-coded deserialization
                         Debug.Assert(size == sizeof(WorkerVersion));
                         var workerId = BitConverter.ToInt64(buf, stringStart);
-                        var version = BitConverter.ToInt64(buf, stringStart + sizeof(int));
+                        var version = BitConverter.ToInt64(buf, stringStart + sizeof(long));
                         currentCommand.wv = new WorkerVersion(workerId, version);
                         if (currentCommand.commandType == DprFinderCommand.Type.NEW_CHECKPOINT)
                         {
@@ -213,6 +218,10 @@ namespace FASTER.libdpr
                         else if (currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY)
                         {
                             commandParserState = CommandParserState.ARG_WL;
+                        }
+                        else if (currentCommand.commandType == DprFinderCommand.Type.GRAPH_RESENT)
+                        {
+                            return true;
                         }
                         else
                         {
@@ -228,12 +237,23 @@ namespace FASTER.libdpr
                     {
                         Debug.Assert(size == sizeof(long));
                         Debug.Assert(currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY);
-                        currentCommand.worldLine = BitConverter.ToInt64(buf, stringStart);
-                        commandParserState = CommandParserState.NONE;
+                        currentCommand.worldLine = BitConverter.ToInt64(buf, stringStart); 
                         size = -1;
-                        return true;
-                    }
+                        if (currentCommand.commandType == DprFinderCommand.Type.NEW_CHECKPOINT)
+                        {
+                            commandParserState = CommandParserState.ARG_WV;
+                        }
+                        else if (currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY)
+                        {
 
+                            commandParserState = CommandParserState.NONE;
+                            return true;
+                        }
+                        else
+                        {
+                            Debug.Assert(false);
+                        }
+                    }
                     return false;
                 case CommandParserState.ARG_DEPS:
                     if (ProcessRedisBulkString(readHead, buf))

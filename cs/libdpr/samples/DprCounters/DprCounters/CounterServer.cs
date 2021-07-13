@@ -32,20 +32,21 @@ namespace DprCounters
             // Each DPR worker should be backed by one state object. The state object exposes some methods 
             // for the DPR logic to invoke when necessary, but DPR does not otherwise mediate user interactions
             // with it. 
-            var v = dprFinder.NewWorker(me);
-            var stateObject = new CounterStateObject(checkpointDir, v);
+            var stateObject = new CounterStateObject(checkpointDir);
             // A DPR server provides DPR methods that the users should invoke at appropriate points of execution. There
             // should be one DPR server per worker in the cluster
             dprServer = new DprServer<CounterStateObject>(dprFinder, me, stateObject);
             this.me = me;
             
-            var localEndpoint = new IPEndPoint(IPAddress.Parse(ip), port);
+            var localEndpoint = new IPEndPoint(IPAddress.Parse(ip), port); 
             socket = new Socket(localEndpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             socket.Bind(localEndpoint);
         }
 
         public void RunServer()
         {
+            dprServer.ConnectToCluster();
+            
             termination = new ManualResetEventSlim();
             // DprServer must be continually refreshed and checkpointed for the system to make progress. It is easiest
             // to simply spawn a background thread to do that. 
@@ -56,8 +57,6 @@ namespace DprCounters
                     Thread.Sleep(10);
                     // A DprServer has built-in timers to rate-limit checkpoints and refreshes if needed
                     dprServer.TryRefreshAndCheckpoint(100, 10);
-                    // Truncate any committed versions from in-memory mapping reserved for rollbacks
-                    dprServer.StateObject().PruneCachedVersions(v => v < dprFinder.SafeVersion(me));
                 }
             });
             backgroundThread.Start();

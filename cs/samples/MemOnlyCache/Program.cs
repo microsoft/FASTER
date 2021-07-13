@@ -86,7 +86,7 @@ namespace MemOnlyCache
             var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)); 
 
             h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, comparer: new CacheKey());
-            sizeTracker = new CacheSizeTracker(h, logSettings.MemorySizeBits, targetSize);
+            sizeTracker = new CacheSizeTracker(h, targetSize);
 
             // Initially populate store
             PopulateStore(numRecords);

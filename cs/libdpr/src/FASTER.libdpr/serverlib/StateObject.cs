@@ -1,4 +1,8 @@
 
+using System;
+using System.Collections;
+using System.Collections.Generic;
+
 namespace FASTER.libdpr
 {
     /// <summary>
@@ -20,6 +24,11 @@ namespace FASTER.libdpr
         /// </summary>
         /// <returns>Current version (lower bound) of the state object</returns>
         long Version();
+
+        /// <summary>
+        /// Gets all DPR information associated with a version as a byte array
+        /// </summary>
+        delegate ReadOnlySpan<byte> DepsProvider(long version);
         
         /// <summary>
         /// Begins a checkpoint to advance to the targetVersion. Invocation of the call only guarantees that object
@@ -27,9 +36,15 @@ namespace FASTER.libdpr
         /// (e.g., if targetVersion is smaller than current version, or if another concurrent checkpoint is underway).
         /// libDPR expects to receive checkpoint-related information, such as the actual version checkpointed, through
         /// registered callback instead of this function.
+        ///
+        /// Depending on the DprFinder backend chosen, state objects may need to persist additional DPR information
+        /// along with each checkpoint. If that is the case, the state object should invoke depsProvider after
+        /// version end to obtain the bytes to write out. It is ok to ignore this requirement if a state object will
+        /// only be connected to a DprFinder backend that does not require this. 
         /// </summary>
+        /// <param name="depsProvider">function to get DPR byte header to write with each checkpoint</param>>
         /// <param name="targetVersion">The version to jump to, or -1 if unconditionally jumping to next version</param>
-        void BeginCheckpoint(long targetVersion = -1);
+        void BeginCheckpoint(DepsProvider depsProvider, long targetVersion = -1);
 
         /// <summary>
         /// Recovers the state object to an earlier checkpoint, identified by the given version. After the function
@@ -38,5 +53,26 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="version">Unique checkpoint for the state object to recover to</param>
         void BeginRestore(long version);
+
+        /// <summary>
+        /// Removes a version locally. This method is invoked when a version will no longer be recovered to (rolled
+        /// back or a newer version is committed)
+        /// </summary>
+        /// <param name="version"> version number to remove </param>
+        void PruneVersion(long version);
+
+        /// <summary>
+        /// Retrieves information about all locally available checkpoints. If the method is called, the state object
+        /// must return the exact DPR header written out as part of the BeginCheckpoint call, for every checkpoint
+        /// that was completed but not yet pruned.
+        ///
+        /// Not every DprFinder will call this method, so it is ok to not implement this method if a state object will
+        /// only be connected to a DprFinder that does not require this.
+        /// </summary>
+        /// <returns>
+        /// enumerable of (byte array, offset) that denotes the start of each locally present checkpoint's
+        /// DPR header
+        /// </returns>
+        IEnumerable<(byte[], int)> GetUnprunedVersions();
     }
 }

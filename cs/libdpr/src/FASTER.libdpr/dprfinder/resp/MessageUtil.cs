@@ -11,162 +11,7 @@ namespace FASTER.libdpr
         private static ThreadLocalObjectPool<byte[]> reusableMessageBuffers =
             new ThreadLocalObjectPool<byte[]>(() => new byte[BatchInfo.MaxHeaderSize], 1);
 
-        private static unsafe int LongToDecimalString(long a, byte[] buf, int offset)
-        {
-            var digits = stackalloc byte[20];
-            var numDigits = 0;
-            do
-            {
-                digits[numDigits] = (byte) (a % 10 + '0');
-                numDigits++;
-                a /= 10;
-            } while (a > 0);
-
-            var head = offset;
-
-            if (head + numDigits >= buf.Length) return 0;
-            for (var i = numDigits - 1; i >= 0; i--)
-                buf[head++] = digits[i];
-            return head - offset;
-        }
-
-        internal static long LongFromDecimalString(byte[] buf, int start, int end)
-        {
-            var negative = false;
-            if (buf[start] == '-')
-            {
-                negative = true;
-                start++;
-            }
-
-            long result = 0;
-
-            for (var i = start; i < end; i++)
-            {
-                result *= 10;
-                result += buf[i] - '0';
-            }
-
-            return negative ? -result : result;
-        }
-
-        internal static int WriteRedisBulkString(string val, byte[] buf, int offset)
-        {
-            var head = offset;
-            if (head + 1 >= buf.Length) return 0;
-            buf[head++] = (byte) '$';
-
-            var size = LongToDecimalString(val.Length, buf, head);
-            if (size == 0) return 0;
-            head += size;
-
-            if (head + 4 + val.Length >= buf.Length) return 0;
-            buf[head++] = (byte) '\r';
-            buf[head++] = (byte) '\n';
-
-            foreach (var t in val)
-                buf[head++] = (byte) t;
-
-            buf[head++] = (byte) '\r';
-            buf[head++] = (byte) '\n';
-            return head - offset;
-        }
-
-        internal static int WriteRedisBulkString(long val, byte[] buf, int offset)
-        {
-            var head = offset;
-            if (head + 1 >= buf.Length) return 0;
-            buf[head++] = (byte) '$';
-
-            var size = LongToDecimalString(sizeof(long), buf, head);
-            if (size == 0) return 0;
-            head += size;
-
-            if (head + 4 + sizeof(long) >= buf.Length) return 0;
-            buf[head++] = (byte) '\r';
-            buf[head++] = (byte) '\n';
-
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val);
-            head += sizeof(long);
-
-            buf[head++] = (byte) '\r';
-            buf[head++] = (byte) '\n';
-            return head - offset;
-        }
-
         // TODO(Tianyu): Eliminate ad-hoc serialization code and move this inside WorkerVersion class
-        internal static unsafe int WriteRedisBulkString(WorkerVersion val, byte[] buf, int offset)
-        {
-            var head = offset;
-            if (head + sizeof(byte) >= buf.Length) return 0;
-            buf[head++] = (byte) '$';
-
-            var size = LongToDecimalString(sizeof(WorkerVersion), buf, head);
-            if (size == 0) return 0;
-            head += size;
-
-            if (head + 4 + sizeof(WorkerVersion) >= buf.Length) return 0;
-            buf[head++] = (byte) '\r';
-            buf[head++] = (byte) '\n';
-
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val.Worker.guid);
-            head += sizeof(long);
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val.Version);
-            head += sizeof(long);
-
-            buf[head++] = (byte) '\r';
-            buf[head++] = (byte) '\n';
-            return head - offset;
-        }
-
-        internal static unsafe int WriteRedisBulkString(IEnumerable<WorkerVersion> val, byte[] buf, int offset)
-        {
-            var head = offset;
-            if (head + sizeof(byte) >= buf.Length) return 0;
-            buf[head++] = (byte) '$';
-
-            // Find size of encoding up front
-            var count = val.Count();
-            var totalSize = sizeof(int) + count * sizeof(WorkerVersion);
-
-            var size = LongToDecimalString(totalSize, buf, head);
-            if (size == 0) return 0;
-            head += size;
-
-            if (head + 4 + totalSize >= buf.Length) return 0;
-            buf[head++] = (byte) '\r';
-            buf[head++] = (byte) '\n';
-
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(int)), count);
-            head += sizeof(int);
-            foreach (var wv in val)
-            {
-                BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), wv.Worker.guid);
-                head += sizeof(long);
-                BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), wv.Version);
-                head += sizeof(long);
-            }
-
-            buf[head++] = (byte) '\r';
-            buf[head++] = (byte) '\n';
-            return head - offset;
-        }
-
-        internal static int WriteRedisArrayHeader(int numElems, byte[] buf, int offset)
-        {
-            var head = offset;
-            if (head + 1 >= buf.Length) return 0;
-            buf[head++] = (byte) '*';
-
-            var size = LongToDecimalString(numElems, buf, head);
-            if (size == 0) return 0;
-            head += size;
-
-            if (head + 2 >= buf.Length) return 0;
-            buf[head++] = (byte) '\r';
-            buf[head++] = (byte) '\n';
-            return head - offset;
-        }
 
         internal class DprFinderRedisProtocolConnState
         {
@@ -183,7 +28,7 @@ namespace FASTER.libdpr
 
             private static bool HandleReceiveCompletion(SocketAsyncEventArgs e)
             {
-                var connState = (DprFinderRedisProtocolConnState) e.UserToken;
+                var connState = (MessageUtil.DprFinderRedisProtocolConnState) e.UserToken;
                 if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success)
                 {
                     connState.socket.Dispose();
@@ -221,7 +66,7 @@ namespace FASTER.libdpr
 
             internal static void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
             {
-                var connState = (DprFinderRedisProtocolConnState) e.UserToken;
+                var connState = (MessageUtil.DprFinderRedisProtocolConnState) e.UserToken;
                 try
                 {
                     do
@@ -237,12 +82,41 @@ namespace FASTER.libdpr
             }
         }
 
+        
+        internal static int SendGraphReconstruction(this Socket socket, Worker worker,IStateObject stateObject)
+        {
+            var buf = reusableMessageBuffers.Checkout();
+            var head = 0;
+            var checkpoints = stateObject.GetUnprunedVersions();
+            var minVersion = long.MaxValue;
+            var numRequests = 0;
+            foreach (var (bytes, offset) in checkpoints)
+            {
+                SerializationUtil.DeserializeCheckpointMetadata(bytes, offset,
+                    out var worldLine, out var wv, out var deps);
+                head += RespUtil.WriteRedisArrayHeader(4, buf, 0);
+                head += RespUtil.WriteRedisBulkString("NewCheckpoint", buf, head);
+                head += RespUtil.WriteRedisBulkString(worldLine, buf, head);
+                head += RespUtil.WriteRedisBulkString(wv, buf, head);
+                head += RespUtil.WriteRedisBulkString(deps, buf, head);
+                if (minVersion > wv.Version) minVersion = wv.Version;
+                numRequests++;
+            }
+
+            head += RespUtil.WriteRedisArrayHeader(2, buf, head);
+            head += RespUtil.WriteRedisBulkString("GraphResent", buf, head);
+            var committedVersion = new WorkerVersion(worker, minVersion == long.MaxValue ? 0 : minVersion);
+            head += RespUtil.WriteRedisBulkString(committedVersion, buf, head);
+            socket.Send(new Span<byte>(buf, 0, head));
+            return ++numRequests;
+        }
+
         internal static void SendAddWorkerCommand(this Socket socket, Worker worker)
         {
             var buf = reusableMessageBuffers.Checkout();
-            var head = WriteRedisArrayHeader(2, buf, 0);
-            head += WriteRedisBulkString("AddWorker", buf, head);
-            head += WriteRedisBulkString(worker.guid, buf, head);
+            var head = RespUtil.WriteRedisArrayHeader(2, buf, 0);
+            head += RespUtil.WriteRedisBulkString("AddWorker", buf, head);
+            head += RespUtil.WriteRedisBulkString(worker.guid, buf, head);
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         }
@@ -250,21 +124,22 @@ namespace FASTER.libdpr
         internal static void SendDeleteWorkerCommand(this Socket socket, Worker worker)
         {
             var buf = reusableMessageBuffers.Checkout();
-            var head = WriteRedisArrayHeader(2, buf, 0);
-            head += WriteRedisBulkString("DeleteWorker", buf, head);
-            head += WriteRedisBulkString(worker.guid, buf, head);
+            var head = RespUtil.WriteRedisArrayHeader(2, buf, 0);
+            head += RespUtil.WriteRedisBulkString("DeleteWorker", buf, head);
+            head += RespUtil.WriteRedisBulkString(worker.guid, buf, head);
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         }
 
-        internal static void SendNewCheckpointCommand(this Socket socket, WorkerVersion checkpointed,
+        internal static void SendNewCheckpointCommand(this Socket socket, long worldLine, WorkerVersion checkpointed,
             IEnumerable<WorkerVersion> deps)
         {
             var buf = reusableMessageBuffers.Checkout();
-            var head = WriteRedisArrayHeader(3, buf, 0);
-            head += WriteRedisBulkString("NewCheckpoint", buf, head);
-            head += WriteRedisBulkString(checkpointed, buf, head);
-            head += WriteRedisBulkString(deps, buf, head);
+            var head = RespUtil.WriteRedisArrayHeader(4, buf, 0);
+            head += RespUtil.WriteRedisBulkString("NewCheckpoint", buf, head);
+            head += RespUtil.WriteRedisBulkString(worldLine, buf, head);
+            head += RespUtil.WriteRedisBulkString(checkpointed, buf, head);
+            head += RespUtil.WriteRedisBulkString(deps, buf, head);
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         }
@@ -273,10 +148,10 @@ namespace FASTER.libdpr
             long worldLine)
         {
             var buf = reusableMessageBuffers.Checkout();
-            var head = WriteRedisArrayHeader(3, buf, 0);
-            head += WriteRedisBulkString("ReportRecovery", buf, head);
-            head += WriteRedisBulkString(recovered, buf, head);
-            head += WriteRedisBulkString(worldLine, buf, head);
+            var head = RespUtil.WriteRedisArrayHeader(3, buf, 0);
+            head += RespUtil.WriteRedisBulkString("ReportRecovery", buf, head);
+            head += RespUtil.WriteRedisBulkString(recovered, buf, head);
+            head += RespUtil.WriteRedisBulkString(worldLine, buf, head);
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         }
@@ -284,8 +159,8 @@ namespace FASTER.libdpr
         internal static void SendSyncCommand(this Socket socket)
         {
             var buf = reusableMessageBuffers.Checkout();
-            var head = WriteRedisArrayHeader(1, buf, 0);
-            head += WriteRedisBulkString("Sync", buf, head);
+            var head = RespUtil.WriteRedisArrayHeader(1, buf, 0);
+            head += RespUtil.WriteRedisBulkString("Sync", buf, head);
             socket.Send(new Span<byte>(buf, 0, head));
             reusableMessageBuffers.Return(buf);
         }
@@ -297,7 +172,7 @@ namespace FASTER.libdpr
             Debug.Assert(head + 1 >= buf.Length);
             buf[head++] = (byte) '$';
 
-            var size = LongToDecimalString(sizeof(long) + serializedState.Item2, buf, head);
+            var size = RespUtil.LongToDecimalString(sizeof(long) + serializedState.Item2, buf, head);
             Debug.Assert(size != 0);
             head += size;
 
@@ -324,7 +199,7 @@ namespace FASTER.libdpr
             Debug.Assert(head + 1 >= buf.Length);
             buf[head++] = (byte) '$';
 
-            var size = LongToDecimalString(2 * sizeof(long), buf, head);
+            var size = RespUtil.LongToDecimalString(2 * sizeof(long), buf, head);
             Debug.Assert(size != 0);
             head += size;
 

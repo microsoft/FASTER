@@ -2,7 +2,7 @@
 {
     struct NullFasterSession : IFasterSession
     {
-        public static readonly NullFasterSession Instance = new NullFasterSession();
+        public static readonly NullFasterSession Instance = new();
 
         public void CheckpointCompletionCallback(string guid, CommitPoint commitPoint)
         {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace FASTER.libdpr
 {
@@ -29,7 +30,7 @@ namespace FASTER.libdpr
         /// checkpoint requests, or restore requests with this function. 
         /// </summary>
         /// <param name="onPersist">Callback to invoke when checkpoint is recoverable</param>
-        protected abstract void PerformCheckpoint(long version, Action onPersist);
+        protected abstract void PerformCheckpoint(long version, ReadOnlySpan<byte> deps, Action onPersist);
 
         /// <summary>
         /// Blockingly recovers to a previous checkpoint as identified by the token. The function returns only after
@@ -38,11 +39,16 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="token">Checkpoint to recover to</param>
         protected abstract void RestoreCheckpoint(long version);
-        
+
+        public abstract void PruneVersion(long version);
+
+        public abstract IEnumerable<(byte[], int)> GetUnprunedVersions();
+
         /// <inheritdoc/>
         public void Register(DprWorkerCallbacks callbacks)
         {
             this.callbacks = callbacks;
+            callbacks.BeforeNewVersion(1, 0);
         }
 
         /// <inheritdoc/>
@@ -52,15 +58,16 @@ namespace FASTER.libdpr
         }
         
         /// <inheritdoc/>
-        public void BeginCheckpoint(long targetVersion = -1)
+        public void BeginCheckpoint(IStateObject.DepsProvider depsProvider, long targetVersion = -1)
         {
-            versionScheme.AdvanceVersion(v =>
+            versionScheme.TryAdvanceVersion((vOld, vNew) =>
             {
-                PerformCheckpoint(v, () =>
+                var deps = depsProvider(vOld);
+                PerformCheckpoint(vOld, deps, () =>
                 {
-                    callbacks.OnVersionEnd(v);
-                    callbacks.OnVersionPersistent(v);
+                    callbacks.OnVersionPersistent(vOld);
                 });
+                callbacks.BeforeNewVersion(vNew, vOld);
             }, targetVersion);
             
         }
@@ -68,10 +75,11 @@ namespace FASTER.libdpr
         /// <inheritdoc/>
         public void BeginRestore(long version)
         {
-            versionScheme.AdvanceVersion(_ =>
+            versionScheme.TryAdvanceVersion((vOld, vNew) =>
             {
                 RestoreCheckpoint(version);
                 callbacks.OnRollbackComplete();
+                callbacks.BeforeNewVersion(vNew, version);
             });
         }
     }

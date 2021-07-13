@@ -21,7 +21,7 @@ namespace FASTER.libdpr
             }
         }
         
-        protected override void PerformCheckpoint(long version, Action onPersist)
+        protected override void PerformCheckpoint(long version, ReadOnlySpan<byte> deps, Action onPersist)
         {
             int prefix;
             lock (opLog)
@@ -51,6 +51,16 @@ namespace FASTER.libdpr
                 return new HashSet<(int, int)>(opLog.GetRange(0, persistedPrefix));
             }
         }
+
+        public override void PruneVersion(long version)
+        {
+            
+        }
+
+        public override IEnumerable<(byte[], int)> GetUnprunedVersions()
+        {
+            throw new NotImplementedException();
+        }
     }
     
     public class TestStateStore
@@ -67,7 +77,7 @@ namespace FASTER.libdpr
         public void Process(Span<byte> dprHeader, Span<byte> response, (int, int) op)
         {
             ref var dprRequest =
-                ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(response));
+                ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(dprHeader));
             ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
 
             if (dprServer.RequestBatchBegin(ref dprRequest, ref dprResponse, out var tracker))

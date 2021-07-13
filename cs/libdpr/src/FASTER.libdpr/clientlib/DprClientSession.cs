@@ -20,7 +20,7 @@ namespace FASTER.libdpr
         private CommitPoint currentCommitPoint;
         
         private LightDependencySet deps;
-        private long clientVersion = 1, clientWorldLine = 0;
+        private long clientVersion = 1, clientWorldLine = 1;
         private ClientBatchTracker batchTracker;
 
         private bool trackCommits;
@@ -153,9 +153,10 @@ namespace FASTER.libdpr
                 {
                     // In this case, the remote machine has seen more failures than the client and the client needs to 
                     // catch up 
-                    if (reply.worldLine > clientWorldLine)
+                    if (reply.worldLine < 0)
                     {
-                        // Do nothing and client thread will find out about the failure at its own pace
+                        // TODO(Tianyu): Trigger recovery eagerly if possible
+                        // Do nothing for now and let client thread will find out about the failure at its own pace
                         return false;
                     }
                     // Otherwise, we would have declared these ops lost, and the remote server
@@ -186,12 +187,10 @@ namespace FASTER.libdpr
                             }
                             offset++;
                         }
-
                         Utility.MonotonicUpdate(ref clientVersion, maxVersion, out _);
                     }
                 }
-
-
+                
                 lock (deps)
                 {
                     fixed (byte* d = request.deps)

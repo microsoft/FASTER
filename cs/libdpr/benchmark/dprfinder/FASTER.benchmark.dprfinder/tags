@@ -1,0 +1,8 @@
+!_TAG_FILE_SORTED	2	/0=unsorted, 1=sorted, 2=foldcase/
+benchmarkConfig	/Users/Tianyu/Desktop/MIT/FASTER/cs/DprMicrobench/DprMicrobench/DprCoordinator.cs	/^        private BenchmarkConfiguration benchmarkConfig;$/;"	f	language:C#	class:FASTER.benchmark.DprCoordinator	file:
+clusterConfig	/Users/Tianyu/Desktop/MIT/FASTER/cs/DprMicrobench/DprMicrobench/DprCoordinator.cs	/^        public static ClusterConfiguration clusterConfig;$/;"	f	language:C#	class:FASTER.benchmark.DprCoordinator
+DprCoordinator	/Users/Tianyu/Desktop/MIT/FASTER/cs/DprMicrobench/DprMicrobench/DprCoordinator.cs	/^        public DprCoordinator(BenchmarkConfiguration benchmarkConfig)$/;"	m	language:C#	class:FASTER.benchmark.DprCoordinator
+DprCoordinator	/Users/Tianyu/Desktop/MIT/FASTER/cs/DprMicrobench/DprMicrobench/DprCoordinator.cs	/^        static DprCoordinator()$/;"	m	language:C#	class:FASTER.benchmark.DprCoordinator	file:
+DprCoordinator	/Users/Tianyu/Desktop/MIT/FASTER/cs/DprMicrobench/DprMicrobench/DprCoordinator.cs	/^    public class DprCoordinator$/;"	c	language:C#	namespace:FASTER.benchmark
+FASTER.benchmark	/Users/Tianyu/Desktop/MIT/FASTER/cs/DprMicrobench/DprMicrobench/DprCoordinator.cs	/^namespace FASTER.benchmark$/;"	n	language:C#
+Run	/Users/Tianyu/Desktop/MIT/FASTER/cs/DprMicrobench/DprMicrobench/DprCoordinator.cs	/^        public void Run()$/;"	m	language:C#	class:FASTER.benchmark.DprCoordinator

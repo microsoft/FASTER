@@ -16,10 +16,11 @@ namespace FASTER.benchmark
     internal class FasterSpanByteYcsbBenchmark
     {
         // Ensure sizes are aligned to chunk sizes
-        const long kInitCount = YcsbConstants.kChunkSize * (YcsbConstants.kInitCount / YcsbConstants.kChunkSize);
-        const long kTxnCount = YcsbConstants.kChunkSize * (YcsbConstants.kTxnCount / YcsbConstants.kChunkSize);
+        static long InitCount;
+        static long TxnCount;
 
-        readonly ManualResetEventSlim waiter = new ManualResetEventSlim();
+        readonly TestLoader testLoader;
+        readonly ManualResetEventSlim waiter = new();
         readonly int numaStyle;
         readonly int readPercent;
         readonly FunctionsSB functions;
@@ -40,10 +41,13 @@ namespace FASTER.benchmark
 
         internal FasterSpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader)
         {
-            // Pin loading thread if it is not used for checkpointing
-            if (YcsbConstants.kPeriodicCheckpointMilliseconds <= 0)
-                Native32.AffinitizeThreadShardedNuma(0, 2);
+            // Affinize main thread to last core on first socket if not used by experiment
+            var (numGrps, numProcs) = Native32.GetNumGroupsProcsPerGroup();
+            if ((testLoader.Options.NumaStyle == 0 && testLoader.Options.ThreadCount <= (numProcs - 1)) ||
+                (testLoader.Options.NumaStyle == 1 && testLoader.Options.ThreadCount <= numGrps * (numProcs - 1)))
+                Native32.AffinitizeThreadRoundRobin(numProcs - 1);
 
+            this.testLoader = testLoader;
             init_keys_ = i_keys_;
             txn_keys_ = t_keys_;
             numaStyle = testLoader.Options.NumaStyle;
@@ -71,13 +75,13 @@ namespace FASTER.benchmark
 
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: true);
 
-            if (YcsbConstants.kSmallMemoryLog)
+            if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<SpanByte, SpanByte>
-                    (YcsbConstants.kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 },
+                    (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 },
                     new CheckpointSettings { CheckPointType = CheckpointType.Snapshot, CheckpointDir = testLoader.BackupPath });
             else
                 store = new FasterKV<SpanByte, SpanByte>
-                    (YcsbConstants.kMaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizeBits = 35 },
+                    (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizeBits = 35 },
                     new CheckpointSettings { CheckPointType = CheckpointType.Snapshot, CheckpointDir = testLoader.BackupPath });
         }
 
@@ -89,7 +93,7 @@ namespace FASTER.benchmark
 
         private void RunYcsb(int thread_idx)
         {
-            RandomGenerator rng = new RandomGenerator((uint)(1 + thread_idx));
+            RandomGenerator rng = new((uint)(1 + thread_idx));
 
             if (numaStyle == 0)
                 Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
@@ -98,8 +102,7 @@ namespace FASTER.benchmark
 
             waiter.Wait();
 
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
+            var sw = Stopwatch.StartNew();
 
             Span<byte> value = stackalloc byte[kValueSize];
             Span<byte> input = stackalloc byte[kValueSize];
@@ -119,14 +122,14 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            var session = store.For(functions).NewSession<FunctionsSB>(null, YcsbConstants.kAffinitizedSession);
+            var session = store.For(functions).NewSession<FunctionsSB>(null, !testLoader.Options.NoThreadAffinity);
 
             while (!done)
             {
                 long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
-                while (chunk_idx >= kTxnCount)
+                while (chunk_idx >= TxnCount)
                 {
-                    if (chunk_idx == kTxnCount)
+                    if (chunk_idx == TxnCount)
                         idx_ = 0;
                     chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 }
@@ -144,7 +147,7 @@ namespace FASTER.benchmark
 
                     if (idx % 512 == 0)
                     {
-                        if (YcsbConstants.kAffinitizedSession)
+                        if (!testLoader.Options.NoThreadAffinity)
                             session.Refresh();
                         session.CompletePending(false);
                     }
@@ -207,8 +210,6 @@ namespace FASTER.benchmark
 
         internal unsafe (double, double) Run(TestLoader testLoader)
         {
-            //Native32.AffinitizeThreadShardedNuma(0, 2);
-
 #if DASHBOARD
             var dash = new Thread(() => DoContinuousMeasurements());
             dash.Start();
@@ -246,7 +247,7 @@ namespace FASTER.benchmark
 
                 elapsedMs = sw.ElapsedMilliseconds;
             }
-            double insertsPerSecond = elapsedMs == 0 ? 0 : ((double)kInitCount / elapsedMs) * 1000;
+            double insertsPerSecond = elapsedMs == 0 ? 0 : ((double)InitCount / elapsedMs) * 1000;
             Console.WriteLine(TestStats.GetLoadingTimeLine(insertsPerSecond, elapsedMs));
             Console.WriteLine(TestStats.GetAddressesLine(AddressLineNum.Before, store.Log.BeginAddress, store.Log.HeadAddress, store.Log.ReadOnlyAddress, store.Log.TailAddress));
 
@@ -258,11 +259,11 @@ namespace FASTER.benchmark
 
             idx_ = 0;
 
-            if (YcsbConstants.kDumpDistribution)
+            if (testLoader.Options.DumpDistribution)
                 Console.WriteLine(store.DumpDistribution());
 
-            // Ensure first checkpoint is fast
-            if (YcsbConstants.kPeriodicCheckpointMilliseconds > 0)
+            // Ensure first fold-over checkpoint is fast
+            if (testLoader.Options.PeriodicCheckpointMilliseconds > 0 && testLoader.Options.PeriodicCheckpointType == CheckpointType.FoldOver)
                 store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, true);
 
             Console.WriteLine("Executing experiment.");
@@ -280,10 +281,9 @@ namespace FASTER.benchmark
             }
 
             waiter.Set();
-            Stopwatch swatch = new Stopwatch();
-            swatch.Start();
+            var swatch = Stopwatch.StartNew();
 
-            if (YcsbConstants.kPeriodicCheckpointMilliseconds <= 0)
+            if (testLoader.Options.PeriodicCheckpointMilliseconds <= 0)
             {
                 Thread.Sleep(TimeSpan.FromSeconds(testLoader.Options.RunSeconds));
             }
@@ -292,10 +292,14 @@ namespace FASTER.benchmark
                 var checkpointTaken = 0;
                 while (swatch.ElapsedMilliseconds < 1000 * testLoader.Options.RunSeconds)
                 {
-                    if (checkpointTaken < swatch.ElapsedMilliseconds / YcsbConstants.kPeriodicCheckpointMilliseconds)
+                    if (checkpointTaken < swatch.ElapsedMilliseconds / testLoader.Options.PeriodicCheckpointMilliseconds)
                     {
-                        if (store.TakeHybridLogCheckpoint(out _))
+                        long start = swatch.ElapsedTicks;
+                        if (store.TakeHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType, testLoader.Options.PeriodicCheckpointTryIncremental))
                         {
+                            store.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                            var timeTaken = (swatch.ElapsedTicks - start) / TimeSpan.TicksPerMillisecond;
+                            Console.WriteLine("Checkpoint time: {0}ms", timeTaken);
                             checkpointTaken++;
                         }
                     }
@@ -335,7 +339,7 @@ namespace FASTER.benchmark
 
             waiter.Wait();
 
-            var session = store.For(functions).NewSession<FunctionsSB>(null, YcsbConstants.kAffinitizedSession);
+            var session = store.For(functions).NewSession<FunctionsSB>(null, !testLoader.Options.NoThreadAffinity);
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -348,7 +352,7 @@ namespace FASTER.benchmark
             ref SpanByte _value = ref SpanByte.Reinterpret(value);
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
-                chunk_idx < kInitCount;
+                chunk_idx < InitCount;
                 chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize)
             {
                 for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize; ++idx)
@@ -451,10 +455,13 @@ namespace FASTER.benchmark
 
         #region Load Data
 
-        internal static void CreateKeyVectors(out KeySpanByte[] i_keys, out KeySpanByte[] t_keys)
+        internal static void CreateKeyVectors(TestLoader testLoader, out KeySpanByte[] i_keys, out KeySpanByte[] t_keys)
         {
-            i_keys = new KeySpanByte[kInitCount];
-            t_keys = new KeySpanByte[kTxnCount];
+            InitCount = YcsbConstants.kChunkSize * (testLoader.InitCount / YcsbConstants.kChunkSize);
+            TxnCount = YcsbConstants.kChunkSize * (testLoader.TxnCount / YcsbConstants.kChunkSize);
+
+            i_keys = new KeySpanByte[InitCount];
+            t_keys = new KeySpanByte[TxnCount];
         }
 
         internal class KeySetter : IKeySetter<KeySpanByte>

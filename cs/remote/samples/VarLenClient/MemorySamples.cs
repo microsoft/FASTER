@@ -18,7 +18,7 @@ namespace VarLenClient
         public void Run(string ip, int port)
         {
             using var client1 = new FasterKVClient<ReadOnlyMemory<int>, ReadOnlyMemory<int>>(ip, port);
-            var session = client1.NewSession(new MemoryFunctions());
+            var session = client1.NewSession(new MemoryFunctions()); // uses protocol WireFormat.DefaultVarLenKV by default
 
             SyncMemorySamples(session);
             AsyncMemorySamples(session).Wait();

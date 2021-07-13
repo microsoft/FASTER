@@ -26,7 +26,7 @@
     Number of seconds to run the experiment.
     Used primarily to debug changes to this script or do a quick one-off run; the default is 30 seconds.
 
-.PARAMETER NumThreads
+.PARAMETER ThreadCount
     Number of threads to use.
     Used primarily to debug changes to this script or do a quick one-off run; the default is multiple counts as defined in the script.
 
@@ -34,12 +34,22 @@
     Locking mode to use: 0 = No locking, 1 = RecordInfo locking
     Used primarily to debug changes to this script or do a quick one-off run; the default is multiple counts as defined in the script.
 
+.PARAMETER ReadPercentages
+    Keys the Operation to perform: An array of one or more of:
+        0 = No read (Upsert workload only)
+        100 = All reads
+        Between 0 and 100 = mix of reads and upserts
+        -1 = All RMWs
+
 .PARAMETER UseRecover
     Recover the FasterKV from a checkpoint of a previous run rather than loading it from data.
     Used primarily to debug changes to this script or do a quick one-off run; the default is false.
 
 .PARAMETER CloneAndBuild
     Clone the repo and switch to the branches in ExeDirs, then build these.
+
+.PARAMETER NetCore31
+    Use the netcoreapp3.1 instead of net5.0 version of FASTER.benchmark.exe
 
 .EXAMPLE
     pwsh -c "./run_benchmark.ps1 './baseline','./refactor_FASTERImpl'"
@@ -60,6 +70,11 @@
     Runs 3 directories.
 
 .EXAMPLE
+    pwsh -c "./run_benchmark.ps1 master,branch_with_my_changes -ReadPercentages -1 <other args>"
+
+    Runs an RMW-only workload
+
+.EXAMPLE
     pwsh -c "./run_benchmark.ps1 master,branch_with_my_changes -CloneAndBuild <other args>"
 
     Clones the master branch to the .\master folder, the branch_with_my_changes to the branch_with_my_changes folder, and runs those with any <other args> specified.
@@ -68,16 +83,19 @@ param (
   [Parameter(Mandatory=$true)] [string[]]$ExeDirs,
   [Parameter(Mandatory=$false)] [int]$RunSeconds = 30,
   [Parameter(Mandatory=$false)] [int]$ThreadCount = -1,
-  [Parameter(Mandatory=$false)] [int]$lockMode = -1,
+  [Parameter(Mandatory=$false)] [int]$LockMode = -1,
+  [Parameter(Mandatory=$false)] [int[]]$ReadPercentages,
   [Parameter(Mandatory=$false)] [switch]$UseRecover,
-  [Parameter(Mandatory=$false)] [switch]$CloneAndBuild
+  [Parameter(Mandatory=$false)] [switch]$CloneAndBuild,
+  [Parameter(Mandatory=$false)] [switch]$NetCore31
 )
 
 if (-not(Test-Path d:/data)) {
     throw "Cannot find d:/data"
 }
 
-$benchmarkExe = "netcoreapp3.1/win7-x64/FASTER.benchmark.exe"
+$framework = $NetCore31 ? "netcoreapp3.1" : "net5.0"
+$benchmarkExe = "$framework/FASTER.benchmark.exe"
 
 if ($CloneAndBuild) {
     $exeNames = [String[]]($ExeDirs | ForEach-Object{"$_/cs/benchmark/bin/x64/Release/$benchmarkExe"})
@@ -101,7 +119,7 @@ Foreach ($exeName in $exeNames) {
     throw "Cannot find: $exeName"
 }
 
-$resultDirs = [String[]]($ExeDirs | ForEach-Object{"./results/" + (Get-Item $_).Name})
+$resultDirs = [String[]]($ExeDirs | ForEach-Object{"./results_$framework/" + (Get-Item $_).Name})
 Foreach ($resultDir in $resultDirs) {
     Write-Host $resultDir
     if (Test-Path $resultDir) {
@@ -125,6 +143,9 @@ if ($ThreadCount -ge 0) {
 }
 if ($LockMode -ge 0) {
     $lockModes = ($LockMode)
+}
+if ($ReadPercentages) {
+    $readPercents = $ReadPercentages
 }
 if ($UseRecover) {
     $k = "-k"
