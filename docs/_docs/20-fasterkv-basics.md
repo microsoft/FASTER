@@ -279,8 +279,7 @@ public static void Test()
   s.Read(ref key, ref output);
   Debug.Assert(output == value);
   s.RMW(ref key, ref input);
-  s.RMW(ref key, ref input);
-  s.Read(ref key, ref output);
+  s.RMW(ref key, ref input, ref output);
   Debug.Assert(output == value + 20);
 }
 ```
