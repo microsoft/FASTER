@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include <random>
+
 #include "gtest/gtest.h"
 
 #include "core/faster.h"
@@ -124,6 +126,56 @@ class ReadContext : public IAsyncContext {
   K key_;
  public:
   V output;
+};
+
+/// Context to RMW a key when unit testing.
+template<class K, class V>
+class RmwContext : public IAsyncContext {
+ public:
+  typedef K key_t;
+  typedef V value_t;
+
+  RmwContext(key_t key, value_t incr)
+    : key_{ key }
+    , incr_{ incr } {
+  }
+
+  /// Copy (and deep-copy) constructor.
+  RmwContext(const RmwContext& other)
+    : key_{ other.key_ }
+    , incr_{ other.incr_ } {
+  }
+
+  /// The implicit and explicit interfaces require a key() accessor.
+  inline const key_t& key() const {
+    return key_;
+  }
+  inline static constexpr uint32_t value_size() {
+    return sizeof(value_t);
+  }
+  inline static constexpr uint32_t value_size(const value_t& old_value) {
+    return sizeof(value_t);
+  }
+  inline void RmwInitial(value_t& value) {
+    value.value = incr_.value;
+  }
+  inline void RmwCopy(const value_t& old_value, value_t& value) {
+    value.value = old_value.value + incr_.value;
+  }
+  inline bool RmwAtomic(value_t& value) {
+    value.atomic_value.fetch_add(incr_.value);
+    return true;
+  }
+
+  protected:
+  /// The explicit interface requires a DeepCopy_Internal() implementation.
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+  }
+
+ private:
+  key_t key_;
+  value_t incr_;
 };
 
 /// Context to delete a key when unit testing.
@@ -257,6 +309,116 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemHalfLive) {
     if (idx % 2 == 0) ASSERT_EQ(idx, context.output.value);
   }
   store.CompletePending(true);
+  store.StopSession();
+}
+
+TEST_P(CompactLookupParametrizedTestFixture, InMemRmw) {
+  typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
+  // 1 GB log size -- 64 MB mutable region (min possible)
+  faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
+  int numRecords = 100000;
+
+  store.StartSession();
+
+  // Rmw initial (all records fit in-memory)
+  for(size_t idx = 1; idx <= numRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false);
+    };
+    RmwContext<Key, MediumValue> context{ Key(idx), MediumValue(5) };
+    Status result = store.Rmw(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+  // Read. (all records in-memory)
+  for(size_t idx = 1; idx <= numRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false);
+    };
+    ReadContext<Key, MediumValue> context{ idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+    ASSERT_EQ(context.output.value, 5);
+  }
+  // Rmw, increment by 1, 4 times (in random order)
+  std::vector<uint64_t> keys;
+  for (size_t idx = 1; idx <= numRecords; idx++) {
+    for (int t = 0; t < 4; ++t) {
+      keys.push_back(idx);
+    }
+  }
+  std::shuffle(keys.begin(), keys.end(), std::default_random_engine(42));
+
+  for(size_t idx = 0; idx < 4 * numRecords; ++idx) {
+    uint64_t key = keys[idx];
+    assert(1 <= key && key <= numRecords);
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false);
+    };
+    RmwContext<Key, MediumValue> context{ Key(key), MediumValue(1) };
+    Status result = store.Rmw(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+
+  // perform compaction (with or without shift begin address)
+  uint64_t until_address = store.hlog.safe_read_only_address.control();
+  bool shift_begin_address = GetParam();
+  ASSERT_TRUE(
+    store.CompactWithLookup(until_address, shift_begin_address));
+  if (shift_begin_address)
+    ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  store.CompletePending(true);
+
+  // Read.
+  for(size_t idx = 1; idx <= numRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false);
+    };
+    ReadContext<Key, MediumValue> context{ idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+    ASSERT_EQ(context.output.value, 9);
+  }
+
+  // Rmw, decrement by 1, 8 times -- random order
+  keys.clear();
+  for (size_t idx = 1; idx <= numRecords; idx++) {
+    for (int t = 0; t < 8; ++t) {
+      keys.push_back(idx);
+    }
+  }
+  std::shuffle(keys.begin(), keys.end(), std::default_random_engine(42));
+
+  for(size_t idx = 0; idx < 8 * numRecords; ++idx) {
+    uint64_t key = keys[idx];
+    assert(1 <= key && key <= numRecords);
+
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false);
+    };
+    RmwContext<Key, MediumValue> context{ Key(key), MediumValue(-1) };
+    Status result = store.Rmw(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+
+  // perform compaction (with or without shift begin address)
+  until_address = store.hlog.safe_read_only_address.control();
+  ASSERT_TRUE(
+    store.CompactWithLookup(until_address, shift_begin_address));
+  if (shift_begin_address)
+    ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  store.CompletePending(true);
+
+  // Read.
+  for(size_t idx = 1; idx <= numRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false);
+    };
+    ReadContext<Key, MediumValue> context{ idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+    ASSERT_EQ(context.output.value, 1);
+  }
+
   store.StopSession();
 }
 
@@ -1029,6 +1191,132 @@ TEST_P(CompactLookupParametrizedTestFixture, HalfLive) {
   store.CompletePending(true);
   store.StopSession();
 
+  std::experimental::filesystem::remove_all("tmp_store");
+}
+
+TEST_P(CompactLookupParametrizedTestFixture, Rmw) {
+  using Key = FixedSizeKey<uint64_t>;
+  using Value = LargeValue;
+
+  typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
+  typedef FasterKv<Key, LargeValue, disk_t> faster_t;
+
+  std::experimental::filesystem::create_directories("tmp_store");
+  // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
+  faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
+
+  uint32_t num_records = 20000; // ~160 MB of data
+  store.StartSession();
+
+  // Rmw initial (all records fit in-memory)
+  for(size_t idx = 1; idx <= num_records; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false);
+    };
+    RmwContext<Key, Value> context{ Key(idx), Value(5) };
+    Status result = store.Rmw(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+  // Read. (all records in-memory)
+  for(size_t idx = 1; idx <= num_records; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false);
+    };
+    ReadContext<Key, Value> context{ idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+    ASSERT_EQ(context.output.value, 5);
+  }
+
+  // Rmw, increment by 1, 4 times (in random order)
+  std::vector<uint64_t> keys;
+  for (size_t idx = 1; idx <= num_records; idx++) {
+    for (int t = 0; t < 4; ++t) {
+      keys.push_back(idx);
+    }
+  }
+  std::shuffle(keys.begin(), keys.end(), std::default_random_engine(42));
+
+  for(size_t idx = 0; idx < 4 * num_records; ++idx) {
+    uint64_t key = keys[idx];
+    assert(1 <= key && key <= num_records);
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_EQ(Status::Ok, result);
+    };
+    RmwContext<Key, Value> context{ Key(key), Value(1) };
+    Status result = store.Rmw(context, callback, 1);
+    ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+  }
+
+  // perform compaction (with or without shift begin address)
+  uint64_t until_address = store.hlog.safe_read_only_address.control();
+  bool shift_begin_address = GetParam();
+  ASSERT_TRUE(
+    store.CompactWithLookup(until_address, shift_begin_address));
+  if (shift_begin_address)
+    ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  store.CompletePending(true);
+
+  // Read.
+  for(size_t idx = 1; idx <= num_records; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_EQ(result, Status::Ok);
+      CallbackContext<ReadContext<Key, Value>> context{ ctxt };
+      ASSERT_EQ(context->output.value, 9);
+    };
+    ReadContext<Key, Value> context{ idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+    if (result == Status::Ok) {
+      ASSERT_EQ(context.output.value, 9);
+    }
+  }
+
+  // Rmw, decrement by 1, 8 times -- random order
+  keys.clear();
+  for (size_t idx = 1; idx <= num_records; idx++) {
+    for (int t = 0; t < 8; ++t) {
+      keys.push_back(idx);
+    }
+  }
+  std::shuffle(keys.begin(), keys.end(), std::default_random_engine(42));
+
+  for(size_t idx = 0; idx < 8 * num_records; ++idx) {
+    uint64_t key = keys[idx];
+    assert(1 <= key && key <= num_records);
+
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_EQ(Status::Ok, result);
+    };
+    RmwContext<Key, Value> context{ Key(key), Value(-1) };
+    Status result = store.Rmw(context, callback, 1);
+    ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+  }
+
+  // perform compaction (with or without shift begin address)
+  until_address = store.hlog.safe_read_only_address.control();
+  ASSERT_TRUE(
+    store.CompactWithLookup(until_address, shift_begin_address));
+  if (shift_begin_address)
+    ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  store.CompletePending(true);
+
+  // Read.
+  for(size_t idx = 1; idx <= num_records; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_EQ(result, Status::Ok);
+      CallbackContext<ReadContext<Key, Value>> context{ ctxt };
+      ASSERT_EQ(context->output.value, 1);
+    };
+    ReadContext<Key, Value> context{ idx };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+    if (result == Status::Ok) {
+      ASSERT_EQ(context.output.value, 1);
+    }
+  }
+
+  store.StopSession();
   std::experimental::filesystem::remove_all("tmp_store");
 }
 
