@@ -9,24 +9,24 @@ namespace FASTER.libdpr
         public static int SerializeCheckpointMetadata(byte[] buf, int offset, long worldLine,
             WorkerVersion checkpointed, IEnumerable<WorkerVersion> deps)
         {
-            if (!BitConverter.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), worldLine)) return 0;
+            if (!Utility.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), worldLine)) return 0;
             offset += sizeof(long);
-            if (!BitConverter.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), checkpointed.Worker.guid)) return 0;
+            if (!Utility.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), checkpointed.Worker.guid)) return 0;
             offset += sizeof(long);
-            if (!BitConverter.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), checkpointed.Version)) return 0;
+            if (!Utility.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), checkpointed.Version)) return 0;
             // skip 4 bytes of size field for now;
             var sizeField = offset;
-            if (!BitConverter.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), 0)) return 0;
+            if (!Utility.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), 0)) return 0;
             var numDeps = 0;
             foreach (var wv in deps)
             {
                 numDeps++;
                 offset += sizeof(long);
-                if (!BitConverter.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), wv.Worker.guid)) return 0;
+                if (!Utility.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), wv.Worker.guid)) return 0;
                 offset += sizeof(long);
-                if (!BitConverter.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), wv.Version)) return 0;
+                if (!Utility.TryWriteBytes(new Span<byte>(buf, offset, buf.Length - offset), wv.Version)) return 0;
             }
-            if (!BitConverter.TryWriteBytes(new Span<byte>(buf, sizeField, buf.Length - sizeField), numDeps)) return 0;
+            if (!Utility.TryWriteBytes(new Span<byte>(buf, sizeField, buf.Length - sizeField), numDeps)) return 0;
             
             return offset;
         }

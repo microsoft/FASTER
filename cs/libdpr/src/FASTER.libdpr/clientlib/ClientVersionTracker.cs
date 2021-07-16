@@ -58,7 +58,7 @@ namespace FASTER.libdpr
 
         internal void Add(long serialNum, WorkerVersion executedAt)
         {
-            Utility.MonotonicUpdate(ref largestSeqNum, serialNum, out _);
+            FASTER.core.Utility.MonotonicUpdate(ref largestSeqNum, serialNum, out _);
 
             if (!versionMappings.TryGetValue(executedAt, out var list))
             {

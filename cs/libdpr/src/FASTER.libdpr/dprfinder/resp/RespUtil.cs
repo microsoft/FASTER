@@ -82,7 +82,7 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
 
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val);
+            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val);
             head += sizeof(long);
 
             buf[head++] = (byte) '\r';
@@ -104,9 +104,9 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
 
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val.Worker.guid);
+            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val.Worker.guid);
             head += sizeof(long);
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val.Version);
+            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val.Version);
             head += sizeof(long);
 
             buf[head++] = (byte) '\r';
@@ -132,13 +132,13 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
 
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(int)), count);
+            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(int)), count);
             head += sizeof(int);
             foreach (var wv in val)
             {
-                BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), wv.Worker.guid);
+                Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), wv.Worker.guid);
                 head += sizeof(long);
-                BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), wv.Version);
+                Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), wv.Version);
                 head += sizeof(long);
             }
 
@@ -171,13 +171,13 @@ namespace FASTER.libdpr
         internal static int SerializeDictionary(IDictionary<Worker, long> dict, byte[] buf, int head)
         {
             if (head + DictionarySerializedSize(dict) > buf.Length) return 0;
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(int)), dict.Count);
+            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(int)), dict.Count);
             head += sizeof(int);
-            foreach (var (worker, val) in dict)
+            foreach (var entry in dict)
             {
-                BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), worker.guid);
+                Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), entry.Key.guid);
                 head += sizeof(long);
-                BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val);
+                Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), entry.Value);
                 head += sizeof(long);
             }
 

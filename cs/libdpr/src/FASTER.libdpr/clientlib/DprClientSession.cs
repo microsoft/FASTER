@@ -61,7 +61,7 @@ namespace FASTER.libdpr
         public CommitPoint GetCommitPoint()
         {
             if (!trackCommits) throw new NotSupportedException();
-            if (Utility.MonotonicUpdate(ref seenDprViewNum, dprClient.GetDprViewNumber(), out _))
+            if (FASTER.core.Utility.MonotonicUpdate(ref seenDprViewNum, dprClient.GetDprViewNumber(), out _))
                 ComputeCurrentCommitPoint();
             return currentCommitPoint;
         }
@@ -187,7 +187,7 @@ namespace FASTER.libdpr
                             }
                             offset++;
                         }
-                        Utility.MonotonicUpdate(ref clientVersion, maxVersion, out _);
+                        FASTER.core.Utility.MonotonicUpdate(ref clientVersion, maxVersion, out _);
                     }
                 }
                 

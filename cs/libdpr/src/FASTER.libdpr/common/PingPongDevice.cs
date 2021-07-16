@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
@@ -30,7 +31,7 @@ namespace FASTER.libdpr
 
         public PingPongDevice(IDevice device1, IDevice device2)
         {
-            Debug.Assert(checksumHasher.HashSize == 16);
+            Debug.Assert(checksumHasher.HashSize == 128);
             var v1 = ReadFromDevice(device1, out _);
             var v2 = ReadFromDevice(device2, out _);
             if (v1 == -1 && v2 == -1)
@@ -63,12 +64,15 @@ namespace FASTER.libdpr
             var header = new MetadataHeader();
             header.size = size;
             header.version = versionCounter++;
-            checksumHasher.TryComputeHash(new Span<byte>(buf, offset, size), new Span<byte>(header.checksum, 16), out _);
+            var hash = checksumHasher.ComputeHash(buf, offset, size);
+            
+            fixed (byte* b = &hash[0])
+                Unsafe.CopyBlock(header.checksum, b, 16);
             
             var countdown = new CountdownEvent(2);
 
             // Write of metadata block should be atomic
-            Debug.Assert(frontDevice.SegmentSize >= sizeof(MetadataHeader));
+            Debug.Assert(frontDevice.SegmentSize == -1 || frontDevice.SegmentSize >= sizeof(MetadataHeader));
             frontDevice.WriteAsync((IntPtr) header.bytes, 0, 0, (uint) sizeof(MetadataHeader),
                 (e, n, o) =>
                 {

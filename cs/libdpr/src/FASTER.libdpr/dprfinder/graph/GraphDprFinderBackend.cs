@@ -155,8 +155,8 @@ namespace FASTER.libdpr
                 serializedPersistentStateSize = 0;
             }
 
-            foreach (var (worker, version) in volatileState.GetCurrentCut())
-                versionTable[worker] = version;
+            foreach (var entry in volatileState.GetCurrentCut())
+                versionTable[entry.Key] = entry.Value;
         }
 
         // Try to commit wvs starting from the given wv. Commits and updates the volatile state the entire dependency
@@ -245,11 +245,11 @@ namespace FASTER.libdpr
                 var minVersion = versionTable.Min(pair => pair.Value);
                 // Update entries in the cut to be at least the min. No need to prune the graph as later traversals will take
                 // care of that
-                foreach (var (worker, version) in volatileState.GetCurrentCut().ToList())
+                foreach (var entry in volatileState.GetCurrentCut().ToList())
                 {
-                    if (version > minVersion) continue;
+                    if (entry.Value > minVersion) continue;
                     volatileState.hasUpdates = true;
-                    volatileState.GetCurrentCut()[worker] = minVersion;
+                    volatileState.GetCurrentCut()[entry.Key] = minVersion;
                 }
             }
 

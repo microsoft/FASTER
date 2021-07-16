@@ -73,7 +73,7 @@ namespace FASTER.libdpr
         public void Update(Worker worker, long version)
         {
             ref var originalVersion = ref dependentVersions[worker.guid];
-            Utility.MonotonicUpdate(ref originalVersion, version, out _);
+            FASTER.core.Utility.MonotonicUpdate(ref originalVersion, version, out _);
         }
         
         /// <summary>
@@ -86,7 +86,7 @@ namespace FASTER.libdpr
         public bool TryRemove(Worker worker, long version)
         {
             ref var originalVersion = ref dependentVersions[worker.guid];
-            return Interlocked.CompareExchange(ref originalVersion, NoDependency, version) == version;
+            return Interlocked.CompareExchange(ref originalVersion, NoDependency, version) >= version;
         }
 
         /// <inheritdoc/>
