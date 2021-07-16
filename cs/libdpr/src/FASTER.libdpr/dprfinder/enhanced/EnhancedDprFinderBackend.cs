@@ -2,10 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Net;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace FASTER.libdpr
 {
@@ -47,12 +44,12 @@ namespace FASTER.libdpr
             if (serializedSize > serializedResponse.Length)
                 serializedResponse = new byte[Math.Max(2 * serializedResponse.Length, serializedSize)];
 
-            BitConverter.TryWriteBytes(new Span<byte>(serializedResponse, 0, sizeof(long)),
+            Utility.TryWriteBytes(new Span<byte>(serializedResponse, 0, sizeof(long)),
                 clusterState.currentWorldLine);
             recoveryStateEnd =
                 RespUtil.SerializeDictionary(clusterState.worldLinePrefix, serializedResponse, sizeof(long));
             // In the absence of a cut, set cut to a special "unknown" value.
-            BitConverter.TryWriteBytes(new Span<byte>(serializedResponse, recoveryStateEnd, sizeof(int)), -1);
+            Utility.TryWriteBytes(new Span<byte>(serializedResponse, recoveryStateEnd, sizeof(int)), -1);
             responseEnd = recoveryStateEnd + sizeof(int);
         }
 
@@ -457,8 +454,8 @@ namespace FASTER.libdpr
                 volatileClusterState.currentWorldLine++;
                 // TODO(Tianyu): This is slightly more aggressive than needed, but no worse than original DPR. Can
                 // implement more precise rollback later.
-                foreach (var (w, v) in currentCut)
-                    volatileClusterState.worldLinePrefix[w] = v;
+                foreach (var entry in currentCut)
+                    volatileClusterState.worldLinePrefix[entry.Key] = entry.Value;
                 // Anything in the precedence graph is rolled back and we can just remove them 
                 foreach (var list in precedenceGraph.Values)
                     objectPool.Return(list);

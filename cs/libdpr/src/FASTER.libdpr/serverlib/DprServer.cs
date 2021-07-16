@@ -86,9 +86,9 @@ namespace FASTER.libdpr
             var head = 0;
             foreach (var wv in deps)
             {
-                BitConverter.TryWriteBytes(new Span<byte>(depSerializationArray, head, sizeof(long)), wv.Worker.guid);
+                Utility.TryWriteBytes(new Span<byte>(depSerializationArray, head, sizeof(long)), wv.Worker.guid);
                 head += sizeof(long);
-                BitConverter.TryWriteBytes(new Span<byte>(depSerializationArray, head, sizeof(long)), wv.Version);
+                Utility.TryWriteBytes(new Span<byte>(depSerializationArray, head, sizeof(long)), wv.Version);
                 head += sizeof(long);
             }
 
@@ -105,7 +105,7 @@ namespace FASTER.libdpr
             {
                 if (!state.dprFinder.Refresh())
                     state.dprFinder.ResendGraph(state.me, stateObject);
-                Utility.MonotonicUpdate(ref state.lastRefreshMilli, currentTime, out _);
+                FASTER.core.Utility.MonotonicUpdate(ref state.lastRefreshMilli, currentTime, out _);
                 TryAdvanceWorldLineTo(state.dprFinder.SystemWorldLine());
             }
 
@@ -113,7 +113,7 @@ namespace FASTER.libdpr
             {
                 stateObject.BeginCheckpoint(ComputeDependency,
                     Math.Max(stateObject.Version() + 1, state.dprFinder.GlobalMaxVersion()));
-                Utility.MonotonicUpdate(ref state.lastCheckpointMilli, currentTime, out _);
+                FASTER.core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, currentTime, out _);
             }
 
             // Can prune dependency information of committed versions
@@ -152,7 +152,7 @@ namespace FASTER.libdpr
             while (request.versionLowerBound > stateObject.Version())
             {
                 stateObject.BeginCheckpoint(ComputeDependency, request.versionLowerBound);
-                Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
+                FASTER.core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
             }
 
             // Enter protected region for world-lines. Because we validate requests batch-at-a-time, the world-line
@@ -246,7 +246,7 @@ namespace FASTER.libdpr
         public void ForceCheckpoint(long targetVersion = -1)
         {
             stateObject.BeginCheckpoint(ComputeDependency, targetVersion);
-            Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
+            FASTER.core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
         }
     }
 }

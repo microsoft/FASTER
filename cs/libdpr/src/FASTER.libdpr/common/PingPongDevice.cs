@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
@@ -63,7 +64,10 @@ namespace FASTER.libdpr
             var header = new MetadataHeader();
             header.size = size;
             header.version = versionCounter++;
-            checksumHasher.TryComputeHash(new Span<byte>(buf, offset, size), new Span<byte>(header.checksum, 16), out _);
+            var hash = checksumHasher.ComputeHash(buf, offset, size);
+            
+            fixed (byte* b = &hash[0])
+                Unsafe.CopyBlock(header.checksum, b, 16);
             
             var countdown = new CountdownEvent(2);
 

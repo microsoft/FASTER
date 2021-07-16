@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Net.Sockets;
 
 namespace FASTER.libdpr
@@ -107,7 +106,7 @@ namespace FASTER.libdpr
             head += RespUtil.WriteRedisBulkString("GraphResent", buf, head);
             var committedVersion = new WorkerVersion(worker, minVersion == long.MaxValue ? 0 : minVersion);
             head += RespUtil.WriteRedisBulkString(committedVersion, buf, head);
-            socket.Send(new Span<byte>(buf, 0, head));
+            socket.Send(buf, 0, head, SocketFlags.None);
             return ++numRequests;
         }
 
@@ -117,7 +116,7 @@ namespace FASTER.libdpr
             var head = RespUtil.WriteRedisArrayHeader(2, buf, 0);
             head += RespUtil.WriteRedisBulkString("AddWorker", buf, head);
             head += RespUtil.WriteRedisBulkString(worker.guid, buf, head);
-            socket.Send(new Span<byte>(buf, 0, head));
+            socket.Send(buf, 0, head, SocketFlags.None);
             reusableMessageBuffers.Return(buf);
         }
 
@@ -127,7 +126,7 @@ namespace FASTER.libdpr
             var head = RespUtil.WriteRedisArrayHeader(2, buf, 0);
             head += RespUtil.WriteRedisBulkString("DeleteWorker", buf, head);
             head += RespUtil.WriteRedisBulkString(worker.guid, buf, head);
-            socket.Send(new Span<byte>(buf, 0, head));
+            socket.Send(buf, 0, head, SocketFlags.None);
             reusableMessageBuffers.Return(buf);
         }
 
@@ -140,7 +139,7 @@ namespace FASTER.libdpr
             head += RespUtil.WriteRedisBulkString(worldLine, buf, head);
             head += RespUtil.WriteRedisBulkString(checkpointed, buf, head);
             head += RespUtil.WriteRedisBulkString(deps, buf, head);
-            socket.Send(new Span<byte>(buf, 0, head));
+            socket.Send(buf, 0, head, SocketFlags.None);
             reusableMessageBuffers.Return(buf);
         }
 
@@ -152,7 +151,7 @@ namespace FASTER.libdpr
             head += RespUtil.WriteRedisBulkString("ReportRecovery", buf, head);
             head += RespUtil.WriteRedisBulkString(recovered, buf, head);
             head += RespUtil.WriteRedisBulkString(worldLine, buf, head);
-            socket.Send(new Span<byte>(buf, 0, head));
+            socket.Send(buf, 0, head, SocketFlags.None);
             reusableMessageBuffers.Return(buf);
         }
 
@@ -161,7 +160,7 @@ namespace FASTER.libdpr
             var buf = reusableMessageBuffers.Checkout();
             var head = RespUtil.WriteRedisArrayHeader(1, buf, 0);
             head += RespUtil.WriteRedisBulkString("Sync", buf, head);
-            socket.Send(new Span<byte>(buf, 0, head));
+            socket.Send(buf, 0, head, SocketFlags.None);
             reusableMessageBuffers.Return(buf);
         }
 
@@ -180,7 +179,7 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
 
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), maxVersion);
+            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), maxVersion);
             head += sizeof(long);
             Array.Copy(serializedState.Item1, 0, buf, head, serializedState.Item2);
             head += serializedState.Item2;
@@ -188,7 +187,7 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
 
-            socket.Send(new Span<byte>(buf, 0, head));
+            socket.Send(buf, 0, head, SocketFlags.None);
             reusableMessageBuffers.Return(buf);
         }
 
@@ -207,15 +206,15 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
 
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), result.Item1);
+            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), result.Item1);
             head += sizeof(long);
-            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), result.Item2);
+            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), result.Item2);
             head += sizeof(long);
 
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
 
-            socket.Send(new Span<byte>(buf, 0, head));
+            socket.Send(buf, 0, head, SocketFlags.None);
             reusableMessageBuffers.Return(buf);
         }
     }
