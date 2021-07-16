@@ -52,14 +52,12 @@ namespace FASTER.test.recovery.sumstore.simple
         [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask PageBlobSimpleRecoveryTest([Values]CheckpointType checkpointType, [Values]bool isAsync)
         {
-            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
-            {
-                checkpointManager = new DeviceLogCommitCheckpointManager(
-                    new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
-                await SimpleRecoveryTest1_Worker(checkpointType, isAsync);
-                checkpointManager.PurgeAll();
-            }
+            TestUtils.IgnoreIfNotRunningAzureTests();
+            checkpointManager = new DeviceLogCommitCheckpointManager(
+                new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
+                new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
+            await SimpleRecoveryTest1_Worker(checkpointType, isAsync);
+            checkpointManager.PurgeAll();
         }
 
         [Test]

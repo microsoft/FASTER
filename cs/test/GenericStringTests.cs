@@ -26,20 +26,14 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            //** #142980 - Blob not exist exception in Dispose so use Try \ Catch to make sure tests run without issues 
-            try
-            {
-
-                session?.Dispose();
-                session = null;
-                fht?.Dispose();
-                fht = null;
-                log?.Dispose();
-                log = null;
-                objlog?.Dispose();
-                objlog = null;
-            }
-            catch { }
+            session?.Dispose();
+            session = null;
+            fht?.Dispose();
+            fht = null;
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
 
             TestUtils.DeleteDirectory(path);
         }

@@ -30,19 +30,17 @@ namespace FASTER.test.async
             TestUtils.DeleteDirectory(test_path);
         }
 
-        [TestCase(CheckpointType.FoldOver)]
-        [TestCase(CheckpointType.Snapshot)]
+        [Test]
         [Category("FasterKV")]
-        public async Task LargeObjectTest(CheckpointType checkpointType)
+        public async Task LargeObjectTest([Values]CheckpointType checkpointType)
         {
             MyInput input = default;
-            MyLargeOutput output = new MyLargeOutput();
+            MyLargeOutput output = new ();
 
             log = Devices.CreateLogDevice(test_path + "/LargeObjectTest.log");
             objlog = Devices.CreateLogDevice(test_path + "/LargeObjectTest.obj.log");
 
-            fht1 = new FasterKV<MyKey, MyLargeValue>
-                (128,
+            fht1 = new (128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
                 new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
@@ -72,8 +70,7 @@ namespace FASTER.test.async
             log = Devices.CreateLogDevice(test_path + "/LargeObjectTest.log");
             objlog = Devices.CreateLogDevice(test_path + "/LargeObjectTest.obj.log");
 
-            fht2 = new FasterKV<MyKey, MyLargeValue>
-                (128,
+            fht2 = new(128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
                 new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }

@@ -69,6 +69,15 @@ namespace FASTER.test
             Directory.CreateDirectory(path);
         }
 
+        internal static bool IsRunningAzureTests => "yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests"));
+
+        internal static void IgnoreIfNotRunningAzureTests()
+        {
+            // Need this environment variable set AND Azure Storage Emulator running
+            if (!IsRunningAzureTests)
+                Assert.Ignore("Environment variable RunAzureTests is not defined");
+        }
+
         // Used to test the various devices by using the same test with VALUES parameter
         // Cannot use LocalStorageDevice from non-Windows OS platform
         public enum DeviceType
@@ -102,6 +111,7 @@ namespace FASTER.test
                         device = new LocalStorageDevice(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort);
                     break;
                 case DeviceType.EmulatedAzure:
+                    IgnoreIfNotRunningAzureTests();
                     device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, "fasterlogblob", deleteOnClose: false);
                     break;
 #endif
@@ -110,7 +120,7 @@ namespace FASTER.test
                     break;
                 // Emulated higher latency storage device - takes a disk latency arg (latencyMs) and emulates an IDevice using main memory, serving data at specified latency
                 case DeviceType.LocalMemory:  
-                    device = new LocalMemoryDevice(1L << 26, 1L << 22, 2, latencyMs: latencyMs);  // 64 MB (1L << 26) is enough for our test cases
+                    device = new LocalMemoryDevice(1L << 26, 1L << 22, 2, sector_size: 512, latencyMs: latencyMs, fileName: filename);  // 64 MB (1L << 26) is enough for our test cases
                     break;
             }
 

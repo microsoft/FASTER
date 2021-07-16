@@ -25,8 +25,8 @@ namespace FASTER.test
         [Category("Smoke")]
         public void PageBlobWriteRead()
         {
-            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
-                TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests"));
+            TestUtils.IgnoreIfNotRunningAzureTests();
+            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests"));
         }
 
         [Test]
@@ -34,8 +34,8 @@ namespace FASTER.test
         [Category("Smoke")]
         public void PageBlobWriteReadWithLease()
         {
-            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
-                TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests",null,true,true));
+            TestUtils.IgnoreIfNotRunningAzureTests();
+            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests",null,true,true));
         }
 
         [Test]
@@ -46,7 +46,7 @@ namespace FASTER.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             IDevice tested;
             IDevice localDevice = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
-            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+            if (TestUtils.IsRunningAzureTests)
             {
                 IDevice cloudDevice = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests");
                 tested = new TieredStorageDevice(1, localDevice, cloudDevice);

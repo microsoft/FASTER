@@ -33,34 +33,25 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            //*** Bug #142980 - Blob not exist exception in Dispose so use Try \ Catch to make sure tests run without issues 
-            try
-            {
-                log?.Dispose();
-                log = null;
-                device?.Dispose();
-                device = null;
-                deviceUnCommitted?.Dispose();
-                deviceUnCommitted = null;
-                logUncommitted?.Dispose();
-                logUncommitted = null;
-            }
-            catch { }
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
+            deviceUnCommitted?.Dispose();
+            deviceUnCommitted = null;
+            logUncommitted?.Dispose();
+            logUncommitted = null;
 
             // Clean up log files
             TestUtils.DeleteDirectory(path);
         }
-
-
 
         public void PopulateLog(FasterLog log)
         {
             //****** Populate log for Basic data for tests 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
-            {
                 entry[i] = (byte)i;
-            }
 
             // Enqueue but set each Entry in a way that can differentiate between entries
             for (int i = 0; i < numEntries; i++)
@@ -79,7 +70,6 @@ namespace FASTER.test
 
             // Commit to the log
             log.Commit(true);
-
         }
 
         public void PopulateUncommittedLog(FasterLog logUncommitted)
@@ -87,9 +77,7 @@ namespace FASTER.test
             //****** Populate uncommitted log / device for ScanUncommittedTest
             // Set Default entry data
             for (int j = 0; j < entryLength; j++)
-            {
                 entry[j] = (byte)j;
-            }
 
             // Enqueue but set each Entry in a way that can differentiate between entries
             for (int j = 0; j < numEntries; j++)
@@ -110,25 +98,15 @@ namespace FASTER.test
             logUncommitted.RefreshUncommitted(true);
         }
 
-
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
         public void ScanBasicDefaultTest([Values] TestUtils.DeviceType deviceType)
         {
-
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = path + "LogScanDefault" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
-
-
-#if WINDOWS
-            // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
-            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
-                return;
-#endif
-
             PopulateLog(log);
 
             // Basic default scan from start to end 
@@ -142,10 +120,8 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result["+ currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
-
                         currentEntry++;
                     }
                 }
@@ -160,19 +136,12 @@ namespace FASTER.test
         [Category("FasterLog")]
         public void ScanNoDefaultTest([Values] TestUtils.DeviceType deviceType)
         {
-
             // Test where all params are set just to make sure handles it ok
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = path + "LogScanNoDefault" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
-
-#if WINDOWS
-            // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
-            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
-                return;
-#endif
             PopulateLog(log);
 
             // Read the log - Look for the flag so know each entry is unique
@@ -183,10 +152,8 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
-
                         currentEntry++;
                     }
                 }
@@ -196,25 +163,17 @@ namespace FASTER.test
             Assert.AreEqual(entryLength, currentEntry);
         }
 
-
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
         public void ScanByNameTest([Values] TestUtils.DeviceType deviceType)
         {
-
             //You can persist iterators(or more precisely, their CompletedUntilAddress) as part of a commit by simply naming them during their creation. 
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = path + "LogScanByName" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
-
-#if WINDOWS
-            // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
-            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
-                return;
-#endif
             PopulateLog(log);
 
             // Read the log - Look for the flag so know each entry is unique
@@ -225,10 +184,8 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
-
                         currentEntry++;
                     }
                 }
@@ -237,7 +194,6 @@ namespace FASTER.test
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
             Assert.AreEqual(entryLength, currentEntry);
         }
-
 
         [Test]
         [Category("FasterLog")]
@@ -250,13 +206,6 @@ namespace FASTER.test
             string filename = path + "LogScanWithoutRecover" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
-
-#if WINDOWS
-            // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
-            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
-                return;
-#endif
-
             PopulateLog(log);
 
             // Read the log 
@@ -269,7 +218,6 @@ namespace FASTER.test
                     {
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
-
                         currentEntry++;
                     }
                 }
@@ -290,15 +238,7 @@ namespace FASTER.test
             string filename = path + "LogScanDoublePage" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
-
-#if WINDOWS
-            // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
-            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
-                return;
-#endif
-
             PopulateLog(log);
-
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
@@ -310,7 +250,6 @@ namespace FASTER.test
                     {
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
-
                         currentEntry++;
                     }
                 }
@@ -325,17 +264,10 @@ namespace FASTER.test
         [Category("Smoke")]
         public void ScanBufferingModeSinglePageTest([Values] TestUtils.DeviceType deviceType)
         {
-
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = path + "LogScanSinglePage" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
-
-#if WINDOWS
-            // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
-            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
-                return;
-#endif
             PopulateLog(log);
 
             // Read the log - Look for the flag so know each entry is unique
@@ -346,10 +278,8 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
-
                         currentEntry++;
                     }
                 }
@@ -359,24 +289,15 @@ namespace FASTER.test
             Assert.AreEqual(entryLength, currentEntry);
         }
 
-
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
         public void ScanUncommittedTest([Values] TestUtils.DeviceType deviceType)
         {
-
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = path + "LogScan" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
-
-#if WINDOWS
-            // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
-            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
-                return;
-#endif
-
             PopulateUncommittedLog(log);
 
             // Setting scanUnCommitted to true is actual test here.
@@ -390,7 +311,6 @@ namespace FASTER.test
                     {
                         // Span Batch only added first entry several times so have separate verification
                         Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
-
                         currentEntry++;
                     }
                 }
@@ -399,8 +319,5 @@ namespace FASTER.test
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
             Assert.AreEqual(entryLength, currentEntry);
         }
-
     }
 }
-
-

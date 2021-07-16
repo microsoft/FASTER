@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.IO;
 using FASTER.core;
 using NUnit.Framework;
 
@@ -11,7 +10,6 @@ namespace FASTER.test
     [TestFixture]
     internal class DeltaLogStandAloneTests
     {
-
         private FasterLog log;
         private IDevice device;
         private string path;
@@ -28,96 +26,64 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            //** #142980 - Blob not exist exception in Dispose so use Try \ Catch to make sure tests run without issues 
-            try
-            {
-
-                log?.Dispose();
-                log = null;
-                device?.Dispose();
-                device = null;
-
-            }
-            catch
-            { }
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
 
             // Clean up log files
             TestUtils.DeleteDirectory(path, wait: true);
         }
-
 
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
         public void DeltaLogTest1([Values] TestUtils.DeviceType deviceType)
         {
-            int TotalCount = 200; 
-            string filename = path + "delta" + deviceType.ToString() + ".log";
-            TestUtils.DeleteDirectory(path, wait: true);
-            DirectoryInfo di = Directory.CreateDirectory(path);
+            const int TotalCount = 200; 
+            string filename = $"{path}delta_{deviceType}.log";
+            TestUtils.RecreateDirectory(path);
 
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            device.Initialize(-1);
+            using DeltaLog deltaLog = new DeltaLog(device, 12, 0);
+            Random r = new (20);
+            int i;
 
-            //*** Bug #143432 - DeltaLogTest on LocalMemory is only returning 50 items when should be returning 200
-            if (deviceType == TestUtils.DeviceType.LocalMemory)
+            SectorAlignedBufferPool bufferPool = new(1, (int)device.SectorSize);
+            deltaLog.InitializeForWrites(bufferPool);
+            for (i = 0; i < TotalCount; i++)
             {
-                 return;
+                int _len = 1 + r.Next(254);
+                long address;
+                while (true)
+                {
+                    deltaLog.Allocate(out int maxLen, out address);
+                    if (_len <= maxLen) break;
+                    deltaLog.Seal(0);
+                }
+                for (int j = 0; j < _len; j++)
+                {
+                    unsafe { *(byte*)(address + j) = (byte)_len; }
+                }
+                deltaLog.Seal(_len, i);
             }
-            //*** Bug #143432 - DeltaLogTest on LocalMemory is only returning 50 items when should be returning 200
+            deltaLog.FlushAsync().Wait();
 
-
-            using (device = TestUtils.CreateTestDevice(deviceType, filename))
+            deltaLog.InitializeForReads();
+            r = new (20);
+            for (i = 0; deltaLog.GetNext(out long address, out int len, out int type); i++)
             {
-                device.Initialize(-1);
-                using DeltaLog deltaLog = new DeltaLog(device, 12, 0);
-                Random r = new Random(20);
-                int i;
-
-                var bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
-                deltaLog.InitializeForWrites(bufferPool);
-                for (i = 0; i < TotalCount; i++)
+                int _len = 1 + r.Next(254);
+                Assert.AreEqual(i, type);
+                Assert.AreEqual(len, _len);
+                for (int j = 0; j < len; j++)
                 {
-                    int len = 1 + r.Next(254);
-                    long address;
-                    while (true)
-                    {
-                        deltaLog.Allocate(out int maxLen, out address);
-                        if (len <= maxLen) break;
-                        deltaLog.Seal(0);
-                    }
-                    for (int j = 0; j < len; j++)
-                    {
-                        unsafe { *(byte*)(address + j) = (byte)len; }
-                    }
-                    deltaLog.Seal(len, i);
+                    unsafe { Assert.AreEqual((byte)_len, *(byte*)(address + j)); };
                 }
-                deltaLog.FlushAsync().Wait();
-
-                deltaLog.InitializeForReads();
-                i = 0;
-                r = new Random(20);
-                while (deltaLog.GetNext(out long address, out int len, out int type))
-                {
-                    int _len = 1 + r.Next(254);
-                    Assert.IsTrue(type == i);
-                    Assert.IsTrue(_len == len);
-                    for (int j = 0; j < len; j++)
-                    {
-                        unsafe { Assert.IsTrue(*(byte*)(address + j) == (byte)_len); };
-                    }
-                    i++;
-                }
-                Assert.IsTrue(i == TotalCount,$"i={i} and TotalCount={TotalCount}");
-                bufferPool.Free();
             }
-            while (true)
-            {
-                try
-                {
-                    di.Delete(recursive: true);
-                    break;
-                }
-                catch { }
-            }
+            Assert.AreEqual(TotalCount, i, $"i={i} and TotalCount={TotalCount}");
+            bufferPool.Free();
         }
     }
 }

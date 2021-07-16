@@ -525,14 +525,10 @@ namespace FASTER.test.recovery
             }
             else
             {
-                if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
-                {
-                    checkpointManager = new DeviceLogCommitCheckpointManager(
-                        new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                        new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
-                }
-                else
-                    return;
+                TestUtils.IgnoreIfNotRunningAzureTests();
+                checkpointManager = new DeviceLogCommitCheckpointManager(
+                    new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
+                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             }
 
             await IncrSnapshotRecoveryCheck(checkpointManager);

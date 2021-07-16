@@ -22,37 +22,51 @@ namespace FASTER.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path, wait:true);
 
-            log = Devices.CreateLogDevice(path + "/GenericLogCompactionTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(path + "/GenericLogCompactionTests.obj.log", deleteOnClose: true);
+            if (TestContext.CurrentContext.Test.Arguments.Length == 0)
+            {
+                // Default log creation
+                log = Devices.CreateLogDevice(path + "/GenericLogCompactionTests.log", deleteOnClose: true);
+                objlog = Devices.CreateLogDevice(path + "/GenericLogCompactionTests.obj.log", deleteOnClose: true);
 
-            fht = new FasterKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
-                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                );
+                fht = new FasterKV<MyKey, MyValue>
+                    (128,
+                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
+                    checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
+                    serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
+                    );
+            }
+            else
+            {
+                // For this class, deviceType is the only parameter. Using this to illustrate the approach; NUnit doesn't provide metadata for arguments,
+                // so for multi-parameter tests it is probably better to stay with the "separate SetUp method" approach.
+                var deviceType = (TestUtils.DeviceType)TestContext.CurrentContext.Test.Arguments[0];
+
+                log = TestUtils.CreateTestDevice(deviceType, $"{path}LogCompactBasicTest_{deviceType}.log");
+                objlog = TestUtils.CreateTestDevice(deviceType, $"{path}LogCompactBasicTest_{deviceType}.obj.log");
+
+                fht = new FasterKV<MyKey, MyValue>
+                    (128,
+                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9, SegmentSizeBits = 22 },
+                    checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
+                    serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
+                    );
+            }
             session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
         }
 
         [TearDown]
         public void TearDown()
         {
-            //** Bug #142980 - FasterKV: Blob Doesn't exist exception when .Dispose() when running Emulator.  -- Work around so doesn't crash during clean up is put try catch around
-            try
-            {
-                session?.Dispose();
-                session = null;
-                fht?.Dispose();
-                fht = null;
-                log?.Dispose();
-                log = null;
-                objlog?.Dispose();
-                objlog = null;
-            }
-            catch { }
+            session?.Dispose();
+            session = null;
+            fht?.Dispose();
+            fht = null;
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
 
             TestUtils.DeleteDirectory(path);
-
         }
 
         // Basic test that where shift begin address to untilAddress after compact
@@ -61,22 +75,6 @@ namespace FASTER.test
         [Category("Smoke")]
         public void LogCompactBasicTest([Values] TestUtils.DeviceType deviceType)
         {
-            // Reset all the log and fht values since using all deviceType
-            string filename = path + "LogCompactBasicTest" + deviceType.ToString() + ".log";
-            string objfilename = path + "LogCompactBasicTest_obj" + deviceType.ToString() + ".log";
-
-            log = TestUtils.CreateTestDevice(deviceType, filename);
-            objlog = TestUtils.CreateTestDevice(deviceType, objfilename);
-
-            fht = new FasterKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9, SegmentSizeBits = 22 },  
-                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                );
-
-            session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
-
             MyInput input = new MyInput();
 
             const int totalRecords = 500;
@@ -105,12 +103,16 @@ namespace FASTER.test
 
                 var status = session.Read(ref key1, ref input, ref output, 0, 0);
                 if (status == Status.PENDING)
-                    session.CompletePending(true);
-                else
                 {
-                    Assert.IsTrue(status == Status.OK,"Found status:"+status.ToString());
-                    Assert.IsTrue(output.value.value == value.value, "output value:"+output.value.value.ToString()+" value:"+value.value.ToString());
+                    session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    Assert.IsTrue(completedOutputs.Next());
+                    Assert.AreEqual(Status.OK, completedOutputs.Current.Status);
+                    output = completedOutputs.Current.Output;
+                    Assert.IsFalse(completedOutputs.Next());
+                    completedOutputs.Dispose();
                 }
+                Assert.IsTrue(status == Status.OK, "Found status:" + status.ToString());
+                Assert.IsTrue(output.value.value == value.value, "output value:" + output.value.value.ToString() + " value:" + value.value.ToString());
             }
         }
 
