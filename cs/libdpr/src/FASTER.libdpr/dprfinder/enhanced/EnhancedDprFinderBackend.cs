@@ -414,7 +414,6 @@ namespace FASTER.libdpr
             // for as then only the graph traversal thread will update current cut
             lock (currentCut)
             {
-                Debug.Assert(earliestPresentVersion <= volatileClusterState.worldLinePrefix[worker]);
                 // We don't know if a present version is committed or not, but all pruned versions must be committed.
                 currentCut[worker] = Math.Max(0, earliestPresentVersion - 1);
             }

@@ -31,7 +31,7 @@ namespace FASTER.libdpr
 
         public PingPongDevice(IDevice device1, IDevice device2)
         {
-            Debug.Assert(checksumHasher.HashSize == 16);
+            Debug.Assert(checksumHasher.HashSize == 128);
             var v1 = ReadFromDevice(device1, out _);
             var v2 = ReadFromDevice(device2, out _);
             if (v1 == -1 && v2 == -1)
@@ -72,7 +72,7 @@ namespace FASTER.libdpr
             var countdown = new CountdownEvent(2);
 
             // Write of metadata block should be atomic
-            Debug.Assert(frontDevice.SegmentSize >= sizeof(MetadataHeader));
+            Debug.Assert(frontDevice.SegmentSize == -1 || frontDevice.SegmentSize >= sizeof(MetadataHeader));
             frontDevice.WriteAsync((IntPtr) header.bytes, 0, 0, (uint) sizeof(MetadataHeader),
                 (e, n, o) =>
                 {
