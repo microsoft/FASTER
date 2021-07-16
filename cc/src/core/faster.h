@@ -176,7 +176,7 @@ class FasterKv {
 
   /// Statistics
   inline uint64_t Size() const {
-    return hlog.GetTailAddress().control();
+    return hlog.GetTailAddress().control() - hlog.begin_address.control();
   }
   inline void DumpDistribution() {
     state_[resize_info_.version].DumpDistribution(
@@ -1674,7 +1674,8 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
     pending_context->continue_async(address, expected_entry);
     return OperationStatus::RETRY_NOW;
   }
-  assert(address < hlog.begin_address.load() || address == pending_context->entry.address());
+  //assert(address < hlog.begin_address.load() || address == pending_context->entry.address());
+  assert(address < head_address || address == pending_context->entry.address());
 
   // We have to do copy-on-write/RCU and write the updated value to the tail of the log.
   Address new_address;
@@ -3044,6 +3045,8 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
     std::this_thread::yield();
   }
 
+  // TODO: delay if checkpointing
+
   if (shift_begin_address) {
     // Truncate log & update hash index
     static std::atomic<bool> truncated (false);
@@ -3299,7 +3302,9 @@ inline Status FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context) {
   assert(atomic_entry->load().address() != Address::kInvalidAddress);
 
   do {
-    assert( thread_ctx().phase == Phase::REST);
+    assert( thread_ctx().phase == Phase::REST ||
+            thread_ctx().phase == Phase::GC_IO_PENDING ||
+            thread_ctx().phase == Phase::GC_IN_PROGRESS);
 
     if (entry.address() != expected_entry.address()) {
       // Hash-chain changed since last time!
@@ -3332,13 +3337,14 @@ inline Status FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context) {
     record_t* record = reinterpret_cast<record_t*>(dest_store->hlog.Get(new_address));
     // Copy record
     assert(copy_context.copy_at(record, record_size));
-    // Replace record header
-    new(record) record_t{
-      RecordInfo{
-        static_cast<uint16_t>(thread_ctx().version), true, false, false, expected_entry.address() }
-    };
 
     if (dest_store == this) {
+      // Replace record header
+      new(record) record_t{
+        RecordInfo{
+          static_cast<uint16_t>(thread_ctx().version), true, false, false, expected_entry.address() }
+      };
+
       // Try to update hash bucket address
       HashBucketEntry updated_entry{ new_address, hash.tag(), false };
       if(atomic_entry->compare_exchange_strong(entry, updated_entry)) {
@@ -3360,12 +3366,17 @@ inline Status FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context) {
         //       this can only happen if we are concurrently doing cold-cold log compaction. Even in this case,
         //       records found in hot log have priority over those in cold one. This means that the thread
         //       performing the cold-cold compaction will properly check for updated chain (and possibly abort).
+
+        // Replace record header
+        new(record) record_t{
+          RecordInfo{
+            static_cast<uint16_t>(dest_store->thread_ctx().version), true, false, false, dest_entry.address() }
+        };
         if(dest_atomic_entry->compare_exchange_strong(dest_entry, dest_updated_entry)) {
           // Installed the new record in the hash table.
           return Status::Ok;
         }
       } while(true);
-
     }
 
     Refresh();
