@@ -34,8 +34,14 @@ namespace FASTER.server
         /// <inheritdoc />
         public IServerSession GetSession(WireFormat wireFormat, Socket socket)
         {
-            return new BinaryServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
-                (socket, store, new SpanByteFunctionsForServer<long>(wireFormat), serializer, maxSizeSettings, broker);
+            switch (wireFormat) {
+                case WireFormat.WebSocket:
+                    return new WebsocketServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
+                        (socket, store, new SpanByteFunctionsForServer<long>(wireFormat), serializer, maxSizeSettings, broker);
+                default:
+                    return new BinaryServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
+                        (socket, store, new SpanByteFunctionsForServer<long>(wireFormat), serializer, maxSizeSettings, broker);
+            }
         }
 
         /// <inheritdoc />
