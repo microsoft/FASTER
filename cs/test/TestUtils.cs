@@ -131,7 +131,7 @@ namespace FASTER.test
         {
             // Make this all under one root folder named {prefix}, which is the base namespace name. All UT namespaces using this must start with this prefix.
             const string prefix = "FASTER.test";
-            Debug.Assert(TestContext.CurrentContext.Test.ClassName.StartsWith($"{prefix}."));
+            Assert.IsTrue(TestContext.CurrentContext.Test.ClassName.StartsWith($"{prefix}."), $"Expected {prefix} prefix was not found");
             var suffix = TestContext.CurrentContext.Test.ClassName.Substring(prefix.Length + 1);
             return forAzure ? suffix : $"{prefix}/{suffix}";
         }
@@ -151,5 +151,12 @@ namespace FASTER.test
         internal static string AzureTestDirectory => TestContext.CurrentContext.Test.MethodName;
 
         internal const string AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
+
+        internal enum AllocatorType
+        {
+            FixedBlittable,
+            VarLenBlittable,
+            Generic
+        }
     }
 }

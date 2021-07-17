@@ -249,9 +249,7 @@ namespace FASTER.test.recovery.sumstore
             // Assert that expected is same as found
             for (long i = 0; i < numUniqueKeys; i++)
             {
-                Assert.IsTrue(
-                    expected[i] == inputArray[i].numClicks.numClicks,
-                    "Debug error for AdId {0}: Expected ({1}), Found({2})", inputArray[i].adId.adId, expected[i], inputArray[i].numClicks.numClicks);
+                Assert.AreEqual(expected[i], inputArray[i].numClicks.numClicks, $"AdId {inputArray[i].adId.adId}");
             }
         }
 

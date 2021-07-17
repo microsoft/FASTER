@@ -274,6 +274,9 @@ namespace FASTER.core
             (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
+            base.VerifyCompatibleSectorSize(device);
+            base.VerifyCompatibleSectorSize(objectLogDevice);
+            
             bool epochTaken = false;
             if (!epoch.ThisInstanceProtected())
             {
@@ -302,8 +305,6 @@ namespace FASTER.core
                     epoch.Suspend();
             }
         }
-
-
 
         internal override void ClearPage(long page, int offset)
         {

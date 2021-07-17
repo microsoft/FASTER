@@ -398,6 +398,12 @@ namespace FASTER.core
         /// <param name="localSegmentOffsets"></param>
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
 
+        private protected void VerifyCompatibleSectorSize(IDevice device)
+        {
+            if (this.sectorSize % device.SectorSize != 0)
+                throw new FasterException($"Allocator with sector size {sectorSize} cannot flush to device with sector size {device.SectorSize}");
+        }
+
         /// <summary>
         /// Delta flush
         /// </summary>
