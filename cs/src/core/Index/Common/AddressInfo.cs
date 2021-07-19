@@ -80,6 +80,7 @@ namespace FASTER.core
             }
             set
             {
+                var orig_word = word;
                 var _word = (long)word;
                 _word &= ~kAddressMask;
                 _word |= (value & kAddressMask);

@@ -21,7 +21,6 @@ namespace FASTER.core
         public Value value;
     }
 
-
     public unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
     {
         // Circular buffer definition
@@ -29,8 +28,8 @@ namespace FASTER.core
 
         // Object log related variables
         private readonly IDevice objectLogDevice;
-        // Size of object chunks beign written to storage
-        private const int ObjectBlockSize = 100 * (1 << 20);
+        // Size of object chunks being written to storage
+        private readonly int ObjectBlockSize = 100 * (1 << 20);
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
         // Record sizes
@@ -742,7 +741,7 @@ namespace FASTER.core
         }
 
 
-        #region Page handlers for objects
+#region Page handlers for objects
         /// <summary>
         /// Deseialize part of page from stream
         /// </summary>
@@ -982,7 +981,7 @@ namespace FASTER.core
         {
             return SerializerSettings.valueSerializer != null;
         }
-        #endregion
+#endregion
 
         public override IHeapContainer<Key> GetKeyContainer(ref Key key) => new StandardHeapContainer<Key>(ref key);
         public override IHeapContainer<Value> GetValueContainer(ref Value value) => new StandardHeapContainer<Value>(ref value);

@@ -112,7 +112,7 @@ namespace FASTER.test
                     break;
                 case DeviceType.EmulatedAzure:
                     IgnoreIfNotRunningAzureTests();
-                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, "fasterlogblob", deleteOnClose: false);
+                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: false);
                     break;
 #endif
                 case DeviceType.MLSD:

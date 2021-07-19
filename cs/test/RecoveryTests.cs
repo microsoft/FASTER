@@ -13,11 +13,11 @@ namespace FASTER.test.recovery.sumstore
     [TestFixture]
     internal class DeviceTypeRecoveryTests
     {
-        internal const long numUniqueKeys = (1 << 14);
+        internal const long numUniqueKeys = (1 << 12);
         internal const long keySpace = (1L << 14);
-        internal const long numOps = (1L << 19);
+        internal const long numOps = (1L << 17);
         internal const long completePendingInterval = (1L << 10);
-        internal const long checkpointInterval = (1L << 16);
+        internal const long checkpointInterval = (1L << 14);
 
         private FasterKV<AdId, NumClicks> fht;
         private string path;

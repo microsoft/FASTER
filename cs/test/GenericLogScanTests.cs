@@ -12,7 +12,7 @@ namespace FASTER.test
     {
         private FasterKV<MyKey, MyValue> fht;
         private IDevice log, objlog;
-        const int totalRecords = 50;
+        const int totalRecords = 250;
         private string path;
 
         [SetUp]
@@ -42,14 +42,6 @@ namespace FASTER.test
         [Category("Smoke")]
         public void DiskWriteScanBasicTest([Values] TestUtils.DeviceType deviceType)
         {
-#if WINDOWS
-            //*** Bug #143131 - fht.Log.Scan failing to get proper value on EmulatedAzure only ***
-            // Notes: Works if FlushAndEvict are removed; record at 48 changes from key/value == 1 to == 1024??
-            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
-            {
-                return;
-            }
-#endif
             log = TestUtils.CreateTestDevice(deviceType, $"{path}DiskWriteScanBasicTest_{deviceType}.log");
             objlog = TestUtils.CreateTestDevice(deviceType, $"{path}DiskWriteScanBasicTest_{deviceType}.obj.log");
             fht = new (128,
