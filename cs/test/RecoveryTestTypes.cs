@@ -1,16 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.Runtime.CompilerServices;
-using System.IO;
-using System.Diagnostics;
 
 namespace FASTER.test.recovery.sumstore
 {
@@ -18,30 +10,31 @@ namespace FASTER.test.recovery.sumstore
     {
         public long adId;
 
-        public long GetHashCode64(ref AdId key)
-        {
-            return Utility.GetHashCode(key.adId);
-        }
-        public bool Equals(ref AdId k1, ref AdId k2)
-        {
-            return k1.adId == k2.adId;
-        }
+        public long GetHashCode64(ref AdId key) => Utility.GetHashCode(key.adId);
+
+        public bool Equals(ref AdId k1, ref AdId k2) => k1.adId == k2.adId;
     }
 
     public struct AdInput
     {
         public AdId adId;
         public NumClicks numClicks;
+
+        public override string ToString() => $"id = {adId.adId}, clicks = {numClicks.numClicks}";
     }
 
     public struct NumClicks
     {
         public long numClicks;
+
+        public override string ToString() => numClicks.ToString();
     }
 
     public struct Output
     {
         public NumClicks value;
+
+        public override string ToString() => value.ToString();
     }
 
     public class Functions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>

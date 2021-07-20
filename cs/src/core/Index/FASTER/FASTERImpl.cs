@@ -112,7 +112,7 @@ namespace FASTER.core
 
                 if (UseReadCache)
                 {
-                    if (pendingContext.SkipReadCache)
+                    if (pendingContext.SkipReadCache || pendingContext.NoKey)
                     {
                         SkipReadCache(ref logicalAddress);
                     }
