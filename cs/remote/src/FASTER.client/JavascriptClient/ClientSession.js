@@ -10,175 +10,189 @@
         this.upsertQueue = new Queue();
         this.sendSocket = new ClientNetworkSession(this, address, port);
         this.intSerializer = new IntSerializer();
+        this.offset = 4 + BatchHeader.Size;
+        this.numMessages = 0;
+        this.reusableBuffer = new ArrayBuffer(this.bufferSize);
+        this.numPendingBatches = 0;
     }
 
     ProcessReplies(view, arrayBuf) {
-        var opSeqId = this.intSerializer.deserialize(arrayBuf, 0);
-        const op = view.getUint8(4);
-        const status = view.getUint8(5);
+        var count = view.getUint8(8);
+        var arrIdx = 4 + BatchHeader.Size;
 
-        switch (op) {
-            case MessageType.Read:
-                if (status == Status.OK) {
-                    var key = this.readrmwQueue.dequeue();
-                    var output = this.serializer.ReadOutput(arrayBuf, 6);
-                    this.functions.ReadCompletionCallback(key, output, status);
+        for (var i = 0; i < count; i++) {
+            const op = view.getUint8(arrIdx);
+            arrIdx++;
+            const status = view.getUint8(arrIdx);
+            arrIdx++;
+
+            switch (op) {
+                case MessageType.Read:
+                    if (status == Status.OK) {
+                        var key = this.readrmwQueue.dequeue();
+                        var output = this.serializer.ReadOutput(arrayBuf, arrIdx);
+                        arrIdx += output.length + 4;
+                        this.functions.ReadCompletionCallback(key, output, status);
+                        break;
+                    } else if (status != Status.PENDING) {
+                        var output = [];
+                        this.functions.ReadCompletionCallback(key, output, status);
+                    }
                     break;
-                } else if (status != Status.PENDING) {
-                    var output = [];
-                    this.functions.ReadCompletionCallback(key, output, status);
-                }
-                break;
 
-            case MessageType.Upsert:
-                var keyValue = this.upsertQueue.dequeue();
-                this.functions.UpsertCompletionCallback(keyValue[0], keyValue[1], status);
-                break;
+                case MessageType.Upsert:
+                    var keyValue = this.upsertQueue.dequeue();
+                    this.functions.UpsertCompletionCallback(keyValue[0], keyValue[1], status);
+                    break;
 
-            case MessageType.Delete:
-                var keyValue = this.upsertQueue.dequeue();
-                this.functions.DeleteCompletionCallback(keyValue[0], status);
-                break;
+                case MessageType.Delete:
+                    var keyValue = this.upsertQueue.dequeue();
+                    this.functions.DeleteCompletionCallback(keyValue[0], status);
+                    break;
 
-            case MessageType.RMW:
-                if (status == Status.OK || status == Status.NOTFOUND) {
-                    var key = this.readrmwQueue.dequeue();
-                    var output = this.serializer.ReadOutput(arrayBuf, 6);
-                    this.functions.RMWCompletionCallback(key, output, status);
-                } else if (status != Status.PENDING) {
-                    var key = this.readrmwQueue.dequeue();
-                    var output = [];
-                    this.functions.RMWCompletionCallback(key, output, status);
-                }
-                break;
+                case MessageType.RMW:
+                    if (status == Status.OK || status == Status.NOTFOUND) {
+                        var key = this.readrmwQueue.dequeue();
+                        var output = this.serializer.ReadOutput(arrayBuf, arrIdx);
+                        arrIdx += output.length + 4;
+                        this.functions.RMWCompletionCallback(key, output, status);
+                    } else if (status != Status.PENDING) {
+                        var key = this.readrmwQueue.dequeue();
+                        var output = [];
+                        this.functions.RMWCompletionCallback(key, output, status);
+                    }
+                    break;
 
-            case MessageType.SubscribeKV:
-                var sid = this.intSerializer.deserialize(arrayBuf, 6);
-                if (status == Status.OK || status == Status.NOTFOUND) {
-                    var key = this.subscriptionDict[sid];
-                    var output = this.serializer.ReadOutput(arrayBuf, 10);
-                    this.functions.SubscribeKVCompletionCallback(key, output, status);
-                } else if (status != Status.PENDING) {
-                    var key = this.subscriptionDict[sid];
-                    var output = [];
-                    this.functions.SubscribeKVCompletionCallback(key, output, status);
-                } else {
-                    var key = this.readrmwQueue.dequeue();
-                    this.subscriptionDict[sid] = key;
-                }
-                break;
+                case MessageType.SubscribeKV:
+                    var sid = this.intSerializer.deserialize(arrayBuf, arrIdx);
+                    arrIdx += 4;
+                    if (status == Status.OK || status == Status.NOTFOUND) {
+                        var key = this.subscriptionDict[sid];
+                        var output = this.serializer.ReadOutput(arrayBuf, arrIdx);
+                        arrIdx += output.length + 4;
+                        this.functions.SubscribeKVCompletionCallback(key, output, status);
+                    } else if (status != Status.PENDING) {
+                        var key = this.subscriptionDict[sid];
+                        var output = [];
+                        this.functions.SubscribeKVCompletionCallback(key, output, status);
+                    } else {
+                        var key = this.readrmwQueue.dequeue();
+                        this.subscriptionDict[sid] = key;
+                    }
+                    break;
 
-            default:
-                alert("Wrong reply received");
+                default:
+                    alert("Wrong reply received");
+            }
+        }
+        this.numPendingBatches--;
+    }
+
+    /// <summary>
+    /// Flush current buffer of outgoing messages. Does not wait for responses.
+    /// </summary>
+    Flush() {
+        if (this.offset > 4 + BatchHeader.Size) {
+
+            var payloadSize = this.offset;
+            this.intSerializer.serialize(this.reusableBuffer, 4, 0);
+            this.intSerializer.serialize(this.reusableBuffer, 8, this.numMessages);
+            this.intSerializer.serialize(this.reusableBuffer, 0, (payloadSize - 4));
+            this.numPendingBatches++;
+
+            var sendingView = new Uint8Array(this.reusableBuffer, 0, payloadSize);
+            this.sendSocket.websocket.send(sendingView);
+            this.offset = 4 + BatchHeader.Size;
+            this.numMessages = 0;
         }
     }
 
+    /// <summary>
+    /// Flush current buffer of outgoing messages. Spin-wait for all responses to be received and process them.
+    /// </summary>
+    CompletePending(wait = true) {
+        this.Flush();
+    //    if (wait)
+    //        while (this.numPendingBatches > 0) {
+    //            // Do nothing
+    //        }
+    }
 
     Upsert(key, lenKey, value, lenValue) {
         // OP SEQ NUMBER, OP, LEN(KEY), KEY, LEN(VAL), VAL
-        var messageByteArr = new ArrayBuffer(this.bufferSize);
-        var view = new Uint8Array(messageByteArr);
+        var view = new Uint8Array(this.reusableBuffer);
 
-        var arrIdx = this.serializer.WriteOpSeqNum(messageByteArr, 0, opSequenceNumber++);
+        var arrIdx = this.offset;
         view[arrIdx++] = MessageType.Upsert;
 
-        var arrIdx = this.serializer.WriteKVI(messageByteArr, arrIdx, key, lenKey);
-        var arrIdx = this.serializer.WriteKVI(messageByteArr, arrIdx, value, lenValue);
-
-        var sendingView = new Uint8Array(messageByteArr, 0, arrIdx);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, lenKey);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, value, lenValue);
 
         this.upsertQueue.enqueue([key, value]);
 
-        this.sendSocket.websocket.send(sendingView);
-
-        sendingView = null;
-        view = null;
-        messageByteArr = null;
+        this.offset = arrIdx;
+        this.numMessages++;
     }
 
     Read(key, lenKey) {
         // OP SEQ NUMBER, OP, LEN(KEY), KEY
-        var messageByteArr = new ArrayBuffer(this.bufferSize);
-        var view = new Uint8Array(messageByteArr);
+        var view = new Uint8Array(this.reusableBuffer);
 
-        var arrIdx = this.serializer.WriteOpSeqNum(messageByteArr, 0, opSequenceNumber++);
+        var arrIdx = this.offset;
         view[arrIdx++] = MessageType.Read;
 
-        var arrIdx = this.serializer.WriteKVI(messageByteArr, arrIdx, key, lenKey);
-
-        var sendingView = new Uint8Array(messageByteArr, 0, arrIdx);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, lenKey);
 
         this.readrmwQueue.enqueue(key);
 
-        this.sendSocket.websocket.send(sendingView);
-
-        sendingView = null;
-        view = null;
-        messageByteArr = null;
+        this.offset = arrIdx;
+        this.numMessages++;
     }
 
     Delete(key, lenKey) {
         // OP SEQ NUMBER, OP, LEN(KEY), KEY
-        var messageByteArr = new ArrayBuffer(this.bufferSize);
-        var view = new Uint8Array(messageByteArr);
+        var view = new Uint8Array(this.reusableBuffer);
 
-        var arrIdx = this.serializer.WriteOpSeqNum(messageByteArr, 0, opSequenceNumber++);
+        var arrIdx = this.offset;
         view[arrIdx++] = MessageType.Delete;
 
-        var arrIdx = this.serializer.WriteKVI(messageByteArr, arrIdx, key, lenKey);
-
-        var sendingView = new Uint8Array(messageByteArr, 0, arrIdx);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, lenKey);
 
         var value = [];
         this.upsertQueue.enqueue([key, value]);
 
-        this.sendSocket.websocket.send(sendingView);
-
-        sendingView = null;
-        view = null;
-        messageByteArr = null;
+        this.offset = arrIdx;
+        this.numMessages++;
     }
 
     RMW(key, lenKey, input, lenInput) {
         // OP SEQ NUMBER, OP, LEN(KEY), KEY, LEN(OP_ID + INPUT), OP_ID, INPUT
-        var messageByteArr = new ArrayBuffer(this.bufferSize);
-        var view = new Uint8Array(messageByteArr);
+        var view = new Uint8Array(this.reusableBuffer);
 
-        var arrIdx = this.serializer.WriteOpSeqNum(messageByteArr, 0, opSequenceNumber++);
+        var arrIdx = this.offset;
         view[arrIdx++] = MessageType.RMW;
 
-        var arrIdx = this.serializer.WriteKVI(messageByteArr, arrIdx, key, lenKey);
-        var arrIdx = this.serializer.WriteKVI(messageByteArr, arrIdx, input, lenInput);
-
-        var sendingView = new Uint8Array(messageByteArr, 0, arrIdx);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, lenKey);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, input, lenInput);
 
         this.readrmwQueue.enqueue(key);
 
-        this.sendSocket.websocket.send(sendingView);
-
-        sendingView = null;
-        view = null;
-        messageByteArr = null;
+        this.offset = arrIdx;
+        this.numMessages++;
     }
 
     SubscribeKV(key, lenKey) {
         // OP SEQ NUMBER, OP, LEN(KEY), KEY
-        var messageByteArr = new ArrayBuffer(this.bufferSize);
-        var view = new Uint8Array(messageByteArr);
+        var view = new Uint8Array(this.reusableBuffer);
 
-        var arrIdx = this.serializer.WriteOpSeqNum(messageByteArr, 0, opSequenceNumber++);
+        var arrIdx = this.offset;
         view[arrIdx++] = MessageType.SubscribeKV;
 
-        var arrIdx = this.serializer.WriteKVI(messageByteArr, arrIdx, key, lenKey);
-
-        var sendingView = new Uint8Array(messageByteArr, 0, arrIdx);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, lenKey);
 
         this.readrmwQueue.enqueue(key);
 
-        this.sendSocket.websocket.send(sendingView);
-
-        sendingView = null;
-        view = null;
-        messageByteArr = null;
+        this.offset = arrIdx;
+        this.numMessages++;
     }
 }
