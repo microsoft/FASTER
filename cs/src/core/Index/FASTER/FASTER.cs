@@ -473,8 +473,17 @@ namespace FASTER.core
                     return;
 
                 List<ValueTask> valueTasks = new();
-                
-                ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, valueTasks, token);
+
+                try
+                {
+                    ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, valueTasks, token);
+                }
+                catch (Exception)
+                {
+                    this._indexCheckpoint.Reset();
+                    this._hybridLogCheckpoint.Reset();
+                    throw;
+                }
 
                 if (valueTasks.Count == 0)
                     continue; // we need to re-check loop, so we return only when we are at REST

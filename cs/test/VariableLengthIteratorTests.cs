@@ -1,9 +1,9 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
 
@@ -16,8 +16,10 @@ namespace FASTER.test
         [Category("FasterKV")]
         public void ShouldSkipEmptySpaceAtEndOfPage()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+
             var vlLength = new VLValue();
-            var log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog-vl-iter.log", deleteOnClose: true);
+            var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog-vl-iter.log", deleteOnClose: true);
             var fht = new FasterKV<Key, VLValue>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page
@@ -70,6 +72,7 @@ namespace FASTER.test
                 fht.Dispose();
                 log.Dispose();
             }
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
 
             void Set(long keyValue, int length, int tag)
             {

@@ -11,9 +11,8 @@ using FASTER.test.recovery.sumstore;
 
 namespace FASTER.test.async
 {
-
     [TestFixture]
-    public class RecoveryTests
+    public class AsyncRecoveryTests
     {
         private FasterKV<AdId, NumClicks> fht1;
         private FasterKV<AdId, NumClicks> fht2;
@@ -23,23 +22,27 @@ namespace FASTER.test.async
 
         [TestCase(CheckpointType.FoldOver)]
         [TestCase(CheckpointType.Snapshot)]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async Task AsyncRecoveryTest1(CheckpointType checkpointType)
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/SimpleRecoveryTest2.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/AsyncRecoveryTest1.log", deleteOnClose: true);
 
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "/checkpoints4");
+            string testPath = TestUtils.MethodTestDir + "/checkpoints4";
+            Directory.CreateDirectory(testPath);
 
             fht1 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints4", CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = testPath, CheckPointType = checkpointType }
                 );
 
             fht2 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints4", CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = testPath, CheckPointType = checkpointType }
                 );
 
             int numOps = 5000;
@@ -105,7 +108,7 @@ namespace FASTER.test.async
 
             fht2.Dispose();
             log.Dispose();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "/checkpoints4").Delete(true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
     }
 
