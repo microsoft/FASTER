@@ -9,24 +9,11 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
-    
     public class PingPongDevice : IDisposable
     {
-        [StructLayout(LayoutKind.Explicit, Size = 32)]
-        private unsafe struct MetadataHeader
-        {
-            [FieldOffset(0)]
-            internal fixed byte bytes[32];
-            [FieldOffset(0)]
-            internal long size;
-            [FieldOffset(8)]
-            internal long version;
-            [FieldOffset(16)]
-            internal fixed byte checksum[16];
-        }
-        
+        private readonly MD5 checksumHasher = MD5.Create();
+
         private IDevice frontDevice, backDevice;
-        private MD5 checksumHasher = MD5.Create();
         private long versionCounter;
 
         public PingPongDevice(IDevice device1, IDevice device2)
@@ -51,12 +38,19 @@ namespace FASTER.libdpr
             {
                 versionCounter = v2;
                 frontDevice = device1;
-                backDevice = device2;            
+                backDevice = device2;
             }
             else
             {
                 throw new InvalidDataException("The ping-pong devices should not point to the same version");
             }
+        }
+
+        public void Dispose()
+        {
+            frontDevice?.Dispose();
+            backDevice?.Dispose();
+            checksumHasher?.Dispose();
         }
 
         public unsafe void WriteReliably(byte[] buf, int offset, int size)
@@ -65,35 +59,33 @@ namespace FASTER.libdpr
             header.size = size;
             header.version = versionCounter++;
             var hash = checksumHasher.ComputeHash(buf, offset, size);
-            
+
             fixed (byte* b = &hash[0])
+            {
                 Unsafe.CopyBlock(header.checksum, b, 16);
-            
+            }
+
             var countdown = new CountdownEvent(2);
 
             // Write of metadata block should be atomic
             Debug.Assert(frontDevice.SegmentSize == -1 || frontDevice.SegmentSize >= sizeof(MetadataHeader));
             frontDevice.WriteAsync((IntPtr) header.bytes, 0, 0, (uint) sizeof(MetadataHeader),
-                (e, n, o) =>
-                {
-                    countdown.Signal();
+                (e, n, o) => { countdown.Signal(); }, null);
 
-                }, null);
-            
             var handle = GCHandle.Alloc(buf, GCHandleType.Pinned);
             // Skip one segment to avoid clobbering with metadata header write
-            frontDevice.WriteAsync(handle.AddrOfPinnedObject(), 0,  frontDevice.SectorSize, (uint) size,
+            frontDevice.WriteAsync(handle.AddrOfPinnedObject(), 0, frontDevice.SectorSize, (uint) size,
                 (e, n, o) =>
                 {
                     countdown.Signal();
                     handle.Free();
                 }, null);
-            
+
             countdown.Wait();
             (frontDevice, backDevice) = (backDevice, frontDevice);
             countdown.Dispose();
         }
-        
+
         private unsafe long ReadFromDevice(IDevice device, out byte[] buf)
         {
             var header = new MetadataHeader();
@@ -101,26 +93,24 @@ namespace FASTER.libdpr
             device.ReadAsync(0, 0, (IntPtr) header.bytes, (uint) sizeof(MetadataHeader),
                 (e, n, o) => completed.Set(), null);
             completed.Wait();
-            
+
             buf = new byte[header.size];
             if (header.size == 0) return -1;
 
             completed = new ManualResetEventSlim();
             fixed (byte* b = &buf[0])
             {
-                device.ReadAsync(0, (uint) device.SectorSize, (IntPtr) b, (uint) header.size,
+                device.ReadAsync(0, device.SectorSize, (IntPtr) b, (uint) header.size,
                     (e, n, o) => completed.Set(), null);
                 completed.Wait();
             }
-            
+
             // Compare the hash with checksum
             var contentHash = checksumHasher.ComputeHash(buf);
             for (var i = 0; i < contentHash.Length; i++)
-            {
                 if (header.checksum[i] != contentHash[i])
                     // Not a complete write, should discard
                     return -1;
-            }
             return header.version;
         }
 
@@ -137,11 +127,13 @@ namespace FASTER.libdpr
             return true;
         }
 
-        public void Dispose()
+        [StructLayout(LayoutKind.Explicit, Size = 32)]
+        private unsafe struct MetadataHeader
         {
-            frontDevice?.Dispose();
-            backDevice?.Dispose();
-            checksumHasher?.Dispose();
+            [FieldOffset(0)] internal fixed byte bytes[32];
+            [FieldOffset(0)] internal long size;
+            [FieldOffset(8)] internal long version;
+            [FieldOffset(16)] internal fixed byte checksum[16];
         }
     }
 }

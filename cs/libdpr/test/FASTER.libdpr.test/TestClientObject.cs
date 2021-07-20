@@ -34,17 +34,13 @@ namespace FASTER.libdpr
             return op.Item2;
         }
 
-        public void ResolveOp(int op)
+        public long ResolveOp(int op)
         {
             responses.Remove(op, out var buf);
             Debug.Assert(buf != null);
-            unsafe
-            {
-                fixed (byte* h = &buf[0])
-                    session.ResolveBatch(ref Unsafe.AsRef<DprBatchResponseHeader>(h));
-            }
-
+            session.ResolveBatch(new ReadOnlyMemory<byte>(buf), out var result);
             bufs.Return(buf);
+            return result[0];
         }
     }
 }

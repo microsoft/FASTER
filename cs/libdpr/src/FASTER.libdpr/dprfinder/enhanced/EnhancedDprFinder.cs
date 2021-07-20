@@ -10,14 +10,13 @@ namespace FASTER.libdpr
 {
     public class EnhancedDprFinder : IDprFinder
     {
-        private Dictionary<Worker, long> lastKnownCut = new Dictionary<Worker, long>();
+        private readonly Socket dprFinderConn;
         private ClusterState lastKnownClusterState;
+        private readonly Dictionary<Worker, long> lastKnownCut = new Dictionary<Worker, long>();
         private long maxVersion;
+        private readonly DprFinderResponseParser parser = new DprFinderResponseParser();
+        private readonly byte[] recvBuffer = new byte[1 << 20];
 
-        private Socket dprFinderConn;
-        private byte[] recvBuffer = new byte[1 << 20];
-        private DprFinderResponseParser parser = new DprFinderResponseParser();
-        
         public EnhancedDprFinder(Socket dprFinderConn)
         {
             this.dprFinderConn = dprFinderConn;
@@ -31,8 +30,8 @@ namespace FASTER.libdpr
             dprFinderConn.NoDelay = true;
             dprFinderConn.Connect(ipEndpoint);
         }
-        
-        
+
+
         public long SafeVersion(Worker worker)
         {
             return lastKnownCut?[worker] ?? 0;
@@ -60,7 +59,7 @@ namespace FASTER.libdpr
                 dprFinderConn.SendNewCheckpointCommand(worldLine, persisted, deps);
                 var received = dprFinderConn.Receive(recvBuffer);
                 Debug.Assert(received == 5 && Encoding.ASCII.GetString(recvBuffer, 0, received).Equals("+OK\r\n"));
-            }        
+            }
         }
 
         public bool Refresh()
@@ -69,30 +68,19 @@ namespace FASTER.libdpr
             {
                 dprFinderConn.SendSyncCommand();
                 ProcessRespResponse();
-                
+
                 maxVersion = BitConverter.ToInt64(recvBuffer, parser.stringStart);
                 var newState = ClusterState.FromBuffer(recvBuffer, parser.stringStart + sizeof(long), out var head);
                 Interlocked.Exchange(ref lastKnownClusterState, newState);
                 // Cut is unavailable, signal a resend.
                 if (BitConverter.ToInt32(recvBuffer, head) == -1) return false;
                 lock (lastKnownCut)
+                {
                     RespUtil.ReadDictionaryFromBytes(recvBuffer, head, lastKnownCut);
+                }
             }
 
             return true;
-        }
-        
-        private void ProcessRespResponse()
-        {
-            int i = 0, receivedSize = 0;
-            while (true)
-            {
-                receivedSize += dprFinderConn.Receive(recvBuffer);
-                for (; i < receivedSize; i++)
-                {
-                    if (parser.ProcessChar(i, recvBuffer)) return;
-                }
-            }
         }
 
         public void ReportRecovery(long worldLine, WorkerVersion latestRecoveredVersion)
@@ -111,7 +99,7 @@ namespace FASTER.libdpr
                     received += dprFinderConn.Receive(recvBuffer);
             }
         }
-        
+
         public long NewWorker(Worker id, IStateObject stateObject)
         {
             if (stateObject != null)
@@ -133,7 +121,19 @@ namespace FASTER.libdpr
                 dprFinderConn.SendDeleteWorkerCommand(id);
                 var received = dprFinderConn.Receive(recvBuffer);
                 Debug.Assert(received == 5 && Encoding.ASCII.GetString(recvBuffer, 0, received).Equals("+OK\r\n"));
-            }        
+            }
+        }
+
+        private void ProcessRespResponse()
+        {
+            int i = 0, receivedSize = 0;
+            while (true)
+            {
+                receivedSize += dprFinderConn.Receive(recvBuffer);
+                for (; i < receivedSize; i++)
+                    if (parser.ProcessChar(i, recvBuffer))
+                        return;
+            }
         }
     }
 }

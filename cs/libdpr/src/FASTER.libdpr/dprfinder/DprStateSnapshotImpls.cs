@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace FASTER.libdpr
 {
-    public class GlobalMinDprStateSnapshot: IDprStateSnapshot
+    public class GlobalMinDprStateSnapshot : IDprStateSnapshot
     {
         private readonly long globalSafeVersion;
 
@@ -10,19 +10,22 @@ namespace FASTER.libdpr
         {
             this.globalSafeVersion = globalSafeVersion;
         }
-        
-        public long SafeVersion(Worker worker) => globalSafeVersion;
+
+        public long SafeVersion(Worker worker)
+        {
+            return globalSafeVersion;
+        }
     }
-    
+
     /// <summary>
-    /// A DprStateSnapshot backed by a dictionary mapping from worker to version 
+    ///     A DprStateSnapshot backed by a dictionary mapping from worker to version
     /// </summary>
     public class DictionaryDprStateSnapshot : IDprStateSnapshot
     {
-        private Dictionary<Worker, long> dprTableSnapshot;
+        private readonly Dictionary<Worker, long> dprTableSnapshot;
 
         /// <summary>
-        /// Constructs a new DprStateSnapshot backed by the given dictionary
+        ///     Constructs a new DprStateSnapshot backed by the given dictionary
         /// </summary>
         /// <param name="dprTableSnapshot"> dictionary that encodes the DPR state </param>
         public DictionaryDprStateSnapshot(Dictionary<Worker, long> dprTableSnapshot)
@@ -30,14 +33,15 @@ namespace FASTER.libdpr
             this.dprTableSnapshot = dprTableSnapshot;
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc />
         public long SafeVersion(Worker worker)
         {
             if (dprTableSnapshot == null) return 0;
 
             lock (dprTableSnapshot)
+            {
                 return !dprTableSnapshot.TryGetValue(worker, out var safeVersion) ? 0 : safeVersion;
+            }
         }
     }
-
 }

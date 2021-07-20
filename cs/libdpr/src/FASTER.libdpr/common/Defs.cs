@@ -3,19 +3,19 @@ using System;
 namespace FASTER.libdpr
 {
     /// <summary>
-    /// A worker in the system manipulates uniquely exactly one state object. 
+    ///     A worker in the system manipulates uniquely exactly one state object.
     /// </summary>
     [Serializable]
     public struct Worker
     {
         /// <summary>
-        /// Reserved Worker id for cluster management
+        ///     Reserved Worker id for cluster management
         /// </summary>
         public readonly long guid;
 
 
         /// <summary>
-        /// Constructs a worker with the given guid
+        ///     Constructs a worker with the given guid
         /// </summary>
         /// <param name="guid"> worker guid </param>
         public Worker(long guid)
@@ -40,23 +40,24 @@ namespace FASTER.libdpr
             return guid.GetHashCode();
         }
     }
-    
+
     /// <summary>
-    /// A worker-version is a tuple of worker and checkpoint version. 
+    ///     A worker-version is a tuple of worker and checkpoint version.
     /// </summary>
     public struct WorkerVersion
     {
         /// <summary>
-        /// Worker
+        ///     Worker
         /// </summary>
         public Worker Worker { get; set; }
+
         /// <summary>
-        /// Version
+        ///     Version
         /// </summary>
         public long Version { get; set; }
 
         /// <summary>
-        /// Constructs a new worker version object with given parameters
+        ///     Constructs a new worker version object with given parameters
         /// </summary>
         /// <param name="worker">worker</param>
         /// <param name="version">version</param>

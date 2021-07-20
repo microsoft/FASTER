@@ -7,82 +7,11 @@ namespace FASTER.libdpr
 {
     internal static class MessageUtil
     {
-        private static ThreadLocalObjectPool<byte[]> reusableMessageBuffers =
+        private static readonly ThreadLocalObjectPool<byte[]> reusableMessageBuffers =
             new ThreadLocalObjectPool<byte[]>(() => new byte[BatchInfo.MaxHeaderSize], 1);
 
-        // TODO(Tianyu): Eliminate ad-hoc serialization code and move this inside WorkerVersion class
 
-        internal class DprFinderRedisProtocolConnState
-        {
-            private Socket socket;
-            private int readHead, bytesRead, commandStart = 0;
-            private DprFinderCommandParser parser = new DprFinderCommandParser();
-            private Action<DprFinderCommand, Socket> commandHandler;
-
-            internal DprFinderRedisProtocolConnState(Socket socket, Action<DprFinderCommand, Socket> commandHandler)
-            {
-                this.socket = socket;
-                this.commandHandler = commandHandler;
-            }
-
-            private static bool HandleReceiveCompletion(SocketAsyncEventArgs e)
-            {
-                var connState = (MessageUtil.DprFinderRedisProtocolConnState) e.UserToken;
-                if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success)
-                {
-                    connState.socket.Dispose();
-                    e.Dispose();
-                    return false;
-                }
-
-                connState.bytesRead += e.BytesTransferred;
-                for (; connState.readHead < connState.bytesRead; connState.readHead++)
-                {
-                    if (connState.parser.ProcessChar(connState.readHead, e.Buffer))
-                    {
-                        connState.commandHandler(connState.parser.currentCommand, connState.socket);
-                        connState.commandStart = connState.readHead + 1;
-                    }
-                }
-
-                // TODO(Tianyu): Magic number
-                // If less than some certain number of bytes left in the buffer, shift buffer content to head to free
-                // up some space. Don't want to do this too often. Obviously ok to do if no bytes need to be copied (
-                // the current end of buffer marks the end of a command, and we can discard the entire buffer).
-                if (e.Buffer.Length - connState.readHead < 4096 || connState.readHead == connState.commandStart)
-                {
-                    var bytesLeft = connState.bytesRead - connState.commandStart;
-                    // Shift buffer to front
-                    Array.Copy(e.Buffer, connState.commandStart, e.Buffer, 0, bytesLeft);
-                    connState.bytesRead = bytesLeft;
-                    connState.readHead -= connState.commandStart;
-                    connState.commandStart = 0;
-                }
-
-                e.SetBuffer(connState.readHead, e.Buffer.Length - connState.readHead);
-                return true;
-            }
-
-            internal static void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
-            {
-                var connState = (MessageUtil.DprFinderRedisProtocolConnState) e.UserToken;
-                try
-                {
-                    do
-                    {
-                        // No more things to receive
-                        if (!HandleReceiveCompletion(e)) return;
-                    } while (!connState.socket.ReceiveAsync(e));
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Probably caused by a normal cancellation from this side. Ok to ignore
-                }
-            }
-        }
-
-        
-        internal static int SendGraphReconstruction(this Socket socket, Worker worker,IStateObject stateObject)
+        internal static int SendGraphReconstruction(this Socket socket, Worker worker, IStateObject stateObject)
         {
             var buf = reusableMessageBuffers.Checkout();
             var head = 0;
@@ -216,6 +145,75 @@ namespace FASTER.libdpr
 
             socket.Send(buf, 0, head, SocketFlags.None);
             reusableMessageBuffers.Return(buf);
+        }
+
+        // TODO(Tianyu): Eliminate ad-hoc serialization code and move this inside WorkerVersion class
+
+        internal class DprFinderRedisProtocolConnState
+        {
+            private readonly Action<DprFinderCommand, Socket> commandHandler;
+            private readonly DprFinderCommandParser parser = new DprFinderCommandParser();
+            private int readHead, bytesRead, commandStart;
+            private readonly Socket socket;
+
+            internal DprFinderRedisProtocolConnState(Socket socket, Action<DprFinderCommand, Socket> commandHandler)
+            {
+                this.socket = socket;
+                this.commandHandler = commandHandler;
+            }
+
+            private static bool HandleReceiveCompletion(SocketAsyncEventArgs e)
+            {
+                var connState = (DprFinderRedisProtocolConnState) e.UserToken;
+                if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success)
+                {
+                    connState.socket.Dispose();
+                    e.Dispose();
+                    return false;
+                }
+
+                connState.bytesRead += e.BytesTransferred;
+                for (; connState.readHead < connState.bytesRead; connState.readHead++)
+                    if (connState.parser.ProcessChar(connState.readHead, e.Buffer))
+                    {
+                        connState.commandHandler(connState.parser.currentCommand, connState.socket);
+                        connState.commandStart = connState.readHead + 1;
+                    }
+
+                // TODO(Tianyu): Magic number
+                // If less than some certain number of bytes left in the buffer, shift buffer content to head to free
+                // up some space. Don't want to do this too often. Obviously ok to do if no bytes need to be copied (
+                // the current end of buffer marks the end of a command, and we can discard the entire buffer).
+                if (e.Buffer.Length - connState.readHead < 4096 || connState.readHead == connState.commandStart)
+                {
+                    var bytesLeft = connState.bytesRead - connState.commandStart;
+                    // Shift buffer to front
+                    Array.Copy(e.Buffer, connState.commandStart, e.Buffer, 0, bytesLeft);
+                    connState.bytesRead = bytesLeft;
+                    connState.readHead -= connState.commandStart;
+                    connState.commandStart = 0;
+                }
+
+                e.SetBuffer(connState.readHead, e.Buffer.Length - connState.readHead);
+                return true;
+            }
+
+            internal static void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
+            {
+                var connState = (DprFinderRedisProtocolConnState) e.UserToken;
+                try
+                {
+                    do
+                    {
+                        // No more things to receive
+                        if (!HandleReceiveCompletion(e)) return;
+                    } while (!connState.socket.ReceiveAsync(e));
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Probably caused by a normal cancellation from this side. Ok to ignore
+                }
+            }
         }
     }
 }

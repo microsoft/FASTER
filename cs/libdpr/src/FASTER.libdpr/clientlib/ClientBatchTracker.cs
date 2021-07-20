@@ -1,7 +1,6 @@
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using FASTER.core;
 
 namespace FASTER.libdpr
 {
@@ -9,19 +8,17 @@ namespace FASTER.libdpr
     internal class BatchInfo
     {
         internal const int MaxHeaderSize = 4096;
-        internal int batchId;
-        internal bool allocated;
-        internal Worker workerId;
-        internal long startSeqNum, endSeqNum;
         internal readonly byte[] header;
+        internal bool allocated;
+        internal int batchId, batchSize;
+        internal Worker workerId;
 
         internal BatchInfo(int batchId)
         {
             this.batchId = batchId;
+            batchSize = 0;
             allocated = false;
             workerId = default;
-            startSeqNum = 0;
-            endSeqNum = 0;
             header = new byte[MaxHeaderSize];
         }
     }
@@ -30,19 +27,79 @@ namespace FASTER.libdpr
     // a number of frames that hold batch information as specified in the constructor. 
     internal class ClientBatchTracker : IEnumerable<BatchInfo>
     {
-        private BatchInfo[] buffers;
-        private ConcurrentQueue<int> freeBuffers;
+        private readonly BatchInfo[] buffers;
+        private readonly ConcurrentQueue<int> freeBuffers;
+
+        internal ClientBatchTracker(int preallocateNumber = 8192)
+        {
+            buffers = new BatchInfo[preallocateNumber];
+            freeBuffers = new ConcurrentQueue<int>();
+            for (var i = 0; i < preallocateNumber; i++)
+            {
+                buffers[i] = new BatchInfo(i);
+                freeBuffers.Enqueue(i);
+            }
+        }
+
+        public IEnumerator<BatchInfo> GetEnumerator()
+        {
+            return new Enumerator(this);
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+
+        // Requests a new batch info object to write information into. Returns false if there are too many batches
+        // being tracked and the tracker has no space left
+        internal bool TryGetBatchInfo(out BatchInfo info)
+        {
+            info = default;
+            if (freeBuffers.TryDequeue(out var id))
+            {
+                info = buffers[id];
+                info.allocated = true;
+                return true;
+            }
+
+            return false;
+        }
+
+        internal BatchInfo GetBatch(int id)
+        {
+            return buffers[id];
+        }
+
+        internal void FinishBatch(int id)
+        {
+            var info = GetBatch(id);
+            // Signals invalid batch
+            info.allocated = false;
+            freeBuffers.Enqueue(info.batchId);
+        }
+
+        // Go through all outstanding batches and decide whether they are resolved, and update the given CommitPoint
+        // object accordingly for a rollback to mark lost operations 
+        internal void HandleRollback()
+        {
+            for (var i = 0; i < buffers.Length; i++)
+            {
+                if (!buffers[i].allocated) continue;
+                FinishBatch(i);
+            }
+        }
 
         private class Enumerator : IEnumerator<BatchInfo>
         {
-            private ClientBatchTracker tracker;
-            private int i = 0;
+            private int i;
+            private readonly ClientBatchTracker tracker;
 
             public Enumerator(ClientBatchTracker tracker)
             {
                 this.tracker = tracker;
             }
-            
+
             public bool MoveNext()
             {
                 do
@@ -66,64 +123,6 @@ namespace FASTER.libdpr
             public void Dispose()
             {
             }
-        }
-
-        internal ClientBatchTracker(int preallocateNumber = 8192)
-        {
-            buffers = new BatchInfo[preallocateNumber];
-            freeBuffers = new ConcurrentQueue<int>();
-            for (var i = 0; i < preallocateNumber; i++)
-            {
-                buffers[i] = new BatchInfo(i);
-                freeBuffers.Enqueue(i);
-            }
-        }
-
-        // Requests a new batch info object to write information into. Returns false if there are too many batches
-        // being tracked and the tracker has no space left
-        internal bool TryGetBatchInfo(out BatchInfo info)
-        {
-            info = default;
-            if (freeBuffers.TryDequeue(out var id))
-            {
-                info = buffers[id];
-                info.allocated = true;
-                return true;
-            }
-            return false;
-        }
-
-        internal BatchInfo GetBatch(int id) => buffers[id];
-
-        internal void FinishBatch(int id)
-        {
-            var info = GetBatch(id);
-            // Signals invalid batch
-            info.allocated = false;
-            freeBuffers.Enqueue(info.batchId);
-        }
-
-        // Go through all outstanding batches and decide whether they are resolved, and update the given CommitPoint
-        // object accordingly for a rollback to mark lost operations 
-        internal void HandleRollback(ref CommitPoint limit)
-        {
-            for (var i = 0; i < buffers.Length; i++)
-            {
-                if (!buffers[i].allocated) continue;
-                for (var j = buffers[i].startSeqNum; j < buffers[i].endSeqNum; j++)
-                    limit.ExcludedSerialNos.Add(j);
-                FinishBatch(i);
-            }
-        }
-
-        public IEnumerator<BatchInfo> GetEnumerator()
-        {
-            return new Enumerator(this);
-        }
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
         }
     }
 }

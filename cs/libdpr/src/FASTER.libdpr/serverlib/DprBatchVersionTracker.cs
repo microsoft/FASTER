@@ -1,74 +1,12 @@
-using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.libdpr
 {
     /// <summary>
-    /// on-wire format for a vector of version numbers. Does not own or allocate underlying memory.
-    /// </summary>
-    public unsafe struct DprBatchVersionVector : IEnumerable<long>
-    {
-        private readonly byte *vectorHead;
-
-        /// <summary>
-        /// Construct a new VersionVector to be backed by the given byte*
-        /// </summary>
-        /// <param name="vectorHead"></param>
-        public DprBatchVersionVector(byte *vectorHead)
-        {
-            this.vectorHead = vectorHead;
-        }
-
-        private class DprBatchVersionVectorEnumerator : IEnumerator<long>
-        {
-            private readonly long* start;
-            private long index = -1;
-
-            public DprBatchVersionVectorEnumerator(byte* start)
-            {
-                this.start = (long*) start;
-            }
-
-            public bool MoveNext()
-            {
-                return ++index < start[0];
-            }
-
-            public void Reset()
-            {
-                index = 0;
-            }
-            
-            public long Current => start[index + 1];
-
-            object IEnumerator.Current => Current;
-
-            public void Dispose()
-            {
-            }
-        }
-
-        /// <summary>
-        /// Returns an enumerator through version numbers
-        /// </summary>
-        /// <returns>an enumerator through version numbers</returns>
-        public IEnumerator<long> GetEnumerator()
-        {
-            return new DprBatchVersionVectorEnumerator(vectorHead);
-        }
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
-    }
-
-    /// <summary>
-    /// A class that tracks version information per batch.
-    ///
-    /// Conceptually a tracker is a batch offset -> version mapping, where the user of this library writes down for
-    /// each operation the version it was executed at, or NOT_EXECUTED if the operation was skipped for some reason.  
+    ///     A class that tracks version information per batch.
+    ///     Conceptually a tracker is a batch offset -> version mapping, where the user of this library writes down for
+    ///     each operation the version it was executed at, or NOT_EXECUTED if the operation was skipped for some reason.
     /// </summary>
     public class DprBatchVersionTracker
     {
@@ -80,7 +18,7 @@ namespace FASTER.libdpr
         private readonly List<long> versions = new List<long>(DefaultBatchSize);
 
         /// <summary>
-        /// Records that the operation at the given batch offset was executed at the given version
+        ///     Records that the operation at the given batch offset was executed at the given version
         /// </summary>
         /// <param name="batchOffset"> operation as identified by its position in a batch</param>
         /// <param name="executedVersion">the version said operation was executed at</param>
@@ -93,13 +31,13 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Records that a contiguous range of operations within a batch were all executed at the given version
+        ///     Records that a contiguous range of operations within a batch were all executed at the given version
         /// </summary>
         /// <param name="batchOffsetStart">
-        /// start of operation range  as identified by its position in a batch, inclusive
+        ///     start of operation range  as identified by its position in a batch, inclusive
         /// </param>
         /// <param name="batchOffsetEnd">
-        /// end of operation range as identified by its position in a batch, exclusive
+        ///     end of operation range as identified by its position in a batch, exclusive
         /// </param>
         /// <param name="executedVersion">the version said operations were executed at</param>
         public void MarkOperationRangesVersion(int batchOffsetStart, int batchOffsetEnd, long executedVersion)
@@ -109,7 +47,7 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Computes and returns size of the current version vector when encoded onto the wire, in bytes.
+        ///     Computes and returns size of the current version vector when encoded onto the wire, in bytes.
         /// </summary>
         /// <returns>size of the current version vector when encoded onto the wire, in bytes</returns>
         public int EncodingSize()
@@ -118,8 +56,8 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Serializes the content of this version tracker onto the supplied response header. The header is assumed have
-        /// enough space allocated to fit this information.
+        ///     Serializes the content of this version tracker onto the supplied response header. The header is assumed have
+        ///     enough space allocated to fit this information.
         /// </summary>
         /// <param name="response"> Reference to the destination header </param>
         public unsafe void AppendOntoResponse(ref DprBatchResponseHeader response)
