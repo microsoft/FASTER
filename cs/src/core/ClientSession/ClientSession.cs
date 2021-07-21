@@ -239,14 +239,35 @@ namespace FASTER.core
             return (Read(ref key, ref input, ref output, userContext, serialNo), output);
         }
 
-#if DEBUG
-        internal const string AdvancedOnlyMethodErr = "This method is not available on non-Advanced ClientSessions";
-
-        /// <summary>This method is not available for non-Advanced ClientSessions, because ReadCompletionCallback does not have RecordInfo.</summary>
-        [Obsolete(AdvancedOnlyMethodErr)]
-        public Status Read(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0) 
-            => throw new FasterException(AdvancedOnlyMethodErr);
-#endif // DEBUG;
+        /// <summary>
+        /// Read operation that accepts a <paramref name="recordInfo"/> ref argument to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
+        ///     and is updated with the record header for the found record (which contains previous address in the hash chain for this key; this can
+        ///     be used as <paramref name="recordInfo"/> in a subsequent call to iterate all records for <paramref name="key"/>).
+        /// </summary>
+        /// <param name="key">The key to look up</param>
+        /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
+        /// <param name="output">The location to place the retrieved value</param>
+        /// <param name="recordInfo">On input contains the address to start at in its <see cref="RecordInfo.PreviousAddress"/>; if this is Constants.kInvalidAddress, the
+        ///     search starts with the key as in other forms of Read. On output, receives a copy of the record's header, which can be passed
+        ///     in a subsequent call, thereby enumerating all records in a key's hash chain.</param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <remarks>This method on non-Advanced ClientSessions is not suitable for read loops, because ReadCompletionCallback does not have RecordInfo.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Read(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0)
+        {
+            if (SupportAsync) UnsafeResumeThread();
+            try
+            {
+                return fht.ContextRead(ref key, ref input, ref output, ref recordInfo, readFlags, userContext, FasterSession, serialNo, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
+        }
 
         /// <summary>
         /// Read operation that accepts an <paramref name="address"/> argument to lookup at, instead of a key.
@@ -366,13 +387,36 @@ namespace FASTER.core
             return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
         }
 
-#if DEBUG
-        /// <summary>For consistency with Read(.., ref RecordInfo, ...), this method is not available for non-Advanced ClientSessions.</summary>
-        [Obsolete(AdvancedOnlyMethodErr)]
+        /// <summary>
+        /// Async read operation that accepts a <paramref name="startAddress"/> to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
+        ///     and returns the <see cref="RecordInfo"/> for the found record (which contains previous address in the hash chain for this key; this can
+        ///     be used as <paramref name="startAddress"/> in a subsequent call to iterate all records for <paramref name="key"/>).
+        /// </summary>
+        /// <param name="key">The key to look up</param>
+        /// <param name="input">Input to help extract the retrieved value into output</param>
+        /// <param name="startAddress">Start at this address rather than the address in the hash table for <paramref name="key"/>"/></param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <param name="cancellationToken">Token to cancel the operation</param>
+        /// <returns><see cref="ValueTask"/> wrapping <see cref="FasterKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
+        /// <remarks>The caller must await the return value to obtain the result, then call one of
+        ///     <list type="bullet">
+        ///     <item>result.<see cref="FasterKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
+        ///     <item>result.<see cref="FasterKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordInfo)"/></item>
+        ///     </list>
+        ///     to complete the read operation and obtain the result status, the output that is populated by the 
+        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record
+        ///     <para>This method on non-Advanced ClientSessions is not suitable for read loops, because ReadCompletionCallback does not have RecordInfo.</para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, long startAddress, ReadFlags readFlags = ReadFlags.None,
                                                                                                  Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
-            => throw new FasterException(AdvancedOnlyMethodErr);
-#endif
+        {
+            Debug.Assert(SupportAsync, NotAsyncSessionErr);
+            var operationFlags = FasterKV<Key, Value>.PendingContext<Input, Output, Context>.GetOperationFlags(readFlags);
+            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, startAddress, userContext, serialNo, cancellationToken, operationFlags);
+        }
 
         /// <summary>
         /// Async Read operation that accepts an <paramref name="address"/> argument to lookup at, instead of a key.

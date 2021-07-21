@@ -339,7 +339,6 @@ namespace FASTER.core
             return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
         }
 
-
         /// <summary>
         /// Async read operation. May return uncommitted results; to ensure reading of committed results, complete the read and then call WaitForCommitAsync.
         /// </summary>

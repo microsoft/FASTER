@@ -94,11 +94,11 @@ namespace FASTER.core
 
             OperationStatus status;
             long logicalAddress;
-            var usePreviousAddress = startAddress != Constants.kInvalidAddress;
+            var useStartAddress = startAddress != Constants.kInvalidAddress && !pendingContext.HasMinAddress;
             bool tagExists;
-            if (!usePreviousAddress)
+            if (!useStartAddress)
             {
-                tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address >= pendingContext.minAddress;
             }
             else
             {
@@ -188,7 +188,7 @@ namespace FASTER.core
                 if (!pendingContext.recordInfo.Tombstone)
                 {
                     fasterSession.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, logicalAddress);
-                    if (CopyReadsToTail == CopyReadsToTail.FromReadOnly)
+                    if (CopyReadsToTail == CopyReadsToTail.FromReadOnly && !pendingContext.SkipCopyReadsToTail)
                     {
                         var container = hlog.GetValueContainer(ref hlog.GetValue(physicalAddress));
                         InternalUpsert(ref key, ref container.Get(), ref userContext, ref pendingContext, fasterSession, sessionCtx, lsn);
@@ -209,7 +209,7 @@ namespace FASTER.core
                 if (sessionCtx.phase == Phase.PREPARE)
                 {
                     Debug.Assert(heldOperation != LatchOperation.Exclusive);
-                    if (usePreviousAddress)
+                    if (useStartAddress)
                     {
                         Debug.Assert(heldOperation == LatchOperation.None);
                     }
@@ -1716,6 +1716,7 @@ namespace FASTER.core
                 request.id = pendingContext.id;
                 request.request_key = pendingContext.key;
                 request.logicalAddress = pendingContext.logicalAddress;
+                request.minAddress = pendingContext.minAddress;
                 request.record = default;
                 if (asyncOp)
                     request.asyncOperation = new TaskCompletionSource<AsyncIOContext<Key, Value>>(TaskCreationOptions.RunContinuationsAsynchronously);
