@@ -1,21 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
 using FASTER.test.recovery.sumstore;
-using System.Diagnostics;
 
 namespace FASTER.test.statemachine
 {
-
     [TestFixture]
     public class StateMachineTests
     {
@@ -33,26 +26,30 @@ namespace FASTER.test.statemachine
                 inputArray[i].adId = i;
             }
 
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/StateMachineTest1.log", deleteOnClose: true);
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "/statemachinetest");
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/StateMachineTest1.log", deleteOnClose: true);
+            string checkpointDir = TestUtils.MethodTestDir + "/statemachinetest";
+            Directory.CreateDirectory(checkpointDir);
             fht1 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/statemachinetest", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.FoldOver }
                 );
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht1.Dispose();
-            log.Dispose();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "/statemachinetest").Delete(true);
+            fht1?.Dispose();
+            fht1 = null;
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
-
 
         [TestCase]
         [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
         public void StateMachineTest1()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -108,7 +105,7 @@ namespace FASTER.test.statemachine
 
 
         [TestCase]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest2()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -153,7 +150,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest3()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -192,7 +189,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest4()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -240,7 +237,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest5()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -305,7 +302,7 @@ namespace FASTER.test.statemachine
 
 
         [TestCase]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest6()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -397,7 +394,7 @@ namespace FASTER.test.statemachine
                 <AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/statemachinetest", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir + "/statemachinetest", CheckPointType = CheckpointType.FoldOver }
                 );
 
             fht2.Recover(); // sync, does not require session

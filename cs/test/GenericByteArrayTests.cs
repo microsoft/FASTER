@@ -19,11 +19,11 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericStringTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericStringTests.obj.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.obj.log", deleteOnClose: true);
 
-            fht
-                = new FasterKV<byte[], byte[]>(
+            fht = new FasterKV<byte[], byte[]>(
                     1L << 20, // size of hash table in #cache lines; 64 bytes per cache line
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 }, // log device
                     comparer: new ByteArrayEC()
@@ -35,13 +35,17 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            session.Dispose();
-            fht.Dispose();
+            session?.Dispose();
+            session = null;
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
-            objlog.Dispose();
-        }
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
 
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
 
         private byte[] GetByteArray(int i)
         {
@@ -50,6 +54,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ByteArrayBasicTest()
         {
             const int totalRecords = 2000;
