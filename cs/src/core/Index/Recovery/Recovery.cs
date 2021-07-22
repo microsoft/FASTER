@@ -129,7 +129,7 @@ namespace FASTER.core
                 try
                 {
                     recoveredHLCInfo = new HybridLogCheckpointInfo();
-                    recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits);
+                    recoveredCommitCookie = recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits);
                 }
                 catch
                 {
@@ -204,7 +204,7 @@ namespace FASTER.core
 
             // Recovery appropriate context information
             recoveredHLCInfo = new HybridLogCheckpointInfo();
-            recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits);
+            recoveredCommitCookie = recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits);
             recoveredHLCInfo.info.DebugPrint();
             try
             {

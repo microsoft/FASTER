@@ -18,9 +18,26 @@ namespace FASTER.core
         // The current state machine in the system. The value could be stale and point to the previous state machine
         // if no state machine is active at this time.
         private ISynchronizationStateMachine currentSyncStateMachine;
+        private List<IStateMachineCallback> callbacks;
 
-        internal SystemState SystemState => systemState;
+        /// <summary>
+        /// Any additional (user specified) metadata to write out with commit
+        /// </summary>
+        public byte[] CommitCookie { get; set; }
 
+        private byte[] recoveredCommitCookie;
+        /// <summary>
+        /// User-specified commit cookie persisted with the recovered commit
+        /// </summary>
+        public byte[] RecoveredCommitCookie => recoveredCommitCookie; 
+
+        /// <summary>
+        /// Get the state machine state of the system
+        /// </summary>
+        public SystemState SystemState => systemState;
+        
+        public void UnsafeRegisterCallback(IStateMachineCallback callback) => callbacks.Add(callback);
+        
         /// <summary>
         /// Attempt to start the given state machine in the system if no other state machine is active.
         /// </summary>
@@ -64,6 +81,10 @@ namespace FASTER.core
 
             // Execute custom task logic
             currentSyncStateMachine.GlobalBeforeEnteringState(nextState, this);
+            // Execute any additional callbacks in critical section
+            foreach (var callback in callbacks)
+                callback.BeforeEnteringState(nextState, this);
+            
             var success = MakeTransition(intermediate, nextState);
             // Guaranteed to succeed, because other threads will always block while the system is in intermediate.
             Debug.Assert(success);

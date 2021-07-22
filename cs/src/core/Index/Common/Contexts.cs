@@ -405,15 +405,16 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <param name="checkpointManager"></param>
         /// <param name="deltaLog"></param>
-        /// <returns></returns>
-        internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null)
+        /// <returns> Any user-specified commit cookie written as part of the checkpoint </returns>
+        internal byte[] Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null)
         {
             var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog);
             if (metadata == null)
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
+            using StreamReader s = new(new MemoryStream(metadata));
+            Initialize(s);
 
-            using (StreamReader s = new(new MemoryStream(metadata)))
-                Initialize(s);
+            return s.CurrentEncoding.GetBytes(s.ReadToEnd());
         }
 
         /// <summary>
@@ -517,7 +518,7 @@ namespace FASTER.core
             checkpointManager.InitializeLogCheckpoint(token);
         }
 
-        public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits)
+        public byte[] Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits)
         {
             deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
             deltaFileDevice.Initialize(-1);
@@ -525,11 +526,11 @@ namespace FASTER.core
             {
                 deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
                 deltaLog.InitializeForReads();
-                info.Recover(token, checkpointManager, deltaLog);
+                return info.Recover(token, checkpointManager, deltaLog);
             }
             else
             {
-                info.Recover(token, checkpointManager, null);
+                return info.Recover(token, checkpointManager, null);
             }
         }
 
