@@ -16,15 +16,21 @@ namespace FASTER.test
     [TestFixture]
     internal class FasterLogStandAloneTests
     {
-
         [Test]
-        public void TestDisposeReleasesFileLocksWithInprogressCommit()
+        [Category("FasterLog")]
+        [Category("Smoke")]
+
+        public void TestDisposeReleasesFileLocksWithInprogressCommit([Values] TestUtils.DeviceType deviceType)
         {
-            string commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
-            DirectoryInfo di = Directory.CreateDirectory(commitPath);
-            IDevice device = Devices.CreateLogDevice(commitPath + "testDisposeReleasesFileLocksWithInprogressCommit.log", preallocateFile: true, deleteOnClose: false);
-            FasterLog fasterLog = new FasterLog(new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry });
+            string path = TestUtils.MethodTestDir + "/";
+            string filename = path + "TestDisposeRelease" + deviceType.ToString() + ".log";
+
+            DirectoryInfo di = Directory.CreateDirectory(path);
+            IDevice device = TestUtils.CreateTestDevice(deviceType, filename);
+            FasterLog fasterLog = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path, LogChecksum = LogChecksumType.PerEntry });
+
             Assert.IsTrue(fasterLog.TryEnqueue(new byte[100], out long beginAddress));
+
             fasterLog.Commit(spinWait: false);
             fasterLog.Dispose();
             device.Dispose();
@@ -40,21 +46,21 @@ namespace FASTER.test
         }
     }
 
-    [TestFixture]
-    internal class FasterLogTests
+    // This test base class allows splitting up the tests into separate fixtures that can be run in parallel
+    internal class FasterLogTestBase
     {
-        const int entryLength = 100;
-        const int numEntries = 100000;//1000000;
-        const int numSpanEntries = 500;  // really slows down if go too many
-        private FasterLog log;
-        private IDevice device;
-        private string commitPath;
-        private DeviceLogCommitCheckpointManager manager;
+        protected const int entryLength = 100;
+        protected const int numEntries = 100000;//1000000;
+        protected const int numSpanEntries = 500;  // really slows down if go too many
+        protected FasterLog log;
+        protected IDevice device;
+        protected string path;
+        protected DeviceLogCommitCheckpointManager manager;
 
-        static readonly byte[] entry = new byte[100];
-        static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10000);
+        protected static readonly byte[] entry = new byte[100];
+        protected static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10000);
 
-        private struct ReadOnlySpanBatch : IReadOnlySpanBatch
+        protected struct ReadOnlySpanBatch : IReadOnlySpanBatch
         {
             private readonly int batchSize;
             public ReadOnlySpanBatch(int batchSize) => this.batchSize = batchSize;
@@ -62,41 +68,27 @@ namespace FASTER.test
             public int TotalEntries() => batchSize;
         }
 
-        [SetUp]
-        public void Setup()
+        protected void BaseSetup()
         {
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name +  "/";
+            path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try
-            {
-                if (Directory.Exists(commitPath))
-                    Directory.Delete(commitPath, true);
-            }
-            catch { }
+            TestUtils.DeleteDirectory(path, wait: true);
 
-            device = Devices.CreateLogDevice(commitPath + "fasterlog.log", deleteOnClose: true);
-            manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(commitPath));
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(path));
+        }
 
-    }
-
-    [TearDown]
-        public void TearDown()
+        protected void BaseTearDown()
         {
-            if (log is not null)
-                log.Dispose();
-            manager.Dispose();
-            device.Dispose();
+            log?.Dispose();
+            log = null;
+            manager?.Dispose();
+            manager = null;
+            device?.Dispose();
+            device = null;
 
-            // Saw timing issues on release build where fasterlog.log was not quite freed up before deleting which caused long delays 
-            Thread.Sleep(1000);
-            try
-            {
-                if (Directory.Exists(commitPath))
-                    Directory.Delete(commitPath, true);
-            }
-            catch { }
-
+            TestUtils.DeleteDirectory(path);
         }
 
         internal class Counter
@@ -129,7 +121,7 @@ namespace FASTER.test
 
         internal static bool IsAsync(IteratorType iterType) => iterType == IteratorType.AsyncByteVector || iterType == IteratorType.AsyncMemoryOwner;
 
-        private async ValueTask AssertGetNext(IAsyncEnumerator<(byte[] entry, int entryLength, long currentAddress, long nextAddress)> asyncByteVectorIter,
+        protected async ValueTask AssertGetNext(IAsyncEnumerator<(byte[] entry, int entryLength, long currentAddress, long nextAddress)> asyncByteVectorIter,
                                               IAsyncEnumerator<(IMemoryOwner<byte> entry, int entryLength, long currentAddress, long nextAddress)> asyncMemoryOwnerIter,
                                               FasterLogScanIterator iter, byte[] expectedData = default, bool verifyAtEnd = false)
         {
@@ -165,9 +157,32 @@ namespace FASTER.test
                 Assert.IsFalse(iter.GetNext(out _, out _, out _));
         }
 
+        protected static async Task LogWriterAsync(FasterLog log, byte[] entry)
+        {
+            CancellationTokenSource cts = new CancellationTokenSource();
+            CancellationToken token = cts.Token;
+
+            // Enter in some entries then wait on this separate thread
+            await log.EnqueueAsync(entry);
+            await log.EnqueueAsync(entry);
+            var commitTask = await log.CommitAsync(null, token);
+            await log.EnqueueAsync(entry);
+            await log.CommitAsync(commitTask, token);
+        }
+    }
+
+    [TestFixture]
+    internal class FasterLogGeneralTests : FasterLogTestBase
+    {
+        [SetUp]
+        public void Setup() => base.BaseSetup();
+
+        [TearDown]
+        public void TearDown() => base.BaseTearDown();
+
         [Test]
         [Category("FasterLog")]
-        public async ValueTask FasterLogTest1([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask FasterLogTest1([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
@@ -216,10 +231,21 @@ namespace FASTER.test
             }
             Assert.IsTrue(counter.count == numEntries);
         }
+    }
+
+
+    [TestFixture]
+    internal class FasterLogEnqueueTests : FasterLogTestBase
+    {
+        [SetUp]
+        public void Setup() => base.BaseSetup();
+
+        [TearDown]
+        public void TearDown() => base.BaseTearDown();
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask TryEnqueue1([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask TryEnqueue1([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
@@ -254,19 +280,24 @@ namespace FASTER.test
                     Assert.IsFalse(waitingReader.IsCompleted);
 
                     await log.CommitAsync(token);
-                    while (!waitingReader.IsCompleted); 
+                    while (!waitingReader.IsCompleted) ;
                     Assert.IsTrue(waitingReader.IsCompleted);
 
-                    await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd :true);
+                    await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
                 }
             }
         }
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask TryEnqueue2([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        [Category("Smoke")]
+
+        public async ValueTask TryEnqueue2([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
-            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
+            string filename = path + "TryEnqueue2" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+
+            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22 };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             const int dataLength = 10000;
@@ -319,12 +350,27 @@ namespace FASTER.test
                     break;
             }
         }
+    }
+
+    [TestFixture]
+    internal class FasterLogTruncateTests : FasterLogTestBase
+    {
+        [SetUp]
+        public void Setup() => base.BaseSetup();
+
+        [TearDown]
+        public void TearDown() => base.BaseTearDown();
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask TruncateUntilBasic([Values]LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        [Category("Smoke")]
+
+        public async ValueTask TruncateUntilBasic([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
-            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
+            string filename = path + "TruncateUntilBasic" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+
+            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22 };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             byte[] data1 = new byte[100];
@@ -361,13 +407,17 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values]LogChecksumType logChecksum)
+        [Category("Smoke")]
+
+        public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values] LogChecksumType logChecksum, [Values] TestUtils.DeviceType deviceType)
         {
             CancellationToken cancellationToken = default;
 
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numSpanEntries);
 
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager });
+            string filename = path + "EnqueueAndWaitForCommitAsyncBasicTest" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22 });
 
             int headerSize = logChecksum == LogChecksumType.None ? 4 : 12;
             bool _disposed = false;
@@ -405,7 +455,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask TruncateUntil2([Values] LogChecksumType logChecksum, [Values]IteratorType iteratorType)
+        public async ValueTask TruncateUntil2([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
@@ -539,9 +589,12 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public void CommitNoSpinWait()
+        [Category("Smoke")]
+        public void CommitNoSpinWait([Values] TestUtils.DeviceType deviceType)
         {
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager });
+            string filename = path + "CommitNoSpinWait" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 });
 
             int commitFalseEntries = 100;
 
@@ -554,15 +607,18 @@ namespace FASTER.test
                 log.Enqueue(entry);
             }
 
-            // Main point of the test ... If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.
-            // There won't be that much difference from True to False here as the True case is so quick. However, it is a good basic check
-            // to make sure it isn't crashing and that it does actually commit it
-            // Seen timing issues on CI machine when doing false to true ... so just take a second to let it settle
-            log.Commit(false);
-            Thread.Sleep(4000);
+            //*******
+            // Main point of the test ... If commit(true) (like other tests do) it waits until commit completes before moving on.
+            // If set to false, it will fire and forget the commit and return immediately (which is the way this test is set up).
+            // There won't be that much difference from True to False here as the True case is so quick but there can be issues if start checking right after commit without giving time to commit.
+            // Also, it is a good basic check to make sure it isn't crashing and that it does actually commit it
+            // Can take two approaches
+            //    1) Just give it a few seconds to commit before checking as literally takes a second or so to commit. If commit isn't finished after this slight delay, then we have issues and it will show as a fail when reads and it needs investigated
+            //    2) Check right away but if it fails, check again and repeat until it is done committing. No need to add this extra complexity into the test and so this is appropriate use of a sleep
+            //*******
 
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
+            log.Commit(false);
+            Thread.Sleep(5000);
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
@@ -572,9 +628,6 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
-
                         Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  currentEntry:" + currentEntry);
 
                         currentEntry++;
@@ -582,29 +635,29 @@ namespace FASTER.test
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
-            
             log.Dispose();
-        }
 
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
+
+        }
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask CommitAsyncPrevTask()
+        [Category("Smoke")]
+        public async ValueTask CommitAsyncPrevTask([Values] TestUtils.DeviceType deviceType)
         {
-
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
-            Task currentTask;
 
-            var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager };
+            string filename = $"{path}/CommitAsyncPrevTask_{deviceType}.log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 };
             log = await FasterLog.CreateAsync(logSettings);
 
-
             // make it small since launching each on separate threads 
-            int entryLength = 10;
+            const int entryLength = 10;
+            int expectedEntries = 3; // Not entry length because this is number of enqueues called
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
@@ -613,20 +666,19 @@ namespace FASTER.test
             }
 
             // Enqueue and AsyncCommit in a separate thread (wait there until commit is done though).
-            currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
-
-            // Give all a second or so to queue up and to help with timing issues - shouldn't need but timing issues
-            Thread.Sleep(2000);
+            Task currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
 
             // Commit to the log
             currentTask.Wait(4000, token);
 
             // double check to make sure finished - seen cases where timing kept running even after commit done
+            bool wasCanceled = false;
             if (currentTask.Status != TaskStatus.RanToCompletion)
+            {
+                wasCanceled = true;
+                Console.WriteLine("currentTask failed to complete; canceling");
                 cts.Cancel();
-
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
+            }
 
             // Read the log to make sure all entries are put in
             int currentEntry = 0;
@@ -636,9 +688,6 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
-
                         Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + " not match expected:" + currentEntry);
 
                         currentEntry++;
@@ -646,9 +695,8 @@ namespace FASTER.test
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure expected entries is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(expectedEntries, currentEntry);
 
             // NOTE: seeing issues where task is not running to completion on Release builds
             // This is a final check to make sure task finished. If didn't then assert
@@ -656,35 +704,23 @@ namespace FASTER.test
             // case of task not stopping
             if (currentTask.Status != TaskStatus.RanToCompletion)
             {
-                Assert.Fail("Final Status check Failure -- Task should be 'RanToCompletion' but current Status is:" + currentTask.Status);
+                Assert.Fail($"Final Status check Failure -- Task should be 'RanToCompletion' but current Status is: {currentTask.Status}; wasCanceled = {wasCanceled}");
             }
-        }
-
-        static async Task LogWriterAsync(FasterLog log, byte[] entry)
-        {
-
-            CancellationTokenSource cts = new CancellationTokenSource();
-            CancellationToken token = cts.Token;
-
-
-            // Enter in some entries then wait on this separate thread
-            await log.EnqueueAsync(entry);
-            await log.EnqueueAsync(entry);
-            var commitTask = await log.CommitAsync(null,token);
-            await log.EnqueueAsync(entry);
-            await log.CommitAsync(commitTask,token);
         }
 
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType)
+        [Category("Smoke")]
+        public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
-
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
 
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogCommitManager = manager });
+            string filename = path + "RefreshUncommittedAsyncTest" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogCommitManager = manager, SegmentSizeBits = 22 });
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
@@ -740,17 +776,13 @@ namespace FASTER.test
                 if (!IsAsync(iteratorType))
                     Assert.IsFalse(iter.GetNext(out _, out _, out _));
 
-                // Actual tess is here 
+                // Actual test is here 
                 await log.RefreshUncommittedAsync(token);
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
             log.Dispose();
         }
-
-
-
-
 
     }
 }
