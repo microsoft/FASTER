@@ -18,7 +18,7 @@ namespace FASTER.core
         // The current state machine in the system. The value could be stale and point to the previous state machine
         // if no state machine is active at this time.
         private ISynchronizationStateMachine currentSyncStateMachine;
-        private List<IStateMachineCallback> callbacks;
+        private List<IStateMachineCallback> callbacks = new List<IStateMachineCallback>();
 
         /// <summary>
         /// Any additional (user specified) metadata to write out with commit
@@ -27,7 +27,7 @@ namespace FASTER.core
 
         private byte[] recoveredCommitCookie;
         /// <summary>
-        /// User-specified commit cookie persisted with the recovered commit
+        /// User-specified commit cookie persisted with last recovered commit
         /// </summary>
         public byte[] RecoveredCommitCookie => recoveredCommitCookie; 
 
@@ -36,6 +36,11 @@ namespace FASTER.core
         /// </summary>
         public SystemState SystemState => systemState;
         
+        /// <summary>
+        /// Registers the given callback to be invoked for every state machine transition. Not safe to call with
+        /// concurrent FASTER operations. 
+        /// </summary>
+        /// <param name="callback"> callback to register </param>
         public void UnsafeRegisterCallback(IStateMachineCallback callback) => callbacks.Add(callback);
         
         /// <summary>
