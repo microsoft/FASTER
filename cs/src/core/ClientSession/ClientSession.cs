@@ -942,7 +942,6 @@ namespace FASTER.core
         /// <param name="desiredValue"></param>
         /// <param name="recordInfo"></param>
         /// <param name="foundLogicalAddress"></param>
-        /// <param name="noReadCache"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void CopyToTail(ref Key key, ref Value desiredValue, ref RecordInfo recordInfo, long foundLogicalAddress)
         {
