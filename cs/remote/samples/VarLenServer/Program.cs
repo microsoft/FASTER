@@ -48,6 +48,8 @@ namespace VarLenServer
             // Register provider as backend provider for WireFormat.DefaultFixedLenKV
             // You can register multiple providers with the same server, with different wire protocol specifications
             server.Register(WireFormat.DefaultVarLenKV, provider);
+            // Register provider as backend provider for WireFormat.WebSocket
+            server.Register(WireFormat.WebSocket, provider);
 
             // Start server
             server.Start();

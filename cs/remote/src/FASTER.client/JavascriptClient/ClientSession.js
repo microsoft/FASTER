@@ -4,7 +4,7 @@
         this.functions = functions;
         this.readrmwPendingContext = {};
         this.maxSizeSettings  = maxSizeSettings ?? new MaxSizeSettings();
-        this.bufferSize = JSUtils.ClientBufferSize(maxSizeSettings);
+        this.bufferSize = JSUtils.ClientBufferSize(this.maxSizeSettings);
         this.serializer = new ParameterSerializer();
         this.readrmwQueue = new Queue();
         this.upsertQueue = new Queue();
@@ -171,15 +171,15 @@
     //        }
     }
 
-    Upsert(key, lenKey, value, lenValue) {
+    Upsert(key, value) {
         // OP SEQ NUMBER, OP, LEN(KEY), KEY, LEN(VAL), VAL
         var view = new Uint8Array(this.reusableBuffer);
 
         var arrIdx = this.offset;
         view[arrIdx++] = MessageType.Upsert;
 
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, lenKey);
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, value, lenValue);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, value, value.length);
 
         this.upsertQueue.enqueue([key, value]);
 
@@ -187,14 +187,14 @@
         this.numMessages++;
     }
 
-    Read(key, lenKey) {
+    Read(key) {
         // OP SEQ NUMBER, OP, LEN(KEY), KEY
         var view = new Uint8Array(this.reusableBuffer);
 
         var arrIdx = this.offset;
         view[arrIdx++] = MessageType.Read;
 
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, lenKey);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
 
         this.readrmwQueue.enqueue(key);
 
@@ -202,14 +202,14 @@
         this.numMessages++;
     }
 
-    Delete(key, lenKey) {
+    Delete(key) {
         // OP SEQ NUMBER, OP, LEN(KEY), KEY
         var view = new Uint8Array(this.reusableBuffer);
 
         var arrIdx = this.offset;
         view[arrIdx++] = MessageType.Delete;
 
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, lenKey);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
 
         var value = [];
         this.upsertQueue.enqueue([key, value]);
@@ -218,15 +218,15 @@
         this.numMessages++;
     }
 
-    RMW(key, lenKey, input, lenInput) {
+    RMW(key, input) {
         // OP SEQ NUMBER, OP, LEN(KEY), KEY, LEN(OP_ID + INPUT), OP_ID, INPUT
         var view = new Uint8Array(this.reusableBuffer);
 
         var arrIdx = this.offset;
         view[arrIdx++] = MessageType.RMW;
 
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, lenKey);
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, input, lenInput);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, input, input.length);
 
         this.readrmwQueue.enqueue(key);
 
@@ -234,14 +234,14 @@
         this.numMessages++;
     }
 
-    SubscribeKV(key, lenKey) {
+    SubscribeKV(key) {
         // OP SEQ NUMBER, OP, LEN(KEY), KEY
         var view = new Uint8Array(this.reusableBuffer);
 
         var arrIdx = this.offset;
         view[arrIdx++] = MessageType.SubscribeKV;
 
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, lenKey);
+        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
 
         this.readrmwQueue.enqueue(key);
 

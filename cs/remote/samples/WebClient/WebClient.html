@@ -1,0 +1,112 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Koin client example</title>
+    <link rel="stylesheet" href="https://cdn.bootcss.com/bootstrap/3.3.0/css/bootstrap.min.css">
+</head>
+
+<style>
+    textarea {
+        vertical-align: bottom;
+    }
+
+    #output {
+        overflow: auto;
+    }
+
+        #output > p {
+            overflow-wrap: break-word;
+        }
+
+        #output span {
+            color: blue;
+        }
+
+            #output span.error {
+                color: red;
+            }
+</style>
+
+<body>
+    <h2>FASTER webclient test</h2>
+
+    <label><b>Key :</b> </label> <input type="text" id="putKey" />
+    <label><b>Value :</b> </label> <input type="text" id="putValue" />
+    <p> Click <button class="btn btn-xs btn-primary" id="putButton">Put</button> button to Upsert key and value</p><br>
+    <br>
+    <label><b>Key :</b> </label> <input type="text" id="getKey" />
+    <p> Click <button class="btn btn-xs btn-primary" id="getButton">Get</button> button to Get key and value</p><br>
+    <br>
+
+    <div id=output></div>
+
+    <script src="..\..\src\FASTER.client\JavascriptClient\Utils.js"></script>
+    <script src="..\..\src\FASTER.client\JavascriptClient\ParameterSerializer.js"></script>
+    <script src="..\..\src\FASTER.client\JavascriptClient\Queue.js"></script>
+    <script src="..\..\src\FASTER.client\JavascriptClient\CallbackFunctionsBase.js"></script>
+    <script src="..\..\src\FASTER.client\JavascriptClient\BatchHeader.js"></script>
+    <script src="..\..\src\FASTER.client\JavascriptClient\ClientSession.js"></script>
+    <script src="..\..\src\FASTER.client\JavascriptClient\ClientNetworkSession.js"></script>
+
+    <script>
+        function serialize(str) {
+            var index = 0;
+            var byteArr = new ArrayBuffer(str.length);
+            const byteView = new Uint8Array(byteArr);
+            for (index = 0; index < str.length; index++) {
+                var code = str.charCodeAt(index);
+                byteView.set([code], index);
+            }
+            return byteView;
+        }
+
+        function deserialize(byteArr, startIdx, lenString) {
+            var strByteArr = [];
+            const byteView = new Uint8Array(byteArr);
+            for (var index = 0; index < lenString; index++) {
+                strByteArr[index] = byteView[startIdx + index];
+            }
+
+            var result = "";
+            for (var i = 0; i < lenString; i++) {
+                result += String.fromCharCode(parseInt(strByteArr[i], 10));
+            }
+
+            return result;
+        }
+
+    </script>
+
+    <script src="FASTERFunctions.js"></script>
+
+    <script>
+        // http://www.websocket.org/echo.html
+        var buttonPut = document.querySelector("#putButton"),
+            buttonGet = document.querySelector("#getButton");
+
+        buttonPut.addEventListener("click", onClickButtonPut);
+        buttonGet.addEventListener("click", onClickButtonGet);
+
+        var address = "127.0.0.1";
+        var port = 3278;
+        var remoteSession = new ClientSession(address, port, new FASTERFunctions(this));
+
+        function onClickButtonPut() {
+            var keyBytes = serialize(putKey.value);
+            var valBytes = serialize(putValue.value);
+
+            remoteSession.Upsert(keyBytes, valBytes);
+            remoteSession.CompletePending(true);
+        }
+
+        function onClickButtonGet() {
+            var keyBytes = serialize(putKey.value);
+
+            remoteSession.Read(keyBytes);
+            remoteSession.CompletePending(true);
+        }
+    </script>
+</body>
+</html>
