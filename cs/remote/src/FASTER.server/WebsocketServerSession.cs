@@ -51,8 +51,6 @@ namespace FASTER.server
 
         public override int TryConsumeMessages(byte[] buf)
         {
-            bool completeWSCommand = true;
-
             if (recvBufferPtr == null)
             {
                 recvHandle = GCHandle.Alloc(buf, GCHandleType.Pinned);
@@ -61,9 +59,9 @@ namespace FASTER.server
 
             while (TryReadMessages(buf, out var offset))
             {
-                completeWSCommand = ProcessBatch(buf, offset);
+                bool completeWSCommand = ProcessBatch(buf, offset);
                 if (!completeWSCommand)
-                    break;
+                    return bytesRead;
             }
 
             // The bytes left in the current buffer not consumed by previous operations
@@ -219,12 +217,6 @@ namespace FASTER.server
                         Buffer.MemoryCopy(responsePtr, dcurr, response.Length, response.Length);
 
                     dcurr += response.Length;
-                    //Debug.WriteLine("RESP: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d)).ToArray()) + "]\n\n");
-                    //Debug.WriteLine("RESP: [" + Encoding.UTF8.GetString(response) + "]\n\n");
-
-                    //ptr += bytesRead;
-                    //readHead = (int)(ptr - recvBufferPtr);
-                    //_origReadHead = readHead;
 
                     SendResponse((int)(d - responseObject.obj.bufferPtr), (int)(dcurr - d));
                     responseObject.obj = null;
@@ -270,14 +262,22 @@ namespace FASTER.server
                     totalMsgLen += msglen;
                     offset += 4;
 
+                    if (fin == false)
+                    {
+                        byte[] decodedClientMsgLen = new byte[sizeof(Int32)];
+                        byte[] clientMsgLenMask = new byte[4] { buf[decoderInfo.maskStart], buf[decoderInfo.maskStart + 1], buf[decoderInfo.maskStart + 2], buf[decoderInfo.maskStart + 3] };
+                        for (int i = 0; i < sizeof(Int32); ++i)
+                            decodedClientMsgLen[i] = (byte)(buf[decoderInfo.dataStart + i] ^ clientMsgLenMask[i % 4]);
+                        var clientMsgLen = (int)BitConverter.ToInt32(decodedClientMsgLen, 0);
+                        if (clientMsgLen > bytesRead)
+                            return false;
+                    }
+
                     var nextBufOffset = offset;
 
                     while (fin == false)
                     {
-                        completeWSCommand = false;
                         nextBufOffset += msglen;
-                        if ((buf[nextBufOffset] & 0b11111111) != (0b10000000))
-                            return completeWSCommand;
 
                         fin = ((buf[nextBufOffset]) & 0b10000000) != 0;
 
@@ -361,21 +361,12 @@ namespace FASTER.server
                                 if ((int)(dend - dcurr) < 2)
                                     SendAndReset(ref d, ref dend);
 
-                                //dcurr += 10;
-
                                 var keyPtr = src;
                                 status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src));
 
-                                //WriteOpSeqId(ref opSequenceId, ref dcurr, (int)(dend - dcurr));
                                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                                 Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                                //int packetLen = (int)((dcurr - 10) - d);
-                                //CreateSendPacketHeader(ref d, packetLen);
-
-                                //ptr += totalMsgLen;
-                                //readHead = (int)(ptr - recvBufferPtr);
-                                //_origReadHead = readHead;
                                 subscribeKVBroker.Publish(keyPtr);
                                 break;
 
@@ -384,13 +375,10 @@ namespace FASTER.server
                                 if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                     SendAndReset(ref d, ref dend);
 
-                                //dcurr += 10;
-
                                 long ctx = ((long)message << 32) | (long)pendingSeqNo;
                                 status = session.Read(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
                                     ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, 0);
 
-                                //WriteOpSeqId(ref opSequenceId, ref dcurr, (int)(dend - dcurr));
                                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                                 Write(ref status, ref dcurr, (int)(dend - dcurr));
 
@@ -399,12 +387,6 @@ namespace FASTER.server
                                 else if (status == core.Status.OK)
                                     serializer.SkipOutput(ref dcurr);
 
-                                //packetLen = (int)((dcurr - 10) - d);
-                                //CreateSendPacketHeader(ref d, packetLen);
-
-                                //ptr += totalMsgLen;
-                                //readHead = (int)(ptr - recvBufferPtr);
-                                //_origReadHead = readHead;
                                 break;
 
                             case MessageType.RMW:
@@ -412,25 +394,15 @@ namespace FASTER.server
                                 if ((int)(dend - dcurr) < 2)
                                     SendAndReset(ref d, ref dend);
 
-                                //dcurr += 10;
-
                                 keyPtr = src;
 
                                 ctx = ((long)message << 32) | (long)pendingSeqNo;
                                 status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src), ctx);
 
-                                //WriteOpSeqId(ref opSequenceId, ref dcurr, (int)(dend - dcurr));
                                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                                 if (status == Status.PENDING)
                                     Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-
-                                //packetLen = (int)((dcurr - 10) - d);
-                                //CreateSendPacketHeader(ref d, packetLen);
-
-                                //ptr += totalMsgLen;
-                                //readHead = (int)(ptr - recvBufferPtr);
-                                //_origReadHead = readHead;
 
                                 subscribeKVBroker.Publish(keyPtr);
                                 break;
@@ -440,22 +412,12 @@ namespace FASTER.server
                                 if ((int)(dend - dcurr) < 2)
                                     SendAndReset(ref d, ref dend);
 
-                                //dcurr += 10;
-
                                 keyPtr = src;
 
                                 status = session.Delete(ref serializer.ReadKeyByRef(ref src));
 
-                                //WriteOpSeqId(ref opSequenceId, ref dcurr, (int)(dend - dcurr));
                                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                                 Write(ref status, ref dcurr, (int)(dend - dcurr));
-
-                                //packetLen = (int)((dcurr - 10) - d);
-                                //CreateSendPacketHeader(ref d, packetLen);
-
-                                //ptr += totalMsgLen;
-                                //readHead = (int)(ptr - recvBufferPtr);
-                                //_origReadHead = readHead;
 
                                 subscribeKVBroker.Publish(keyPtr);
                                 break;
@@ -464,26 +426,16 @@ namespace FASTER.server
                                 if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                     SendAndReset(ref d, ref dend);
 
-                                //dcurr += 10;
-
                                 var keyStart = src;
                                 ref Key key = ref serializer.ReadKeyByRef(ref src);
 
                                 int sid = subscribeKVBroker.Subscribe(ref keyStart, this);
                                 status = Status.PENDING;
 
-                                //WriteOpSeqId(ref opSequenceId, ref dcurr, (int)(dend - dcurr));
                                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                                 Write(sid, ref dcurr, (int)(dend - dcurr));
                                 serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
-
-                                //packetLen = (int)((dcurr - 10) - d);
-                                //CreateSendPacketHeader(ref d, packetLen);
-
-                                //ptr += totalMsgLen;
-                                //readHead = (int)(ptr - recvBufferPtr);
-                                //_origReadHead = readHead;
 
                                 break;
 
@@ -491,26 +443,16 @@ namespace FASTER.server
                                 if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                     SendAndReset(ref d, ref dend);
 
-                                //dcurr += 10;
-
                                 keyStart = src;
                                 key = ref serializer.ReadKeyByRef(ref src);
 
                                 sid = subscribeKVBroker.PSubscribe(ref keyStart, this);
                                 status = Status.PENDING;
 
-                                //WriteOpSeqId(ref opSequenceId, ref dcurr, (int)(dend - dcurr));
                                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                                 Write(sid, ref dcurr, (int)(dend - dcurr));
                                 serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
-
-                                //packetLen = (int)((dcurr - 10) - d);
-                                //CreateSendPacketHeader(ref d, packetLen);
-
-                                //ptr += totalMsgLen;
-                                //readHead = (int)(ptr - recvBufferPtr);
-                                //_origReadHead = readHead;
 
                                 break;
 
@@ -578,9 +520,6 @@ namespace FASTER.server
 
                 if (status == Status.OK)
                     serializer.SkipOutput(ref dcurr);
-
-                //int packetLen = (int)((dcurr - 10) - d);
-                //CreateSendPacketHeader(ref d, packetLen);
             }
 
             // Send replies
@@ -642,7 +581,6 @@ namespace FASTER.server
 
                 CreateSendPacketHeader(ref d, packetLen);
 
-                //Debug.WriteLine("RESP: [" + Encoding.ASCII.GetString(new Span<byte>(d, (int)(dcurr - d)).ToArray()) + "]\n\n");
                 *(int*)dtemp = (packetLen - sizeof(int));
                 *(int*)dstart = 0;
                 *(int*)(dstart + sizeof(int)) = (msgnum - start);

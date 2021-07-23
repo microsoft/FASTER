@@ -62,8 +62,11 @@ namespace FASTER.server
         {
             if (k.Length > length) return false;
 
-            var dest = new SpanByte(length, (IntPtr)dst);
+            *(int*)dst = k.Length;
+            dst += sizeof(int);
+            var dest = new SpanByte(k.Length, (IntPtr)dst);
             k.CopyTo(ref dest);
+            dst += k.Length;
             return true;
         }
 

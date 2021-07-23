@@ -2,7 +2,7 @@
 
     constructor(address, port, functions, maxSizeSettings) {
         this.functions = functions;
-        this.subscriptionDict = {};
+        this.readrmwPendingContext = {};
         this.maxSizeSettings  = maxSizeSettings ?? new MaxSizeSettings();
         this.bufferSize = JSUtils.ClientBufferSize(maxSizeSettings);
         this.serializer = new ParameterSerializer();
@@ -25,17 +25,21 @@
             arrIdx++;
             const status = view.getUint8(arrIdx);
             arrIdx++;
+            var output = [];
 
             switch (op) {
                 case MessageType.Read:
+                    var key = this.readrmwQueue.dequeue();
                     if (status == Status.OK) {
-                        var key = this.readrmwQueue.dequeue();
-                        var output = this.serializer.ReadOutput(arrayBuf, arrIdx);
+                        output = this.serializer.ReadOutput(arrayBuf, arrIdx);
                         arrIdx += output.length + 4;
                         this.functions.ReadCompletionCallback(key, output, status);
                         break;
-                    } else if (status != Status.PENDING) {
-                        var output = [];
+                    } else if (status == Status.PENDING) {
+                        var p = this.intSerializer.deserialize(arrayBuf, arrIdx);
+                        arrIdx += 4;
+                        readrmwPendingContext[p] = key;
+                    } else {
                         this.functions.ReadCompletionCallback(key, output, status);
                     }
                     break;
@@ -51,14 +55,17 @@
                     break;
 
                 case MessageType.RMW:
+                    var key = this.readrmwQueue.dequeue();
                     if (status == Status.OK || status == Status.NOTFOUND) {
-                        var key = this.readrmwQueue.dequeue();
-                        var output = this.serializer.ReadOutput(arrayBuf, arrIdx);
+                        output = this.serializer.ReadOutput(arrayBuf, arrIdx);
                         arrIdx += output.length + 4;
                         this.functions.RMWCompletionCallback(key, output, status);
-                    } else if (status != Status.PENDING) {
-                        var key = this.readrmwQueue.dequeue();
-                        var output = [];
+                    } else if (status == Status.PENDING) {
+                        var p = this.intSerializer.deserialize(arrayBuf, arrIdx);
+                        arrIdx += 4;
+                        readrmwPendingContext[p] = key;
+                    } else {
+                        output = [];
                         this.functions.RMWCompletionCallback(key, output, status);
                     }
                     break;
@@ -67,18 +74,22 @@
                     var sid = this.intSerializer.deserialize(arrayBuf, arrIdx);
                     arrIdx += 4;
                     if (status == Status.OK || status == Status.NOTFOUND) {
-                        var key = this.subscriptionDict[sid];
-                        var output = this.serializer.ReadOutput(arrayBuf, arrIdx);
+                        var key = this.readrmwPendingContext[sid];
+                        output = this.serializer.ReadOutput(arrayBuf, arrIdx);
                         arrIdx += output.length + 4;
                         this.functions.SubscribeKVCompletionCallback(key, output, status);
-                    } else if (status != Status.PENDING) {
-                        var key = this.subscriptionDict[sid];
-                        var output = [];
-                        this.functions.SubscribeKVCompletionCallback(key, output, status);
-                    } else {
+                    } else if (status == Status.PENDING) {
                         var key = this.readrmwQueue.dequeue();
-                        this.subscriptionDict[sid] = key;
+                        this.readrmwPendingContext[sid] = key;
+                    } else {
+                        var key = this.readrmwPendingContext[sid];
+                        output = [];
+                        this.functions.SubscribeKVCompletionCallback(key, output, status);
                     }
+                    break;
+
+                case MessageType.HandlePending:
+                    HandlePending(view, arrayBuf, arrIdx - 1);
                     break;
 
                 default:
@@ -86,6 +97,48 @@
             }
         }
         this.numPendingBatches--;
+    }
+
+    HandlePending(view, arrayBuf, arrIdx) {
+        var output = [];
+        var origMessage = view.getUint8(arrIdx++);
+        var p = this.intSerializer.deserialize(arrayBuf, arrIdx);
+        arrIdx += 4;
+        var status = view.getUint8(arrIdx++);
+
+        switch (origMessage) {
+            case MessageType.Read:
+                var key = this.readrmwPendingContext[p];
+                delete this.readrmwPendingContext[p];
+                if (status == Status.OK) {
+                    output = this.serializer.ReadOutput(arrayBuf, arrIdx);
+                    arrIdx += output.length + 4;
+                }
+                this.functions.ReadCompletionCallback(key, output, status);
+                break;
+
+            case MessageType.RMW:
+                var key = this.readrmwPendingContext[p];
+                delete this.readrmwPendingContext[p];
+                if (status == Status.OK) {
+                    output = this.serializer.ReadOutput(arrayBuf, arrIdx);
+                    arrIdx += output.length + 4;
+                }
+                this.functions.RMWCompletionCallback(key, output, status);
+                break;
+
+            case MessageType.SubscribeKV:
+                var key = this.readrmwPendingContext[p];
+                if (status == Status.OK) {
+                    output = this.serializer.ReadOutput(arrayBuf, arrIdx);
+                    arrIdx += output.length + 4;
+                }
+                this.functions.SubscribeKVCompletionCallback(key, output, status);
+                break;
+
+            default:
+                alert("Not implemented exception");
+        }
     }
 
     /// <summary>
