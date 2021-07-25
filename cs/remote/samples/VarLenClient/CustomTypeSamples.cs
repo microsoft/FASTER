@@ -29,6 +29,9 @@ namespace VarLenClient
             SyncVarLenSamples(session);
 
             // Samples using sync client API
+            SyncVarLenSubscriptionKVSamples(session, subSession);
+
+            // Samples using sync client API
             SyncVarLenSubscriptionSamples(session, subSession);
 
             // Samples using async client API
@@ -54,7 +57,7 @@ namespace VarLenClient
             session.CompletePending(true);
         }
 
-        void SyncVarLenSubscriptionSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session,
+        void SyncVarLenSubscriptionKVSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session,
                                             ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session2)
         {
             session2.SubscribeKV(new CustomType(23));
@@ -78,6 +81,29 @@ namespace VarLenClient
             System.Threading.Thread.Sleep(1000);
         }
 
+        void SyncVarLenSubscriptionSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session,
+                                            ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session2)
+        {
+            session2.Subscribe(new CustomType(23));
+            session2.CompletePending(true);
+
+            session2.Subscribe(new CustomType(24));
+            session2.CompletePending(true);
+
+            session2.PSubscribe(new CustomType(25));
+            session2.CompletePending(true);
+
+            session.Publish(new CustomType(23), new CustomType(2300));
+            session.CompletePending(true);
+
+            session.Publish(new CustomType(24), new CustomType(2400));
+            session.CompletePending(true);
+
+            session.Publish(new CustomType(25), new CustomType(2500));
+            session.CompletePending(true);
+
+            System.Threading.Thread.Sleep(1000);
+        }
 
         async Task AsyncVarLenSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session)
         {

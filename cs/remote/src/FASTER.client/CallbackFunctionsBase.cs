@@ -25,5 +25,9 @@ namespace FASTER.client
         public virtual void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         /// <inheritdoc/>
         public virtual void SubscribeKVCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
+        /// <inheritdoc/>
+        public virtual void PublishCompletionCallback(ref Key key, ref Value value, Context ctx) { }
+        /// <inheritdoc/>
+        public virtual void SubscribeCallback(ref Key key, ref Value value, Context ctx) { }
     }
 }
