@@ -2,18 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class BlittableFASTERScanTests
     {
@@ -24,7 +17,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BlittableFASTERScanTests.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BlittableFASTERScanTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
         }
@@ -32,13 +26,17 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
+
         public void BlittableDiskWriteScan()
         {
             using var session = fht.For(new Functions()).NewSession<Functions>();

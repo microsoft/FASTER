@@ -1,19 +1,12 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test.async
 {
-
     [TestFixture]
     internal class SessionFASTERTests
     {
@@ -23,7 +16,8 @@ namespace FASTER.test.async
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog1.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
         }
@@ -31,15 +25,16 @@ namespace FASTER.test.async
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
-
-
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void SessionTest1()
         {
             using var session = fht.NewSession(new Functions());
@@ -64,7 +59,6 @@ namespace FASTER.test.async
             Assert.IsTrue(output.value.vfield1 == value.vfield1);
             Assert.IsTrue(output.value.vfield2 == value.vfield2);
         }
-
 
         [Test]
         [Category("FasterKV")]

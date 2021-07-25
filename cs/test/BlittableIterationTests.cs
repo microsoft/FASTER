@@ -1,29 +1,27 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class BlittableIterationTests
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BlittableIterationTests.log", deleteOnClose: true);
+            path = TestUtils.MethodTestDir + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait:true);
+
+            log = Devices.CreateLogDevice(path + "/BlittableIterationTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
         }
@@ -31,18 +29,26 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(path);
         }
 
         [Test]
         [Category("FasterKV")]
-        public void BlittableIterationTest1()
+        [Category("Smoke")]
+        public void BlittableIterationTest1([Values] TestUtils.DeviceType deviceType)
         {
+            string filename = path + "BlittableIterationTest1" + deviceType.ToString() + ".log";
+            log = TestUtils.CreateTestDevice(deviceType, filename);
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
+
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
-            const int totalRecords = 2000;
+            const int totalRecords = 500;
             var start = fht.Log.TailAddress;
 
             for (int i = 0; i < totalRecords; i++)
@@ -62,7 +68,6 @@ namespace FASTER.test
             iter.Dispose();
 
             Assert.IsTrue(count == totalRecords);
-
 
             for (int i = 0; i < totalRecords; i++)
             {

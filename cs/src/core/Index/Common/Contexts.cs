@@ -538,7 +538,9 @@ namespace FASTER.core
             flushedSemaphore = null;
             info = default;
             snapshotFileDevice?.Dispose();
+            snapshotFileDevice = null;
             snapshotFileObjectLogDevice?.Dispose();
+            snapshotFileObjectLogDevice = null;
         }
 
         public bool IsDefault()
@@ -687,7 +689,8 @@ namespace FASTER.core
         public void Reset()
         {
             info = default;
-            main_ht_device.Dispose();
+            main_ht_device?.Dispose();
+            main_ht_device = null;
         }
 
         public bool IsDefault()

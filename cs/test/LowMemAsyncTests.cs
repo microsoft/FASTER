@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 
 namespace FASTER.test.async
 {
-
     [TestFixture]
     public class LowMemAsyncTests
     {
@@ -20,9 +19,9 @@ namespace FASTER.test.async
         [SetUp]
         public void Setup()
         {
-            path = TestContext.CurrentContext.TestDirectory + $"/{TestContext.CurrentContext.Test.ClassName}/";
+            path = TestUtils.MethodTestDir;
+            TestUtils.DeleteDirectory(path, wait: true);
             log = new LocalMemoryDevice(1L << 30, 1L << 25, 1, latencyMs: 20);
-            // log = Devices.CreateLogDevice(path + "Async.log", deleteOnClose: true);
             Directory.CreateDirectory(path);
             fht1 = new FasterKV<long, long>
                 (1L << 10,
@@ -34,9 +33,11 @@ namespace FASTER.test.async
         [TearDown]
         public void TearDown()
         {
-            fht1.Dispose();
-            log.Dispose();
-            new DirectoryInfo(path).Delete(true);
+            fht1?.Dispose();
+            fht1 = null;
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(path);
         }
 
         private static async Task Populate(ClientSession<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> s1)
@@ -66,8 +67,9 @@ namespace FASTER.test.async
         }
 
         [Test]
-        [Category("FasterKV"), Category("Stress")]
-        public async Task ConcurrentUpsertReadAsyncTest()
+        [Category("FasterKV")]
+        [Category("Stress")]
+        public async Task LowMemConcurrentUpsertReadAsyncTest()
         {
             await Task.Yield();
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
@@ -87,8 +89,9 @@ namespace FASTER.test.async
         }
 
         [Test]
-        [Category("FasterKV"), Category("Stress")]
-        public async Task ConcurrentUpsertRMWReadAsyncTest()
+        [Category("FasterKV")]
+        [Category("Stress")]
+        public async Task LowMemConcurrentUpsertRMWReadAsyncTest()
         {
             await Task.Yield();
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));

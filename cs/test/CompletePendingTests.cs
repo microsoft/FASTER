@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -14,11 +13,18 @@ namespace FASTER.test
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
+        private string path;
+
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
+            path = TestUtils.MethodTestDir + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait:true);
+
+            log = Devices.CreateLogDevice(path + "/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>(128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
         }
 
@@ -29,6 +35,7 @@ namespace FASTER.test
             fht = null;
             log?.Dispose();
             log = null;
+            TestUtils.DeleteDirectory(path, wait: true);
         }
 
         const int numRecords = 1000;

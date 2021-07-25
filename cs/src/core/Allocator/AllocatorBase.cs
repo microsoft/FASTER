@@ -398,6 +398,12 @@ namespace FASTER.core
         /// <param name="localSegmentOffsets"></param>
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
 
+        private protected void VerifyCompatibleSectorSize(IDevice device)
+        {
+            if (this.sectorSize % device.SectorSize != 0)
+                throw new FasterException($"Allocator with sector size {sectorSize} cannot flush to device with sector size {device.SectorSize}");
+        }
+
         /// <summary>
         /// Delta flush
         /// </summary>
@@ -709,7 +715,7 @@ namespace FASTER.core
             SegmentBufferSize = 1 + (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             if (SegmentSize < PageSize)
-                throw new FasterException("Segment must be at least of page size");
+                throw new FasterException($"Segment ({SegmentSize.ToString()}) must be at least of page size ({PageSize.ToString()})");
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
 
@@ -739,7 +745,7 @@ namespace FASTER.core
         /// <param name="firstValidAddress"></param>
         protected void Initialize(long firstValidAddress)
         {
-            Debug.Assert(firstValidAddress <= PageSize);
+            Debug.Assert(firstValidAddress <= PageSize, $"firstValidAddress {firstValidAddress} shoulld be <= PageSize {PageSize}");
 
             bufferPool = new SectorAlignedBufferPool(1, sectorSize);
 
@@ -1910,7 +1916,7 @@ namespace FASTER.core
                 {
                     if (errorCode != 0)
                     {
-                        errorList.Add(result.fromAddress);
+                        errorList.Add(result.fromAddress, errorCode);
                     }
                     Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
                     ShiftFlushedUntilAddress();

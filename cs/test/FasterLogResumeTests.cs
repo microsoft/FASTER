@@ -9,33 +9,30 @@ using FASTER.core;
 using NUnit.Framework;
 using System.Threading;
 
-
 namespace FASTER.test
 {
     [TestFixture]
     internal class FasterLogResumeTests
     {
         private IDevice device;
-        private string commitPath;
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            commitPath = TestContext.CurrentContext.TestDirectory + "/" + TestContext.CurrentContext.Test.Name + "/";
+            path = TestUtils.MethodTestDir + "/";
 
-            if (Directory.Exists(commitPath))
-                TestUtils.DeleteDirectory(commitPath);
+            TestUtils.DeleteDirectory(path, wait:true);
 
-            device = Devices.CreateLogDevice(commitPath + "fasterlog.log", deleteOnClose: true);
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
         }
 
         [TearDown]
         public void TearDown()
         {
-            device.Dispose();
-
-            if (Directory.Exists(commitPath))
-                TestUtils.DeleteDirectory(commitPath);
+            device?.Dispose();
+            device = null;
+            TestUtils.DeleteDirectory(path);
         }
 
         [Test]
@@ -80,7 +77,7 @@ namespace FASTER.test
             var input3 = new byte[] { 11, 12 };
             string readerName = "abc";
 
-            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), overwriteLogCommits, removeOutdated))
+            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(path), overwriteLogCommits, removeOutdated))
             {
 
                 long originalCompleted;
@@ -124,7 +121,7 @@ namespace FASTER.test
             var input3 = new byte[] { 11, 12 };
             string readerName = "abcd";
 
-            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(commitPath), overwriteLogCommits, removeOutdated))
+            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(path), overwriteLogCommits, removeOutdated))
             {
                 long originalCompleted;
 
