@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using FASTER.core;
 
 namespace FASTER.libdpr
 {
@@ -199,6 +198,5 @@ namespace FASTER.libdpr
 
             return head;
         }
-        
     }
 }

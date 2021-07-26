@@ -8,34 +8,32 @@ using System.Threading.Tasks;
 namespace FASTER.libdpr
 {
     /// <summary>
-    /// A simple single-server DprFinder implementation relying primarily on graph traversal.
-    ///
-    /// Fault-tolerant in that all reported commits are persisted on a given IDevice and a new SimpleDprFinderServer
-    /// can restart from persisted state of a failed one to appear as if it never failed.
-    ///
-    /// The server speaks the Redis protocol and appears as a Redis server that supports the following commands:\
-    /// AddWorker(worker) -> OK
-    /// RemoveWorker(worker) -> OK
-    /// NewCheckpoint(wv, deps) -> OK
-    /// ReportRecovery(wv, worldLine) -> OK
-    /// Sync() -> state
-    /// All parameters and return values are Redis bulk strings of bytes that encode the corresponding C#
-    /// object with the exception of return values of '+OK\r\n's
+    ///     A simple single-server DprFinder implementation relying primarily on graph traversal.
+    ///     Fault-tolerant in that all reported commits are persisted on a given IDevice and a new SimpleDprFinderServer
+    ///     can restart from persisted state of a failed one to appear as if it never failed.
+    ///     The server speaks the Redis protocol and appears as a Redis server that supports the following commands:\
+    ///     AddWorker(worker) -> OK
+    ///     RemoveWorker(worker) -> OK
+    ///     NewCheckpoint(wv, deps) -> OK
+    ///     ReportRecovery(wv, worldLine) -> OK
+    ///     Sync() -> state
+    ///     All parameters and return values are Redis bulk strings of bytes that encode the corresponding C#
+    ///     object with the exception of return values of '+OK\r\n's
     /// </summary>
     public class GraphDprFinderServer : IDisposable
     {
         private static readonly byte[] OkResponse = Encoding.GetEncoding("ASCII").GetBytes("+OK\r\n");
-        private readonly string ip;
-        private readonly int port;
-        private Socket servSocket;
 
         private readonly GraphDprFinderBackend backend;
-        private ManualResetEventSlim termination;
+        private readonly string ip;
+        private readonly int port;
         private Thread ioThread, processThread;
+        private Socket servSocket;
+        private ManualResetEventSlim termination;
 
         /// <summary>
-        /// Constructs a new SimpleDprFinderServer instance at the given ip, listening on the given port,
-        /// and using the given backend object 
+        ///     Constructs a new SimpleDprFinderServer instance at the given ip, listening on the given port,
+        ///     and using the given backend object
         /// </summary>
         /// <param name="ip">ip address of server</param>
         /// <param name="port">port to listen on the server</param>
@@ -47,8 +45,20 @@ namespace FASTER.libdpr
             this.backend = backend;
         }
 
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            servSocket.Dispose();
+            // TODO(Tianyu): Clean shutdown of client connections
+
+            termination.Set();
+            ioThread.Join();
+            processThread.Join();
+            backend.Dispose();
+        }
+
         /// <summary>
-        /// Main server loop for DPR finding
+        ///     Main server loop for DPR finding
         /// </summary>
         public void StartServer()
         {
@@ -56,19 +66,14 @@ namespace FASTER.libdpr
             ioThread = new Thread(() =>
             {
                 while (!termination.IsSet)
-                {
                     // TODO(Tianyu): Need to throttle/tune I/O frequency?
                     backend.PersistState();
-                }
             });
             ioThread.Start();
-            
+
             processThread = new Thread(() =>
             {
-                while (!termination.IsSet)
-                {
-                    backend.TryFindDprCut();
-                }
+                while (!termination.IsSet) backend.TryFindDprCut();
             });
             processThread.Start();
 
@@ -83,19 +88,7 @@ namespace FASTER.libdpr
             if (!servSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
         }
-        
-        /// <inheritdoc/>
-        public void Dispose()
-        {
-            servSocket.Dispose();
-            // TODO(Tianyu): Clean shutdown of client connections
 
-            termination.Set();
-            ioThread.Join();
-            processThread.Join();
-            backend.Dispose();
-        }
-        
         private bool HandleNewClientConnection(SocketAsyncEventArgs e)
         {
             if (e.SocketError != SocketError.Success)
@@ -111,10 +104,10 @@ namespace FASTER.libdpr
             saea.Completed += MessageUtil.DprFinderRedisProtocolConnState.RecvEventArg_Completed;
             // If the client already have packets, avoid handling it here on the handler thread so we don't block future accepts.
             if (!e.AcceptSocket.ReceiveAsync(saea))
-                Task.Run(() =>  MessageUtil.DprFinderRedisProtocolConnState.RecvEventArg_Completed(null, saea));
+                Task.Run(() => MessageUtil.DprFinderRedisProtocolConnState.RecvEventArg_Completed(null, saea));
             return true;
         }
-        
+
         private void AcceptEventArg_Completed(object sender, SocketAsyncEventArgs e)
         {
             do
@@ -150,6 +143,5 @@ namespace FASTER.libdpr
                     throw new ArgumentOutOfRangeException();
             }
         }
-        
     }
 }

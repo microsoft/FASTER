@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
-
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -11,21 +10,20 @@ using System.Threading;
 namespace FASTER.libdpr
 {
     /// <summary>
-    /// DprFinder implementation backed by a simple server component <see cref="GraphDprFinderServer"/>
-    /// The server needs to be provisioned, deployed, and kept alive separately for the DprFinder to work.
+    ///     DprFinder implementation backed by a simple server component <see cref="GraphDprFinderServer" />
+    ///     The server needs to be provisioned, deployed, and kept alive separately for the DprFinder to work.
     /// </summary>
     public class GraphDprFinder : IDprFinder
     {
+        private readonly Socket dprFinderConn;
         private GraphDprFinderBackend.State lastKnownState;
         private long maxVersion;
 
-        private Socket dprFinderConn;
-        private byte[] recvBuffer = new byte[1 << 20];
-
-        private DprFinderResponseParser parser = new DprFinderResponseParser();
+        private readonly DprFinderResponseParser parser = new DprFinderResponseParser();
+        private readonly byte[] recvBuffer = new byte[1 << 20];
 
         /// <summary>
-        /// Construct a new SimpleDprFinder client with the given socket that connects to the backend
+        ///     Construct a new SimpleDprFinder client with the given socket that connects to the backend
         /// </summary>
         /// <param name="dprFinderConn"> a (connected) socket to the DPR finder backend </param>
         // TODO(Tianyu): Handle possible reconnect due to dpr finder restarts 
@@ -41,32 +39,31 @@ namespace FASTER.libdpr
             dprFinderConn.Connect(ipEndpoint);
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc />
         public long SafeVersion(Worker worker)
         {
             return lastKnownState?.GetCurrentCut()[worker] ?? 0;
-
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc />
         public IDprStateSnapshot GetStateSnapshot()
         {
             return new DictionaryDprStateSnapshot(lastKnownState?.GetCurrentCut());
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc />
         public long SystemWorldLine()
         {
             return lastKnownState?.GetCurrentWorldLines().Select(e => e.Value).Max() ?? 0;
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc />
         public long GlobalMaxVersion()
         {
             return maxVersion;
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc />
         public void ReportNewPersistentVersion(long worldLine, WorkerVersion persisted, IEnumerable<WorkerVersion> deps)
         {
             lock (dprFinderConn)
@@ -77,7 +74,7 @@ namespace FASTER.libdpr
             }
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc />
         public bool Refresh()
         {
             lock (dprFinderConn)
@@ -94,20 +91,7 @@ namespace FASTER.libdpr
             return true;
         }
 
-        private void ProcessRespResponse()
-        {
-            int i = 0, receivedSize = 0;
-            while (true)
-            {
-                receivedSize += dprFinderConn.Receive(recvBuffer);
-                for (; i < receivedSize; i++)
-                {
-                    if (parser.ProcessChar(i, recvBuffer)) return;
-                }
-            }
-        }
-        
-        /// <inheritdoc/>
+        /// <inheritdoc />
         public void ReportRecovery(long worldLine, WorkerVersion latestRecoveredVersion)
         {
             lock (dprFinderConn)
@@ -143,6 +127,18 @@ namespace FASTER.libdpr
         public void ResendGraph(Worker worker, IStateObject stateObject)
         {
             // Nothing to do here
+        }
+
+        private void ProcessRespResponse()
+        {
+            int i = 0, receivedSize = 0;
+            while (true)
+            {
+                receivedSize += dprFinderConn.Receive(recvBuffer);
+                for (; i < receivedSize; i++)
+                    if (parser.ProcessChar(i, recvBuffer))
+                        return;
+            }
         }
     }
 }

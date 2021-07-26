@@ -7,39 +7,43 @@ using System.Threading;
 namespace FASTER.libdpr
 {
     /// <summary>
-    /// Precomputed response to sync calls into DprFinder. Holds both serialized cluster persistent state and the
-    /// current DPR cut. 
+    ///     Precomputed response to sync calls into DprFinder. Holds both serialized cluster persistent state and the
+    ///     current DPR cut.
     /// </summary>
     public class PrecomputedSyncResponse
     {
         /// <summary>
-        /// Reader/Writer latch that protects members --- if reading the serialized response, must do so under
-        /// read latch to prevent concurrent modification.
-        /// </summary>
-        public ReaderWriterLockSlim rwLatch;
-        /// <summary>
-        /// buffer that holds the serialized state
-        /// </summary>
-        public byte[] serializedResponse = new byte[1 << 15];
-        /// <summary>
-        /// end offset of the serialized portion of cluster state on the response buffer
+        ///     end offset of the serialized portion of cluster state on the response buffer
         /// </summary>
         public int recoveryStateEnd;
+
         /// <summary>
-        /// end offset of the entire response on the buffer
+        ///     end offset of the entire response on the buffer
         /// </summary>
         public int responseEnd;
 
         /// <summary>
-        /// Create a new PrecomputedSyncResponse from the given cluster state. Until UpdateCut is called, the
-        /// serialized response will have a special value for the cut to signal its absence.  
+        ///     Reader/Writer latch that protects members --- if reading the serialized response, must do so under
+        ///     read latch to prevent concurrent modification.
+        /// </summary>
+        public ReaderWriterLockSlim rwLatch;
+
+        /// <summary>
+        ///     buffer that holds the serialized state
+        /// </summary>
+        public byte[] serializedResponse = new byte[1 << 15];
+
+        /// <summary>
+        ///     Create a new PrecomputedSyncResponse from the given cluster state. Until UpdateCut is called, the
+        ///     serialized response will have a special value for the cut to signal its absence.
         /// </summary>
         /// <param name="clusterState"> cluster state to serialize </param>
         public PrecomputedSyncResponse(ClusterState clusterState)
         {
             rwLatch = new ReaderWriterLockSlim();
             // Reserve space for world-line + prefix + size field of cut as a minimum
-            var serializedSize = sizeof(long) + RespUtil.DictionarySerializedSize(clusterState.worldLinePrefix) + sizeof(int);
+            var serializedSize = sizeof(long) + RespUtil.DictionarySerializedSize(clusterState.worldLinePrefix) +
+                                 sizeof(int);
             // Resize response buffer to fit
             if (serializedSize > serializedResponse.Length)
                 serializedResponse = new byte[Math.Max(2 * serializedResponse.Length, serializedSize)];
@@ -54,7 +58,7 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Update the PrecomputedSyncResponse to hold the given cut
+        ///     Update the PrecomputedSyncResponse to hold the given cut
         /// </summary>
         /// <param name="newCut"> DPR cut to serialize </param>
         internal void UpdateCut(Dictionary<Worker, long> newCut)
@@ -62,7 +66,7 @@ namespace FASTER.libdpr
             // Update serialized under write latch so readers cannot see partial updates
             rwLatch.EnterWriteLock();
             var serializedSize = RespUtil.DictionarySerializedSize(newCut);
-            
+
             // Resize response buffer to fit
             if (serializedSize > serializedResponse.Length - recoveryStateEnd)
             {
@@ -77,24 +81,25 @@ namespace FASTER.libdpr
     }
 
     /// <summary>
-    /// Persistent state about the DPR cluster 
+    ///     Persistent state about the DPR cluster
     /// </summary>
     public class ClusterState
     {
         /// <summary>
-        /// Latest recorded world-line of the cluster
+        ///     Latest recorded world-line of the cluster
         /// </summary>
         public long currentWorldLine;
+
         /// <summary>
-        /// common prefix of the current world-line with previous ones. In other words, this is the cut workers had
-        /// to recover to before entering the current world-line. This also serves as point of truth of cluster
-        /// membership, and a worker is recognized as part of the cluster iff they have an entry in this dictionary.
-        /// Workers that did not participate in the previous world-lines have 0 in the cut. 
+        ///     common prefix of the current world-line with previous ones. In other words, this is the cut workers had
+        ///     to recover to before entering the current world-line. This also serves as point of truth of cluster
+        ///     membership, and a worker is recognized as part of the cluster iff they have an entry in this dictionary.
+        ///     Workers that did not participate in the previous world-lines have 0 in the cut.
         /// </summary>
         public Dictionary<Worker, long> worldLinePrefix;
 
         /// <summary>
-        /// Creates a new ClusterState object for an empty cluster
+        ///     Creates a new ClusterState object for an empty cluster
         /// </summary>
         public ClusterState()
         {
@@ -103,7 +108,7 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Creates a ClusterState from serialized bytes
+        ///     Creates a ClusterState from serialized bytes
         /// </summary>
         /// <param name="buf"> byte buffer that holds serialized cluster state</param>
         /// <param name="offset"> offset to start scanning </param>
@@ -123,98 +128,46 @@ namespace FASTER.libdpr
 
 
     /// <summary>
-    /// Backend logic for the enhanced DPR finder.
-    ///
-    /// The enhanced DPR finder relies on state objects to persist dependencies and avoids incurring additional storage
-    /// round-trips on the commit critical path. 
+    ///     Backend logic for the enhanced DPR finder.
+    ///     The enhanced DPR finder relies on state objects to persist dependencies and avoids incurring additional storage
+    ///     round-trips on the commit critical path.
     /// </summary>
     public class EnhancedDprFinderBackend
     {
-        // Recovery state is the information EnhancedDprFinderBackend needs to keep when restarting (presumably because
-        // of failure) from previous on-disk state.
-        private class RecoveryState
-        {
-            private EnhancedDprFinderBackend backend;
-            private bool recoveryComplete;
-            private CountdownEvent countdown;
-            private ConcurrentDictionary<Worker, byte> workersUnaccontedFor = new ConcurrentDictionary<Worker, byte>();
+        // Used to send add/delete worker requests to processing thread
+        private readonly ConcurrentQueue<(Worker, Action<(long, long)>)> addQueue =
+            new ConcurrentQueue<(Worker, Action<(long, long)>)>();
 
-            internal RecoveryState(EnhancedDprFinderBackend backend)
-            {
-                this.backend = backend;
-                // Check if the cluster is empty
-                if (backend.volatileClusterState.worldLinePrefix.Count == 0)
-                {
-                    // If so, we do not need to recover anything, simply finish writing out the empty cut and mark
-                    // this backend as fully recovered for future operations
-                    backend.GetPrecomputedResponse().UpdateCut(backend.currentCut);
-                    recoveryComplete = true;
-                    return;
-                }
-
-                // Otherwise, we need to first rebuild an in-memory precedence graph from information persisted
-                // at each state object. 
-                recoveryComplete = false;
-                // Mark all previously known worker as unaccounted for --- we cannot make any statements about the
-                // current state of the cluster until we are sure we have up-to-date information from all of them
-                foreach (var w in backend.volatileClusterState.worldLinePrefix.Keys)
-                    workersUnaccontedFor.TryAdd(w, 0);
-                countdown = new CountdownEvent(workersUnaccontedFor.Count);
-            }
-
-            internal bool RecoveryComplete() => recoveryComplete;
-
-            // Called when the backend has received all precedence graph information from a worker
-            internal void MarkWorkerAccountedFor(Worker worker)
-            {
-                // A worker may repeatedly check-in due to crashes or other reason, we need to make sure each
-                // worker decrements the count exactly once
-                if (!workersUnaccontedFor.TryRemove(worker, out _)) return;
-                
-                if (!countdown.Signal()) return;
-                // At this point, we have all information that is at least as up-to-date as when we crashed. We can
-                // traverse the graph and be sure to reach a conclusion that's at least as up-to-date as the guarantees
-                // we may have given out before we crashed.
-                backend.cutChanged = true;
-                backend.TryCommitVersions(true);
-                
-                // Only mark recovery complete after we have reached that conclusion
-                recoveryComplete = true;
-            }
-        }
-        
-        private ClusterState volatileClusterState;
-        private ReaderWriterLockSlim clusterChangeLatch = new ReaderWriterLockSlim();
-
-        private long maxVersion = 0;
-        private Dictionary<Worker, long> currentCut = new Dictionary<Worker, long>();
+        private readonly ReaderWriterLockSlim clusterChangeLatch = new ReaderWriterLockSlim();
+        private readonly Dictionary<Worker, long> currentCut = new Dictionary<Worker, long>();
         private bool cutChanged;
+        private readonly ConcurrentQueue<(Worker, Action)> deleteQueue = new ConcurrentQueue<(Worker, Action)>();
+        private readonly Queue<WorkerVersion> frontier = new Queue<WorkerVersion>();
 
-        private ConcurrentDictionary<WorkerVersion, List<WorkerVersion>> precedenceGraph =
-            new ConcurrentDictionary<WorkerVersion, List<WorkerVersion>>();
-        private ConcurrentDictionary<Worker, long> versionTable = new ConcurrentDictionary<Worker, long>();
-        private ConcurrentQueue<WorkerVersion> outstandingWvs = new ConcurrentQueue<WorkerVersion>();
+        private long maxVersion;
 
-        private HashSet<WorkerVersion> visited = new HashSet<WorkerVersion>();
-        private Queue<WorkerVersion> frontier = new Queue<WorkerVersion>();
-
-        private SimpleObjectPool<List<WorkerVersion>> objectPool =
+        private readonly SimpleObjectPool<List<WorkerVersion>> objectPool =
             new SimpleObjectPool<List<WorkerVersion>>(() => new List<WorkerVersion>());
 
-        private PingPongDevice persistentStorage;
-        private PrecomputedSyncResponse syncResponse;
+        private readonly ConcurrentQueue<WorkerVersion> outstandingWvs = new ConcurrentQueue<WorkerVersion>();
 
-        // Used to send add/delete worker requests to processing thread
-        private ConcurrentQueue<(Worker, Action<(long, long)>)> addQueue =
-            new ConcurrentQueue<(Worker, Action<(long, long)>)>();
-        private ConcurrentQueue<(Worker, Action)> deleteQueue = new ConcurrentQueue<(Worker, Action)>();
+        private readonly PingPongDevice persistentStorage;
+
+        private readonly ConcurrentDictionary<WorkerVersion, List<WorkerVersion>> precedenceGraph =
+            new ConcurrentDictionary<WorkerVersion, List<WorkerVersion>>();
 
         // Only used during DprFinder recovery
-        private RecoveryState recoveryState;
+        private readonly RecoveryState recoveryState;
+        private PrecomputedSyncResponse syncResponse;
+        private readonly ConcurrentDictionary<Worker, long> versionTable = new ConcurrentDictionary<Worker, long>();
+
+        private readonly HashSet<WorkerVersion> visited = new HashSet<WorkerVersion>();
+
+        private readonly ClusterState volatileClusterState;
 
         /// <summary>
-        /// Create a new EnhancedDprFinderBackend backed by the given storage. If the storage holds a valid persisted
-        /// EnhancedDprFinderBackend state, the constructor will attempt to recover from it. 
+        ///     Create a new EnhancedDprFinderBackend backed by the given storage. If the storage holds a valid persisted
+        ///     EnhancedDprFinderBackend state, the constructor will attempt to recover from it.
         /// </summary>
         /// <param name="persistentStorage"> persistent storage backing this dpr finder </param>
         public EnhancedDprFinderBackend(PingPongDevice persistentStorage)
@@ -281,7 +234,7 @@ namespace FASTER.libdpr
                 {
                     // Mark cut as changed so we know to serialize the new cut later on
                     cutChanged = true;
-                    
+
                     var version = currentCut.GetValueOrDefault(committed.Worker, 0);
                     // Update cut if necessary
                     if (version < committed.Version)
@@ -299,8 +252,8 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Performs work to evolve cluster state and find DPR cuts. Must be called repeatedly for the DprFinder to
-        /// make progress. Process() should only be invoked sequentially, but may be concurrent with other public methods.
+        ///     Performs work to evolve cluster state and find DPR cuts. Must be called repeatedly for the DprFinder to
+        ///     make progress. Process() should only be invoked sequentially, but may be concurrent with other public methods.
         /// </summary>
         public void Process()
         {
@@ -368,7 +321,7 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Adds a new checkpoint to the precedence graph with the given dependencies
+        ///     Adds a new checkpoint to the precedence graph with the given dependencies
         /// </summary>
         /// <param name="worldLine"> world-line of the checkpoint </param>
         /// <param name="wv"> worker version checkpointed </param>
@@ -388,7 +341,7 @@ namespace FASTER.libdpr
                 // not allow this write to go through
                 if (worldLine != volatileClusterState.currentWorldLine
                     && wv.Version > volatileClusterState.worldLinePrefix[wv.Worker]) return;
-                
+
                 var list = objectPool.Checkout();
                 list.Clear();
                 list.AddRange(deps);
@@ -422,15 +375,17 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Add the worker to the cluster. If the worker is already part of the cluster the DprFinder considers that
-        /// a failure recovery and triggers necessary next steps. Given callback is invoked when the effect of this
-        /// call is recoverable on storage 
+        ///     Add the worker to the cluster. If the worker is already part of the cluster the DprFinder considers that
+        ///     a failure recovery and triggers necessary next steps. Given callback is invoked when the effect of this
+        ///     call is recoverable on storage
         /// </summary>
         /// <param name="worker"> worker to add to the cluster </param>
         /// <param name="callback"> callback to invoke when worker addition is persistent </param>
-        public void AddWorker(Worker worker, Action<(long, long)> callback = null) =>
+        public void AddWorker(Worker worker, Action<(long, long)> callback = null)
+        {
             addQueue.Enqueue(ValueTuple.Create(worker, callback));
-        
+        }
+
         private (long, long) ProcessAddWorker(Worker worker)
         {
             // Before adding a worker, make sure all workers have already reported all (if any) locally outstanding 
@@ -467,14 +422,16 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Delete a worker from the cluster. It is up to the caller to ensure that the worker is not participating in
-        /// any future operations or have outstanding unpersisted operations others may depend on. Until callback is
-        /// invoked, the worker is still considered part of the system and must be recovered if it crashes. 
+        ///     Delete a worker from the cluster. It is up to the caller to ensure that the worker is not participating in
+        ///     any future operations or have outstanding unpersisted operations others may depend on. Until callback is
+        ///     invoked, the worker is still considered part of the system and must be recovered if it crashes.
         /// </summary>
         /// <param name="worker"> the worker to delete from the cluster </param>
         /// <param name="callback"> callback to invoke when worker removal is persistent on storage </param>
-        public void DeleteWorker(Worker worker, Action callback = null) =>
+        public void DeleteWorker(Worker worker, Action callback = null)
+        {
             deleteQueue.Enqueue(ValueTuple.Create(worker, callback));
+        }
 
         private void ProcessDeleteWorker(Worker worker)
         {
@@ -491,16 +448,80 @@ namespace FASTER.libdpr
 
         /// <summary></summary>
         /// <returns> PrecomputedResponse to sync calls </returns>
-        public PrecomputedSyncResponse GetPrecomputedResponse() => syncResponse;
+        public PrecomputedSyncResponse GetPrecomputedResponse()
+        {
+            return syncResponse;
+        }
 
         /// <summary></summary>
         /// <returns> Largest version number seen by this DprFinder </returns>
-        public long MaxVersion() => maxVersion;
+        public long MaxVersion()
+        {
+            return maxVersion;
+        }
 
         /// <inheritdoc cref="IDisposable" />
         public void Dispose()
         {
             persistentStorage?.Dispose();
+        }
+
+        // Recovery state is the information EnhancedDprFinderBackend needs to keep when restarting (presumably because
+        // of failure) from previous on-disk state.
+        private class RecoveryState
+        {
+            private readonly EnhancedDprFinderBackend backend;
+            private readonly CountdownEvent countdown;
+            private bool recoveryComplete;
+
+            private readonly ConcurrentDictionary<Worker, byte> workersUnaccontedFor =
+                new ConcurrentDictionary<Worker, byte>();
+
+            internal RecoveryState(EnhancedDprFinderBackend backend)
+            {
+                this.backend = backend;
+                // Check if the cluster is empty
+                if (backend.volatileClusterState.worldLinePrefix.Count == 0)
+                {
+                    // If so, we do not need to recover anything, simply finish writing out the empty cut and mark
+                    // this backend as fully recovered for future operations
+                    backend.GetPrecomputedResponse().UpdateCut(backend.currentCut);
+                    recoveryComplete = true;
+                    return;
+                }
+
+                // Otherwise, we need to first rebuild an in-memory precedence graph from information persisted
+                // at each state object. 
+                recoveryComplete = false;
+                // Mark all previously known worker as unaccounted for --- we cannot make any statements about the
+                // current state of the cluster until we are sure we have up-to-date information from all of them
+                foreach (var w in backend.volatileClusterState.worldLinePrefix.Keys)
+                    workersUnaccontedFor.TryAdd(w, 0);
+                countdown = new CountdownEvent(workersUnaccontedFor.Count);
+            }
+
+            internal bool RecoveryComplete()
+            {
+                return recoveryComplete;
+            }
+
+            // Called when the backend has received all precedence graph information from a worker
+            internal void MarkWorkerAccountedFor(Worker worker)
+            {
+                // A worker may repeatedly check-in due to crashes or other reason, we need to make sure each
+                // worker decrements the count exactly once
+                if (!workersUnaccontedFor.TryRemove(worker, out _)) return;
+
+                if (!countdown.Signal()) return;
+                // At this point, we have all information that is at least as up-to-date as when we crashed. We can
+                // traverse the graph and be sure to reach a conclusion that's at least as up-to-date as the guarantees
+                // we may have given out before we crashed.
+                backend.cutChanged = true;
+                backend.TryCommitVersions(true);
+
+                // Only mark recovery complete after we have reached that conclusion
+                recoveryComplete = true;
+            }
         }
     }
 }

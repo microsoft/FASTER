@@ -4,19 +4,28 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using FASTER.core;
 
 namespace FASTER.libdpr
 {
-
     /// <summary>
-    /// Maintains per-worker state for DPR version-tracking.
-    ///
-    /// Shared between the DprManager and DprWorkerCallback. This is separate from DprManager to avoid introducing
-    /// the IStateObject generic type argument to DprWorkerCallback.
+    ///     Maintains per-worker state for DPR version-tracking.
+    ///     Shared between the DprManager and DprWorkerCallback. This is separate from DprManager to avoid introducing
+    ///     the IStateObject generic type argument to DprWorkerCallback.
     /// </summary>
     internal class DprWorkerState
     {
+        internal readonly SimpleObjectPool<LightDependencySet> dependencySetPool;
+
+        internal readonly IDprFinder dprFinder;
+        internal readonly Worker me;
+        internal readonly ConcurrentDictionary<long, LightDependencySet> versions;
+
+        internal readonly SimpleVersionScheme worldlineTracker;
+        internal long lastCheckpointMilli, lastRefreshMilli;
+        internal ManualResetEventSlim rollbackProgress;
+
+        internal Stopwatch sw = Stopwatch.StartNew();
+
         internal DprWorkerState(IDprFinder dprFinder, Worker me)
         {
             this.dprFinder = dprFinder;
@@ -25,22 +34,11 @@ namespace FASTER.libdpr
             versions = new ConcurrentDictionary<long, LightDependencySet>();
             dependencySetPool = new SimpleObjectPool<LightDependencySet>(() => new LightDependencySet());
         }
-
-        internal readonly IDprFinder dprFinder;
-
-        internal readonly SimpleVersionScheme worldlineTracker;
-        internal ManualResetEventSlim rollbackProgress;
-        internal readonly ConcurrentDictionary<long, LightDependencySet> versions;
-        internal readonly SimpleObjectPool<LightDependencySet> dependencySetPool;
-        internal readonly Worker me;
-
-        internal Stopwatch sw = Stopwatch.StartNew();
-        internal long lastCheckpointMilli = 0, lastRefreshMilli = 0;
     }
 
     /// <summary>
-    /// DprManager is the primary interface between an underlying state object and the libDPR layer. libDPR expects
-    /// to be called before and after every batch execution.
+    ///     DprManager is the primary interface between an underlying state object and the libDPR layer. libDPR expects
+    ///     to be called before and after every batch execution.
     /// </summary>
     /// <typeparam name="TStateObject"></typeparam>
     /// <typeparam name="TToken"></typeparam>
@@ -49,8 +47,8 @@ namespace FASTER.libdpr
     {
         private readonly DprWorkerState state;
         private readonly TStateObject stateObject;
-        private SimpleObjectPool<DprBatchVersionTracker> trackers;
-        private byte[] depSerializationArray;
+        private readonly byte[] depSerializationArray;
+        private readonly SimpleObjectPool<DprBatchVersionTracker> trackers;
 
         public DprServer(IDprFinder dprFinder, Worker me, TStateObject stateObject)
         {
@@ -78,7 +76,10 @@ namespace FASTER.libdpr
             }, state.dprFinder.SystemWorldLine());
         }
 
-        public TStateObject StateObject() => stateObject;
+        public TStateObject StateObject()
+        {
+            return stateObject;
+        }
 
         private ReadOnlySpan<byte> ComputeDependency(long version)
         {
@@ -105,7 +106,7 @@ namespace FASTER.libdpr
             {
                 if (!state.dprFinder.Refresh())
                     state.dprFinder.ResendGraph(state.me, stateObject);
-                FASTER.core.Utility.MonotonicUpdate(ref state.lastRefreshMilli, currentTime, out _);
+                core.Utility.MonotonicUpdate(ref state.lastRefreshMilli, currentTime, out _);
                 TryAdvanceWorldLineTo(state.dprFinder.SystemWorldLine());
             }
 
@@ -113,7 +114,7 @@ namespace FASTER.libdpr
             {
                 stateObject.BeginCheckpoint(ComputeDependency,
                     Math.Max(stateObject.Version() + 1, state.dprFinder.GlobalMaxVersion()));
-                FASTER.core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, currentTime, out _);
+                core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, currentTime, out _);
             }
 
             // Can prune dependency information of committed versions
@@ -134,11 +135,11 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Invoke before beginning processing of a batch. If the function returns false, the batch must not be
-        /// executed to preserve DPR consistency, and the caller should return the error response (written in the
-        /// response field in case of failure). Otherwise, when the function returns, the batch is safe to execute.
-        /// In the true case, there must eventually be a matching SignalBatchFinish call for DPR to make
-        /// progress.
+        ///     Invoke before beginning processing of a batch. If the function returns false, the batch must not be
+        ///     executed to preserve DPR consistency, and the caller should return the error response (written in the
+        ///     response field in case of failure). Otherwise, when the function returns, the batch is safe to execute.
+        ///     In the true case, there must eventually be a matching SignalBatchFinish call for DPR to make
+        ///     progress.
         /// </summary>
         /// <param name="request">Dpr request message from user</param>
         /// <param name="response">Dpr response message that will be returned to user in case of failure</param>
@@ -152,7 +153,7 @@ namespace FASTER.libdpr
             while (request.versionLowerBound > stateObject.Version())
             {
                 stateObject.BeginCheckpoint(ComputeDependency, request.versionLowerBound);
-                FASTER.core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
+                core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
             }
 
             // Enter protected region for world-lines. Because we validate requests batch-at-a-time, the world-line
@@ -203,12 +204,12 @@ namespace FASTER.libdpr
             // Exit without releasing epoch, as protection is supposed to extend until end of batch.
             return true;
         }
-        
+
 
         /// <summary>
-        /// Invoke after processing of a batch is complete, and dprBatchHeader has been populated with a batch offset ->
-        /// executed version mapping. This function must be invoked once for every processed batch for DPR to make
-        /// progress.
+        ///     Invoke after processing of a batch is complete, and dprBatchHeader has been populated with a batch offset ->
+        ///     executed version mapping. This function must be invoked once for every processed batch for DPR to make
+        ///     progress.
         /// </summary>
         /// <param name="request">Dpr request message from user</param>
         /// <param name="response">Dpr response message that will be returned to user</param>
@@ -238,15 +239,14 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Force the execution of a checkpoint ahead of the schedule specified at creation time.
-        ///
-        /// Resets the checkpoint schedule to happen checkpoint_milli after this invocation. 
+        ///     Force the execution of a checkpoint ahead of the schedule specified at creation time.
+        ///     Resets the checkpoint schedule to happen checkpoint_milli after this invocation.
         /// </summary>
         /// <param name="targetVersion"> the version to jump to after the checkpoint</param>
         public void ForceCheckpoint(long targetVersion = -1)
         {
             stateObject.BeginCheckpoint(ComputeDependency, targetVersion);
-            FASTER.core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
+            core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
         }
     }
 }

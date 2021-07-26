@@ -4,82 +4,28 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
-using FASTER.core;
 
 namespace FASTER.libdpr
 {
     public class GraphDprFinderBackend : IDisposable
     {
-        /// <summary>
-        ///  Encapsulates the persistent state of GraphDprFinderBackend
-        /// </summary>
-        public class State
-        {
-            // Accesses to these are single-threaded
-            private Dictionary<Worker, long> worldLines;
-            private Dictionary<Worker, long> cut;
+        // callbacks to invoke on the next persist completion
+        private readonly List<Action> callbacks = new List<Action>();
+        private readonly Queue<WorkerVersion> frontier = new Queue<WorkerVersion>();
 
-            // Dirty bit to signal that the state has been changed
-            internal bool hasUpdates;
+        // Volatile information, but immediately visible outside to enable version fast-forwarding. This is ok because
+        // fast-forwarding has no correctness implications, but helps the cluster stay in sync with their checkpoint
+        // schedule.
+        private long maxVersion;
 
-            /// <summary>
-            /// Constructs a new GraphDprFinderBackend.State object that's empty
-            /// </summary>
-            public State()
-            {
-                worldLines = new Dictionary<Worker, long>();
-                cut = new Dictionary<Worker, long>();
-            }
+        /* Reused data structure for graph and traversal */
+        private readonly SimpleObjectPool<List<WorkerVersion>> objectPool =
+            new SimpleObjectPool<List<WorkerVersion>>(() => new List<WorkerVersion>());
 
-            /// <summary>
-            /// Constructs a new GraphDprFinderBackend.State from serialized bytes on the given buffer
-            /// </summary>
-            /// <param name="buf">buffer holding serialized bytes</param>
-            /// <param name="offset">offset within buffer to start reading from</param>
-            public State(byte[] buf, int offset)
-            {
-                var head = offset;
-                worldLines = new Dictionary<Worker, long>();
-                cut = new Dictionary<Worker, long>();
-                head = RespUtil.ReadDictionaryFromBytes(buf, head, cut);
-                RespUtil.ReadDictionaryFromBytes(buf, head, worldLines);
-            }
+        private readonly ConcurrentQueue<WorkerVersion> outstandingWvs = new ConcurrentQueue<WorkerVersion>();
 
-            /// <summary>
-            /// Constructs a new GraphDprFinderBackend.State as the copy of another State object.
-            /// </summary>
-            /// <param name="other">State object to copy from</param>
-            public State(State other)
-            {
-                worldLines = new Dictionary<Worker, long>(other.worldLines);
-                cut = new Dictionary<Worker, long>(other.cut);
-            }
-
-            /// <summary></summary>
-            /// <returns>The DPR cut</returns>
-            public Dictionary<Worker, long> GetCurrentCut()
-            {
-                return cut;
-            }
-
-            /// <summary></summary>
-            /// <returns>A mapping from workers to their current world-line</returns>
-            public Dictionary<Worker, long> GetCurrentWorldLines()
-            {
-                return worldLines;
-            }
-            
-            internal bool Serialize(byte[] buf, out int size)
-            {
-                var head = 0;
-                // Check that the buffer is large enough to hold the entries
-                size = sizeof(long) * 2 * (worldLines.Count + cut.Count) + 2 * sizeof(int);
-                if (buf.Length <size) return false;
-                head = RespUtil.SerializeDictionary(cut, buf, head);
-                RespUtil.SerializeDictionary(worldLines, buf, head);
-                return true;
-            }
-        }
+        /* Persistence */
+        private readonly PingPongDevice persistentStorage;
 
         /* Ephemeral data structures */
         // Precedence graph stores dependency information. All nodes present in the precedence graph's keyset are
@@ -89,54 +35,40 @@ namespace FASTER.libdpr
         // This graph is updated and read concurrently because races are benign here --- worker-versions are only
         // added or deleted and never updated; in the face of concurrent writes, readers miss information and arrive
         // at overly conservative answers that are still correct. 
-        private ConcurrentDictionary<WorkerVersion, List<WorkerVersion>> precedenceGraph =
+        private readonly ConcurrentDictionary<WorkerVersion, List<WorkerVersion>> precedenceGraph =
             new ConcurrentDictionary<WorkerVersion, List<WorkerVersion>>();
-
-        // Tracks a mapping from worker -> latest committed version, used for the approximate algorithm. This is 
-        // cheaper to access than scanning through the entire graph if maintained separately. Ok to be out-of-sync
-        // slightly with the graph as the graph is the source of truth and this is used for speed-up / DprFinder
-        // fault recovery when some deps are lost. 
-        private ConcurrentDictionary<Worker, long> versionTable = new ConcurrentDictionary<Worker, long>();
-
-        // Volatile information, but immediately visible outside to enable version fast-forwarding. This is ok because
-        // fast-forwarding has no correctness implications, but helps the cluster stay in sync with their checkpoint
-        // schedule.
-        private long maxVersion = 0;
-
-        // State that is being updated on the fly (single-threaded). Not visible to the outside world until 
-        // persistent. A thread periodically reads a copy of the volatile state to flush to persistent storage and 
-        // cache the snapshot to make available to workers.
-        private State volatileState;
 
         /* Cluster Recovery */
         // Recovery reports are processed on the same thread as graph traversal to avoid concurrency and ensure
         // correctness. As soon as the cluster acknowledges a failure and enters recovery mode, it must stop giving 
         // guarantees. Single-threaded processing makes this easier.
-        private ConcurrentQueue<(WorkerVersion, long, Action)> recoveryReports = new ConcurrentQueue<(WorkerVersion, long, Action)>();
-        // callbacks to invoke on the next persist completion
-        private List<Action> callbacks = new List<Action>();
-
-        /* Persistence */
-        private PingPongDevice persistentStorage;
-        // Only keep the serialized persistent state for shipping to clients, as the DprFinder never needs to interpret
-        // this information.
-        private byte[] serializedPersistentState;
-        private int serializedPersistentStateSize;
-
-        /* Reused data structure for graph and traversal */
-        private SimpleObjectPool<List<WorkerVersion>> objectPool =
-            new SimpleObjectPool<List<WorkerVersion>>(() => new List<WorkerVersion>());
-
-        private HashSet<WorkerVersion> visited = new HashSet<WorkerVersion>();
-        private Queue<WorkerVersion> frontier = new Queue<WorkerVersion>();
-        private ConcurrentQueue<WorkerVersion> outstandingWvs = new ConcurrentQueue<WorkerVersion>();
+        private readonly ConcurrentQueue<(WorkerVersion, long, Action)> recoveryReports =
+            new ConcurrentQueue<(WorkerVersion, long, Action)>();
 
         /* Serialization */
         // Start out at some arbitrary size --- the code resizes this buffer to fit
         private byte[] serializationBuffer = new byte[1 << 20];
 
+        // Only keep the serialized persistent state for shipping to clients, as the DprFinder never needs to interpret
+        // this information.
+        private byte[] serializedPersistentState;
+        private int serializedPersistentStateSize;
+
+        // Tracks a mapping from worker -> latest committed version, used for the approximate algorithm. This is 
+        // cheaper to access than scanning through the entire graph if maintained separately. Ok to be out-of-sync
+        // slightly with the graph as the graph is the source of truth and this is used for speed-up / DprFinder
+        // fault recovery when some deps are lost. 
+        private readonly ConcurrentDictionary<Worker, long> versionTable = new ConcurrentDictionary<Worker, long>();
+
+        private readonly HashSet<WorkerVersion> visited = new HashSet<WorkerVersion>();
+
+        // State that is being updated on the fly (single-threaded). Not visible to the outside world until 
+        // persistent. A thread periodically reads a copy of the volatile state to flush to persistent storage and 
+        // cache the snapshot to make available to workers.
+        private readonly State volatileState;
+
         /// <summary>
-        /// Creates a new GraphDprFinderBackend that persists to the given backend
+        ///     Creates a new GraphDprFinderBackend that persists to the given backend
         /// </summary>
         /// <param name="persistentStorage">backend persistent storage device</param>
         public GraphDprFinderBackend(PingPongDevice persistentStorage)
@@ -157,6 +89,11 @@ namespace FASTER.libdpr
 
             foreach (var entry in volatileState.GetCurrentCut())
                 versionTable[entry.Key] = entry.Value;
+        }
+
+        public void Dispose()
+        {
+            persistentStorage?.Dispose();
         }
 
         // Try to commit wvs starting from the given wv. Commits and updates the volatile state the entire dependency
@@ -206,17 +143,15 @@ namespace FASTER.libdpr
             volatileState.GetCurrentWorldLines()[worker] = worldLine;
             // Remove any rolled back version to avoid accidentally including them in a cut.
             for (var v = survivingVersion + 1; v <= maxVersion; v++)
-            {
                 if (precedenceGraph.TryRemove(new WorkerVersion(worker, v), out var list))
                     objectPool.Return(list);
-            }
         }
-        
+
         public void TryFindDprCut()
         {
             if (versionTable.IsEmpty)
                 return;
-            
+
             lock (volatileState)
             {
                 // Apply any recovery-related updates
@@ -226,7 +161,7 @@ namespace FASTER.libdpr
                     if (entry.Item3 != null)
                         callbacks.Add(entry.Item3);
                 }
-            
+
                 // Check if all workers are on the same worldline. If not, there's an in-progress recovery. No
                 // guarantees if recovery is in progress
                 long worldLine = -1;
@@ -235,10 +170,9 @@ namespace FASTER.libdpr
                     if (worldLine == -1)
                         worldLine = entry.Value;
                     if (worldLine != entry.Value) return;
-
                 }
             }
-            
+
             lock (volatileState)
             {
                 // Use min to quickly prune outdated vertices
@@ -268,8 +202,8 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Writes (a consistent snapshot of) the volatile state to persistent storage so it can be made visible to
-        /// workers. Writes complete synchronously on the calling thread.
+        ///     Writes (a consistent snapshot of) the volatile state to persistent storage so it can be made visible to
+        ///     workers. Writes complete synchronously on the calling thread.
         /// </summary>
         public void PersistState()
         {
@@ -291,20 +225,20 @@ namespace FASTER.libdpr
                 serializationBuffer = new byte[Math.Max(size, serializationBuffer.Length * 2)];
 
             persistentStorage.WriteReliably(serializationBuffer, 0, size);
-            
+
             // Atomically updates the current stashed copy of persistent state and its size for client consumption.
             lock (serializedPersistentState)
             {
                 Interlocked.Exchange(ref serializedPersistentState, serializationBuffer);
                 serializedPersistentStateSize = size;
             }
-            
+
             foreach (var callback in acks)
                 callback();
         }
 
         /// <summary>
-        /// Report a new checkpoint to the backend with the given dependencies
+        ///     Report a new checkpoint to the backend with the given dependencies
         /// </summary>
         /// <param name="wv">worker-version of the checkpoint</param>
         /// <param name="deps">dependencies of the checkpoint</param>
@@ -323,12 +257,15 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Report a new recovery of a worker version. If the given worker is the special value of CLUSTER_MANAGER,
-        /// this is treated as an external signal to start a recovery process. 
+        ///     Report a new recovery of a worker version. If the given worker is the special value of CLUSTER_MANAGER,
+        ///     this is treated as an external signal to start a recovery process.
         /// </summary>
         /// <param name="wv">worker version that is recovered, or (CLUSTER_MANAGER, 0) if triggering recovery for the cluster</param>
         /// <param name="worldLine"> the new worldline the worker is on</param>
-        /// <param name="callback"> the function to trigger when the recovery update is persistent on disk. If null or not supplied, the function blocks until persistence.</param>
+        /// <param name="callback">
+        ///     the function to trigger when the recovery update is persistent on disk. If null or not
+        ///     supplied, the function blocks until persistence.
+        /// </param>
         public void ReportRecovery(WorkerVersion wv, long worldLine, Action callback)
         {
             recoveryReports.Enqueue(ValueTuple.Create(wv, worldLine, callback));
@@ -336,11 +273,12 @@ namespace FASTER.libdpr
 
 
         /// <summary>
-        /// Adds a new worker to the system to be tracked. 
+        ///     Adds a new worker to the system to be tracked.
         /// </summary>
         /// <param name="worker">the worker to add</param>
         /// <param name="callback">callback to invoke when the add is persistent</param>
-        /// <returns> (world-line, version) that the new worker should start at </returns>>
+        /// <returns> (world-line, version) that the new worker should start at </returns>
+        /// >
         public (long, long) AddWorker(Worker worker, Action<(long, long)> callback)
         {
             versionTable.TryAdd(worker, 0);
@@ -367,7 +305,7 @@ namespace FASTER.libdpr
                     ApplyRollback(newWorldLine, worker, survivingVersion);
                     result = (newWorldLine, survivingVersion);
                 }
-                
+
                 volatileState.hasUpdates = true;
                 if (callback != null)
                     callbacks.Add(() => callback(result));
@@ -376,8 +314,8 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Remove a worker from the system for tracking. It is up to the caller to ensure that removal is safe (i.e.,
-        /// all dependencies on the removed worker are resolved)
+        ///     Remove a worker from the system for tracking. It is up to the caller to ensure that removal is safe (i.e.,
+        ///     all dependencies on the removed worker are resolved)
         /// </summary>
         /// <param name="worker">the worker to remove</param>
         /// <param name="callback">callback to invoke when the removal is persistent</param>
@@ -403,11 +341,81 @@ namespace FASTER.libdpr
             }
         }
 
-        public long MaxVersion() => maxVersion;
-
-        public void Dispose()
+        public long MaxVersion()
         {
-            persistentStorage?.Dispose();
+            return maxVersion;
+        }
+
+        /// <summary>
+        ///     Encapsulates the persistent state of GraphDprFinderBackend
+        /// </summary>
+        public class State
+        {
+            private readonly Dictionary<Worker, long> cut;
+
+            // Dirty bit to signal that the state has been changed
+            internal bool hasUpdates;
+
+            // Accesses to these are single-threaded
+            private readonly Dictionary<Worker, long> worldLines;
+
+            /// <summary>
+            ///     Constructs a new GraphDprFinderBackend.State object that's empty
+            /// </summary>
+            public State()
+            {
+                worldLines = new Dictionary<Worker, long>();
+                cut = new Dictionary<Worker, long>();
+            }
+
+            /// <summary>
+            ///     Constructs a new GraphDprFinderBackend.State from serialized bytes on the given buffer
+            /// </summary>
+            /// <param name="buf">buffer holding serialized bytes</param>
+            /// <param name="offset">offset within buffer to start reading from</param>
+            public State(byte[] buf, int offset)
+            {
+                var head = offset;
+                worldLines = new Dictionary<Worker, long>();
+                cut = new Dictionary<Worker, long>();
+                head = RespUtil.ReadDictionaryFromBytes(buf, head, cut);
+                RespUtil.ReadDictionaryFromBytes(buf, head, worldLines);
+            }
+
+            /// <summary>
+            ///     Constructs a new GraphDprFinderBackend.State as the copy of another State object.
+            /// </summary>
+            /// <param name="other">State object to copy from</param>
+            public State(State other)
+            {
+                worldLines = new Dictionary<Worker, long>(other.worldLines);
+                cut = new Dictionary<Worker, long>(other.cut);
+            }
+
+            /// <summary></summary>
+            /// <returns>The DPR cut</returns>
+            public Dictionary<Worker, long> GetCurrentCut()
+            {
+                return cut;
+            }
+
+            /// <summary></summary>
+            /// <returns>A mapping from workers to their current world-line</returns>
+            public Dictionary<Worker, long> GetCurrentWorldLines()
+            {
+                return worldLines;
+            }
+
+            internal bool Serialize(byte[] buf, out int size)
+            {
+                var head = 0;
+                // Check that the buffer is large enough to hold the entries
+                size = sizeof(long) * 2 * (worldLines.Count + cut.Count) + 2 * sizeof(int);
+                if (buf.Length < size) return false;
+                head = RespUtil.SerializeDictionary(cut, buf, head);
+                RespUtil.SerializeDictionary(worldLines, buf, head);
+                return true;
+            }
         }
     }
 }

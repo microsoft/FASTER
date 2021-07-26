@@ -1,11 +1,10 @@
-
 using System.Diagnostics;
 
 namespace FASTER.libdpr
 {
     /// <summary>
-    /// A set of callback functions that libdpr expects the underlying implementation to invoke at certain points of
-    /// the checkpoint/recovery process. 
+    ///     A set of callback functions that libdpr expects the underlying implementation to invoke at certain points of
+    ///     the checkpoint/recovery process.
     /// </summary>
     /// <typeparam name="TToken">Type of token that uniquely identifies a checkpoint</typeparam>
     public class DprWorkerCallbacks
@@ -18,8 +17,8 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Invoked when a new version is created. This method should be invoked and allowed to finish before any
-        /// operation is issued to the new version and before future version is created.
+        ///     Invoked when a new version is created. This method should be invoked and allowed to finish before any
+        ///     operation is issued to the new version and before future version is created.
         /// </summary>
         /// <param name="version"></param>
         /// <param name="previousVersion"></param>
@@ -35,7 +34,7 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Invoked when a version is persistent.
+        ///     Invoked when a version is persistent.
         /// </summary>
         /// <param name="version">Version number of the finished version</param>
         /// <param name="token">unique token that identifies the checkpoint associated with the version</param>
@@ -50,8 +49,8 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Invoked when rollback is complete. There is no need for any identifier because libDPR always issues rollbacks
-        /// one-at-a-time without only one outstanding rollback.
+        ///     Invoked when rollback is complete. There is no need for any identifier because libDPR always issues rollbacks
+        ///     one-at-a-time without only one outstanding rollback.
         /// </summary>
         public void OnRollbackComplete()
         {

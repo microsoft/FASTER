@@ -67,7 +67,7 @@ namespace FASTER.libdpr
 
         public long SystemWorldLine()
         {
-            return 0;
+            return 1;
         }
 
         public IDprStateSnapshot GetStateSnapshot()

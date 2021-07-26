@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.InteropServices;
 using FASTER.libdpr;
 
 namespace DprCounters
@@ -16,7 +15,10 @@ namespace DprCounters
         private DprClientSession session;
         private Dictionary<Worker, IPEndPoint> cluster;
         private byte[] serializationBuffer = new byte[1 << 15];
+        private long serialNum = 0;
 
+        private ClientVersionTracker versionTracker = new ClientVersionTracker();
+        
         /// <summary>
         /// Create a new client session
         /// </summary>
@@ -28,6 +30,7 @@ namespace DprCounters
             this.cluster = cluster;
         }
 
+
         /// <summary>
         /// Increments the counter at the given location by the given amount
         /// </summary>
@@ -37,9 +40,12 @@ namespace DprCounters
         /// <returns>unique id for operation </returns>
         public long Increment(Worker worker, long amount, out long result)
         {
+            var id = serialNum++;
+            // Add unique id to tracking
+            versionTracker.Add(id);
             // Before sending operations, consult with DPR client for a batch header. For this simple example, we 
             // are using one message per batch
-            var seqNo = session.IssueBatch(1, worker, out var header);
+            session.IssueBatch(1, worker, out var header);
             // Use a serialization scheme that writes a size field and then the DPR header and request in sequence.
             BitConverter.TryWriteBytes(new Span<byte>(serializationBuffer, 0, sizeof(int)),
                 header.Length + sizeof(long));
@@ -62,17 +68,16 @@ namespace DprCounters
             while (receivedBytes < size + sizeof(int))
                 receivedBytes += socket.Receive(serializationBuffer, receivedBytes, serializationBuffer.Length - receivedBytes, SocketFlags.None);
 
-            ref var response = ref MemoryMarshal.GetReference(
-                MemoryMarshal.Cast<byte, DprBatchResponseHeader>(new Span<byte>(serializationBuffer, sizeof(int),
-                    size - sizeof(long))));
             // Forward the DPR response header after we are done
-            var success = session.ResolveBatch(ref response);
+            var success = session.ResolveBatch(new Memory<byte>(serializationBuffer, sizeof(int), size - sizeof(long)), out var vector);
             // Because we use one-off sockets, resolve batch should never fail.
             Debug.Assert(success);
-            
+
+            versionTracker.Resolve(id, new WorkerVersion(worker, vector[0]));
+
             // (Non-DPR) Response is 8 bytes, 
             result = BitConverter.ToInt64(serializationBuffer, sizeof(int) + size - sizeof(long));
-            return seqNo;
+            return id;
         }
 
         /// <summary>
@@ -82,10 +87,13 @@ namespace DprCounters
         /// <returns>whether operation is committed</returns>
         public bool Committed(long seq)
         {
-            var cp = session.GetCommitPoint();
+            if (session.TryGetCurrentCut(out var cut))
+                versionTracker.HandleCommit(cut);
+            
+            var cp = versionTracker.GetCommitPoint();
             // Because the session is strictly sequential, operation will never be in exception list.
             Debug.Assert(cp.ExcludedSerialNos.Count == 0);
-            return seq < session.GetCommitPoint().UntilSerialNo;
+            return seq < cp.UntilSerialNo;
         }
     }
 }

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-
+using System.Text;
 
 namespace FASTER.libdpr
 {
@@ -65,13 +65,13 @@ namespace FASTER.libdpr
         ARG_W,
         ARG_WV,
         ARG_WL,
-        ARG_DEPS,
+        ARG_DEPS
     }
 
     internal class DprFinderCommandParser
     {
-        internal DprFinderCommand currentCommand;
         internal CommandParserState commandParserState;
+        internal DprFinderCommand currentCommand;
         internal int currentCommandStart = -1, currentFragmentStart, size, stringStart;
 
         internal DprFinderCommandParser()
@@ -150,36 +150,36 @@ namespace FASTER.libdpr
                         switch ((char) buf[stringStart])
                         {
                             case 'N':
-                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
+                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size)
                                     .Equals("NewCheckpoint"));
                                 currentCommand.commandType = DprFinderCommand.Type.NEW_CHECKPOINT;
                                 commandParserState = CommandParserState.ARG_WL;
                                 break;
                             case 'R':
-                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
+                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size)
                                     .Equals("ReportRecovery"));
                                 currentCommand.commandType = DprFinderCommand.Type.REPORT_RECOVERY;
                                 commandParserState = CommandParserState.ARG_WV;
                                 break;
                             case 'A':
-                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
+                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size)
                                     .Equals("AddWorker"));
                                 currentCommand.commandType = DprFinderCommand.Type.ADD_WORKER;
                                 commandParserState = CommandParserState.ARG_W;
                                 break;
                             case 'D':
-                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
+                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size)
                                     .Equals("DeleteWorker"));
                                 currentCommand.commandType = DprFinderCommand.Type.DELETE_WORKER;
                                 commandParserState = CommandParserState.ARG_W;
                                 break;
                             case 'S':
-                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size).Equals("Sync"));
+                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size).Equals("Sync"));
                                 currentCommand.commandType = DprFinderCommand.Type.SYNC;
                                 commandParserState = CommandParserState.NONE;
                                 return true;
                             case 'G':
-                                Debug.Assert(System.Text.Encoding.ASCII.GetString(buf, readHead, size)
+                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size)
                                     .Equals("GraphResent"));
                                 currentCommand.commandType = DprFinderCommand.Type.GRAPH_RESENT;
                                 commandParserState = CommandParserState.ARG_WV;
@@ -212,21 +212,13 @@ namespace FASTER.libdpr
                         var version = BitConverter.ToInt64(buf, stringStart + sizeof(long));
                         currentCommand.wv = new WorkerVersion(workerId, version);
                         if (currentCommand.commandType == DprFinderCommand.Type.NEW_CHECKPOINT)
-                        {
                             commandParserState = CommandParserState.ARG_DEPS;
-                        }
                         else if (currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY)
-                        {
                             commandParserState = CommandParserState.ARG_WL;
-                        }
                         else if (currentCommand.commandType == DprFinderCommand.Type.GRAPH_RESENT)
-                        {
                             return true;
-                        }
                         else
-                        {
                             Debug.Assert(false);
-                        }
 
                         size = -1;
                     }
@@ -237,7 +229,7 @@ namespace FASTER.libdpr
                     {
                         Debug.Assert(size == sizeof(long));
                         Debug.Assert(currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY);
-                        currentCommand.worldLine = BitConverter.ToInt64(buf, stringStart); 
+                        currentCommand.worldLine = BitConverter.ToInt64(buf, stringStart);
                         size = -1;
                         if (currentCommand.commandType == DprFinderCommand.Type.NEW_CHECKPOINT)
                         {
@@ -245,7 +237,6 @@ namespace FASTER.libdpr
                         }
                         else if (currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY)
                         {
-
                             commandParserState = CommandParserState.NONE;
                             return true;
                         }
@@ -254,6 +245,7 @@ namespace FASTER.libdpr
                             Debug.Assert(false);
                         }
                     }
+
                     return false;
                 case CommandParserState.ARG_DEPS:
                     if (ProcessRedisBulkString(readHead, buf))
