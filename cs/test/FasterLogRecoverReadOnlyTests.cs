@@ -27,10 +27,12 @@ namespace FASTER.test.recovery
         [SetUp]
         public void Setup()
         {
-            path = Path.GetTempPath() + "RecoverReadOnlyTest/";
+            path = TestUtils.MethodTestDir + "/";
             deviceName = path + "testlog";
-            if (Directory.Exists(path))
-                TestUtils.DeleteDirectory(path);
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait:true);
+
             cts = new CancellationTokenSource();
             done = new SemaphoreSlim(0);
         }
@@ -38,8 +40,11 @@ namespace FASTER.test.recovery
         [TearDown]
         public void TearDown()
         {
+            cts?.Dispose();
+            cts = default;
+            done?.Dispose();
+            done = default;
             TestUtils.DeleteDirectory(path);
-            cts.Dispose();
         }
 
         [Test]

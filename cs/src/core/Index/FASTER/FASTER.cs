@@ -16,6 +16,7 @@ namespace FASTER.core
     /// <summary>
     /// Flags for the Read-by-address methods
     /// </summary>
+    /// <remarks>Note: must be kept in sync with corresponding PendingContext k* values</remarks>
     [Flags]
     public enum ReadFlags
     {
@@ -24,6 +25,9 @@ namespace FASTER.core
 
         /// <summary>Skip the ReadCache when reading, including not inserting to ReadCache when pending reads are complete</summary>
         SkipReadCache = 0x00000001,
+
+        /// <summary>The minimum address at which to resolve the Key; return <see cref="Status.NOTFOUND"/> if the key is not found at this address or higher</summary>
+        MinAddress = 0x00000002,
     }
 
     public partial class FasterKV<Key, Value> : FasterBase,
@@ -473,8 +477,17 @@ namespace FASTER.core
                     return;
 
                 List<ValueTask> valueTasks = new();
-                
-                ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, valueTasks, token);
+
+                try
+                {
+                    ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, valueTasks, token);
+                }
+                catch (Exception)
+                {
+                    this._indexCheckpoint.Reset();
+                    this._hybridLogCheckpoint.Reset();
+                    throw;
+                }
 
                 if (valueTasks.Count == 0)
                     continue; // we need to re-check loop, so we return only when we are at REST
@@ -517,7 +530,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.operationFlags = PendingContext<Input, Output, Context>.GetOperationFlags(readFlags);
+            pcontext.SetOperationFlags(readFlags, recordInfo.PreviousAddress);
             var internalStatus = InternalRead(ref key, ref input, ref output, recordInfo.PreviousAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
 
@@ -544,7 +557,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.operationFlags = PendingContext<Input, Output, Context>.GetOperationFlags(readFlags, noKey: true);
+            pcontext.SetOperationFlags(readFlags, address, noKey: true);
             Key key = default;
             var internalStatus = InternalRead(ref key, ref input, ref output, address, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);

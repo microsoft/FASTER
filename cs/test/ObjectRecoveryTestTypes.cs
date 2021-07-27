@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 1591
-
 using System.Threading;
 using FASTER.core;
 
@@ -35,7 +33,6 @@ namespace FASTER.test.recovery.objectstore
             writer.Write(obj.adId);
         }
     }
-
 
     public class Input
     {

@@ -150,7 +150,7 @@ namespace FASTER.core
             var req = new IORequestLocalMemory
             {
                 srcAddress = (void*)sourceAddress,
-                dstAddress = ram_segments[segmentId] + destinationAddress,
+                dstAddress = ram_segments[segmentId % parallelism] + destinationAddress,
                 bytes = numBytesToWrite,
                 callback = callback,
                 context = context

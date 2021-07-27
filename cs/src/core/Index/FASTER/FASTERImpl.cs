@@ -94,11 +94,11 @@ namespace FASTER.core
 
             OperationStatus status;
             long logicalAddress;
-            var usePreviousAddress = startAddress != Constants.kInvalidAddress;
+            var useStartAddress = startAddress != Constants.kInvalidAddress && !pendingContext.HasMinAddress;
             bool tagExists;
-            if (!usePreviousAddress)
+            if (!useStartAddress)
             {
-                tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address >= pendingContext.minAddress;
             }
             else
             {
@@ -112,7 +112,7 @@ namespace FASTER.core
 
                 if (UseReadCache)
                 {
-                    if (pendingContext.SkipReadCache)
+                    if (pendingContext.SkipReadCache || pendingContext.NoKey)
                     {
                         SkipReadCache(ref logicalAddress);
                     }
@@ -188,10 +188,10 @@ namespace FASTER.core
                 if (!pendingContext.recordInfo.Tombstone)
                 {
                     fasterSession.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, logicalAddress);
-                    if (CopyReadsToTail == CopyReadsToTail.FromReadOnly)
+                    if (CopyReadsToTail == CopyReadsToTail.FromReadOnly && !pendingContext.SkipCopyReadsToTail)
                     {
                         var container = hlog.GetValueContainer(ref hlog.GetValue(physicalAddress));
-                        InternalUpsert(ref key, ref container.Get(), ref userContext, ref pendingContext, fasterSession, sessionCtx, lsn);
+                        InternalTryCopyToTail(ref key, ref container.Get(), ref pendingContext.recordInfo, logicalAddress, fasterSession, sessionCtx);
                         container.Dispose();
                     }
                     return OperationStatus.SUCCESS;
@@ -209,7 +209,7 @@ namespace FASTER.core
                 if (sessionCtx.phase == Phase.PREPARE)
                 {
                     Debug.Assert(heldOperation != LatchOperation.Exclusive);
-                    if (usePreviousAddress)
+                    if (useStartAddress)
                     {
                         Debug.Assert(heldOperation == LatchOperation.None);
                     }
@@ -1369,97 +1369,12 @@ namespace FASTER.core
         {
             Debug.Assert(RelaxedCPR || pendingContext.version == opCtx.version);
 
-            var bucket = default(HashBucket*);
-            var slot = default(int);
-            var logicalAddress = Constants.kInvalidAddress;
-            var physicalAddress = default(long);
-
-            // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
             ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
-
-            var hash = comparer.GetHashCode64(ref key);
-
-            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-
-#region Trace back record in in-memory HybridLog
-            var entry = default(HashBucketEntry);
-            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
-            logicalAddress = entry.word & Constants.kAddressMask;
-
-            if (UseReadCache)
-                SkipReadCache(ref logicalAddress);
-            var latestLogicalAddress = logicalAddress;
-
-            if (logicalAddress >= hlog.HeadAddress)
-            {
-                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
-                {
-                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
-                    TraceBackForKeyMatch(ref key,
-                                            logicalAddress,
-                                            hlog.HeadAddress,
-                                            out logicalAddress,
-                                            out physicalAddress);
-                }
-            }
-#endregion
-
-            if (logicalAddress > pendingContext.entry.Address)
-            {
-                // Give up early
-                return;
-            }
-
-#region Create new copy in mutable region
-            physicalAddress = (long)request.record.GetValidPointer();
-            var (actualSize, allocatedSize) = hlog.GetRecordSize(physicalAddress);
-
-            long newLogicalAddress, newPhysicalAddress;
-            if (UseReadCache)
-            {
-                BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
-                newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
-                RecordInfo.WriteInfo(ref readcache.GetInfo(newPhysicalAddress), opCtx.version,
-                                    tombstone:false, invalidBit:false,
-                                    entry.Address);
-                readcache.Serialize(ref key, newPhysicalAddress);
-                fasterSession.SingleWriter(ref key,
-                                       ref hlog.GetContextRecordValue(ref request),
-                                       ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
-            }
-            else
-            {
-                BlockAllocate(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
-                newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
-                               tombstone:false, invalidBit:false,
-                               latestLogicalAddress);
-                hlog.Serialize(ref key, newPhysicalAddress);
-                fasterSession.SingleWriter(ref key,
-                                       ref hlog.GetContextRecordValue(ref request),
-                                       ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
-            }
-
-
-            var updatedEntry = default(HashBucketEntry);
-            updatedEntry.Tag = tag;
-            updatedEntry.Address = newLogicalAddress & Constants.kAddressMask;
-            updatedEntry.Pending = entry.Pending;
-            updatedEntry.Tentative = false;
-            updatedEntry.ReadCache = UseReadCache;
-
-            var foundEntry = default(HashBucketEntry);
-            foundEntry.word = Interlocked.CompareExchange(
-                                            ref bucket->bucket_entries[slot],
-                                            updatedEntry.word,
-                                            entry.word);
-            if (foundEntry.word != entry.word)
-            {
-                if (!UseReadCache) hlog.GetInfo(newPhysicalAddress).Invalid = true;
-                // We don't retry, just give up
-            }
-#endregion
+            byte* physicalAddress = request.record.GetValidPointer();
+            long logicalAddress = pendingContext.entry.Address;
+            ref RecordInfo oldRecordInfo = ref hlog.GetInfoFromBytePointer(physicalAddress);
+            
+            InternalTryCopyToTail(opCtx, ref key, ref hlog.GetContextRecordValue(ref request), ref oldRecordInfo, logicalAddress, fasterSession, currentCtx);
         }
 
         /// <summary>
@@ -1716,6 +1631,7 @@ namespace FASTER.core
                 request.id = pendingContext.id;
                 request.request_key = pendingContext.key;
                 request.logicalAddress = pendingContext.logicalAddress;
+                request.minAddress = pendingContext.minAddress;
                 request.record = default;
                 if (asyncOp)
                     request.asyncOperation = new TaskCompletionSource<AsyncIOContext<Key, Value>>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1890,6 +1806,172 @@ namespace FASTER.core
             foundPhysicalAddress = Constants.kInvalidAddress;
             return false;
         }
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OperationStatus InternalCopyToTail<Input, Output, Context, FasterSession>(
+                                            ref Key key, ref Value value,
+                                            ref RecordInfo recordInfo,
+                                            long expectedLogicalAddress,
+                                            FasterSession fasterSession,
+                                            FasterExecutionContext<Input, Output, Context> currentCtx,
+                                            bool noReadCache = false)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        { 
+            OperationStatus internalStatus;
+            do
+                internalStatus = InternalTryCopyToTail(currentCtx, ref key, ref value, ref recordInfo, expectedLogicalAddress, fasterSession, currentCtx, noReadCache);
+            while (internalStatus == OperationStatus.RETRY_NOW);
+            return internalStatus;
+        }
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OperationStatus InternalTryCopyToTail<Input, Output, Context, FasterSession>(
+                                            ref Key key, ref Value value,
+                                            ref RecordInfo recordInfo,
+                                            long foundLogicalAddress,
+                                            FasterSession fasterSession,
+                                            FasterExecutionContext<Input, Output, Context> currentCtx,
+                                            bool noReadCache = false)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+            => InternalTryCopyToTail(currentCtx, ref key, ref value, ref recordInfo, foundLogicalAddress, fasterSession, currentCtx, noReadCache);
+
+        /// <summary>
+        /// Helper function for trying to copy existing immutable records (at foundLogicalAddress) to the tail,
+        /// used in <see cref="InternalRead{Input, Output, Context, Functions}(ref Key, ref Input, ref Output, long, ref Context, ref PendingContext{Input, Output, Context}, Functions, FasterExecutionContext{Input, Output, Context}, long)"/>
+        /// <see cref="InternalContinuePendingReadCopyToTail{Input, Output, Context, FasterSession}(FasterExecutionContext{Input, Output, Context}, AsyncIOContext{Key, Value}, ref PendingContext{Input, Output, Context}, FasterSession, FasterExecutionContext{Input, Output, Context})"/>,
+        /// and <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}.CopyToTail(ref Key, ref Value, ref RecordInfo, long)"/>
+        /// 
+        /// Succeed only if the record for the same key hasn't changed.
+        /// </summary>
+        /// <typeparam name="Input"></typeparam>
+        /// <typeparam name="Output"></typeparam>
+        /// <typeparam name="Context"></typeparam>
+        /// <typeparam name="FasterSession"></typeparam>
+        /// <param name="opCtx">
+        /// The thread(or session) context to execute operation in.
+        /// It's different from currentCtx only when the function is used in InternalContinuePendingReadCopyToTail
+        /// </param>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <param name="recordInfo"></param>
+        /// <param name="expectedLogicalAddress">
+        /// The expected address of the record being copied.
+        /// </param>
+        /// <param name="fasterSession"></param>
+        /// <param name="currentCtx"></param>
+        /// <param name="noReadCache">
+        /// If true, it won't clutter read cache. 
+        /// Otherwise, it still checks UseReadCache to determine whether to buffer in read cache.
+        /// It is useful in Compact.
+        /// </param>
+        /// <returns>
+        /// NOTFOUND: didn't find the expected record of the same key that isn't greater than expectedLogicalAddress
+        /// RETRY_NOW: failed.
+        /// SUCCESS:
+        /// </returns>
+        internal OperationStatus InternalTryCopyToTail<Input, Output, Context, FasterSession>(
+                                        FasterExecutionContext<Input, Output, Context> opCtx,
+                                        ref Key key, ref Value value,
+                                        ref RecordInfo recordInfo,
+                                        long expectedLogicalAddress,
+                                        FasterSession fasterSession,
+                                        FasterExecutionContext<Input, Output, Context> currentCtx,
+                                        bool noReadCache = false)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            Debug.Assert(expectedLogicalAddress >= hlog.BeginAddress);
+            var bucket = default(HashBucket*);
+            var slot = default(int);
+
+            var hash = comparer.GetHashCode64(ref key);
+            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+            var entry = default(HashBucketEntry);
+            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
+            var logicalAddress = entry.Address;
+            var physicalAddress = default(long);
+            if (UseReadCache)
+                SkipReadCache(ref logicalAddress);
+            var latestLogicalAddress = logicalAddress;
+
+            if (logicalAddress >= hlog.HeadAddress)
+            {
+                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                {
+                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    TraceBackForKeyMatch(ref key,
+                                            logicalAddress,
+                                            hlog.HeadAddress,
+                                            out logicalAddress,
+                                            out physicalAddress);
+                }
+            }
+
+            if (logicalAddress > expectedLogicalAddress || logicalAddress < hlog.BeginAddress)
+            {
+                // We give up early.
+                // Note: In Compact, expectedLogicalAddress may not exactly match the source of this copy operation,
+                // but instead only an upper bound.
+                return OperationStatus.NOTFOUND;
+            }
+            #region Create new copy in mutable region
+            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
+
+            long newLogicalAddress, newPhysicalAddress;
+            bool copyToReadCache = noReadCache ? false : UseReadCache;
+            if (copyToReadCache)
+            {
+                BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
+                newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
+                RecordInfo.WriteInfo(ref readcache.GetInfo(newPhysicalAddress), opCtx.version,
+                                    tombstone: false, invalidBit: false,
+                                    entry.Address);
+                readcache.Serialize(ref key, newPhysicalAddress);
+                fasterSession.SingleWriter(ref key,
+                                        ref value,
+                                        ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+            }
+            else
+            {
+                BlockAllocate(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
+                newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
+                                tombstone: false, invalidBit: false,
+                                latestLogicalAddress);
+                hlog.Serialize(ref key, newPhysicalAddress);
+                fasterSession.SingleWriter(ref key,
+                                        ref value,
+                                        ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+            }
+
+
+            var updatedEntry = default(HashBucketEntry);
+            updatedEntry.Tag = tag;
+            updatedEntry.Address = newLogicalAddress & Constants.kAddressMask;
+            updatedEntry.Pending = entry.Pending;
+            updatedEntry.Tentative = false;
+            updatedEntry.ReadCache = copyToReadCache;
+
+            var foundEntry = default(HashBucketEntry);
+            foundEntry.word = Interlocked.CompareExchange(
+                                            ref bucket->bucket_entries[slot],
+                                            updatedEntry.word,
+                                            entry.word);
+            if (foundEntry.word != entry.word)
+            {
+                if (!copyToReadCache) hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                // Note: only Compact actually retries;
+                // other operations, i.e., copy to tail during reads, just give up if the first try fails
+                return OperationStatus.RETRY_NOW;
+            }
+            else
+                return OperationStatus.SUCCESS;
+            #endregion
+        }
+
         #endregion
 
         #region Split Index
