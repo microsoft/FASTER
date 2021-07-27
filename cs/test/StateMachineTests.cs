@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Collections.Generic;
 using System.Threading;
 using FASTER.core;
 using System.IO;
@@ -343,6 +344,66 @@ namespace FASTER.test.statemachine
 
             RecoverAndTest(log);
         }
+        
+        [TestCase]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void StateMachineCallbackTest1()
+        {
+            var callback = new TestCallback();
+            fht1.UnsafeRegisterCallback(callback);
+            Prepare(out var f, out var s1, out var s2);
+
+            // We should be in PREPARE, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            // Refresh session s2
+            s2.Refresh();
+            s1.Refresh();
+
+            // We should now be in IN_PROGRESS, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            s2.Refresh();
+
+            // We should be in WAIT_PENDING, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_PENDING, 2), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            s1.Refresh();
+
+            // We should be in WAIT_FLUSH, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            s2.Refresh();
+
+            // We should be in PERSISTENCE_CALLBACK, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            // Expect checkpoint completion callback
+            f.checkpointCallbackExpectation = 1;
+
+            s1.Refresh();
+
+            // Completion callback should have been called once
+            Assert.IsTrue(f.checkpointCallbackExpectation == 0);
+
+            // We should be in REST, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            // Dispose session s2; does not move state machine forward
+            s2.Dispose();
+            s1.Dispose();
+
+            RecoverAndTest(log);
+        }
+
 
         void Prepare(out SimpleFunctions f, out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1, out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s2)
         {
@@ -449,6 +510,23 @@ namespace FASTER.test.statemachine
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output.numClicks == key.adId);
+        }
+    }
+
+    public class TestCallback : IStateMachineCallback
+    {
+        private HashSet<SystemState> invokedStates = new();
+
+
+        public void BeforeEnteringState<Key1, Value>(SystemState next, FasterKV<Key1, Value> faster)
+        {
+            Assert.IsFalse(invokedStates.Contains(next));
+            invokedStates.Add(next);
+        }
+
+        public void CheckInvoked(SystemState state)
+        {
+            Assert.IsTrue(invokedStates.Contains(state));
         }
     }
 }

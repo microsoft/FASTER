@@ -7,6 +7,7 @@
 
 using System;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -62,7 +63,10 @@ namespace FASTER.core
         {
             var metadata = _hybridLogCheckpoint.info.ToByteArray();
             if (CommitCookie != null && CommitCookie.Length != 0)
-                metadata = metadata.Concat(CommitCookie).ToArray();
+            {
+                var convertedCookie = Convert.ToBase64String(CommitCookie);
+                metadata = metadata.Concat(Encoding.Default.GetBytes(convertedCookie)).ToArray();
+            }
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, metadata);
         }
 
@@ -70,7 +74,10 @@ namespace FASTER.core
         {
             var metadata = _hybridLogCheckpoint.info.ToByteArray();
             if (CommitCookie != null && CommitCookie.Length != 0)
-                metadata = metadata.Concat(CommitCookie).ToArray();
+            {
+                var convertedCookie = Convert.ToBase64String(CommitCookie);
+                metadata = metadata.Concat(Encoding.Default.GetBytes(convertedCookie)).ToArray();
+            }
             checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, metadata, deltaLog);
         }
 

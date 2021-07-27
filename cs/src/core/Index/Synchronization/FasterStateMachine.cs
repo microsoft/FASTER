@@ -32,13 +32,15 @@ namespace FASTER.core
         public byte[] RecoveredCommitCookie => recoveredCommitCookie; 
 
         /// <summary>
-        /// Get the state machine state of the system
+        /// Get the current state machine state of the system
         /// </summary>
         public SystemState SystemState => systemState;
         
         /// <summary>
         /// Registers the given callback to be invoked for every state machine transition. Not safe to call with
-        /// concurrent FASTER operations. 
+        /// concurrent FASTER operations. Note that registered callbacks execute as part of the critical
+        /// section of FASTER's state transitions. Excessive synchronization or expensive computation in the callback
+        /// may slow or halt state machine execution. For advanced users only. 
         /// </summary>
         /// <param name="callback"> callback to register </param>
         public void UnsafeRegisterCallback(IStateMachineCallback callback) => callbacks.Add(callback);

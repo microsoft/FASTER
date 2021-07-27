@@ -229,7 +229,7 @@ namespace FASTER.core
         /// Initiate full checkpoint
         /// </summary>
         /// <param name="token">Checkpoint token</param>
-        /// <param name="nextVersion">
+        /// <param name="targetVersion">
         /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
         /// than current version. Actual new version may have version number greater than supplied number. If the supplied
         /// number is -1, checkpoint will unconditionally create a new version. 
@@ -239,15 +239,15 @@ namespace FASTER.core
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
-        public bool TakeFullCheckpoint(out Guid token, long nextVersion = -1) 
-            => TakeFullCheckpoint(out token, this.FoldOverSnapshot ? CheckpointType.FoldOver : CheckpointType.Snapshot, nextVersion);
+        public bool TakeFullCheckpoint(out Guid token, long targetVersion = -1) 
+            => TakeFullCheckpoint(out token, this.FoldOverSnapshot ? CheckpointType.FoldOver : CheckpointType.Snapshot, targetVersion);
 
         /// <summary>
         /// Initiate full checkpoint
         /// </summary>
         /// <param name="token">Checkpoint token</param>
         /// <param name="checkpointType">Checkpoint type</param>
-        /// <param name="nextVersion">
+        /// <param name="targetVersion">
         /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
         /// than current version. Actual new version may have version number greater than supplied number. If the supplied
         /// number is -1, checkpoint will unconditionally create a new version. 
@@ -257,7 +257,7 @@ namespace FASTER.core
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
-        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType, long nextVersion = -1)
+        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1)
         {
             ISynchronizationTask backend;
             if (checkpointType == CheckpointType.FoldOver)
@@ -267,7 +267,7 @@ namespace FASTER.core
             else
                 throw new FasterException("Unsupported full checkpoint type");
 
-            var result = StartStateMachine(new FullCheckpointStateMachine(backend, nextVersion));
+            var result = StartStateMachine(new FullCheckpointStateMachine(backend, targetVersion));
             if (result)
                 token = _hybridLogCheckpointToken;
             else
@@ -280,7 +280,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="checkpointType">Checkpoint type</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <param name="nextVersion">
+        /// <param name="targetVersion">
         /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
         /// than current version. Actual new version may have version number greater than supplied number. If the supplied
         /// number is -1, checkpoint will unconditionally create a new version. 
@@ -294,9 +294,9 @@ namespace FASTER.core
         /// Await task to complete checkpoint, if initiated successfully
         /// </returns>
         public async ValueTask<(bool success, Guid token)> TakeFullCheckpointAsync(CheckpointType checkpointType,
-            CancellationToken cancellationToken = default, long nextVersion = -1)
+            CancellationToken cancellationToken = default, long targetVersion = -1)
         {
-            var success = TakeFullCheckpoint(out Guid token, checkpointType, nextVersion);
+            var success = TakeFullCheckpoint(out Guid token, checkpointType, targetVersion);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
@@ -342,13 +342,13 @@ namespace FASTER.core
         /// Initiate log-only checkpoint
         /// </summary>
         /// <param name="token">Checkpoint token</param>
-        /// <param name="nextVersion">
+        /// <param name="targetVersion">
         /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
         /// than current version. Actual new version may have version number greater than supplied number. If the supplied
         /// number is -1, checkpoint will unconditionally create a new version. 
         /// </param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token, long nextVersion = -1)
+        public bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1)
         {
             ISynchronizationTask backend;
             if (FoldOverSnapshot)
@@ -356,7 +356,7 @@ namespace FASTER.core
             else
                 backend = new SnapshotCheckpointTask();
 
-            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, nextVersion));
+            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
             token = _hybridLogCheckpointToken;
             return result;
         }
@@ -367,14 +367,14 @@ namespace FASTER.core
         /// <param name="token">Checkpoint token</param>
         /// <param name="checkpointType">Checkpoint type</param>
         /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
-        /// <param name="nextVersion">
+        /// <param name="targetVersion">
         /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
         /// than current version. Actual new version may have version number greater than supplied number. If the supplied
         /// number is -1, checkpoint will unconditionally create a new version. 
         /// </param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
-            long nextVersion = -1)
+            long targetVersion = -1)
         {
             ISynchronizationTask backend;
             if (checkpointType == CheckpointType.FoldOver)
@@ -389,7 +389,7 @@ namespace FASTER.core
             else
                 throw new FasterException("Unsupported checkpoint type");
 
-            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, nextVersion));
+            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
             token = _hybridLogCheckpointToken;
             return result;
         }
@@ -409,9 +409,9 @@ namespace FASTER.core
         /// Await task to complete checkpoint, if initiated successfully
         /// </returns>
         public async ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType,
-            bool tryIncremental = false, CancellationToken cancellationToken = default, long nextVersion = -1)
+            bool tryIncremental = false, CancellationToken cancellationToken = default, long targetVersion = -1)
         {
-            var success = TakeHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental, nextVersion);
+            var success = TakeHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental, targetVersion);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);

@@ -84,5 +84,20 @@ namespace FASTER.core
         {
             return $"[{phase},{version}]";
         }
+
+        public bool Equals(SystemState other)
+        {
+            return word == other.word;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is SystemState other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            return word.GetHashCode();
+        }
     }
 }

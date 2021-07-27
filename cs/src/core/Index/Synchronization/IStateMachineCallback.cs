@@ -6,7 +6,7 @@ namespace FASTER.core
     public interface IStateMachineCallback
     {
         /// <summary>
-        /// Invoked in the critical section before every state transition
+        /// Invoked immediately before every state transition.
         /// </summary>
         /// <param name="next"> next system state </param>
         /// <param name="faster"> reference to FASTER K-V </param>

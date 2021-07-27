@@ -413,8 +413,8 @@ namespace FASTER.core
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
             using StreamReader s = new(new MemoryStream(metadata));
             Initialize(s);
-
-            return s.CurrentEncoding.GetBytes(s.ReadToEnd());
+            var cookie = s.ReadToEnd();
+            return cookie.Length == 0 ? null : Convert.FromBase64String(cookie);
         }
 
         /// <summary>
