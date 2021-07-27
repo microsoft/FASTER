@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using FASTER.common;
@@ -25,7 +26,8 @@ namespace FASTER.server
         public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker)
             : base(socket, store, functions, serializer, maxSizeSettings)
         {
-            this.subscribeKVBroker = subscribeKVBroker;
+            if (subscribeKVBroker != null)
+                this.subscribeKVBroker = subscribeKVBroker;
 
             readHead = 0;
 
@@ -144,7 +146,8 @@ namespace FASTER.server
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            subscribeKVBroker.Publish(keyPtr);
+                            if (subscribeKVBroker != null)
+                                subscribeKVBroker.Publish(keyPtr);
                             break;
 
                         case MessageType.Read:
@@ -183,7 +186,8 @@ namespace FASTER.server
                             else if (status == Status.OK || status == Status.NOTFOUND)
                                 serializer.SkipOutput(ref dcurr);
 
-                            subscribeKVBroker.Publish(keyPtr);
+                            if (subscribeKVBroker != null)
+                                subscribeKVBroker.Publish(keyPtr);
                             break;
 
                         case MessageType.Delete:
@@ -197,12 +201,15 @@ namespace FASTER.server
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            subscribeKVBroker.Publish(keyPtr);
+                            if (subscribeKVBroker != null)
+                                subscribeKVBroker.Publish(keyPtr);
                             break;
 
                         case MessageType.SubscribeKV:
+                            Debug.Assert(subscribeKVBroker != null);
+
                             if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
-                                SendAndReset(ref d, ref dend);
+                            SendAndReset(ref d, ref dend);
 
                             var keyStart = src;
                             serializer.ReadKeyByRef(ref src);
@@ -215,8 +222,13 @@ namespace FASTER.server
                             break;
 
                         case MessageType.PSubscribeKV:
+                            Debug.Assert(subscribeKVBroker != null);
+
                             if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
+
+                            if (subscribeKVBroker == null)
+                                break;
 
                             keyStart = src;
                             serializer.ReadKeyByRef(ref src);
@@ -340,7 +352,8 @@ namespace FASTER.server
 
         public override void Dispose()
         {
-            subscribeKVBroker.RemoveSubscription(this);
+            if (subscribeKVBroker != null)
+                subscribeKVBroker.RemoveSubscription(this);
         }
     }
 }

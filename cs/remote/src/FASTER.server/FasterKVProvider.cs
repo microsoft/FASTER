@@ -34,7 +34,7 @@ namespace FASTER.server
         /// <param name="subscribeKVBroker"></param>
         /// <param name="serializer"></param>
         /// <param name="maxSizeSettings"></param>
-        public FasterKVProvider(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
+        public FasterKVProvider(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker = default, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
             this.functionsGen = functionsGen;

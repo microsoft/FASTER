@@ -23,7 +23,7 @@ namespace FASTER.server
         /// <param name="store"></param>
         /// <param name="broker"></param>
         /// <param name="maxSizeSettings"></param>
-        public SpanByteFasterKVProvider(FasterKV<SpanByte, SpanByte> store, SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker, MaxSizeSettings maxSizeSettings = default)
+        public SpanByteFasterKVProvider(FasterKV<SpanByte, SpanByte> store, SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = default, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
             this.broker = broker;
