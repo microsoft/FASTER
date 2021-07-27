@@ -1861,9 +1861,10 @@ namespace FASTER.core
                         }
                         else
                         {
-                            // Keys are not same. I/O is not complete
+                            // Keys are not same. I/O is not complete. Follow the chain to the previous record and issue a request for it if
+                            // it is in the range to resolve, else surface "not found".
                             ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
-                            if (ctx.logicalAddress >= BeginAddress)
+                            if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                             {
                                 ctx.record.Return();
                                 ctx.record = ctx.objBuffer = default;
