@@ -13,7 +13,7 @@ namespace FASTER.test.recovery.sumstore.simple
     [TestFixture]
     public class RecoveryTests
     {
-        const int numOps = 5000;
+        const int numOps = 250;
         AdId[] inputArray;
 
         string checkpointDir;
@@ -208,7 +208,7 @@ namespace FASTER.test.recovery.sumstore.simple
                 value.numClicks = key;
                 session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
 
-                if (key == 2999)
+                if (key == 249)
                     address = fht1.Log.TailAddress;
             }
 

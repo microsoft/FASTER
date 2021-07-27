@@ -579,7 +579,7 @@ namespace FASTER.test.readaddress
     [TestFixture]
     public class ReadMinAddressTests
     {
-        const int numOps = 5000;
+        const int numOps = 500;
 
         private IDevice log;
         private FasterKV<long, long> fht;

@@ -48,7 +48,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
                 );
 
-            numOps = 5000;
+            numOps = 200;
         }
 
         [TearDown]
