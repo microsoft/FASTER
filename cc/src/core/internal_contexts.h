@@ -562,6 +562,7 @@ class CopyToTailContextBase {
   CopyToTailContextBase(HashBucketEntry expected_entry_, void* dest_store_)
     : expected_entry{ expected_entry_ }
     , dest_store{ dest_store_ }
+    , search_min_offset{ Address::kInvalidAddress }
   {}
 
   virtual inline const key_t& key() const = 0;
@@ -573,6 +574,7 @@ class CopyToTailContextBase {
 
  public:
   HashBucketEntry expected_entry;
+  Address search_min_offset;
   void* dest_store;
 };
 
