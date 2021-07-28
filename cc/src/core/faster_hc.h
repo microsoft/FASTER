@@ -10,6 +10,18 @@
 namespace FASTER {
 namespace core {
 
+enum class ReadOperationStage {
+  HOT_LOG_READ = 1,
+  COLD_LOG_READ = 2,
+};
+
+enum class RmwOperationStage {
+  HOT_LOG_RMW = 1,
+  COLD_LOG_READ = 2,
+  HOT_LOG_RMW_RETRY_IF_NOT_FOUND = 3,
+  HOT_LOG_RMW_CALL_USER_CALLBACK = 4,
+};
+
 template <class K>
 class HotColdContext : public IAsyncContext {
  public:
@@ -43,20 +55,47 @@ class HotColdContext : public IAsyncContext {
 };
 
 /// Context that holds user context for Read request
+template <class K, class V>
+class AsyncHotColdReadContext : public HotColdContext<K> {
+ public:
+  typedef K key_t;
+  typedef V value_t;
+
+ protected:
+  AsyncHotColdReadContext(void* faster_hc_, ReadOperationStage stage_, IAsyncContext& caller_context_,
+                        AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
+    : HotColdContext<key_t>(faster_hc_, caller_context_, caller_callback_, monotonic_serial_num_)
+    , stage{ stage_ }
+  {}
+  /// The deep-copy constructor.
+  AsyncHotColdReadContext(AsyncHotColdReadContext& other_, IAsyncContext* caller_context_)
+    : HotColdContext<key_t>(other_, caller_context_)
+    , stage{ other_.stage }
+  {}
+ public:
+  virtual const key_t& key() const = 0;
+  virtual void Get(const value_t& value) = 0;
+  virtual void GetAtomic(const value_t& value) = 0;
+
+  ReadOperationStage stage;
+};
+
+/// Context that holds user context for Read request
 template <class RC>
-class HotColdReadContext : public HotColdContext <typename RC::key_t> {
+class HotColdReadContext : public AsyncHotColdReadContext <typename RC::key_t, typename RC::value_t> {
  public:
   typedef RC read_context_t;
   typedef typename read_context_t::key_t key_t;
   typedef typename read_context_t::value_t value_t;
 
-  HotColdReadContext(void* faster_hc_, read_context_t& caller_context_,
-                  AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
-    : HotColdContext<key_t>(faster_hc_, caller_context_, caller_callback_, monotonic_serial_num_)
+  HotColdReadContext(void* faster_hc_, ReadOperationStage stage_, read_context_t& caller_context_,
+                    AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
+    : AsyncHotColdReadContext<key_t, value_t>(faster_hc_, stage_, caller_context_,
+                                            caller_callback_, monotonic_serial_num_)
     {}
   /// The deep-copy constructor.
   HotColdReadContext(HotColdReadContext& other_, IAsyncContext* caller_context_)
-    : HotColdContext<key_t>(other_, caller_context_)
+    : AsyncHotColdReadContext<key_t, value_t>(other_, caller_context_)
     {}
 
  protected:
@@ -64,50 +103,55 @@ class HotColdReadContext : public HotColdContext <typename RC::key_t> {
     return IAsyncContext::DeepCopy_Internal(*this, HotColdContext<key_t>::caller_context,
                                             context_copy);
   }
- public:
+ private:
   inline const read_context_t& read_context() const {
     return *static_cast<const read_context_t*>(HotColdContext<key_t>::caller_context);
   }
   inline read_context_t& read_context() {
     return *static_cast<read_context_t*>(HotColdContext<key_t>::caller_context);
   }
+ public:
   /// Propagates calls to caller context
-  inline const key_t& key() const {
+  inline const key_t& key() const final {
     return read_context().key();
   }
-  inline void Get(const value_t& value) {
+  inline void Get(const value_t& value) final {
     read_context().Get(value);
   }
-  inline void GetAtomic(const value_t& value) {
+  inline void GetAtomic(const value_t& value) final {
     read_context().GetAtomic(value);
   }
 };
+
+/// Context that holds user context for Read request
+
+// forward declaration
+template<class K, class V>
+class HotColdRmwReadContext;
 
 template <class K, class V>
 class AsyncHotColdRmwContext : public HotColdContext<K> {
  public:
   typedef K key_t;
   typedef V value_t;
+  typedef HotColdRmwReadContext<K, V> rmw_read_context_t;
  protected:
-  AsyncHotColdRmwContext(void* faster_hc_, IAsyncContext& caller_context_, AsyncCallback caller_callback_,
-                      uint64_t monotonic_serial_num_, HashBucketEntry& expected_entry_,
-                      AsyncCallback hs_rmw_callback_, AsyncCallback cs_read_callback_,
-                      AsyncCallback hs_retry_if_not_found_callback_)
+  AsyncHotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, HashBucketEntry& expected_entry_,
+                      IAsyncContext& caller_context_, AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
     : HotColdContext<key_t>(faster_hc_, caller_context_, caller_callback_, monotonic_serial_num_)
+    , stage{ stage_ }
     , expected_entry{ expected_entry_ }
-    , hot_store_rmw_callback{ hs_rmw_callback_ }
-    , cold_store_read_callback{ cs_read_callback_ }
-    , hot_store_retry_if_not_found_callback{ hs_retry_if_not_found_callback_ }
+    , read_context{ nullptr }
   {}
   /// The deep copy constructor.
   AsyncHotColdRmwContext(AsyncHotColdRmwContext& other, IAsyncContext* caller_context)
     : HotColdContext<key_t>(other, caller_context)
+    , stage{ other.stage }
     , expected_entry{ other.expected_entry }
-    , hot_store_rmw_callback{ other.hot_store_rmw_callback }
-    , cold_store_read_callback{ other.cold_store_read_callback }
-    , hot_store_retry_if_not_found_callback{ other.hot_store_retry_if_not_found_callback }
+    , read_context{ other.read_context }
   {}
  public:
+  virtual const key_t& key() const = 0;
   /// Set initial value.
   virtual void RmwInitial(value_t& value) = 0;
   /// RCU.
@@ -119,11 +163,9 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
   /// Get value size for RCU
   virtual uint32_t value_size(const value_t& value) const = 0;
 
+  RmwOperationStage stage;
   HashBucketEntry expected_entry;
-  // callbacks
-  AsyncCallback hot_store_rmw_callback;
-  AsyncCallback cold_store_read_callback;
-  AsyncCallback hot_store_retry_if_not_found_callback;
+  rmw_read_context_t* read_context;
 };
 
 template <class MC>
@@ -133,12 +175,10 @@ class HotColdRmwContext : public AsyncHotColdRmwContext<typename MC::key_t, type
   typedef typename rmw_context_t::key_t key_t;
   typedef typename rmw_context_t::value_t value_t;
 
-  HotColdRmwContext(void* faster_hc_, rmw_context_t& caller_context_, AsyncCallback caller_callback_,
-                      uint64_t monotonic_serial_num_, HashBucketEntry& expected_entry_,
-                      AsyncCallback hs_rmw_callback_, AsyncCallback cs_read_callback_,
-                      AsyncCallback hs_retry_if_not_found_callback_)
-    : AsyncHotColdRmwContext<key_t, value_t>(faster_hc_, caller_context_, caller_callback_, monotonic_serial_num_, expected_entry_,
-                                    hs_rmw_callback_, cs_read_callback_, hs_retry_if_not_found_callback_)
+  HotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, HashBucketEntry& expected_entry_,
+                  rmw_context_t& caller_context_, AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
+    : AsyncHotColdRmwContext<key_t, value_t>(faster_hc_, stage_, expected_entry_,
+                                            caller_context_, caller_callback_, monotonic_serial_num_)
     {}
   /// The deep-copy constructor.
   HotColdRmwContext(HotColdRmwContext& other_, IAsyncContext* caller_context_)
@@ -150,15 +190,16 @@ class HotColdRmwContext : public AsyncHotColdRmwContext<typename MC::key_t, type
     return IAsyncContext::DeepCopy_Internal(*this, HotColdContext<key_t>::caller_context,
                                             context_copy);
   }
- public:
+ private:
   inline const rmw_context_t& rmw_context() const {
     return *static_cast<const rmw_context_t*>(HotColdContext<key_t>::caller_context);
   }
   inline rmw_context_t& rmw_context() {
     return *static_cast<rmw_context_t*>(HotColdContext<key_t>::caller_context);
   }
+ public:
   /// Propagates calls to caller context
-  inline const key_t& key() const {
+  inline const key_t& key() const final {
     return rmw_context().key();
   }
   /// Set initial value.
@@ -184,57 +225,55 @@ class HotColdRmwContext : public AsyncHotColdRmwContext<typename MC::key_t, type
 };
 
 
-template<class K, class V, class MC>
+template<class K, class V>
 class HotColdRmwReadContext : public IAsyncContext {
  public:
-  typedef MC hc_rmw_context_t;
   typedef K key_t;
   typedef V value_t;
+  //typedef MC hc_rmw_context_t; // can also be async
 
-  HotColdRmwReadContext(K key, hc_rmw_context_t* caller_context)
+  HotColdRmwReadContext(key_t key, IAsyncContext* rmw_context_)
     : key_{ key }
-    , caller_context_{ caller_context }
+    , rmw_context{ rmw_context_ }
   {}
   /// Copy (and deep-copy) constructor.
   HotColdRmwReadContext(const HotColdRmwReadContext& other)
     : key_{ other.key_ }
-    , caller_context_{ other.caller_context_ }
+    , rmw_context{ other.rmw_context }
   {}
 
   /// The implicit and explicit interfaces require a key() accessor.
-  inline const K& key() const {
+  inline const key_t& key() const {
     return key_;
   }
-  inline const V& value() const {
+  inline const value_t& value() const {
     return value_;
   }
 
-  inline void Get(const V& value) {
+  inline void Get(const value_t& value) {
     value_.value = value.value;
   }
-  inline void GetAtomic(const V& value) {
+  inline void GetAtomic(const value_t& value) {
     value_.value = value.atomic_value.load();
-  }
-
-  inline const hc_rmw_context_t& hot_cold_rmw_context() const {
-    return *static_cast<const hc_rmw_context_t*>(caller_context_);
-  }
-  inline hc_rmw_context_t& hot_cold_rmw_context() {
-    return *static_cast<hc_rmw_context_t*>(caller_context_);
   }
 
  protected:
   /// The explicit interface requires a DeepCopy_Internal() implementation.
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+    // need to deep copy rmw context, if didn't went async
+    Status rmw_deep_copy_status = rmw_context->DeepCopy(rmw_context);
+    if (rmw_deep_copy_status != Status::Ok) {
+      return rmw_deep_copy_status;
+    }
     return IAsyncContext::DeepCopy_Internal(*this, context_copy);
   }
 
- private:
-  K key_;
-  V value_;
+ public:
+  IAsyncContext* rmw_context; // HotColdRmw context
 
-  /// HotColdRmw context
-  IAsyncContext* caller_context_;
+ private:
+  key_t key_;
+  value_t value_;
 };
 
 template <class MC, class RC>
@@ -286,10 +325,11 @@ class HotColdRmwCopyContext: public CopyToTailContextBase<typename MC::key_t> {
     return true;
   }
 
+  record_t* record_;
+
  private:
   rmw_context_t* rmw_context_;
   read_context_t* read_context_;
-
 };
 
 template<class K, class V, class D>
@@ -297,7 +337,9 @@ class FasterKvHC {
 public:
   typedef FasterKv<K, V, D> faster_t;
   typedef FasterKvHC<K, V, D> faster_hc_t;
+  typedef AsyncHotColdReadContext<K, V> async_hc_read_context_t;
   typedef AsyncHotColdRmwContext<K, V> async_hc_rmw_context_t;
+  typedef HotColdRmwReadContext<K, V> hc_rmw_read_context_t;
 
   typedef K key_t;
   typedef V value_t;
@@ -332,6 +374,10 @@ public:
   FasterKvHC(const FasterKvHC& other) = delete;
 
   ~FasterKvHC() {
+    while (hot_store.system_state_.phase() != Phase::REST ||
+          cold_store.system_state_.phase() != Phase::REST ) {
+      std::this_thread::yield();
+    }
     if (compaction_thread_.joinable()) {
       // shut down compaction thread
       is_compaction_active_.store(false);
@@ -406,8 +452,12 @@ public:
   // retry queue
   concurrent_queue<async_hc_rmw_context_t*> retry_rmw_requests;
  private:
+  static void AsyncContinuePendingRead(IAsyncContext* ctxt, Status result);
+
   template<class C>
   Status InternalRmw(C& pending_context);
+  static void AsyncContinuePendingRmw(IAsyncContext* ctxt, Status result);
+  static void AsyncContinuePendingRmwRead(IAsyncContext* ctxt, Status result);
 
   void CheckInternalLogsSize();
   void CompleteRmwRetryRequests();
@@ -444,18 +494,17 @@ inline uint64_t FasterKvHC<K, V, D>::ContinueSession(const Guid& session_id) {
 template <class K, class V, class D>
 inline void FasterKvHC<K, V, D>::StopSession() {
   // Finish pending ops before stopping session
-  /*while(!CompletePending(false)) {
+  while(!CompletePending(false)) {
     std::this_thread::yield();
-  }*/
+  }
   hot_store.StopSession();
   cold_store.StopSession();
 }
 
 template<class K, class V, class D>
 inline bool FasterKvHC<K, V, D>::CompletePending(bool wait) {
-  bool hot_done, cold_done;
   do {
-    //CompleteRmwRetryRequests();
+    CompleteRmwRetryRequests();
     if(hot_store.CompletePending(wait) &&
         cold_store.CompletePending(wait) &&
         retry_rmw_requests.empty()) {
@@ -472,9 +521,22 @@ inline Status FasterKvHC<K, V, D>::Read(RC& context, AsyncCallback callback,
   typedef RC read_context_t;
   typedef HotColdReadContext<read_context_t> hc_read_context_t;
 
-  auto hot_store_callback = [](IAsyncContext* ctxt, Status result) {
-    CallbackContext<hc_read_context_t> context{ ctxt };
+  // Issue request to hot log
+  hc_read_context_t hc_context{ this, ReadOperationStage::HOT_LOG_READ,
+                              context, callback, monotonic_serial_num };
+  Status status = hot_store.Read(hc_context, AsyncContinuePendingRead, monotonic_serial_num);
+  if (status != Status::NotFound) {
+    return status;
+  }
+  // Issue request on cold log
+  return cold_store.Read(context, callback, monotonic_serial_num);
+}
 
+template<class K, class V, class D>
+inline void FasterKvHC<K, V, D>::AsyncContinuePendingRead(IAsyncContext* ctxt, Status result) {
+  CallbackContext<async_hc_read_context_t> context{ ctxt };
+
+  if (context->stage == ReadOperationStage::HOT_LOG_READ) {
     if (result != Status::NotFound) {
       // call user-provided callback
       context->caller_callback(context->caller_context, result);
@@ -482,23 +544,25 @@ inline Status FasterKvHC<K, V, D>::Read(RC& context, AsyncCallback callback,
     }
     // issue request to cold log
     faster_hc_t * faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
-    Status status = faster_hc->cold_store.Read(context->read_context(),
-                                              context->caller_callback,
+
+    context->stage = ReadOperationStage::COLD_LOG_READ;
+    Status status = faster_hc->cold_store.Read(*context.get(),
+                                              AsyncContinuePendingRead,
                                               context->serial_num);
     if (status != Status::Pending) {
       context->caller_callback(context->caller_context, status);
+      return;
     }
+    context.async = true;
     // User-provided callback will eventually be called from cold log
-  };
-
-  // Issue request to hot log
-  hc_read_context_t hc_context{ this, context, callback, monotonic_serial_num };
-  Status status = hot_store.Read(hc_context, hot_store_callback, monotonic_serial_num);
-  if (status != Status::NotFound) {
-    return status;
   }
-  // Issue request on cold log
-  return cold_store.Read(context, callback, monotonic_serial_num);
+  else if (context->stage == ReadOperationStage::COLD_LOG_READ) {
+    // call user-provided callback
+    context->caller_callback(context->caller_context, result);
+  }
+  else {
+    assert(false); // not reachable
+  }
 }
 
 
@@ -515,186 +579,169 @@ inline Status FasterKvHC<K, V, D>::Rmw(MC& context, AsyncCallback callback,
                                         uint64_t monotonic_serial_num) {
   typedef MC rmw_context_t;
   typedef HotColdRmwContext<rmw_context_t> hc_rmw_context_t;
-  typedef HotColdRmwReadContext<K, V, hc_rmw_context_t> hc_rmw_read_context_t;
-  typedef HotColdRmwCopyContext<MC, hc_rmw_read_context_t> hc_rmw_copy_context_t;
-
-  auto hot_store_retry_if_not_found_callback = [](IAsyncContext* ctxt, Status result) {
-    CallbackContext<hc_rmw_context_t> context{ ctxt };
-    fprintf(stderr, "FFFFFFFF\n");
-    if (result != Status::NotFound) {
-      // call user-provided callback
-      context->caller_callback(context->caller_context, result);
-    } else {
-      // This can only happen if compaction moved this entry to cold -- retry entry
-      faster_hc_t * faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
-      faster_hc->retry_rmw_requests.push(context.get());
-    }
-  };
-
-  auto cold_store_read_callback = [](IAsyncContext* ctxt, Status result) {
-    CallbackContext<hc_rmw_read_context_t> rmw_read_context{ ctxt };
-    CallbackContext<hc_rmw_context_t> context { &rmw_read_context->hot_cold_rmw_context() };
-    faster_hc_t* faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
-    fprintf(stderr, "2222\n");
-
-    if (result == Status::Ok) {
-      // Conditional copy to hot-log
-      hc_rmw_copy_context_t copy_context{ &context->rmw_context(), rmw_read_context.get(),
-                              context->expected_entry, static_cast<void*>(&faster_hc->hot_store) };
-      Status status = faster_hc->hot_store.ConditionalCopyToTail(copy_context);
-      if (status == Status::Pending) {
-        // add to retry queue
-        context.async = true;
-        faster_hc->retry_rmw_requests.push(context.get());
-        return;
-      }
-      assert(status == Status::Ok || status == Status::Aborted);
-      // call rmw on hot log again -- we expect that hot log has the record
-      status = faster_hc->hot_store.Rmw(*context.get(), context->hot_store_retry_if_not_found_callback,
-                                      context->serial_num, false);
-      if (status == Status::Pending) {
-        return; // callback will be called
-      }
-      else if (status != Status::NotFound) {
-        context->caller_callback(context->caller_context, status); // ok or error
-      }
-      // This can only happen if compaction moved this entry to cold -- retry request
-      faster_hc->retry_rmw_requests.push(context.get());
-    } else if (result == Status::NotFound) {
-      // Issue Rmw to hot log -- a record will be created if not exists
-      Status status = faster_hc->hot_store.Rmw(context->rmw_context(), context->caller_callback,
-                                                context->serial_num, true);
-      assert(status != Status::NotFound);
-      if (status != Status::Pending) {
-        context->caller_callback(context->caller_context, status); // ok or error
-      }
-    } else {
-      assert(result != Status::Pending);
-      context->caller_callback(context->caller_context, result); // error
-    }
-
-  };
-
-  auto hot_store_rmw_callback = [](IAsyncContext* ctxt, Status result) {
-    CallbackContext<hc_rmw_context_t> context{ ctxt };
-
-    if (result != Status::NotFound) {
-      // call user-provided callback
-      context->caller_callback(context->caller_context, result);
-      return;
-    }
-    // issue read request to cold log
-    faster_hc_t* faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
-
-    hc_rmw_read_context_t rmw_read_context { context->key(), context.get() };
-    Status read_status = faster_hc->cold_store.Read(rmw_read_context,
-                                  context->cold_store_read_callback, context->serial_num);
-    if (read_status == Status::Ok) {
-      // Conditional copy to hot-cold
-      hc_rmw_copy_context_t copy_context{ &context->rmw_context(), &rmw_read_context,
-                                  context->expected_entry, static_cast<void*>(&faster_hc->hot_store) };
-      Status status = faster_hc->hot_store.ConditionalCopyToTail(copy_context);
-      if (status == Status::Pending) {
-        // add to retry queue
-        fprintf(stderr, "aaaaa\n");
-        context.async = true;
-        faster_hc->retry_rmw_requests.push(context.get());
-        return;
-      }
-      assert(status == Status::Ok || status == Status::Aborted);
-      // call rmw on hot log again -- we expect that hot log has the record
-      status = faster_hc->hot_store.Rmw(*context.get(), context->hot_store_retry_if_not_found_callback,
-                                      context->serial_num, false);
-      if (status == Status::Pending) {
-        context.async = true;
-        return; // callback will be called
-      }
-      else if (status != Status::NotFound) {
-        context->caller_callback(context->caller_context, status); // ok or error
-        return;
-      }
-      // This can only happen if compaction moved this entry to cold -- retry request
-      context.async = true;
-      faster_hc->retry_rmw_requests.push(context.get());
-    } else if (read_status == Status::NotFound) {
-      // Issue Rmw to hot log -- a record will be created if not exists
-      Status status = faster_hc->hot_store.Rmw(context->rmw_context(), context->caller_callback,
-                                                context->serial_num, true);
-      assert(status != Status::NotFound);
-      if (status != Status::Pending) {
-        context->caller_callback(context->caller_context, status); // ok or error
-      }
-    } else if (read_status != Status::Pending) {
-      context->caller_callback(context->caller_context, read_status); // error
-    }
-  };
 
   // Keep hash bucket entry
   KeyHash hash = context.key().GetHash();
   HashBucketEntry entry;
   const AtomicHashBucketEntry* atomic_entry = hot_store.FindEntry(hash, entry);
 
-  hc_rmw_context_t hc_rmw_context{ this, context, callback, monotonic_serial_num, entry,
-                                  hot_store_rmw_callback, cold_store_read_callback,
-                                  hot_store_retry_if_not_found_callback };
+  hc_rmw_context_t hc_rmw_context{ this, RmwOperationStage::HOT_LOG_RMW, entry,
+                                  context, callback, monotonic_serial_num };
   return InternalRmw(hc_rmw_context);
 }
 
 template <class K, class V, class D>
 template <class C>
 inline Status FasterKvHC<K, V, D>::InternalRmw(C& hc_rmw_context) {
-  typedef typename C::rmw_context_t rmw_context_t;
-  typedef HotColdRmwContext<rmw_context_t> hc_rmw_context_t;
-  typedef HotColdRmwReadContext<K, V, hc_rmw_context_t> hc_rmw_read_context_t;
-  typedef HotColdRmwCopyContext<rmw_context_t, hc_rmw_read_context_t> hc_rmw_copy_context_t;
+  //typedef typename C::rmw_context_t rmw_context_t;
+  typedef AsyncHotColdRmwContext<K, V> async_hc_rmw_context_t;
+  typedef HotColdRmwReadContext<K, V> hc_rmw_read_context_t;
+  typedef HotColdRmwCopyContext<async_hc_rmw_context_t, hc_rmw_read_context_t> hc_rmw_copy_context_t;
 
-  auto hot_store_rmw_callback = hc_rmw_context.hot_store_rmw_callback;
-  auto cold_store_read_callback = hc_rmw_context.cold_store_read_callback;
-  auto hot_store_retry_if_not_found_callback = hc_rmw_context.hot_store_retry_if_not_found_callback;
   uint64_t monotonic_serial_num = hc_rmw_context.serial_num;
-  rmw_context_t context = *static_cast<rmw_context_t*>(hc_rmw_context.caller_context);
 
   // Issue RMW request on hot log
-  Status status = hot_store.Rmw(hc_rmw_context, hot_store_rmw_callback, monotonic_serial_num, false);
+  Status status = hot_store.Rmw(hc_rmw_context, AsyncContinuePendingRmw, monotonic_serial_num, false);
   if (status != Status::NotFound) {
     return status;
   }
 
   // Entry not found in hot log - issue read request to cold log
-  hc_rmw_read_context_t rmw_read_context { context.key(), &hc_rmw_context };
-  Status read_status = cold_store.Read(rmw_read_context, cold_store_read_callback,
+  hc_rmw_context.stage = RmwOperationStage::COLD_LOG_READ;
+  hc_rmw_read_context_t rmw_read_context { hc_rmw_context.key(), &hc_rmw_context };
+  Status read_status = cold_store.Read(rmw_read_context, AsyncContinuePendingRmwRead,
                                         monotonic_serial_num);
   if (read_status == Status::Ok) {
     // Conditional copy to hot log
-    hc_rmw_copy_context_t copy_context{ &context, &rmw_read_context,
+    hc_rmw_copy_context_t copy_context{ &hc_rmw_context, &rmw_read_context,
                               hc_rmw_context.expected_entry, static_cast<void*>(&hot_store) };
     Status status = hot_store.ConditionalCopyToTail(copy_context);
     if (status == Status::Pending) {
       // add to retry rmw queue
+      hc_rmw_context.expected_entry = copy_context.expected_entry;
       retry_rmw_requests.push(&hc_rmw_context);
       return Status::Pending;
     }
     assert(status == Status::Ok || status == Status::Aborted);
 
     // call rmw on hot log again -- we expect that hot log has the record
-    status = hot_store.Rmw(hc_rmw_context, hot_store_retry_if_not_found_callback,
-                            monotonic_serial_num, false);
+    hc_rmw_context.stage = RmwOperationStage::HOT_LOG_RMW_RETRY_IF_NOT_FOUND;
+    status = hot_store.Rmw(hc_rmw_context, AsyncContinuePendingRmw,
+                          monotonic_serial_num, false);
     if (status != Status::NotFound) {
       return status;
     }
     // This can only happen if compaction moved this entry to cold log -- retry
+    hc_rmw_context.expected_entry = copy_context.expected_entry;
     retry_rmw_requests.push(&hc_rmw_context);
     return Status::Pending;
   }
   else if (read_status == Status::NotFound) {
     // Issue Rmw to hot log; will create an initial rmw
     // ... unless a concurrent upsert/rmw was performed in the meantime
-    return hot_store.Rmw(context, hc_rmw_context.caller_callback, monotonic_serial_num, true);
+    hc_rmw_context.stage = RmwOperationStage::HOT_LOG_RMW_CALL_USER_CALLBACK;
+    return hot_store.Rmw(hc_rmw_context, AsyncContinuePendingRmw, monotonic_serial_num, true);
   }
-  else {
-    // pending or error status
-    return read_status;
+  // pending or error status
+  return read_status;
+}
+
+template<class K, class V, class D>
+inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmw(IAsyncContext* ctxt, Status result) {
+  typedef HotColdRmwCopyContext<async_hc_rmw_context_t, hc_rmw_read_context_t> hc_rmw_copy_context_t;
+
+  CallbackContext<async_hc_rmw_context_t> context{ ctxt };
+  faster_hc_t* faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
+
+  hc_rmw_read_context_t rmw_read_context { context->key(), context.get() };
+  if (context->stage == RmwOperationStage::HOT_LOG_RMW) {
+    if (result != Status::NotFound) {
+      // call user-provided callback -- most common case
+      context->caller_callback(context->caller_context, result);
+      return;
+    }
+    // issue read request to cold log
+    context->stage = RmwOperationStage::COLD_LOG_READ;
+    Status read_status = faster_hc->cold_store.Read(rmw_read_context, AsyncContinuePendingRmwRead,
+                                                  context->serial_num);
+    if (read_status == Status::Pending) {
+      context.async = true;
+      return;
+    }
+    result = read_status;
+    context->read_context = &rmw_read_context;
   }
+
+  if (context->stage == RmwOperationStage::COLD_LOG_READ) {
+    // result corresponds to cold log Read op status
+    if (result == Status::Ok) {
+      assert(context->read_context != nullptr);
+      hc_rmw_copy_context_t copy_context{ context.get(), context->read_context, context->expected_entry,
+                                          static_cast<void*>(&faster_hc->hot_store) };
+      Status copy_status = faster_hc->hot_store.ConditionalCopyToTail(copy_context);
+      if (copy_status == Status::Pending) {
+        // add to retry queue
+        context.async = true; // do not free context
+        context->expected_entry = copy_context.expected_entry;
+        context->read_context = nullptr;
+        faster_hc->retry_rmw_requests.push(context.get());
+        return;
+      }
+      assert(copy_status == Status::Ok || copy_status == Status::Aborted);
+      // call rmw on hot log again -- we expect that hot log contains the record
+      context->stage = RmwOperationStage::HOT_LOG_RMW_RETRY_IF_NOT_FOUND;
+      Status status = faster_hc->hot_store.Rmw(*context.get(), AsyncContinuePendingRmw,
+                                              context->serial_num, false);
+      if (status == Status::Pending) {
+        context.async = true;
+        return;
+      }
+      result = status;
+    }
+    else if (result == Status::NotFound) {
+      // Issue Rmw to hot log -- a record will be created if not exists
+      context->stage = RmwOperationStage::HOT_LOG_RMW_CALL_USER_CALLBACK;
+      Status status = faster_hc->hot_store.Rmw(*context.get(), AsyncContinuePendingRmw,
+                                              context->serial_num, true);
+      assert(status != Status::NotFound);
+      if (status == Status::Pending) {
+        context.async = true;
+        return;
+      }
+      result = status;
+    }
+
+  }
+
+  if (context->stage == RmwOperationStage::HOT_LOG_RMW_RETRY_IF_NOT_FOUND) {
+    if (result != Status::NotFound) {
+      context->caller_callback(context->caller_context, result);
+      return;
+    }
+    // This can only happen if compaction moved this entry to cold -- retry request
+    context.async = true;
+    faster_hc->retry_rmw_requests.push(context.get());
+    return;
+  }
+
+  if (context->stage == RmwOperationStage::HOT_LOG_RMW_CALL_USER_CALLBACK) {
+    context->caller_callback(context->caller_context, result);
+    return;
+  }
+
+  assert(false); // not reachable
+}
+
+template<class K, class V, class D>
+inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmwRead(IAsyncContext* ctxt, Status result) {
+  CallbackContext<hc_rmw_read_context_t> rmw_read_context{ ctxt };
+  rmw_read_context.async = true;
+  async_hc_rmw_context_t* rmw_context = static_cast<async_hc_rmw_context_t*>(rmw_read_context->rmw_context);
+
+  assert(rmw_context->stage == RmwOperationStage::COLD_LOG_READ);
+  rmw_context->read_context = rmw_read_context.get();
+
+  AsyncContinuePendingRmw(static_cast<IAsyncContext*>(rmw_context), result);
 }
 
 template <class K, class V, class D>
@@ -741,12 +788,15 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
       until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
       assert(until_address <= hot_store.hlog.safe_read_only_address.control());
       assert(until_address % hot_store.hlog.kPageSize == 0);
-      //fprintf(stderr, "HOT: [%llu %llu] %llu\n", hot_store.hlog.begin_address.control(),
+      //fprintf(stdout, "HOT: {%llu} [%llu %llu] %llu\n", hot_store.Size(), hot_store.hlog.begin_address.control(),
       //          hot_store.hlog.GetTailAddress().control(), until_address);
       // perform hot-cold compaction
+      StartSession();
       if (!CompactHotLog(until_address, true)) {
-        fprintf(stderr, "warn: hot-cold compaction not successful\n");
+        fprintf(stdout, "warn: hot-cold compaction not successful\n");
       }
+      StopSession();
+      //fprintf(stdout, "HOT: {%llu} Done!\n", hot_store.Size());
     }
     if (cold_store.Size() > cold_log_disk_size_limit_) {
       uint64_t until_address = cold_store.hlog.begin_address.control() + (
@@ -756,12 +806,15 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
       until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
       assert(until_address <= cold_store.hlog.safe_read_only_address.control());
       assert(until_address % cold_store.hlog.kPageSize == 0);
-      //fprintf(stderr, "COLD: [%llu %llu] %llu\n", cold_store.hlog.begin_address.control(),
+      //fprintf(stdout, "COLD: {%llu} [%llu %llu] %llu\n", cold_store.Size(), cold_store.hlog.begin_address.control(),
       //          cold_store.hlog.GetTailAddress().control(), until_address);
       // perform cold-cold compaction
+      cold_store.StartSession();
       if (!CompactColdLog(until_address, true)) {
-        fprintf(stderr, "warn: cold-cold compaction not successful\n");
+        fprintf(stdout, "warn: cold-cold compaction not successful\n");
       }
+      cold_store.StopSession();
+      //fprintf(stdout, "COLD: {%llu} Done!\n", cold_store.Size());
     }
 
     std::this_thread::sleep_for(compaction_check_interval_);
@@ -774,15 +827,13 @@ inline void FasterKvHC<K, V, D>::CompleteRmwRetryRequests() {
   while (retry_rmw_requests.try_pop(ctxt)) {
     // Re-issue RMW request
     CallbackContext<async_hc_rmw_context_t> context{ ctxt };
+    context->stage = RmwOperationStage::HOT_LOG_RMW;
     Status status = InternalRmw(*context.get());
     if (status != Status::Pending) {
       // if done, callback user code
       context->caller_callback(context->caller_context, status);
     }
-    else {
-      // destroy this context, since a new context was created
-      context.async = false;
-    }
+    context.async = true;
   }
 }
 
