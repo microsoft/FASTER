@@ -277,10 +277,10 @@ namespace FASTER.test.recovery.sumstore
 
         private FasterKV<TData, TData> Setup<TData>()
         {
-            log = new LocalMemoryDevice(1L << 26, 1L << 22, 2, sector_size: smallSector ? 64 : (uint)512, fileName: $"{path}{typeof(TData).Name}.log");
+            log = new LocalMemoryDevice(1L << 14, 1L << 22, 2, sector_size: smallSector ? 64 : (uint)512, fileName: $"{path}{typeof(TData).Name}.log");
             objlog = serializerSettingsObj is null
                 ? null
-                : new LocalMemoryDevice(1L << 26, 1L << 22, 2, fileName: $"{path}{typeof(TData).Name}.obj.log");
+                : new LocalMemoryDevice(1L << 14, 1L << 22, 2, fileName: $"{path}{typeof(TData).Name}.obj.log");
 
             var varLenStruct = this.varLenStructObj as IVariableLengthStruct<TData>;
             Assert.AreEqual(this.varLenStructObj is null, varLenStruct is null, "varLenStructSettings");

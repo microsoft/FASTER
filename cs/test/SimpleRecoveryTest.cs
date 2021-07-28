@@ -14,6 +14,7 @@ namespace FASTER.test.recovery.sumstore.simple
     public class RecoveryTests
     {
         const int numOps = 250;
+        const long logSize = 64;
         AdId[] inputArray;
 
         string checkpointDir;
@@ -64,7 +65,6 @@ namespace FASTER.test.recovery.sumstore.simple
         [Category("FasterKV")]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
-
         public async ValueTask LocalDeviceSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] bool isAsync)
         {
             checkpointManager = new DeviceLogCommitCheckpointManager(
@@ -88,12 +88,12 @@ namespace FASTER.test.recovery.sumstore.simple
 
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest1.log", deleteOnClose: true);
 
-            fht1 = new FasterKV<AdId, NumClicks>(128,
+            fht1 = new FasterKV<AdId, NumClicks>(logSize,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
 
-            fht2 = new FasterKV<AdId, NumClicks>(128,
+            fht2 = new FasterKV<AdId, NumClicks>(logSize,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
@@ -137,12 +137,12 @@ namespace FASTER.test.recovery.sumstore.simple
             checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir + "/checkpoints4"), false);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest2.log", deleteOnClose: true);
 
-            fht1 = new FasterKV<AdId, NumClicks>(128,
+            fht1 = new FasterKV<AdId, NumClicks>(logSize,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
 
-            fht2 = new FasterKV<AdId, NumClicks>(128,
+            fht2 = new FasterKV<AdId, NumClicks>(logSize,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
@@ -189,12 +189,12 @@ namespace FASTER.test.recovery.sumstore.simple
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest2.log", deleteOnClose: true);
             checkpointDir = TestUtils.MethodTestDir + "/checkpoints6";
 
-            fht1 = new FasterKV<AdId, NumClicks>(128,
+            fht1 = new FasterKV<AdId, NumClicks>(logSize,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.FoldOver }
                 );
 
-            fht2 = new FasterKV<AdId, NumClicks>(128,
+            fht2 = new FasterKV<AdId, NumClicks>(logSize,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.FoldOver }
                 );
@@ -208,7 +208,7 @@ namespace FASTER.test.recovery.sumstore.simple
                 value.numClicks = key;
                 session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
 
-                if (key == 249)
+                if (key == 65)
                     address = fht1.Log.TailAddress;
             }
 

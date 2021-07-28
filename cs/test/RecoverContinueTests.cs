@@ -29,26 +29,26 @@ namespace FASTER.test.recovery.sumstore.recover_continue
 
             fht1 = new FasterKV
                 <AdId, NumClicks>
-                (128,
+                (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht2 = new FasterKV
                 <AdId, NumClicks>
-                (128,
+                (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht3 = new FasterKV
                 <AdId, NumClicks>
-                (128,
+                (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
                 );
 
-            numOps = 200;
+            numOps = 100;
         }
 
         [TearDown]
@@ -63,13 +63,13 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             log?.Dispose();
             log = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.DeleteDirectory(checkpointDir);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
-
         public async ValueTask RecoverContinueTest([Values]bool isAsync)
         {
             long sno = 0;
