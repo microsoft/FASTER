@@ -34,14 +34,15 @@ typedef FASTER::environment::ThreadPoolIoHandler handler_t;
 typedef FASTER::environment::QueueIoHandler handler_t;
 #endif
 
-class CompactLookupParametrizedTestFixture : public ::testing::TestWithParam<bool> {
+// Parameterized test definition
+// bool value indicates whether or not to perform shift begin address after compaction
+class CompactLookupParameterizedTestFixture : public ::testing::TestWithParam<bool> {
 };
-
 INSTANTIATE_TEST_CASE_P(
-        CompactLookupTests,
-        CompactLookupParametrizedTestFixture,
-        ::testing::Values(false, true)
-      );
+  CompactLookupTests,
+  CompactLookupParameterizedTestFixture,
+  ::testing::Values(false, true)
+);
 
 /// Upsert context required to insert data for unit testing.
 template <class K, class V>
@@ -214,7 +215,7 @@ class DeleteContext : public IAsyncContext {
 /// Inserts a bunch of records into a FASTER instance and invokes the
 /// compaction algorithm. Since all records are still live, checks if
 /// they remain so after the algorithm completes/returns.
-TEST_P(CompactLookupParametrizedTestFixture, InMemAllLive) {
+TEST_P(CompactLookupParameterizedTestFixture, InMemAllLive) {
   // In memory hybrid log
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
@@ -258,7 +259,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemAllLive) {
 /// Inserts a bunch of records into a FASTER instance, deletes half of them
 /// and invokes the compaction algorithm. Checks that the ones that should
 /// be alive are alive and the ones that should be dead stay dead.
-TEST_P(CompactLookupParametrizedTestFixture, InMemHalfLive) {
+TEST_P(CompactLookupParameterizedTestFixture, InMemHalfLive) {
   // In memory hybrid log
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
@@ -312,7 +313,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemHalfLive) {
   store.StopSession();
 }
 
-TEST_P(CompactLookupParametrizedTestFixture, InMemRmw) {
+TEST_P(CompactLookupParameterizedTestFixture, InMemRmw) {
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
   faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
@@ -425,7 +426,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemRmw) {
 /// Inserts a bunch of records into a FASTER instance, updates half of them
 /// with new values and invokes the compaction algorithm. Checks that the
 /// updated ones have the new value, and the others the old one.
-TEST_P(CompactLookupParametrizedTestFixture, InMemAllLiveNewEntries) {
+TEST_P(CompactLookupParameterizedTestFixture, InMemAllLiveNewEntries) {
   // In memory hybrid log
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
@@ -484,7 +485,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemAllLiveNewEntries) {
 /// compaction algorithm. Concurrent to the compaction, upserts and deletes
 /// are performed in 1/3 of the keys, respectively. After compaction, it
 /// checks that updated keys have the new value, while deleted keys do not exist.
-TEST_P(CompactLookupParametrizedTestFixture, InMemConcurrentOps) {
+TEST_P(CompactLookupParameterizedTestFixture, InMemConcurrentOps) {
   // In memory hybrid log
   typedef FASTER::device::NullDisk disk_t;
   typedef FasterKv<Key, MediumValue, disk_t> faster_t;
@@ -582,7 +583,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemConcurrentOps) {
   store.StopSession();
 }
 
-TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
+TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthKey) {
   using Key = VariableSizeKey;
   using ShallowKey = VariableSizeShallowKey;
   using Value = MediumValue;
@@ -812,7 +813,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthKey) {
   store.StopSession();
 }
 
-TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
+TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthValue) {
   using Key = FixedSizeKey<uint32_t>;
 
   class UpsertContextVLV;
@@ -1062,7 +1063,7 @@ TEST_P(CompactLookupParametrizedTestFixture, InMemVariableLengthValue) {
 /// Inserts a bunch of records into a FASTER instance and invokes the
 /// compaction algorithm. Since all records are still live, checks if
 /// they remain so after the algorithm completes/returns.
-TEST_P(CompactLookupParametrizedTestFixture, AllLive) {
+TEST_P(CompactLookupParameterizedTestFixture, AllLive) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
@@ -1121,7 +1122,7 @@ TEST_P(CompactLookupParametrizedTestFixture, AllLive) {
 /// Inserts a bunch of records into a FASTER instance, deletes half of them
 /// and invokes the compaction algorithm. Checks that the ones that should
 /// be alive are alive and the ones that should be dead stay dead.
-TEST_P(CompactLookupParametrizedTestFixture, HalfLive) {
+TEST_P(CompactLookupParameterizedTestFixture, HalfLive) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
@@ -1194,7 +1195,7 @@ TEST_P(CompactLookupParametrizedTestFixture, HalfLive) {
   std::experimental::filesystem::remove_all("tmp_store");
 }
 
-TEST_P(CompactLookupParametrizedTestFixture, Rmw) {
+TEST_P(CompactLookupParameterizedTestFixture, Rmw) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = LargeValue;
 
@@ -1323,7 +1324,7 @@ TEST_P(CompactLookupParametrizedTestFixture, Rmw) {
 /// Inserts a bunch of records into a FASTER instance, deletes half of them,
 /// re-inserts them with new values, and invokes the compaction algorithm.
 /// Checks that the updated ones have the new value, and the rest remain unchanged.
-TEST_P(CompactLookupParametrizedTestFixture, AllLiveDeleteAndReInsert) {
+TEST_P(CompactLookupParameterizedTestFixture, AllLiveDeleteAndReInsert) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
@@ -1409,7 +1410,7 @@ TEST_P(CompactLookupParametrizedTestFixture, AllLiveDeleteAndReInsert) {
 /// compaction algorithm. Concurrent to the compaction, upserts and deletes
 /// are performed in 1/3 of the keys, respectively. After compaction, it
 /// checks that updated keys have the new value, while deleted keys do not exist.
-TEST_P(CompactLookupParametrizedTestFixture, ConcurrentOps) {
+TEST_P(CompactLookupParameterizedTestFixture, ConcurrentOps) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
@@ -1428,7 +1429,7 @@ TEST_P(CompactLookupParametrizedTestFixture, ConcurrentOps) {
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
-  store.StopSession();
+  store.CompletePending(true);
 
   auto upsert_worker_func = [&store]() {
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -1470,7 +1471,6 @@ TEST_P(CompactLookupParametrizedTestFixture, ConcurrentOps) {
   std::thread upset_worker (upsert_worker_func);
   std::thread delete_worker (delete_worker_func);
 
-  store.StartSession();
   // perform compaction concurrently
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   bool shift_begin_address = GetParam();
@@ -1525,7 +1525,7 @@ TEST_P(CompactLookupParametrizedTestFixture, ConcurrentOps) {
   std::experimental::filesystem::remove_all("tmp_store");
 }
 
-TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
+TEST_P(CompactLookupParameterizedTestFixture, VariableLengthKey) {
   using Key = VariableSizeKey;
   using ShallowKey = VariableSizeShallowKey;
   using Value = MediumValue;
@@ -1798,7 +1798,7 @@ TEST_P(CompactLookupParametrizedTestFixture, VariableLengthKey) {
 }
 
 
-TEST_P(CompactLookupParametrizedTestFixture, VariableLengthValue) {
+TEST_P(CompactLookupParameterizedTestFixture, VariableLengthValue) {
   using Key = FixedSizeKey<uint32_t>;
 
   class UpsertContextVLV;
