@@ -175,7 +175,7 @@ namespace FASTER.core
                     nextState.phase = Phase.IN_PROGRESS;
                     // 13 bits of 1s --- FASTER records only store 13 bits of version number, and we need to ensure that
                     // the next version is distinguishable from the last in those 13 bits.
-                    var bitMask = 1L << 14 - 1;
+                    var bitMask = (1L << 13) - 1;
                     // If they are not distinguishable, simply increment target version to resolve this
                     if (((targetVersion - start.version) & bitMask) == 0)
                         targetVersion++;

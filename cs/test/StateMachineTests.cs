@@ -7,6 +7,7 @@ using FASTER.core;
 using System.IO;
 using NUnit.Framework;
 using FASTER.test.recovery.sumstore;
+using NUnit.Framework.Interfaces;
 
 namespace FASTER.test.statemachine
 {
@@ -403,9 +404,61 @@ namespace FASTER.test.statemachine
 
             RecoverAndTest(log);
         }
+        
+        
+        [TestCase]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        public void VersionChangeRollOverTest()
+        {
+            var toVersion = 1 + (1 << 14);
+            Prepare(out var f, out var s1, out var s2, toVersion);
+
+            // We should be in PREPARE, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
+
+            // Refresh session s2
+            s2.Refresh();
+            s1.Refresh();
+
+            // We should now be in IN_PROGRESS, toVersion + 1 (because of rollover of 13 bit short version)
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, toVersion + 1), fht1.SystemState));
+
+            s2.Refresh();
+
+            // We should be in WAIT_PENDING, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_PENDING, toVersion + 1), fht1.SystemState));
+
+            s1.Refresh();
+
+            // We should be in WAIT_FLUSH, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, toVersion + 1), fht1.SystemState));
+
+            s2.Refresh();
+
+            // We should be in PERSISTENCE_CALLBACK, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, toVersion + 1), fht1.SystemState));
+
+            // Expect checkpoint completion callback
+            f.checkpointCallbackExpectation = 1;
+
+            s1.Refresh();
+
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, toVersion + 1), fht1.SystemState));
 
 
-        void Prepare(out SimpleFunctions f, out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1, out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s2)
+            // Dispose session s2; does not move state machine forward
+            s2.Dispose();
+            s1.Dispose();
+
+            RecoverAndTest(log);
+        }
+
+
+        void Prepare(out SimpleFunctions f,
+            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1,
+            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s2,
+            long toVersion = -1)
         {
             f = new SimpleFunctions();
 
@@ -439,7 +492,7 @@ namespace FASTER.test.statemachine
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
 
-            fht1.TakeHybridLogCheckpoint(out _);
+            fht1.TakeHybridLogCheckpoint(out _, toVersion);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
