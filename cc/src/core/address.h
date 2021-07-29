@@ -66,6 +66,11 @@ class Address {
     control_ += delta;
     return *this;
   }
+  inline Address operator+(const uint64_t delta) {
+    Address addr (*this);
+    addr += delta;
+    return addr;
+  }
   inline Address operator-(const Address& other) {
     return control_ - other.control_;
   }
