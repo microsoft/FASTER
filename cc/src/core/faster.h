@@ -1669,10 +1669,11 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
   if(address >= head_address && address != pending_context->entry.address()) {
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
     if(!pending_context->is_key_equal(record->key())) {
-      Address min_offset = std::max(pending_context->entry.address(), head_address);
-      address = TraceBackForKeyMatchCtxt(*pending_context, record->header.previous_address(), min_offset + 1);
+      Address min_offset = std::max(pending_context->entry.address() + 1, head_address);
+      address = TraceBackForKeyMatchCtxt(*pending_context, record->header.previous_address(), min_offset);
     }
   }
+  assert(address >= pending_context->entry.address());
 
   if(address > pending_context->entry.address()) {
     // We can't trace the current hash bucket entry back to the record we read.
