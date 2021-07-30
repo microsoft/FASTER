@@ -150,6 +150,9 @@ class CompactionCopyToTailContext : public CopyToTailContextBase<K> {
   inline uint32_t value_size() const final {
     return record_->value().size();
   }
+  inline bool is_tombstone() const final {
+    return record_->header.tombstone;
+  }
   inline bool copy_at(void* dest, uint32_t alloc_size) const final {
     if (alloc_size != record_->size()) {
       return false;

@@ -136,7 +136,8 @@ class FasterKv {
 
   /// Store interface
   template <class RC>
-  inline Status Read(RC& context, AsyncCallback callback, uint64_t monotonic_serial_num);
+  inline Status Read(RC& context, AsyncCallback callback, uint64_t monotonic_serial_num,
+                      bool abort_if_tombstone = false);
 
   template <class UC>
   inline Status Upsert(UC& context, AsyncCallback callback, uint64_t monotonic_serial_num);
@@ -590,7 +591,7 @@ inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindOrCreateEntry(KeyHash hash,
 template <class K, class V, class D>
 template <class RC>
 inline Status FasterKv<K, V, D>::Read(RC& context, AsyncCallback callback,
-                                      uint64_t monotonic_serial_num) {
+                                      uint64_t monotonic_serial_num, bool abort_if_tombstone) {
   typedef RC read_context_t;
   typedef PendingReadContext<RC> pending_read_context_t;
   static_assert(std::is_base_of<value_t, typename read_context_t::value_t>::value,
@@ -598,13 +599,16 @@ inline Status FasterKv<K, V, D>::Read(RC& context, AsyncCallback callback,
   static_assert(alignof(value_t) == alignof(typename read_context_t::value_t),
                 "alignof(value_t) != alignof(typename read_context_t::value_t)");
 
-  pending_read_context_t pending_context{ context, callback };
+  pending_read_context_t pending_context{ context, callback, abort_if_tombstone };
   OperationStatus internal_status = InternalRead(pending_context);
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
   } else if(internal_status == OperationStatus::NOT_FOUND) {
     status = Status::NotFound;
+  } else if (internal_status == OperationStatus::ABORTED) {
+    assert(abort_if_tombstone);
+    status = Status::Aborted;
   } else {
     assert(internal_status == OperationStatus::RECORD_ON_DISK);
     bool async;
@@ -749,6 +753,9 @@ inline void FasterKv<K, V, D>::CompleteIoPendingRequests(ExecutionContext& conte
       result = Status::Ok;
     } else if(internal_status == OperationStatus::NOT_FOUND) {
       result = Status::NotFound;
+    } else if (internal_status == OperationStatus::ABORTED) {
+      assert(pending_context->type == OperationType::Read);
+      result = Status::Aborted;
     } else {
       result = HandleOperationStatus(context, *pending_context.get(), internal_status,
                                      pending_context.async);
@@ -852,7 +859,9 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     // Mutable or fuzzy region
     // concurrent read
     if (reinterpret_cast<const record_t*>(hlog.Get(address))->header.tombstone) {
-      return OperationStatus::NOT_FOUND;
+      return (pending_context.abort_if_tombstone)
+                ? OperationStatus::ABORTED
+                : OperationStatus::NOT_FOUND;
     }
     pending_context.GetAtomic(hlog.Get(address));
     return OperationStatus::SUCCESS;
@@ -860,7 +869,9 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     // Immutable region
     // single-thread read
     if (reinterpret_cast<const record_t*>(hlog.Get(address))->header.tombstone) {
-      return OperationStatus::NOT_FOUND;
+      return (pending_context.abort_if_tombstone)
+                ? OperationStatus::ABORTED
+                : OperationStatus::NOT_FOUND;
     }
     pending_context.Get(hlog.Get(address));
     return OperationStatus::SUCCESS;
@@ -1468,6 +1479,10 @@ inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
   case OperationStatus::NOT_FOUND_UNMARK:
     checkpoint_locks_.get_lock(pending_context.get_key_hash()).unlock_old();
     return Status::NotFound;
+  case OperationStatus::ABORTED_UNMARK:
+    assert(pending_context.type == OperationType::Read);
+    checkpoint_locks_.get_lock(pending_context.get_key_hash()).unlock_old();
+    return Status::Aborted;
   case OperationStatus::CPR_SHIFT_DETECTED:
     return PivotAndRetry(ctx, pending_context, async);
   }
@@ -1619,8 +1634,14 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRead(ExecutionContext&
           io_context.caller_context);
     record_t* record = reinterpret_cast<record_t*>(io_context.record.GetValidPointer());
     if(record->header.tombstone) {
-      return (thread_ctx().version > context.version) ? OperationStatus::NOT_FOUND_UNMARK :
-             OperationStatus::NOT_FOUND;
+      if (!pending_context->abort_if_tombstone) {
+        return (thread_ctx().version > context.version) ? OperationStatus::NOT_FOUND_UNMARK :
+              OperationStatus::NOT_FOUND;
+      }
+      else {
+        return (thread_ctx().version > context.version) ? OperationStatus::ABORTED_UNMARK :
+              OperationStatus::ABORTED;
+      }
     }
     pending_context->Get(record);
     assert(!kCopyReadsToTail);
@@ -3167,7 +3188,7 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
         }
         continue;
       }
-      if (record->header.tombstone)  {
+      if (record->header.tombstone && !dest_store_differs)  {
         // no need to copy to tail
         goto complete_pending;
       }
@@ -3370,6 +3391,7 @@ inline OperationStatus FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context
 
   if (dest_store == this) {
     // Case: Single log compaction, or RMW conditional copy from cold to hot
+    assert(!copy_context.is_tombstone());
 
     // Replace record header
     new(record) record_t{
@@ -3399,7 +3421,7 @@ inline OperationStatus FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context
     new(record) record_t{
       RecordInfo{
         static_cast<uint16_t>(dest_store->thread_ctx().version),
-        true, false, false, dest_entry.address() }
+        true, copy_context.is_tombstone(), false, dest_entry.address() }
     };
     // Try to update hash bucket address -- retry until succeed
     if(dest_atomic_entry->compare_exchange_strong(dest_entry, dest_updated_entry)) {

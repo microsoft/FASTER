@@ -313,6 +313,10 @@ class HotColdRmwCopyContext: public CopyToTailContextBase<typename MC::key_t> {
   inline uint32_t value_size() const final {
     return rmw_context_->value_size();
   }
+  inline bool is_tombstone() const final {
+    // rmw never copies tombstone records
+    return false;
+  }
 
   inline bool copy_at(void* dest, uint32_t alloc_size) const final {
     record_t* record = reinterpret_cast<record_t*>(dest);
@@ -526,8 +530,12 @@ inline Status FasterKvHC<K, V, D>::Read(RC& context, AsyncCallback callback,
   // Issue request to hot log
   hc_read_context_t hc_context{ this, ReadOperationStage::HOT_LOG_READ,
                               context, callback, monotonic_serial_num };
-  Status status = hot_store.Read(hc_context, AsyncContinuePendingRead, monotonic_serial_num);
+  Status status = hot_store.Read(hc_context, AsyncContinuePendingRead, monotonic_serial_num, true);
   if (status != Status::NotFound) {
+    if (status == Status::Aborted) {
+      // found a tombstone -- no need to check cold log
+      return Status::NotFound;
+    }
     return status;
   }
   // Issue request on cold log
@@ -540,6 +548,10 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRead(IAsyncContext* ctxt, S
 
   if (context->stage == ReadOperationStage::HOT_LOG_READ) {
     if (result != Status::NotFound) {
+      if (result == Status::Aborted) {
+        // found a tombstone -- no need to check cold log
+        result = Status::NotFound;
+      }
       // call user-provided callback
       context->caller_callback(context->caller_context, result);
       return;

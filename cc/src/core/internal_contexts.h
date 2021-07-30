@@ -42,7 +42,8 @@ enum class OperationStatus : uint8_t {
   SUCCESS_UNMARK,
   NOT_FOUND_UNMARK,
   CPR_SHIFT_DETECTED,
-  ABORTED, // only used in conditional copy
+  ABORTED,
+  ABORTED_UNMARK,
 };
 
 /// Internal FASTER context.
@@ -149,16 +150,21 @@ class AsyncPendingReadContext : public PendingContext<K> {
  public:
   typedef K key_t;
  protected:
-  AsyncPendingReadContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_)
-    : PendingContext<key_t>(OperationType::Read, caller_context_, caller_callback_) {
+  AsyncPendingReadContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_, bool abort_if_tombstone_)
+    : PendingContext<key_t>(OperationType::Read, caller_context_, caller_callback_)
+    , abort_if_tombstone{ abort_if_tombstone_ } {
   }
   /// The deep copy constructor.
   AsyncPendingReadContext(AsyncPendingReadContext& other, IAsyncContext* caller_context)
-    : PendingContext<key_t>(other, caller_context) {
+    : PendingContext<key_t>(other, caller_context)
+    , abort_if_tombstone{ other.abort_if_tombstone } {
   }
  public:
   virtual void Get(const void* rec) = 0;
   virtual void GetAtomic(const void* rec) = 0;
+
+  // If true, Read will return ABORT (instead of NOT_FOUND), if record is tombstone
+  bool abort_if_tombstone;
 };
 
 /// A synchronous Read() context preserves its type information.
@@ -172,8 +178,8 @@ class PendingReadContext : public AsyncPendingReadContext<typename RC::key_t> {
   typedef Record<key_t, value_t> record_t;
   constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
-  PendingReadContext(read_context_t& caller_context_, AsyncCallback caller_callback_)
-    : AsyncPendingReadContext<key_t>(caller_context_, caller_callback_) {
+  PendingReadContext(read_context_t& caller_context_, AsyncCallback caller_callback_, bool abort_if_tombstone_)
+    : AsyncPendingReadContext<key_t>(caller_context_, caller_callback_, abort_if_tombstone_) {
   }
   /// The deep copy constructor.
   PendingReadContext(PendingReadContext& other, IAsyncContext* caller_context_)
@@ -571,6 +577,7 @@ class CopyToTailContextBase {
   virtual KeyHash get_key_hash() const = 0;
   virtual bool is_key_equal(const key_t& other) const = 0;
   virtual uint32_t value_size() const = 0;
+  virtual bool is_tombstone() const = 0;
   virtual bool copy_at(void* dest, uint32_t alloc_size) const = 0;
 
  public:
