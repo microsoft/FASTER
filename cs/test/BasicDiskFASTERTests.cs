@@ -114,13 +114,13 @@ namespace FASTER.test
                 {
                     if (i < 100)
                     {
-                        Assert.IsTrue(output.value.vfield1 == value.vfield1 + 1);
-                        Assert.IsTrue(output.value.vfield2 == value.vfield2 + 1);
+                        Assert.AreEqual(value.vfield1 + 1, output.value.vfield1);
+                        Assert.AreEqual(value.vfield2 + 1, output.value.vfield2);
                     }
                     else
                     {
-                        Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                        Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                        Assert.AreEqual(value.vfield1, output.value.vfield1);
+                        Assert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                 }
             }

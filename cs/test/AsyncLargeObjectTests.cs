@@ -90,7 +90,7 @@ namespace FASTER.test.async
                     {
                         for (int i = 0; i < output.value.value.Length; i++)
                         {
-                            Assert.IsTrue(output.value.value[i] == (byte)(output.value.value.Length + i));
+                            Assert.AreEqual((byte)(output.value.value.Length + i), output.value.value[i]);
                         }
                     }
                 }

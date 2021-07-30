@@ -109,7 +109,7 @@ namespace FASTER.test.recovery.sumstore.simple
                 session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
             if (isAsync)
@@ -125,7 +125,7 @@ namespace FASTER.test.recovery.sumstore.simple
                 if (status == Status.PENDING)
                     session2.CompletePending(true);
                 else
-                    Assert.IsTrue(output.value.numClicks == key);
+                    Assert.AreEqual(key, output.value.numClicks);
             }
             session2.Dispose();
         }
@@ -159,7 +159,7 @@ namespace FASTER.test.recovery.sumstore.simple
                 session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
             if (isAsync)
@@ -176,7 +176,7 @@ namespace FASTER.test.recovery.sumstore.simple
                     session2.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(output.value.numClicks == key);
+                    Assert.AreEqual(key, output.value.numClicks);
                 }
             }
             session2.Dispose();
@@ -215,7 +215,7 @@ namespace FASTER.test.recovery.sumstore.simple
             fht1.Log.ShiftBeginAddress(address);
 
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
             if (isAsync)
@@ -231,8 +231,8 @@ namespace FASTER.test.recovery.sumstore.simple
     {
         public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.numClicks == key.adId);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(key.adId, output.value.numClicks);
         }
 
         // Read functions

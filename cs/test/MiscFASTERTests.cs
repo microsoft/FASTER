@@ -57,10 +57,10 @@ namespace FASTER.test
             session.RMW(ref key2, ref input2, Empty.Default, 0);
 
             session.Read(ref key, ref input1, ref output, Empty.Default, 0);
-            Assert.IsTrue(output.value.value == input1.value);
+            Assert.AreEqual(input1.value, output.value.value);
 
             session.Read(ref key2, ref input2, ref output, Empty.Default, 0);
-            Assert.IsTrue(output.value.value == input2.value);
+            Assert.AreEqual(input2.value, output.value.value);
         }
 
         [Test]
@@ -86,10 +86,10 @@ namespace FASTER.test
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
+                Assert.AreEqual(Status.OK, status);
             }
 
-            Assert.IsTrue(g1.value.value == 23);
+            Assert.AreEqual(23, g1.value.value);
 
             key2 = 99999;
             status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
@@ -100,7 +100,7 @@ namespace FASTER.test
             }
             else
             {
-                Assert.IsTrue(status == Status.NOTFOUND);
+                Assert.AreEqual(Status.NOTFOUND, status);
             }
         }
 

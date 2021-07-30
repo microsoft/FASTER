@@ -86,13 +86,11 @@ namespace FASTER.test
 
             // Read the log just to verify was actually committed
             int currentEntry = 0;
-            using (var iter = LocalMemorylog.Scan(0, 100_000_000))
+            using var iter = LocalMemorylog.Scan(0, 100_000_000);
+            while (iter.GetNext(out byte[] result, out _, out _))
             {
-                while (iter.GetNext(out byte[] result, out _, out _))
-                {
-                    Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as " + currentEntry.ToString());
-                    currentEntry++;
-                }
+                Assert.AreEqual(currentEntry, result[currentEntry]);
+                currentEntry++;
             }
         }
 
@@ -155,7 +153,7 @@ namespace FASTER.test
                         Assert.Fail("Unknown IteratorType");
                         break;
                 }
-                Assert.IsTrue(counter.count == numEntries);
+                Assert.AreEqual(numEntries, counter.count);
             }
 
             log.Dispose();

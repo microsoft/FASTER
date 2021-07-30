@@ -87,8 +87,8 @@ namespace FASTER.test
             int currentEntry = 0;
             while (iter.GetNext(out byte[] result, out _, out _))
             {
-                Assert.IsTrue(currentEntry < entryLength);
-                Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + " not match expected:" + currentEntry);
+                Assert.Less(currentEntry, entryLength);
+                Assert.AreEqual((byte)currentEntry, result[currentEntry]);
                 currentEntry++;
             }
 

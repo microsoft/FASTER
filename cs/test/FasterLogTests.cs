@@ -133,7 +133,7 @@ namespace FASTER.test
 
                 // MoveNextAsync() would hang here waiting for more entries
                 if (verifyAtEnd)
-                    Assert.IsTrue(asyncByteVectorIter.Current.nextAddress == log.TailAddress);
+                    Assert.AreEqual(log.TailAddress, asyncByteVectorIter.Current.nextAddress);
                 return;
             }
 
@@ -146,7 +146,7 @@ namespace FASTER.test
 
                 // MoveNextAsync() would hang here waiting for more entries
                 if (verifyAtEnd)
-                    Assert.IsTrue(asyncMemoryOwnerIter.Current.nextAddress == log.TailAddress);
+                    Assert.AreEqual(log.TailAddress, asyncMemoryOwnerIter.Current.nextAddress);
                 return;
             }
 
@@ -229,7 +229,7 @@ namespace FASTER.test
                     Assert.Fail("Unknown IteratorType");
                     break;
             }
-            Assert.IsTrue(counter.count == numEntries);
+            Assert.AreEqual(numEntries, counter.count);
         }
     }
 
@@ -381,11 +381,11 @@ namespace FASTER.test
                 log.Enqueue(data1);
             }
 
-            Assert.IsTrue(log.CommittedUntilAddress == log.BeginAddress);
+            Assert.AreEqual(log.BeginAddress, log.CommittedUntilAddress);
             await log.CommitAsync();
 
-            Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
-            Assert.IsTrue(log.CommittedBeginAddress == log.BeginAddress);
+            Assert.AreEqual(log.TailAddress, log.CommittedUntilAddress);
+            Assert.AreEqual(log.BeginAddress, log.CommittedBeginAddress);
 
             using var iter = log.Scan(0, long.MaxValue);
             var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
@@ -395,14 +395,14 @@ namespace FASTER.test
 
             log.TruncateUntil(iter.NextAddress);
 
-            Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
-            Assert.IsTrue(log.CommittedBeginAddress < log.BeginAddress);
-            Assert.IsTrue(iter.NextAddress == log.BeginAddress);
+            Assert.AreEqual(log.TailAddress, log.CommittedUntilAddress);
+            Assert.Less(log.CommittedBeginAddress, log.BeginAddress);
+            Assert.AreEqual(log.BeginAddress, iter.NextAddress);
 
             await log.CommitAsync();
 
-            Assert.IsTrue(log.CommittedUntilAddress == log.TailAddress);
-            Assert.IsTrue(log.CommittedBeginAddress == log.BeginAddress);
+            Assert.AreEqual(log.TailAddress, log.CommittedUntilAddress);
+            Assert.AreEqual(log.BeginAddress, log.CommittedBeginAddress);
         }
 
         [Test]
@@ -468,9 +468,9 @@ namespace FASTER.test
                 log.Enqueue(data1);
             }
             log.RefreshUncommitted();
-            Assert.IsTrue(log.SafeTailAddress == log.TailAddress);
+            Assert.AreEqual(log.TailAddress, log.SafeTailAddress);
 
-            Assert.IsTrue(log.CommittedUntilAddress < log.SafeTailAddress);
+            Assert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
 
             using var iter = log.Scan(0, long.MaxValue, scanUncommitted: true);
             var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector ? iter.GetAsyncEnumerable().GetAsyncEnumerator() : default;
@@ -481,7 +481,7 @@ namespace FASTER.test
                 case IteratorType.Sync:
                     while (iter.GetNext(out _, out _, out _))
                         log.TruncateUntil(iter.NextAddress);
-                    Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
+                    Assert.AreEqual(log.SafeTailAddress, iter.NextAddress);
                     break;
                 case IteratorType.AsyncByteVector:
                     {
@@ -533,9 +533,9 @@ namespace FASTER.test
                 log.Enqueue(data1);
             }
             log.RefreshUncommitted();
-            Assert.IsTrue(log.SafeTailAddress == log.TailAddress);
+            Assert.AreEqual(log.TailAddress, log.SafeTailAddress);
 
-            Assert.IsTrue(log.CommittedUntilAddress < log.SafeTailAddress);
+            Assert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
 
             using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
             {
@@ -547,7 +547,7 @@ namespace FASTER.test
                     case IteratorType.Sync:
                         while (iter.GetNext(out _, out _, out _))
                             log.TruncateUntilPageStart(iter.NextAddress);
-                        Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
+                        Assert.AreEqual(log.SafeTailAddress, iter.NextAddress);
                         break;
                     case IteratorType.AsyncByteVector:
                         {
@@ -628,8 +628,7 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  currentEntry:" + currentEntry);
-
+                        Assert.AreEqual((byte)currentEntry, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -676,7 +675,6 @@ namespace FASTER.test
             if (currentTask.Status != TaskStatus.RanToCompletion)
             {
                 wasCanceled = true;
-                Console.WriteLine("currentTask failed to complete; canceling");
                 cts.Cancel();
             }
 
@@ -688,8 +686,7 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        Assert.IsTrue(result[currentEntry] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + " not match expected:" + currentEntry);
-
+                        Assert.AreEqual((byte)currentEntry, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -732,8 +729,8 @@ namespace FASTER.test
             // Actual tess is here 
             await log.RefreshUncommittedAsync();
 
-            Assert.IsTrue(log.SafeTailAddress == log.TailAddress);
-            Assert.IsTrue(log.CommittedUntilAddress < log.SafeTailAddress);
+            Assert.AreEqual(log.TailAddress, log.SafeTailAddress);
+            Assert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
 
             using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
             {
@@ -745,7 +742,7 @@ namespace FASTER.test
                     case IteratorType.Sync:
                         while (iter.GetNext(out _, out _, out _))
                             log.TruncateUntilPageStart(iter.NextAddress);
-                        Assert.IsTrue(iter.NextAddress == log.SafeTailAddress);
+                        Assert.AreEqual(log.SafeTailAddress, iter.NextAddress);
                         break;
                     case IteratorType.AsyncByteVector:
                         {

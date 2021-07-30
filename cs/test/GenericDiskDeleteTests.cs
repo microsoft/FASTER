@@ -72,7 +72,7 @@ namespace FASTER.test
                 }
                 else
                 {
-                    Assert.IsTrue(output.value.value == value.value);
+                    Assert.AreEqual(value.value, output.value.value);
                 }
             }
 
@@ -96,7 +96,7 @@ namespace FASTER.test
                 }
                 else
                 {
-                    Assert.IsTrue(status == Status.NOTFOUND);
+                    Assert.AreEqual(Status.NOTFOUND, status);
                 }
             }
 
@@ -108,7 +108,7 @@ namespace FASTER.test
                 if (recordInfo.Tombstone)
                     val++;
             }
-            Assert.IsTrue(totalRecords == val);
+            Assert.AreEqual(val, totalRecords);
         }
 
 
@@ -133,25 +133,25 @@ namespace FASTER.test
             var input = new MyInput { value = 1000 };
             var output = new MyOutput();
             var status = session.Read(ref key100, ref input, ref output, 1, 0);
-            Assert.IsTrue(status == Status.NOTFOUND);
+            Assert.AreEqual(Status.NOTFOUND, status);
 
             status = session.Upsert(ref key100, ref value100, 0, 0);
-            Assert.IsTrue(status == Status.OK);
+            Assert.AreEqual(Status.OK, status);
 
             status = session.Read(ref key100, ref input, ref output, 0, 0);
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.value == value100.value);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(value100.value, output.value.value);
 
             session.Delete(ref key100, 0, 0);
             session.Delete(ref key200, 0, 0);
 
             // This RMW should create new initial value, since item is deleted
             status = session.RMW(ref key200, ref input, 1, 0);
-            Assert.IsTrue(status == Status.NOTFOUND);
+            Assert.AreEqual(Status.NOTFOUND, status);
 
             status = session.Read(ref key200, ref input, ref output, 0, 0);
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.value == input.value);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(input.value, output.value.value);
 
             // Delete key 200 again
             session.Delete(ref key200, 0, 0);
@@ -164,17 +164,17 @@ namespace FASTER.test
                 session.Upsert(ref _key, ref _value, 0, 0);
             }
             status = session.Read(ref key100, ref input, ref output, 1, 0);
-            Assert.IsTrue(status == Status.PENDING);
+            Assert.AreEqual(Status.PENDING, status);
             session.CompletePending(true);
 
             // This RMW should create new initial value, since item is deleted
             status = session.RMW(ref key200, ref input, 1, 0);
-            Assert.IsTrue(status == Status.PENDING);
+            Assert.AreEqual(Status.PENDING, status);
             session.CompletePending(true);
 
             status = session.Read(ref key200, ref input, ref output, 0, 0);
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.value == input.value);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(input.value, output.value.value);
         }
     }
 }

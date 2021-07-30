@@ -91,7 +91,7 @@ namespace FASTER.test.statemachine
             s1.Refresh();
 
             // Completion callback should have been called once
-            Assert.IsTrue(f.checkpointCallbackExpectation == 0);
+            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             // We should be in REST, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
@@ -139,7 +139,7 @@ namespace FASTER.test.statemachine
             s1.Refresh();
 
             // Completion callback should have been called once
-            Assert.IsTrue(f.checkpointCallbackExpectation == 0);
+            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             // We should be in REST, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
@@ -180,7 +180,7 @@ namespace FASTER.test.statemachine
             s1.UnsafeResumeThread();
 
             // Completion callback should have been called once
-            Assert.IsTrue(f.checkpointCallbackExpectation == 0);
+            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
             s1.Dispose();
@@ -228,7 +228,7 @@ namespace FASTER.test.statemachine
             s1.UnsafeResumeThread();
 
             // Completion callback should have been called once
-            Assert.IsTrue(f.checkpointCallbackExpectation == 0);
+            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
             s1.Dispose();
@@ -268,7 +268,7 @@ namespace FASTER.test.statemachine
             s1.Refresh();
 
             // Completion callback should have been called once
-            Assert.IsTrue(f.checkpointCallbackExpectation == 0);
+            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             // We should be in PERSISTENCE_CALLBACK, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), fht1.SystemState));
@@ -292,7 +292,7 @@ namespace FASTER.test.statemachine
             s1.UnsafeResumeThread();
 
             // Completion callback should have been called once
-            Assert.IsTrue(f.checkpointCallbackExpectation == 0);
+            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
             s1.Dispose();
@@ -326,7 +326,7 @@ namespace FASTER.test.statemachine
             s2.Dispose();
 
             fht1.TakeHybridLogCheckpoint(out _);
-            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             // We should be in REST, 3
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 3), fht1.SystemState));
@@ -337,7 +337,7 @@ namespace FASTER.test.statemachine
             s1.UnsafeResumeThread();
 
             // Completion callback should have been called once
-            Assert.IsTrue(f.checkpointCallbackExpectation == 0);
+            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s1.Dispose();
 
@@ -353,7 +353,7 @@ namespace FASTER.test.statemachine
 
             // Take index checkpoint for recovery purposes
             fht1.TakeIndexCheckpoint(out _);
-            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             // Index checkpoint does not update version, so
             // we should still be in REST, 1
@@ -401,7 +401,7 @@ namespace FASTER.test.statemachine
 
             using (var s3 = fht2.ResumeSession(f, "foo", out CommitPoint lsn))
             {
-                Assert.IsTrue(lsn.UntilSerialNo == numOps - 1);
+                Assert.AreEqual(numOps - 1, lsn.UntilSerialNo);
 
                 // Expect checkpoint completion callback
                 f.checkpointCallbackExpectation = 1;
@@ -409,7 +409,7 @@ namespace FASTER.test.statemachine
                 s3.Refresh();
 
                 // Completion callback should have been called once
-                Assert.IsTrue(f.checkpointCallbackExpectation == 0);
+                Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
                 for (var key = 0; key < numOps; key++)
                 {
@@ -419,7 +419,7 @@ namespace FASTER.test.statemachine
                         s3.CompletePending(true);
                     else
                     {
-                        Assert.IsTrue(output.numClicks == key);
+                        Assert.AreEqual(key, output.numClicks);
                     }
                 }
             }
@@ -437,7 +437,7 @@ namespace FASTER.test.statemachine
             switch (checkpointCallbackExpectation)
             {
                 case 0:
-                    Assert.IsTrue(false, "Unexpected checkpoint callback");
+                    Assert.Fail("Unexpected checkpoint callback");
                     break;
                 default:
                     Interlocked.Decrement(ref checkpointCallbackExpectation);
@@ -447,8 +447,8 @@ namespace FASTER.test.statemachine
 
         public override void ReadCompletionCallback(ref AdId key, ref NumClicks input, ref NumClicks output, Empty ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.numClicks == key.adId);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(key.adId, output.numClicks);
         }
     }
 }

@@ -91,7 +91,7 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read all keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -111,8 +111,8 @@ namespace FASTER.test
                     Assert.IsFalse(completedOutputs.Next());
                     completedOutputs.Dispose();
                 }
-                Assert.IsTrue(status == Status.OK, "Found status:" + status.ToString());
-                Assert.IsTrue(output.value.value == value.value, "output value:" + output.value.value.ToString() + " value:" + value.value.ToString());
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(value.value, output.value.value);
             }
         }
 
@@ -155,8 +155,8 @@ namespace FASTER.test
                     session.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.value.value == value.value);
+                    Assert.AreEqual(Status.OK, status);
+                    Assert.AreEqual(value.value, output.value.value);
                 }
             }
         }
@@ -193,8 +193,8 @@ namespace FASTER.test
 
             var tail = fht.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
-            Assert.IsTrue(fht.Log.TailAddress == tail);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
+            Assert.AreEqual(tail, fht.Log.TailAddress);
 
             // Read 2000 keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -208,8 +208,8 @@ namespace FASTER.test
                     session.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.value.value == value.value);
+                    Assert.AreEqual(Status.OK, status);
+                    Assert.AreEqual(value.value, output.value.value);
                 }
             }
         }
@@ -243,7 +243,7 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -261,12 +261,12 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status == Status.OK);
-                        Assert.IsTrue(output.value.value == value.value);
+                        Assert.AreEqual(Status.OK, status);
+                        Assert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     }
                 }
             }
@@ -294,7 +294,7 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, true, default(EvenCompactionFunctions));
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (var i = 0; i < totalRecords; i++)
@@ -314,12 +314,12 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status == Status.OK);
-                        Assert.IsTrue(output.value.value == value.value);
+                        Assert.AreEqual(Status.OK, status);
+                        Assert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     }
                 }
             }
@@ -348,11 +348,11 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, false, default(EvenCompactionFunctions));
-            Assert.IsFalse(fht.Log.BeginAddress == compactUntil);
+            Assert.AreNotEqual(compactUntil, fht.Log.BeginAddress);
 
             // Verified that begin address not changed so now compact and change Begin to untilAddress
             compactUntil = session.Compact(compactUntil, true, default(EvenCompactionFunctions));
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (var i = 0; i < totalRecords; i++)
@@ -372,12 +372,12 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status == Status.OK);
-                        Assert.IsTrue(output.value.value == value.value);
+                        Assert.AreEqual(Status.OK, status);
+                        Assert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     }
                 }
             }
@@ -420,8 +420,8 @@ namespace FASTER.test
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.value == value.value);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(value.value, output.value.value);
             }
         }
 
