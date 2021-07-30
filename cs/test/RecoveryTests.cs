@@ -289,7 +289,7 @@ namespace FASTER.test.recovery.sumstore
                 : new VariableLengthStructSettings<TData, TData> { keyLength = varLenStruct, valueLength = varLenStruct };
 
             return new FasterKV<TData, TData>(DeviceTypeRecoveryTests.keySpace,
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, SegmentSizeBits = 14, PageSizeBits = 14 },
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, SegmentSizeBits = 25 },
                 new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.Snapshot },
                 this.serializerSettingsObj as SerializerSettings<TData, TData>,
                 variableLengthStructSettings: varLenStructSettings
