@@ -240,7 +240,7 @@ class FasterKv {
   inline bool HasConflictingEntry(KeyHash hash, const HashBucket* bucket, uint8_t version,
                                   const AtomicHashBucketEntry* atomic_entry) const;
 
-  inline Address BlockAllocate(uint32_t record_size);
+  inline Address BlockAllocate(uint32_t record_size, faster_t* other_store = nullptr);
 
   inline Status HandleOperationStatus(ExecutionContext& ctx,
                                       pending_context_t& pending_context,
@@ -1543,16 +1543,22 @@ inline Status FasterKv<K, V, D>::IssueAsyncIoRequest(ExecutionContext& ctx,
 }
 
 template <class K, class V, class D>
-inline Address FasterKv<K, V, D>::BlockAllocate(uint32_t record_size) {
+inline Address FasterKv<K, V, D>::BlockAllocate(uint32_t record_size, faster_t* other_store) {
+  if (other_store == nullptr) {
+    other_store = this;
+  }
+
   uint32_t page;
   Address retval = hlog.Allocate(record_size, page);
   while(retval < hlog.read_only_address.load()) {
     Refresh();
+    if (other_store != this) other_store->Refresh();
     // Don't overrun the hlog's tail offset.
     bool page_closed = (retval == Address::kInvalidAddress);
     while(page_closed) {
       page_closed = !hlog.NewPage(page);
       Refresh();
+      if (other_store != this) other_store->Refresh();
     }
     retval = hlog.Allocate(record_size, page);
   }
@@ -3092,9 +3098,19 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
     // block until truncation & hash index update finishes
     while(!truncated || !completed) {
       CompletePending(false);
+      if (dest_store != this) {
+        dest_store->CompletePending(false);
+      }
       std::this_thread::yield();
     }
-    CompletePending(true);
+    bool done;
+    do {
+      done = CompletePending(false);
+      if (dest_store != this) {
+        dest_store->CompletePending(false);
+      }
+      std::this_thread::yield();
+    } while (!done);
     Refresh();
   }
   return true;
@@ -3384,7 +3400,7 @@ inline OperationStatus FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context
 
   // Append entry to the log
   uint32_t record_size = record_t::size(copy_context.key_size(), copy_context.value_size());
-  Address new_address = dest_store->BlockAllocate(record_size);
+  Address new_address = dest_store->BlockAllocate(record_size, this);
   record_t* record = reinterpret_cast<record_t*>(dest_store->hlog.Get(new_address));
   // Copy record
   assert(copy_context.copy_at(record, record_size));
@@ -3428,10 +3444,12 @@ inline OperationStatus FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context
       // Installed the new record in the hash table.
       return OperationStatus::SUCCESS;
     }
+    dest_store->Refresh();
   }
+  record->header.invalid = true;
 
   // retry request
-  record->header.invalid = true;
+  Refresh();
   return ConditionalCopyToTail(copy_context);
 }
 

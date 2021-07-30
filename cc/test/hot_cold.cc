@@ -312,6 +312,10 @@ TEST_P(HotColdParameterizedTestFixture, UpsertRead) {
     UpsertContext<Key, Value> context{ Key(idx), Value(idx * 2) };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
+
+    if (idx % 24 == 0) {
+      store.CompletePending(false);
+    }
   }
 
   if (!auto_compaction) {
