@@ -358,6 +358,117 @@ TEST_P(HotColdParameterizedTestFixture, UpsertRead) {
     }
   }
 
+  if (!auto_compaction) {
+    // perform cold-cold compaction
+    uint64_t cold_size = store.cold_store.Size();
+    store.CompactColdLog(store.cold_store.hlog.safe_read_only_address.control(), true);
+  }
+
+  store.StopSession();
+  RemoveDirs("temp_store", hot_fp, cold_fp);
+}
+
+TEST_P(HotColdParameterizedTestFixture, UpsertDelete) {
+  using Key = FixedSizeKey<uint64_t>;
+  using Value = LargeValue;
+
+  typedef FASTER::device::FileSystemDisk<handler_t, 1_GiB> disk_t; // 1GB file segments
+  typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
+
+  std::string hot_fp, cold_fp;
+  CreateLogDirs("temp_store", hot_fp, cold_fp);
+
+  bool auto_compaction = GetParam();
+  faster_hc_t store { 1_GiB, 0.25,            // 256 MB hot log, 768 cold log
+                      192_MiB, 1024, hot_fp,  // [hot]  192 MB mem size, 512 entries in hash index
+                      192_MiB, 2048, cold_fp, // [cold] 192 MB mem size, 512 entries in hash index
+                      0.4, 0,                 // 64 MB mutable hot log, minimum mutable cold (i.e. 64 MB)
+                      auto_compaction };      // automatic or manual compaction
+
+  uint32_t num_records = 100000; // ~800 MB of data
+  store.StartSession();
+
+  // Insert.
+  for(size_t idx = 1; idx <= num_records; idx += 2) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false); // Upsert do not go pending (in normal op)
+    };
+    UpsertContext<Key, Value> context{ Key(idx), Value(idx) };
+    Status result = store.Upsert(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+
+  if (!auto_compaction) {
+    // perform hot-cold compaction
+    uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
+    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true);
+    ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+  }
+  // Read both existent and non-existent keys
+  for(size_t idx = 1; idx <= num_records; idx++) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      CallbackContext<ReadContext<Key, Value>> context{ ctxt };
+      if (context->key().key % 2 == 0) {
+        ASSERT_EQ(Status::NotFound, result);
+      } else {
+        ASSERT_EQ(Status::Ok, result);
+        ASSERT_EQ(context->key().key, context->output.value );
+      }
+    };
+    ReadContext<Key, Value> context{ Key(idx) };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_TRUE(result == Status::Ok || result == Status::NotFound ||
+                  result == Status::Pending);
+    if (result == Status::Ok) {
+      ASSERT_TRUE(idx % 2 == 1);
+      ASSERT_EQ(idx, context.output.value);
+    } else if (result != Status::Pending) {
+      ASSERT_TRUE(idx % 2 == 0);
+      ASSERT_EQ(Status::NotFound, result);
+    }
+    if (idx % 25 == 0) {
+      store.CompletePending(false);
+    }
+  }
+  store.CompletePending(true);
+
+  // Delete all inserted records
+  for(size_t idx = 1; idx <= num_records; idx += 2) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false); // Deletes do not go pending (in normal op)
+    };
+    DeleteContext<Key, Value> context{ Key(idx) };
+    Status result = store.Delete(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+
+  if (!auto_compaction) {
+    // perform hot-cold compaction
+    uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
+    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true);
+    ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+  }
+
+  // Read all keys -- all should return NOT_FOUND
+  for(size_t idx = 1; idx <= num_records; idx++) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_EQ(Status::NotFound, result);
+    };
+    ReadContext<Key, Value> context{ Key(idx) };
+    Status result = store.Read(context, callback, 1);
+    ASSERT_TRUE(result == Status::NotFound || result == Status::Pending);
+    if (idx % 25 == 0) {
+      store.CompletePending(false);
+    }
+  }
+  store.CompletePending(true);
+
+  if (!auto_compaction) {
+    // perform cold-cold compaction
+    uint64_t cold_size = store.cold_store.Size();
+    store.CompactColdLog(store.cold_store.hlog.safe_read_only_address.control(), true);
+  }
+
   store.StopSession();
   RemoveDirs("temp_store", hot_fp, cold_fp);
 }
