@@ -325,8 +325,6 @@ class HotColdRmwCopyContext: public CopyToTailContextBase<typename MC::key_t> {
     return true;
   }
 
-  record_t* record_;
-
  private:
   rmw_context_t* rmw_context_;
   read_context_t* read_context_;
@@ -503,10 +501,14 @@ inline void FasterKvHC<K, V, D>::StopSession() {
 
 template<class K, class V, class D>
 inline bool FasterKvHC<K, V, D>::CompletePending(bool wait) {
+  bool hot_store_done, cold_store_done;
   do {
     CompleteRmwRetryRequests();
-    if(hot_store.CompletePending(wait) &&
-        cold_store.CompletePending(wait) &&
+    // Complete pending requests on both stores
+    hot_store_done = hot_store.CompletePending(false);
+    cold_store_done = cold_store.CompletePending(false);
+
+    if(hot_store_done && cold_store_done &&
         retry_rmw_requests.empty()) {
       return true;
     }
@@ -614,20 +616,22 @@ inline Status FasterKvHC<K, V, D>::InternalRmw(C& hc_rmw_context) {
   if (read_status == Status::Ok) {
     // Conditional copy to hot log
     hc_rmw_copy_context_t copy_context{ &hc_rmw_context, &rmw_read_context,
-                              hc_rmw_context.expected_entry, static_cast<void*>(&hot_store) };
-    Status status = hot_store.ConditionalCopyToTail(copy_context);
-    if (status == Status::Pending) {
+                                        hc_rmw_context.expected_entry,
+                                        static_cast<void*>(&hot_store) };
+    OperationStatus copy_status = hot_store.ConditionalCopyToTail(copy_context);
+    if (copy_status == OperationStatus::RECORD_ON_DISK) {
       // add to retry rmw queue
       hc_rmw_context.expected_entry = copy_context.expected_entry;
       retry_rmw_requests.push(&hc_rmw_context);
       return Status::Pending;
     }
-    assert(status == Status::Ok || status == Status::Aborted);
+    assert(copy_status == OperationStatus::SUCCESS ||
+            copy_status == OperationStatus::ABORTED);
 
-    // call rmw on hot log again -- we expect that hot log has the record
+    // call rmw on hot log again -- we expect that hot log contains the record
     hc_rmw_context.stage = RmwOperationStage::HOT_LOG_RMW_RETRY_IF_NOT_FOUND;
-    status = hot_store.Rmw(hc_rmw_context, AsyncContinuePendingRmw,
-                          monotonic_serial_num, false);
+    Status status = hot_store.Rmw(hc_rmw_context, AsyncContinuePendingRmw,
+                                monotonic_serial_num, false);
     if (status != Status::NotFound) {
       return status;
     }
@@ -678,8 +682,8 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmw(IAsyncContext* ctxt, St
       assert(context->read_context != nullptr);
       hc_rmw_copy_context_t copy_context{ context.get(), context->read_context, context->expected_entry,
                                           static_cast<void*>(&faster_hc->hot_store) };
-      Status copy_status = faster_hc->hot_store.ConditionalCopyToTail(copy_context);
-      if (copy_status == Status::Pending) {
+      OperationStatus copy_status = faster_hc->hot_store.ConditionalCopyToTail(copy_context);
+      if (copy_status == OperationStatus::RECORD_ON_DISK) {
         // add to retry queue
         context.async = true; // do not free context
         context->expected_entry = copy_context.expected_entry;
@@ -687,7 +691,8 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmw(IAsyncContext* ctxt, St
         faster_hc->retry_rmw_requests.push(context.get());
         return;
       }
-      assert(copy_status == Status::Ok || copy_status == Status::Aborted);
+      assert(copy_status == OperationStatus::SUCCESS ||
+              copy_status == OperationStatus::ABORTED);
       // call rmw on hot log again -- we expect that hot log contains the record
       context->stage = RmwOperationStage::HOT_LOG_RMW_RETRY_IF_NOT_FOUND;
       Status status = faster_hc->hot_store.Rmw(*context.get(), AsyncContinuePendingRmw,

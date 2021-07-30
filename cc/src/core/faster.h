@@ -203,7 +203,7 @@ class FasterKv {
   inline OperationStatus InternalDelete(C& pending_context, bool force_tombstone);
 
   template<class CC>
-  Status ConditionalCopyToTail(CC& context);
+  inline OperationStatus ConditionalCopyToTail(CC& context);
 
  private:
   OperationStatus InternalContinuePendingRead(ExecutionContext& ctx,
@@ -3167,7 +3167,7 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
         }
         continue;
       }
-      if (record->header.tombstone && !dest_store_differs)  {
+      if (record->header.tombstone)  {
         // no need to copy to tail
         goto complete_pending;
       }
@@ -3212,20 +3212,22 @@ complete_pending:
       if (dest_store_differs) dest_store->CompletePending(false);
       if (record == nullptr) std::this_thread::yield();
     }
+    // Handle pending requests
     size_t size = pending_records_queue.size();
-    //for (auto const & pending_record : pending_records_queue) {
     for (size_t idx = 0; idx < size; idx++) {
       auto const& pending_record = pending_records_queue.front();
       pending_records_queue.pop_front();
 
-      // Copy to tail if no other entry with same key exists
+      // Copy to tail if no other more recent entry with same key exists
       copy_to_tail_context_t copy_context{ pending_record.record, pending_record.expected_entry,
                                             static_cast<void*>(dest_store) };
 
-      Status status = ConditionalCopyToTail(copy_context);
-      assert(status == Status::Ok || status == Status::Aborted || status == Status::Pending);
+      OperationStatus status = ConditionalCopyToTail(copy_context);
+      assert(status == OperationStatus::SUCCESS ||
+             status == OperationStatus::ABORTED ||
+             status == OperationStatus::RECORD_ON_DISK);
 
-      if (status == Status::Pending) {
+      if (status == OperationStatus::RECORD_ON_DISK) {
         // could not determine if record is live -- push record to retry queue
         // NOTE: next time we try, we'll search only the newly introduced hash chain part
         auto record_info = new pending_record_entry_t(pending_record.record, pending_record.address,
@@ -3243,8 +3245,17 @@ complete_pending:
           break;
     }
   }
-  CompletePending(true);
-  if (dest_store_differs) dest_store->CompletePending(true);
+  // Wait for requests completion
+  bool done = false;
+  while (true) {
+    // Complete requests on both logs (if different)
+    done = CompletePending(false);
+    if (dest_store_differs) {
+      done = dest_store->CompletePending(false) && done;
+    }
+    if (done) break;
+    std::this_thread::yield();
+  }
 
   // Stop session for each spawned thread
   if (thread_idx >= 0) {
@@ -3305,9 +3316,17 @@ inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callbac
 
 template <class K, class V, class D>
 template <class CC>
-inline Status FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context) {
+inline OperationStatus FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context) {
   faster_t* dest_store = static_cast<faster_t*>(copy_context.dest_store);
-  HashBucketEntry expected_entry{ copy_context.expected_entry };
+
+  if(thread_ctx().phase != Phase::REST) {
+    HeavyEnter();
+  }
+  if(dest_store != this && dest_store->thread_ctx().phase != Phase::REST) {
+    dest_store->HeavyEnter();
+  }
+
+  HashBucketEntry expected_entry { copy_context.expected_entry };
 
   // Find hash index bucket for this key (must exist)
   KeyHash hash = copy_context.get_key_hash();
@@ -3316,88 +3335,82 @@ inline Status FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context) {
   assert(atomic_entry != nullptr);
   assert(atomic_entry->load().address() != Address::kInvalidAddress);
 
-  do {
-    assert( thread_ctx().phase == Phase::REST ||
-            thread_ctx().phase == Phase::GC_IO_PENDING ||
-            thread_ctx().phase == Phase::GC_IN_PROGRESS);
-
-    if (entry != expected_entry) {
-      // Hash-chain changed since last time!
-      if (expected_entry.address() < hlog.head_address.load()) {
-        // Part of the hash chain we need to check extends to disk -- need to re-check chain
-        copy_context.expected_entry = entry;
-        copy_context.search_min_offset = expected_entry.address() + 1;
-        return Status::Pending;
-      }
-
-      // Check if an entry with same key was inserted during this time
-      Address address = entry.address();
-      record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
-      if(!copy_context.is_key_equal(record->key())) {
-        address = TraceBackForKeyMatchCtxt(copy_context, record->header.previous_address(),
-                                            expected_entry.address() + 1);
-      }
-
-      if (address > expected_entry.address()) {
-        // Some other entry with *same* key was inserted -- abort insert
-        return Status::Aborted;
-      }
-      assert(address == expected_entry.address());
-      // Update expected entry to reflect new hash chain
-      expected_entry = entry;
+  if (entry != expected_entry) {
+    // Hash-chain changed since last time!
+    if (expected_entry.address() < hlog.head_address.load()) {
+      // Part of the hash chain we need to check extends to disk -- need to re-check chain
+      copy_context.expected_entry = entry;
+      copy_context.search_min_offset = expected_entry.address() + 1;
+      return OperationStatus::RECORD_ON_DISK;
     }
 
-    // Append entry to the log
-    uint32_t record_size = record_t::size(copy_context.key_size(), copy_context.value_size());
-    Address new_address = dest_store->BlockAllocate(record_size);
-    record_t* record = reinterpret_cast<record_t*>(dest_store->hlog.Get(new_address));
-    // Copy record
-    assert(copy_context.copy_at(record, record_size));
-
-    if (dest_store == this) {
-      // Replace record header
-      new(record) record_t{
-        RecordInfo{
-          static_cast<uint16_t>(thread_ctx().version), true, false, false, expected_entry.address() }
-      };
-
-      // Try to update hash bucket address
-      HashBucketEntry updated_entry{ new_address, hash.tag(), false };
-      if(atomic_entry->compare_exchange_strong(entry, updated_entry)) {
-        // Installed the new record in the hash table.
-        return Status::Ok;
-      }
-      // Hash-chain changed since last time -- retry
-      record->header.invalid = true;
+    // Check if an entry with same key was inserted during this time
+    Address address = entry.address();
+    record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
+    if(!copy_context.is_key_equal(record->key())) {
+      address = TraceBackForKeyMatchCtxt(copy_context, record->header.previous_address(),
+                                          expected_entry.address() + 1);
     }
-    else { // hot-cold compaction
-      HashBucketEntry dest_entry;
-      AtomicHashBucketEntry* dest_atomic_entry = dest_store->FindOrCreateEntry(hash, dest_entry);
-      // NOTE: dest_entry can be kInvalidAddress for hot-cold, if key does not exists in cold store
-      HashBucketEntry dest_updated_entry{ new_address, hash.tag(), false };
-      //do {
-        // Try to update hash bucket address -- retry until succeed
-        // NOTE: we don't have to check if new records for the same key have been inserted in the meantime.
-        //       this can only happen if we are concurrently doing cold-cold log compaction. Even in this case,
-        //       records found in hot log have priority over those in cold one. This means that the thread
-        //       performing the cold-cold compaction will properly check for updated chain (and possibly abort).
 
-        // Replace record header
-        new(record) record_t{
-          RecordInfo{
-            static_cast<uint16_t>(dest_store->thread_ctx().version), true, false, false, dest_entry.address() }
-        };
-        if(dest_atomic_entry->compare_exchange_strong(dest_entry, dest_updated_entry)) {
-          // Installed the new record in the hash table.
-          return Status::Ok;
-        }
-      //} while(true);
+    if (address > expected_entry.address()) {
+      // Some other entry with *same* key was inserted -- abort copy
+      return OperationStatus::ABORTED;
     }
-    record->header.invalid = true;
-
-    Refresh();
+    assert(address == expected_entry.address());
+    // Update expected entry to reflect new hash chain
+    expected_entry = entry;
   }
-  while (true);
+
+  // Append entry to the log
+  uint32_t record_size = record_t::size(copy_context.key_size(), copy_context.value_size());
+  Address new_address = dest_store->BlockAllocate(record_size);
+  record_t* record = reinterpret_cast<record_t*>(dest_store->hlog.Get(new_address));
+  // Copy record
+  assert(copy_context.copy_at(record, record_size));
+
+  if (dest_store == this) {
+    // Case: Single log compaction, or RMW conditional copy from cold to hot
+
+    // Replace record header
+    new(record) record_t{
+      RecordInfo{
+        static_cast<uint16_t>(thread_ctx().version),
+        true, false, false, expected_entry.address() }
+    };
+    // Try to update hash bucket address
+    HashBucketEntry updated_entry{ new_address, hash.tag(), false };
+    if(atomic_entry->compare_exchange_strong(entry, updated_entry)) {
+      // Installed the new record in the hash table.
+      return OperationStatus::SUCCESS;
+    }
+    // Hash-chain changed since last time
+  }
+  else {
+    // Case: hot-cold compaction
+    HashBucketEntry dest_entry;
+    AtomicHashBucketEntry* dest_atomic_entry = dest_store->FindOrCreateEntry(hash, dest_entry);
+    // NOTE: dest_entry can be kInvalidAddress for hot-cold, if key does not exists in cold store
+    HashBucketEntry dest_updated_entry{ new_address, hash.tag(), false };
+    // NOTE: we don't have to check if new records for the same key have been inserted in the meantime.
+    //       this can only happen if we are concurrently doing cold-cold log compaction. Even in this case,
+    //       records found in hot log have priority over those in cold one. This means that the thread
+    //       performing the cold-cold compaction will properly check for updated chain (and possibly abort).
+    // Replace record header
+    new(record) record_t{
+      RecordInfo{
+        static_cast<uint16_t>(dest_store->thread_ctx().version),
+        true, false, false, dest_entry.address() }
+    };
+    // Try to update hash bucket address -- retry until succeed
+    if(dest_atomic_entry->compare_exchange_strong(dest_entry, dest_updated_entry)) {
+      // Installed the new record in the hash table.
+      return OperationStatus::SUCCESS;
+    }
+  }
+
+  // retry request
+  record->header.invalid = true;
+  return ConditionalCopyToTail(copy_context);
 }
 
 /// When invoked, compacts the hybrid-log between the begin address and a
