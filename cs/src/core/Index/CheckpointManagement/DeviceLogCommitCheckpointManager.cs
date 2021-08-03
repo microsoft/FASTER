@@ -323,7 +323,7 @@ namespace FASTER.core
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
             device.Dispose();
-            return new Span<byte>(body).Slice(sizeof(int)).ToArray();
+            return body.AsSpan().Slice(sizeof(int), size).ToArray();
         }
 
         /// <inheritdoc />

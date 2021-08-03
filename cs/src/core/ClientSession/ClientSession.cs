@@ -141,6 +141,11 @@ namespace FASTER.core
         public long SerialNo => ctx.serialNum;
 
         /// <summary>
+        /// Current version number of the session
+        /// </summary>
+        public long Version => ctx.version;
+
+        /// <summary>
         /// Dispose session
         /// </summary>
         public void Dispose()
