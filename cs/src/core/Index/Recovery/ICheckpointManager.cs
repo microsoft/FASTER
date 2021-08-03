@@ -80,8 +80,9 @@ namespace FASTER.core
         /// </summary>
         /// <param name="logToken">Token</param>
         /// <param name="deltaLog">Delta log</param>
+        /// <param name="version"> specific version requested within the checkpoint, if using delta log (-1 for latest)</param>
         /// <returns>Metadata, or null if invalid</returns>
-        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog);
+        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, long version);
 
         /// <summary>
         /// Get list of index checkpoint tokens, in order of usage preference
@@ -123,6 +124,11 @@ namespace FASTER.core
         /// <returns></returns>
         IDevice GetDeltaLogDevice(Guid token);
 
+        /// <summary>
+        /// Cleanup all data (subfolder) related to the given guid by this manager
+        /// </summary>
+        public void Purge(Guid token);
+        
         /// <summary>
         /// Cleanup all data (subfolder) related to checkpoints by this manager
         /// </summary>

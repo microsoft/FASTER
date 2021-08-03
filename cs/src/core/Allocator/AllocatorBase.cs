@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -472,7 +473,7 @@ namespace FASTER.core
                 deltaLog.Seal(destOffset);
         }
 
-        internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage)
+        internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo = -1)
         {
             if (log == null) return;
 
@@ -480,22 +481,49 @@ namespace FASTER.core
             long endLogicalAddress = GetStartLogicalAddress(endPage);
 
             log.Reset();
-            while (log.GetNext(out long physicalAddress, out int entryLength, out int type))
+            while (log.GetNext(out long physicalAddress, out int entryLength, out var type))
             {
-                if (type != 0) continue; // consider only delta records
-                long endAddress = physicalAddress + entryLength;
-                while (physicalAddress < endAddress)
+                switch (type)
                 {
-                    long address = *(long*)physicalAddress;
-                    physicalAddress += sizeof(long);
-                    int size = *(int*)physicalAddress;
-                    physicalAddress += sizeof(int);
-                    if (address >= startLogicalAddress && address < endLogicalAddress)
-                    {
-                        var destination = GetPhysicalAddress(address);
-                        Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
-                    }
-                    physicalAddress += size;
+                    case DeltaLogEntryType.DELTA:
+                        // Delta records
+                        long endAddress = physicalAddress + entryLength;
+                        while (physicalAddress < endAddress)
+                        {
+                            long address = *(long*)physicalAddress;
+                            physicalAddress += sizeof(long);
+                            int size = *(int*)physicalAddress;
+                            physicalAddress += sizeof(int);
+                            if (address >= startLogicalAddress && address < endLogicalAddress)
+                            {
+                                var destination = GetPhysicalAddress(address);
+                                Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
+                            }
+                            physicalAddress += size;
+                        }
+                        break;
+                    case DeltaLogEntryType.CHECKPOINT_METADATA:
+                        if (recoverTo != -1)
+                        {
+                            // Only read metadata if we need to stop at a specific version
+                            var metadata = new byte[entryLength];
+                            unsafe
+                            {
+                                fixed (byte* m = metadata)
+                                    Buffer.MemoryCopy((void*) physicalAddress, m, entryLength, entryLength);
+                            }
+
+                            HybridLogRecoveryInfo recoveryInfo = new();
+                            using StreamReader s = new(new MemoryStream(metadata));
+                            recoveryInfo.Initialize(s);
+                            // Finish recovery if only specific versions are requested
+                            if (recoveryInfo.version == recoverTo) return;
+                        }
+
+                        break;
+                    default:
+                        throw new FasterException("Unexpected entry type");
+                        
                 }
             }
         }
