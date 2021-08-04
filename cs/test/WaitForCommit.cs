@@ -106,11 +106,11 @@ namespace FASTER.test
         {
             // Using "await" here will kick out of the calling thread once the first await is finished
             // Enter in some entries then wait on this separate thread
-            log.EnqueueAsync(entry);
-            log.EnqueueAsync(entry);
-            log.EnqueueAsync(entry);
+            log.EnqueueAsync(entry).AsTask().GetAwaiter().GetResult();
+            log.EnqueueAsync(entry).AsTask().GetAwaiter().GetResult();
+            log.EnqueueAsync(entry).AsTask().GetAwaiter().GetResult();
             ev.Set();
-            log.WaitForCommitAsync(log.TailAddress);
+            log.WaitForCommitAsync(log.TailAddress).AsTask().GetAwaiter().GetResult();
         }
     }
 }
