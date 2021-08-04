@@ -76,6 +76,7 @@ namespace FASTER.core
             deviceFactory.Delete(new FileDescriptor { directoryName = "" });
         }
 
+        /// <inheritdoc />
         public void Purge(Guid token)
         {
             // Try both because we do not know which type the guid denotes

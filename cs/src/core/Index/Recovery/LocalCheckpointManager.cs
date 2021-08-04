@@ -31,7 +31,8 @@ namespace FASTER.core
         {
             try { new DirectoryInfo(directoryConfiguration.checkpointDir).Delete(true); } catch { }
         }
-
+        
+        /// <inheritdoc />
         public void Purge(Guid token)
         {
             // Try both because we don't know which one

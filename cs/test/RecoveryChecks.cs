@@ -558,6 +558,7 @@ namespace FASTER.test.recovery
                 s1.Upsert(key, key+1);
             }
 
+            var version1 = fht1.SystemState.version;
             var _result1 = fht1.TakeHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
             await fht1.CompleteCheckpointAsync();
 
@@ -569,12 +570,14 @@ namespace FASTER.test.recovery
                 s1.Upsert(key, key + 1);
             }
 
+            var version2 = fht1.SystemState.version;
             var _result2 = fht1.TakeHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
             await fht1.CompleteCheckpointAsync();
 
             Assert.IsTrue(_result2);
             Assert.IsTrue(_token2 == token);
 
+            // Test that we can recover to latest version
             using var fht2 = new FasterKV<long, long>
                 (1 << 10,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = null },
@@ -596,6 +599,28 @@ namespace FASTER.test.recovery
                 }
             }
             s2.CompletePending(true);
+            
+            // Test that we can recover to earlier version
+            using var fht3 = new FasterKV<long, long>
+            (1 << 10,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = null },
+                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
+            );
+
+            await fht3.RecoverAsync(default, _token2, recoverTo: version1);
+
+            Assert.IsTrue(fht3.EntryCount == 1000);
+            using var s3 = fht3.NewSession(new MyFunctions2());
+            for (long key = 0; key < 1000; key++)
+            {
+                long output = default;
+                var status = s3.Read(ref key, ref output);
+                if (status != Status.PENDING)
+                {
+                    MyFunctions2.Verify(status, key, output);
+                }
+            }
+            s3.CompletePending(true);
         }
     }
 }

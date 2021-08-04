@@ -473,7 +473,7 @@ namespace FASTER.core
                 deltaLog.Seal(destOffset);
         }
 
-        internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo = -1)
+        internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo)
         {
             if (log == null) return;
 
