@@ -41,7 +41,8 @@ enum class OperationStatus : uint8_t {
   RECORD_ON_DISK,
   SUCCESS_UNMARK,
   NOT_FOUND_UNMARK,
-  CPR_SHIFT_DETECTED
+  CPR_SHIFT_DETECTED,
+  ABORTED
 };
 
 /// Internal FASTER context.
