@@ -73,7 +73,7 @@ namespace FASTER.server
         /// <inheritdoc />
         public ref SpanByteAndMemory AsRefOutput(byte* src, int length)
         {
-            *(int*)src = length - sizeof(int);
+            // *(int*)src = length - sizeof(int);
             output = SpanByteAndMemory.FromFixedSpan(new Span<byte>(src, length));
             return ref output;
         }

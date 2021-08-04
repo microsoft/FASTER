@@ -12,11 +12,12 @@ namespace FASTER.server
         protected readonly ParameterSerializer serializer;
 
         public FasterKVServerSessionBase(Socket socket, FasterKV<Key, Value> store, Functions functions,
+            SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings,
             ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
             : base(socket, maxSizeSettings)
         {
             session = store.For(new ServerKVFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>(functions, this))
-                .NewSession<ServerKVFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>>();
+                .NewSession<ServerKVFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>>(sessionVariableLengthStructSettings: sessionVariableLengthStructSettings);
             this.serializer = serializer;
         }
         
