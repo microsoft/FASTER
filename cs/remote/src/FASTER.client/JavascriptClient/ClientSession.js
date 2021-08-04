@@ -178,8 +178,8 @@
         var arrIdx = this.offset;
         view[arrIdx++] = MessageType.Upsert;
 
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, value, value.length);
+        arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
+        arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, value, value.length);
 
         this.upsertQueue.enqueue([key, value]);
 
@@ -194,7 +194,7 @@
         var arrIdx = this.offset;
         view[arrIdx++] = MessageType.Read;
 
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
+        arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
 
         this.readrmwQueue.enqueue(key);
 
@@ -209,7 +209,7 @@
         var arrIdx = this.offset;
         view[arrIdx++] = MessageType.Delete;
 
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
+        arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
 
         var value = [];
         this.upsertQueue.enqueue([key, value]);
@@ -225,8 +225,8 @@
         var arrIdx = this.offset;
         view[arrIdx++] = MessageType.RMW;
 
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, input, input.length);
+        arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
+        arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, input, input.length);
 
         this.readrmwQueue.enqueue(key);
 
@@ -241,7 +241,7 @@
         var arrIdx = this.offset;
         view[arrIdx++] = MessageType.SubscribeKV;
 
-        var arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
+        arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
 
         this.readrmwQueue.enqueue(key);
 

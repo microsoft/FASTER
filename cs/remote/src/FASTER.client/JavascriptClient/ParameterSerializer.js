@@ -26,6 +26,35 @@
     }
 }
 
+class ASCIISerializer {
+    serialize(byteArr, arrIdx, str) {
+        var index = 0;
+        const byteView = new Uint8Array(byteArr);
+        for (index = 0; index < str.length; index++) {
+            var code = str.charCodeAt(index);
+            byteView.set([code], arrIdx + index);
+        }
+        return arrIdx + index;
+    }
+
+    deserialize(byteArr, startIdx, lenString) {
+        var strByteArr = [];
+        const byteView = new Uint8Array(byteArr);
+        for (var index = 0; index < lenString; index++) {
+            strByteArr[index] = byteView[startIdx + index];
+        }
+
+        var result = "";
+        for (var i = 0; i < lenString; i++) {
+            result += String.fromCharCode(parseInt(strByteArr[i], 10));
+            // result += String.fromCharCode(parseInt(byteView.getUint8(i), 10));
+        }
+
+        return result;
+    }
+}
+
+
 class ParameterSerializer {
 
     constructor() {
