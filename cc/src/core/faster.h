@@ -156,7 +156,8 @@ class FasterKv {
 
   /// Log compaction entry method.
   bool Compact(uint64_t untilAddress);
-  bool CompactWithLookup(uint64_t until_address, bool shift_begin_address, int n_threads = 8);
+  bool CompactWithLookup(uint64_t until_address, bool shift_begin_address,
+                          int n_threads = kNumCompactionThreads);
 
   /// Truncating the head of the log.
   bool ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
@@ -167,7 +168,7 @@ class FasterKv {
 
   /// Statistics
   inline uint64_t Size() const {
-    return hlog.GetTailAddress().control();
+    return hlog.GetTailAddress().control() - hlog.begin_address.control();
   }
   inline void DumpDistribution() {
     state_[resize_info_.version].DumpDistribution(
@@ -253,7 +254,7 @@ class FasterKv {
   inline Status RecordExists(EC& context, AsyncCallback callback, Address begin_address);
 
   template <class CC>
-  inline Status ConditionalCopyToTail(CC& copy_context, HashBucketEntry& expected_entry);
+  inline OperationStatus ConditionalCopyToTail(CC& copy_context);
 
   /// Checkpoint/recovery methods.
   void HandleSpecialPhases();
@@ -304,6 +305,8 @@ class FasterKv {
  public:
   disk_t disk;
   hlog_t hlog;
+
+  static constexpr int kNumCompactionThreads = 8;
 
  private:
   static constexpr bool kCopyReadsToTail = false;
@@ -2996,7 +2999,7 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
         --remaining;
       }
     }
-    Refresh();
+    CompletePending(false);
     std::this_thread::yield();
   }
 
@@ -3032,6 +3035,7 @@ template<class F>
 inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_ctx, int thread_idx) {
   constexpr int io_check_freq = 20;
 
+  typedef CompactionCopyToTailContext<K, V> copy_to_tail_context_t;
   typedef CompactionPendingRecordEntry<K, V> pending_record_entry_t;
   typedef std::unordered_map<uint64_t, pending_record_entry_t> pending_records_info_t;
   typedef std::deque<pending_record_entry_t> pending_records_queue_t;
@@ -3046,7 +3050,7 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
   Address record_address;
   KeyHash hash;
 
-  // Callback for record exsits operations
+  // Callback for record exists operations
   auto callback = [](IAsyncContext* ctxt, Status result) {
     CallbackContext<CompactionExists<K, V>> context(ctxt);
     assert(result == Status::Ok || result == Status::NotFound);
@@ -3094,7 +3098,7 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
         // No more records in this page
 
         // Shound not move to a new page, until all pending
-        // requests have finished
+        // requests for this page have completed
         if (!pending_records_info.empty() ||
             !pending_records_queue.empty() ||
             !retry_records_queue.empty()) {
@@ -3152,19 +3156,25 @@ complete_pending:
       CompletePending(false);
       if (record == nullptr) std::this_thread::yield();
     }
-    for (auto const & pending_record : pending_records_queue) {
-      // Copy to tail if no other entry with same key exists
-      //CompactionCopyToTailContext<K, V> copy_context{ pending_record.key, pending_record.value };
-      CompactionCopyToTailContext<K, V> copy_context{ pending_record.record };
-      HashBucketEntry expected_entry (pending_record.expected_entry);
-      Status status = ConditionalCopyToTail(copy_context, expected_entry);
-      assert(status == Status::Ok || status == Status::Aborted || status == Status::Pending);
+    size_t size = pending_records_queue.size();
+    for (size_t idx = 0; idx < size; idx++) {
+      auto const& pending_record = pending_records_queue.front();
+      pending_records_queue.pop_front();
 
-      if (status == Status::Pending) {
+      // Copy to tail if no other entry with same key exists
+      copy_to_tail_context_t copy_context{ pending_record.record, pending_record.expected_entry };
+      OperationStatus status = ConditionalCopyToTail(copy_context);
+      assert(status == OperationStatus::SUCCESS ||
+             status == OperationStatus::ABORTED ||
+             status == OperationStatus::RECORD_ON_DISK);
+
+      if (status == OperationStatus::RECORD_ON_DISK) {
         // could not determine if record is live -- push record to retry queue
-        // NOTE: we will search only the newly introduced hash chain part
+        // NOTE: next time we try, we'll search only the newly introduced hash chain part
+        assert(copy_context.search_min_offset != Address::kInvalidAddress);
         auto record_info = new pending_record_entry_t(pending_record.record, pending_record.address,
-                                            expected_entry, pending_record.expected_entry.address() + 1);
+                                                      copy_context.expected_entry,
+                                                      copy_context.search_min_offset);
         retry_records_queue.push_back(record_info);
       }
 
@@ -3175,7 +3185,7 @@ complete_pending:
     if (!pages_available &&               // no more records to compact
         pending_records_info.empty() &&   // no callbacks pending
         pending_records_queue.empty() &&  // no pending records to handle
-        retry_records_queue.empty()) {    // no retry records to handle
+        retry_records_queue.empty()) {    // no retry requests to handle
           break;
     }
   }
@@ -3231,15 +3241,20 @@ inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callbac
     assert(status == Status::Pending);
   }
   else {
-    // Invalid address
-    status = Status::IOError;
+    // No record found
+    status = Status::NotFound;
   }
   return status;
 }
 
 template <class K, class V, class D>
 template <class CC>
-inline Status FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context, HashBucketEntry& expected_entry) {
+inline OperationStatus FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context) {
+
+  if(thread_ctx().phase != Phase::REST) {
+    HeavyEnter();
+  }
+  HashBucketEntry expected_entry { copy_context.expected_entry };
 
   // Find hash index bucket for this key (must exist)
   KeyHash hash = copy_context.get_key_hash();
@@ -3248,58 +3263,58 @@ inline Status FasterKv<K, V, D>::ConditionalCopyToTail(CC& copy_context, HashBuc
   assert(atomic_entry != nullptr);
   assert(atomic_entry->load().address() != Address::kInvalidAddress);
 
-  do {
-    assert( thread_ctx().phase == Phase::REST);
+  assert( thread_ctx().phase == Phase::REST);
 
-    if (entry.address() != expected_entry.address()) {
-      // Hash-chain changed since last time!
-      if (expected_entry.address() < hlog.head_address.load()) {
-        // Part of the hash chain we need to check extends to disk section -- need to re-check chain
-        expected_entry = entry;
-        return Status::Pending;
-      }
-
-      // Check if an entry with same key was inserted during this time
-      Address address = entry.address();
-      record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
-      if(!copy_context.is_key_equal(record->key())) {
-        address = TraceBackForKeyMatchCtxt(copy_context, record->header.previous_address(),
-                                            expected_entry.address() + 1);
-      }
-
-      if (address > expected_entry.address()) {
-        // Some other entry with *same* key was inserted -- abort insert
-        return Status::Aborted;
-      }
-      assert(address == expected_entry.address());
-      // Update expected entry to reflect new hash chain
-      expected_entry = entry;
+  if (entry != expected_entry) {
+    // Hash-chain changed since last time!
+    if (expected_entry.address() < hlog.head_address.load()) {
+      // Part of the hash chain we need to check extends to disk section -- need to re-check chain
+      copy_context.expected_entry = entry;
+      copy_context.search_min_offset = expected_entry.address() + 1;
+      return OperationStatus::RECORD_ON_DISK;
     }
 
-    // Append entry to the log
-    uint32_t record_size = record_t::size(copy_context.key_size(), copy_context.value_size());
-    Address new_address = BlockAllocate(record_size);
-    record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
-    // Copy record
-    memcpy(record, copy_context.record, record_size);
-    // Replace record header
-    new(record) record_t{
-      RecordInfo{
-        static_cast<uint16_t>(thread_ctx().version), true, false, false, expected_entry.address() }
-    };
-
-    // Try to update hash bucket address
-    HashBucketEntry updated_entry{ new_address, hash.tag(), false };
-    if(atomic_entry->compare_exchange_strong(entry, updated_entry)) {
-      // Installed the new record in the hash table.
-      return Status::Ok;
+    // Check if an entry with same key was inserted during this time
+    Address address = entry.address();
+    record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
+    if(!copy_context.is_key_equal(record->key())) {
+      address = TraceBackForKeyMatchCtxt(copy_context, record->header.previous_address(),
+                                          expected_entry.address() + 1);
     }
-    // Hash-chain changed since last time -- retry
-    record->header.invalid = true;
 
-    Refresh();
+    if (address > expected_entry.address()) {
+      // Some other entry with *same* key was inserted -- abort insert
+      return OperationStatus::ABORTED;
+    }
+    assert(address == expected_entry.address());
+    // Update expected entry to reflect new hash chain
+    expected_entry = entry;
   }
-  while (true);
+
+  // Append entry to the log
+  uint32_t record_size = record_t::size(copy_context.key_size(), copy_context.value_size());
+  Address new_address = BlockAllocate(record_size);
+  record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+  // Copy record
+  memcpy(record, copy_context.record, record_size);
+  // Replace record header
+  new(record) record_t{
+    RecordInfo{
+      static_cast<uint16_t>(thread_ctx().version), true, false, false, expected_entry.address() }
+  };
+
+  // Try to update hash bucket address
+  HashBucketEntry updated_entry{ new_address, hash.tag(), false };
+  if(atomic_entry->compare_exchange_strong(entry, updated_entry)) {
+    // Installed the new record in the hash table.
+    return OperationStatus::SUCCESS;
+  }
+  // Hash-chain changed since last time -- retry
+  record->header.invalid = true;
+
+  // retry request
+  Refresh();
+  return ConditionalCopyToTail(copy_context);
 }
 
 /// When invoked, compacts the hybrid-log between the begin address and a

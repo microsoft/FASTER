@@ -127,8 +127,10 @@ class CompactionCopyToTailContext {
   typedef Record<key_t, value_t> record_t;
 
   /// Constructs and returns a context given a pointer to a record.
-  CompactionCopyToTailContext(record_t* record_)
+  CompactionCopyToTailContext(record_t* record_, const HashBucketEntry& expected_entry_)
    : record{ record_ }
+   , expected_entry{ expected_entry_ }
+   , search_min_offset{ Address::kInvalidAddress }
   {}
   /// Copy constructor deleted; copy to tail request doesn't go async
   CompactionCopyToTailContext(const CompactionCopyToTailContext& from) = delete;
@@ -151,6 +153,8 @@ class CompactionCopyToTailContext {
   }
 
   record_t* record;
+  HashBucketEntry expected_entry;
+  Address search_min_offset;
 };
 
 
