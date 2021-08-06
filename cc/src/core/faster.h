@@ -1700,10 +1700,18 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
       address = TraceBackForKeyMatchCtxt(*pending_context, record->header.previous_address(), min_offset);
     }
   }
-  assert(address >= pending_context->entry.address());
+  assert(address >= pending_context->entry.address()); // part of the same hash chain
 
   if(address > pending_context->entry.address()) {
-    // We can't trace the current hash bucket entry back to the record we read.
+    // This handles two mutually exclusive cases. In both cases InternalRmw will be called immediately:
+    //  1) Found a newer record in the in-memory region (i.e. address >= head_address)
+    //     Calling InternalRmw will result in taking into account the newer version,
+    //     instead of the record we've just read from disk.
+    //  2) We can't trace the current hash bucket entry back to the record we've read (i.e. address < head_address)
+    //     This is because part of the hash chain now extends to disk, thus we cannot check it right away
+    //     Calling InternalRmw will result in launching a new search in the hash chain, by reading
+    //     the newly introduced entries in the chain, so we won't miss any potential entries with same key.
+    //
     pending_context->continue_async(address, expected_entry);
     return OperationStatus::RETRY_NOW;
   }

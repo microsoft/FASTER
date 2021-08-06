@@ -17,12 +17,14 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         private FasterKV<AdId, NumClicks> fht3;
         private IDevice log;
         private int numOps;
-        private string checkpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints3";
+        private string checkpointDir;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/RecoverContinueTests.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/RecoverContinueTests.log", deleteOnClose: true);
+            checkpointDir = TestUtils.MethodTestDir + "/checkpoints3";
             Directory.CreateDirectory(checkpointDir);
 
             fht1 = new FasterKV
@@ -52,18 +54,22 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         [TearDown]
         public void TearDown()
         {
-            fht1.Dispose();
-            fht2.Dispose();
-            fht3.Dispose();
+            fht1?.Dispose();
+            fht2?.Dispose();
+            fht3?.Dispose();
             fht1 = null;
             fht2 = null;
             fht3 = null;
-            log.Dispose();
-            TestUtils.DeleteDirectory(checkpointDir);
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
         [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async ValueTask RecoverContinueTest([Values]bool isAsync)
         {
             long sno = 0;
@@ -168,20 +174,20 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
         {
             value = input.numClicks;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output) => true;
 
-        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }

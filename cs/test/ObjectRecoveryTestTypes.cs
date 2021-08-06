@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 1591
-
 using System.Threading;
 using FASTER.core;
 
@@ -35,7 +33,6 @@ namespace FASTER.test.recovery.objectstore
             writer.Write(obj.adId);
         }
     }
-
 
     public class Input
     {
@@ -76,17 +73,17 @@ namespace FASTER.test.recovery.objectstore
         public override void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst) => dst.value = value;
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value) => value = input.numClicks;
+        public override void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output) => value = input.numClicks;
 
-        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref Input input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref Input input, ref NumClicks oldValue, ref Output output) => true;
 
-        public override void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output)
         {
             newValue = new NumClicks { numClicks = oldValue.numClicks + input.numClicks.numClicks };
         }

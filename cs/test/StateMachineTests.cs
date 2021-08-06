@@ -1,21 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Linq;
+using System.Threading;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
 using FASTER.test.recovery.sumstore;
-using System.Diagnostics;
+using NUnit.Framework.Interfaces;
 
 namespace FASTER.test.statemachine
 {
-
     [TestFixture]
     public class StateMachineTests
     {
@@ -33,26 +28,30 @@ namespace FASTER.test.statemachine
                 inputArray[i].adId = i;
             }
 
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/StateMachineTest1.log", deleteOnClose: true);
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "/statemachinetest");
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/StateMachineTest1.log", deleteOnClose: true);
+            string checkpointDir = TestUtils.MethodTestDir + "/statemachinetest";
+            Directory.CreateDirectory(checkpointDir);
             fht1 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/statemachinetest", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.FoldOver }
                 );
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht1.Dispose();
-            log.Dispose();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "/statemachinetest").Delete(true);
+            fht1?.Dispose();
+            fht1 = null;
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
-
 
         [TestCase]
         [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
         public void StateMachineTest1()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -108,7 +107,7 @@ namespace FASTER.test.statemachine
 
 
         [TestCase]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest2()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -153,7 +152,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest3()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -192,7 +191,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest4()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -240,7 +239,7 @@ namespace FASTER.test.statemachine
         }
 
         [TestCase]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest5()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -305,7 +304,7 @@ namespace FASTER.test.statemachine
 
 
         [TestCase]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest6()
         {
             Prepare(out var f, out var s1, out var s2);
@@ -346,8 +345,120 @@ namespace FASTER.test.statemachine
 
             RecoverAndTest(log);
         }
+        
+        [TestCase]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void StateMachineCallbackTest1()
+        {
+            var callback = new TestCallback();
+            fht1.UnsafeRegisterCallback(callback);
+            Prepare(out var f, out var s1, out var s2);
 
-        void Prepare(out SimpleFunctions f, out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1, out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s2)
+            // We should be in PREPARE, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            // Refresh session s2
+            s2.Refresh();
+            s1.Refresh();
+
+            // We should now be in IN_PROGRESS, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            s2.Refresh();
+
+            // We should be in WAIT_PENDING, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_PENDING, 2), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            s1.Refresh();
+
+            // We should be in WAIT_FLUSH, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            s2.Refresh();
+
+            // We should be in PERSISTENCE_CALLBACK, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            // Expect checkpoint completion callback
+            f.checkpointCallbackExpectation = 1;
+
+            s1.Refresh();
+
+            // Completion callback should have been called once
+            Assert.IsTrue(f.checkpointCallbackExpectation == 0);
+
+            // We should be in REST, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
+            callback.CheckInvoked(fht1.SystemState);
+
+            // Dispose session s2; does not move state machine forward
+            s2.Dispose();
+            s1.Dispose();
+
+            RecoverAndTest(log);
+        }
+        
+        
+        [TestCase]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        public void VersionChangeRollOverTest()
+        {
+            var toVersion = 1 + (1 << 14);
+            Prepare(out var f, out var s1, out var s2, toVersion);
+
+            // We should be in PREPARE, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
+
+            // Refresh session s2
+            s2.Refresh();
+            s1.Refresh();
+
+            // We should now be in IN_PROGRESS, toVersion + 1 (because of rollover of 13 bit short version)
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, toVersion + 1), fht1.SystemState));
+
+            s2.Refresh();
+
+            // We should be in WAIT_PENDING, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_PENDING, toVersion + 1), fht1.SystemState));
+
+            s1.Refresh();
+
+            // We should be in WAIT_FLUSH, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, toVersion + 1), fht1.SystemState));
+
+            s2.Refresh();
+
+            // We should be in PERSISTENCE_CALLBACK, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, toVersion + 1), fht1.SystemState));
+
+            // Expect checkpoint completion callback
+            f.checkpointCallbackExpectation = 1;
+
+            s1.Refresh();
+
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, toVersion + 1), fht1.SystemState));
+
+
+            // Dispose session s2; does not move state machine forward
+            s2.Dispose();
+            s1.Dispose();
+
+            RecoverAndTest(log);
+        }
+
+
+        void Prepare(out SimpleFunctions f,
+            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1,
+            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s2,
+            long toVersion = -1)
         {
             f = new SimpleFunctions();
 
@@ -381,7 +492,7 @@ namespace FASTER.test.statemachine
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
 
-            fht1.TakeHybridLogCheckpoint(out _);
+            fht1.TakeHybridLogCheckpoint(out _, toVersion);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
@@ -397,7 +508,7 @@ namespace FASTER.test.statemachine
                 <AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/statemachinetest", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir + "/statemachinetest", CheckPointType = CheckpointType.FoldOver }
                 );
 
             fht2.Recover(); // sync, does not require session
@@ -452,6 +563,23 @@ namespace FASTER.test.statemachine
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output.numClicks == key.adId);
+        }
+    }
+
+    public class TestCallback : IStateMachineCallback
+    {
+        private HashSet<SystemState> invokedStates = new();
+
+
+        public void BeforeEnteringState<Key1, Value>(SystemState next, FasterKV<Key1, Value> faster)
+        {
+            Assert.IsFalse(invokedStates.Contains(next));
+            invokedStates.Add(next);
+        }
+
+        public void CheckInvoked(SystemState state)
+        {
+            Assert.IsTrue(invokedStates.Contains(state));
         }
     }
 }

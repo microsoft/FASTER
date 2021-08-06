@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using NUnit.Framework;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 // General Information about an assembly is controlled through the following 
@@ -37,3 +37,10 @@ using System.Runtime.InteropServices;
 // [assembly: AssemblyVersion("1.0.*")]
 //[assembly: AssemblyVersion("1.0.0.0")]
 //[assembly: AssemblyFileVersion("1.0.0.0")]
+
+// Make all fixtures in the test assembly run in parallel
+#if false // disable parallelism until all the problems are resolved
+//#if NETCOREAPP || NET    // net461 runs x86 by default so OOMs on current memory usage by tests when running multiple tests simultaneously
+[assembly: Parallelizable(ParallelScope.Fixtures)]
+    //[assembly: LevelOfParallelism(4)] // For reduced parallelization of net461 if we reduce memory usage in tests
+#endif

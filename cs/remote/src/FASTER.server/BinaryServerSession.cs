@@ -65,18 +65,20 @@ namespace FASTER.server
             msgnum++;
         }
 
-        public override void CompleteRMW(long ctx, Status status)
+        public override void CompleteRMW(ref Output output, long ctx, Status status)
         {
             byte* d = responseObject.obj.bufferPtr;
             var dend = d + responseObject.obj.buffer.Length;
 
-            if ((int)(dend - dcurr) < 7)
+            if ((int)(dend - dcurr) < 7 + maxSizeSettings.MaxOutputSize)
                 SendAndReset(ref d, ref dend);
 
             hrw.Write(MessageType.PendingResult, ref dcurr, (int)(dend - dcurr));
             hrw.Write((MessageType)(ctx >> 32), ref dcurr, (int)(dend - dcurr));
             Write((int)(ctx & 0xffffffff), ref dcurr, (int)(dend - dcurr));
             Write(ref status, ref dcurr, (int)(dend - dcurr));
+            if (status == Status.OK || status == Status.NOTFOUND)
+                serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
             msgnum++;
         }
 
@@ -124,6 +126,7 @@ namespace FASTER.server
                 for (msgnum = 0; msgnum < num; msgnum++)
                 {
                     var message = (MessageType)(*src++);
+                    var serialNum = hrw.ReadSerialNum(ref src);
                     switch (message)
                     {
                         case MessageType.Upsert:
@@ -131,7 +134,7 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
-                            status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src));
+                            status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src), serialNo: serialNum);
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
                             break;
@@ -143,7 +146,7 @@ namespace FASTER.server
 
                             long ctx = ((long)message << 32) | (long)pendingSeqNo;
                             status = session.Read(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
-                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, 0);
+                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
@@ -156,16 +159,19 @@ namespace FASTER.server
 
                         case MessageType.RMW:
                         case MessageType.RMWAsync:
-                            if ((int)(dend - dcurr) < 2)
+                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
 
                             ctx = ((long)message << 32) | (long)pendingSeqNo;
-                            status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src), ctx);
+                            status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
+                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
                             if (status == Status.PENDING)
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
+                            else if (status == Status.OK || status == Status.NOTFOUND)
+                                serializer.SkipOutput(ref dcurr);
                             break;
 
                         case MessageType.Delete:
@@ -173,7 +179,7 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
-                            status = session.Delete(ref serializer.ReadKeyByRef(ref src));
+                            status = session.Delete(ref serializer.ReadKeyByRef(ref src), serialNo: serialNum);
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
                             break;

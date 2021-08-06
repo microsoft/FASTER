@@ -1,7 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -21,7 +20,7 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref long input, ref RefCountedValue value)
+        public override void InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output)
         {
             Interlocked.Increment(ref InitialCount);
 
@@ -29,7 +28,7 @@ namespace FASTER.test
             value.ReferenceCount = 1;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value)
+        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -38,7 +37,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue)
+        public override void CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output)
         {
             Interlocked.Increment(ref CopyCount);
 
@@ -53,7 +52,7 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value)
+        public override void InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output)
         {
             Interlocked.Increment(ref InitialCount);
 
@@ -61,7 +60,7 @@ namespace FASTER.test
             value.ReferenceCount = 0;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value)
+        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -71,7 +70,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue)
+        public override void CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output)
         {
             Interlocked.Increment(ref CopyCount);
 
@@ -107,7 +106,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            _log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/FunctionPerSessionTests1.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
+            _log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/FunctionPerSessionTests1.log", deleteOnClose: true);
 
             _faster = new FasterKV<int, RefCountedValue>(128, new LogSettings()
             {
@@ -122,9 +122,11 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            _faster.Dispose();
+            _faster?.Dispose();
             _faster = null;
-            _log.Dispose();
+            _log?.Dispose();
+            _log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]

@@ -15,6 +15,9 @@ namespace FASTER.core
     /// </summary>
     public class DeviceLogCommitCheckpointManager : ILogCommitManager, ICheckpointManager
     {
+        const int indexTokenCount = 2;
+        const int logTokenCount = 1;
+
         private readonly INamedDeviceFactory deviceFactory;
         private readonly ICheckpointNamingScheme checkpointNamingScheme;
         private readonly SemaphoreSlim semaphore;
@@ -60,7 +63,7 @@ namespace FASTER.core
                 // later log checkpoint to work with
                 indexTokenHistory = new Guid[2];
                 // We only keep the latest log checkpoint
-                logTokenHistory = new Guid[1];
+                logTokenHistory = new Guid[2];
             }
             this._disposed = false;
 
@@ -206,7 +209,7 @@ namespace FASTER.core
             {
                 var prior = indexTokenHistory[indexTokenHistoryOffset];
                 indexTokenHistory[indexTokenHistoryOffset] = indexToken;
-                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenHistory.Length;
+                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenCount;
                 if (prior != default)
                     deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(prior));
             }
@@ -253,7 +256,7 @@ namespace FASTER.core
             {
                 var prior = logTokenHistory[logTokenHistoryOffset];
                 logTokenHistory[logTokenHistoryOffset] = logToken;
-                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenHistory.Length;
+                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenCount;
                 if (prior != default)
                     deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(prior));
             }
@@ -320,7 +323,7 @@ namespace FASTER.core
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
             device.Dispose();
-            return new Span<byte>(body).Slice(sizeof(int)).ToArray();
+            return body.AsSpan().Slice(sizeof(int), size).ToArray();
         }
 
         /// <inheritdoc />
@@ -366,12 +369,12 @@ namespace FASTER.core
             if (indexToken != default)
             {
                 indexTokenHistory[indexTokenHistoryOffset] = indexToken;
-                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenHistory.Length;
+                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenCount;
             }
             if (logToken != default)
             {
                 logTokenHistory[logTokenHistoryOffset] = logToken;
-                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenHistory.Length;
+                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenCount;
             }
 
             // Purge all log checkpoints that were not used for recovery

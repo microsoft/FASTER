@@ -286,6 +286,7 @@ namespace FASTER.core
             (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
+            base.VerifyCompatibleSectorSize(device);
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
 
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],
@@ -303,7 +304,6 @@ namespace FASTER.core
         {
             return page << LogPageSizeBits;
         }
-
 
         /// <summary>
         /// Get first valid logical address

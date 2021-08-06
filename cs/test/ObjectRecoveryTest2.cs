@@ -18,9 +18,8 @@ namespace FASTER.test.recovery.objects
         [SetUp]
         public void Setup()
         {
-            FasterFolderPath = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
-            if (!Directory.Exists(FasterFolderPath))
-                Directory.CreateDirectory(FasterFolderPath);
+            FasterFolderPath = TestUtils.MethodTestDir;
+            TestUtils.RecreateDirectory(FasterFolderPath);
         }
 
         [TearDown]
@@ -31,6 +30,9 @@ namespace FASTER.test.recovery.objects
 
         [Test]
         [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async ValueTask ObjectRecoveryTest2(
             [Values]CheckpointType checkpointType,
             [Range(100, 700, 300)] int iterations,
@@ -227,10 +229,10 @@ namespace FASTER.test.recovery.objects
 
     public class MyFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value) => value.value = input.value;
-        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
-        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue) => newValue = oldValue;
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output) => value.value = input.value;
+        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyOutput output) => true;
+        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output) => newValue = oldValue;
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output)
         {
             if (value.value.Length < input.value.Length)
                 return false;

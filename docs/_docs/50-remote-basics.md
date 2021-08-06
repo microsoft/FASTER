@@ -75,13 +75,13 @@ on `Input`, which can for example, have an enum operation ID inside `Input` for 
 server should do during RMW, on `Value`:
 
 ```cs
-void InitialUpdater(ref Key key, ref Input input, ref Value value) => value.value = input.value;
-bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => value.value = input.value;
+bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
 {
    Interlocked.Add(ref value.value, input.value);
    return true;
 }
-public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) 
+public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output) 
    => newValue.value = input.value + oldValue.value;
 ```
 
@@ -173,8 +173,16 @@ session.Read(key: 23);
 session.CompletePending(true);
 ```
 
-The final read will produce a result that is `25+25` more than the older value of `10023`, for key `23`.
+The final read will produce a result that is `25+25` more than the original value of `10023`, for key `23`.
 
+We can also get the Output from RMW operations directly:
+
+```cs
+session.RMW(23, 25);
+session.CompletePending(true);
+```
+
+The RMW completion callback will verify a result that is `25+25+25` more than the original value of `10023`, for key `23`.
 
 #### Async Client API
 

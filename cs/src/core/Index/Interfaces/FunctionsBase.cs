@@ -32,18 +32,18 @@ namespace FASTER.core
         public virtual void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
 
         /// <inheritdoc/>
-        public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
+        public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) { }
         /// <inheritdoc/>
-        public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue) => true;
+        public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
         /// <inheritdoc/>
-        public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
+        public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output) { }
         /// <inheritdoc/>
-        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value) => true;
+        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => true;
 
         /// <inheritdoc/>
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
         /// <inheritdoc/>
-        public virtual void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
+        public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
         /// <inheritdoc/>
         public virtual void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         /// <inheritdoc/>
@@ -93,16 +93,16 @@ namespace FASTER.core
         public override void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref Key key, ref Value input, ref Value value) => value = input;
+        public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output) => value = input;
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue) => newValue = merger(input, oldValue);
+        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output) => newValue = merger(input, oldValue);
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value) { value = merger(input, value); return true; }
+        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output) { value = merger(input, value); return true; }
 
         /// <inheritdoc/>
         public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status) { }
         /// <inheritdoc/>
-        public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status) { }
+        public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status) { }
         /// <inheritdoc/>
         public override void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         /// <inheritdoc/>
@@ -142,13 +142,13 @@ namespace FASTER.core
         public virtual void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
 
         /// <inheritdoc/>
-        public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value) { }
+        public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) { }
         /// <inheritdoc/>
-        public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue) => true;
+        public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
         /// <inheritdoc/>
-        public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) { }
+        public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output) { }
         /// <inheritdoc/>
-        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address) => true;
+        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
         /// <inheritdoc/>
         public virtual void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
@@ -156,7 +156,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo) { }
         /// <inheritdoc/>
-        public virtual void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status) { }
+        public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
         /// <inheritdoc/>
         public virtual void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         /// <inheritdoc/>
@@ -206,16 +206,16 @@ namespace FASTER.core
         public override void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref Key key, ref Value input, ref Value value) => value = input;
+        public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output) => value = input;
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue) => newValue = merger(input, oldValue);
+        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output) => newValue = merger(input, oldValue);
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref RecordInfo recordInfo, long address) { value = merger(input, value); return true; }
+        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) { value = merger(input, value); return true; }
 
         /// <inheritdoc/>
         public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo) { }
         /// <inheritdoc/>
-        public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status) { }
+        public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status) { }
         /// <inheritdoc/>
         public override void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
         /// <inheritdoc/>

@@ -108,6 +108,17 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// If SpanByte is in a serialized form, return a non-serialized SpanByte wrapper that points to the same payload.
+        /// The resulting SpanByte is safe to heap-copy, as long as the underlying payload remains fixed.
+        /// </summary>
+        /// <returns></returns>
+        public SpanByte Deserialize()
+        {
+            if (!Serialized) return this;
+            return new SpanByte(Length, (IntPtr)Unsafe.AsPointer(ref payload));
+        }
+
+        /// <summary>
         /// Reinterpret a fixed Span&lt;byte&gt; as a serialized SpanByte. Automatically adds Span length to the first 4 bytes.
         /// </summary>
         /// <param name="span"></param>

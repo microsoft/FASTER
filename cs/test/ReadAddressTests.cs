@@ -12,7 +12,7 @@ using System.Diagnostics;
 
 namespace FASTER.test.readaddress
 {
-#if false // TODO temporarily deactivated due to removal of addresses from single-writer callbacks (also add UpsertAsync where we do RMWAsync/Upsert)
+#if false // TODO temporarily deactivated due to removal of addresses from single-writer callbacks (also add UpsertAsync where we do RMWAsync/Upsert); update to new test format
     [TestFixture]
     public class ReadAddressTests
     {
@@ -110,7 +110,7 @@ namespace FASTER.test.readaddress
                 }
             }
 
-            public override void RMWCompletionCallback(ref Key key, ref Value input, Context ctx, Status status)
+            public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status)
             {
                 if (ctx is not null)
                 {
@@ -118,7 +118,7 @@ namespace FASTER.test.readaddress
                     ctx.recordInfo = default;
                     ctx.status = status;
                 }
-                base.RMWCompletionCallback(ref key, ref input, ctx, status);
+                base.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
             }
         }
 
@@ -133,7 +133,8 @@ namespace FASTER.test.readaddress
 
             internal TestStore(bool useReadCache, CopyReadsToTail copyReadsToTail, bool flush)
             {
-                this.testDir = $"{TestContext.CurrentContext.TestDirectory}/{TestContext.CurrentContext.Test.Name}";
+                this.testDir = TestUtils.MethodTestDir;
+                TestUtils.DeleteDirectory(this.testDir, wait:true);
                 this.logDevice = Devices.CreateLogDevice($"{testDir}/hlog.log");
                 this.flush = flush;
 
@@ -237,12 +238,11 @@ namespace FASTER.test.readaddress
 
             public void Dispose()
             {
-                if (!(this.fkv is null))
-                    this.fkv.Dispose();
-                if (!(this.logDevice is null))
-                    this.logDevice.Dispose();
-                if (!string.IsNullOrEmpty(this.testDir))
-                    new DirectoryInfo(this.testDir).Delete(true);
+                this.fkv?.Dispose();
+                this.fkv = null;
+                this.logDevice?.Dispose();
+                this.logDevice = null;
+                TestUtils.DeleteDirectory(this.testDir);
             }
         }
 
@@ -576,4 +576,97 @@ namespace FASTER.test.readaddress
         }
     }
 #endif
+    [TestFixture]
+    public class ReadMinAddressTests
+    {
+        const int numOps = 5000;
+
+        private IDevice log;
+        private FasterKV<long, long> fht;
+        private ClientSession<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> session;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest1.log", deleteOnClose: true);
+
+            fht = new FasterKV<long, long>(128,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 }
+                );
+
+            session = fht.NewSession(new SimpleFunctions<long, long>());
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            session?.Dispose();
+            session = null;
+            fht?.Dispose();
+            fht = null;
+            log?.Dispose();
+            log = null;
+
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        [Test]
+        [Category("FasterKV"), Category("Read")]
+        public async ValueTask ReadMinAddressTest([Values] bool isAsync)
+        {
+            long minAddress = core.Constants.kInvalidAddress;
+            var pivotKey = numOps / 2;
+            long makeValue(long key) => key + numOps * 10;
+            for (int ii = 0; ii < numOps; ii++)
+            {
+                if (ii == pivotKey)
+                    minAddress = fht.Log.TailAddress;
+                session.Upsert(ii, makeValue(ii));
+            }
+
+            // Verify the test set up correctly
+            Assert.AreNotEqual(core.Constants.kInvalidAddress, minAddress);
+
+            long input = 0;
+
+            async ValueTask ReadMin(long key, Status expectedStatus)
+            {
+                Status status;
+                long output = 0;
+                if (isAsync)
+                    (status, output) = (await session.ReadAsync(ref key, ref input, minAddress, ReadFlags.MinAddress)).Complete();
+                else
+                {
+                    RecordInfo recordInfo = new() { PreviousAddress = minAddress };
+                    status = session.Read(ref key, ref input, ref output, ref recordInfo, ReadFlags.MinAddress);
+                    if (status == Status.PENDING)
+                    {
+                        Assert.IsTrue(session.CompletePendingWithOutputs(out var completedOutputs, wait: true));
+                        (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
+                    }
+                }
+                Assert.AreEqual(expectedStatus, status);
+                if (status != Status.NOTFOUND)
+                    Assert.AreEqual(output, makeValue(key));
+            }
+
+            async ValueTask RunTests()
+            {
+                // First read at the pivot, to verify that and make sure the rest of the test works
+                await ReadMin(pivotKey, Status.OK);
+
+                // Read a Key that is below the min address
+                await ReadMin(pivotKey - 1, Status.NOTFOUND);
+
+                // Read a Key that is above the min address
+                await ReadMin(pivotKey + 1, Status.OK);
+            }
+
+            await RunTests();
+            fht.Log.FlushAndEvict(wait: true);
+            await RunTests();
+        }
+    }
 }

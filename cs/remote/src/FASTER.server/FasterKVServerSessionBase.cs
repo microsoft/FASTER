@@ -21,7 +21,7 @@ namespace FASTER.server
         }
         
         public abstract void CompleteRead(ref Output output, long ctx, Status status);
-        public abstract void CompleteRMW(long ctx, Status status);
+        public abstract void CompleteRMW(ref Output output, long ctx, Status status);
 
 
         public override void Dispose()
