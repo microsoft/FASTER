@@ -76,6 +76,14 @@ class Guid {
 #endif
   }
 
+  static bool IsNull(Guid guid) {
+#ifdef _WIN32
+    return guid == GUID_NULL;
+#else
+    return uuid_is_null(guid.uuid_);
+#endif
+  }
+
   std::string ToString() const {
     char buffer[37];
 #ifdef _WIN32

@@ -29,7 +29,8 @@ enum class OperationType : uint8_t {
   RMW,
   Upsert,
   Insert,
-  Delete
+  Delete,
+  Exists
 };
 
 enum class OperationStatus : uint8_t {
@@ -40,7 +41,9 @@ enum class OperationStatus : uint8_t {
   RECORD_ON_DISK,
   SUCCESS_UNMARK,
   NOT_FOUND_UNMARK,
-  CPR_SHIFT_DETECTED
+  CPR_SHIFT_DETECTED,
+  ABORTED,
+  ABORTED_UNMARK,
 };
 
 /// Internal FASTER context.
@@ -147,16 +150,21 @@ class AsyncPendingReadContext : public PendingContext<K> {
  public:
   typedef K key_t;
  protected:
-  AsyncPendingReadContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_)
-    : PendingContext<key_t>(OperationType::Read, caller_context_, caller_callback_) {
+  AsyncPendingReadContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_, bool abort_if_tombstone_)
+    : PendingContext<key_t>(OperationType::Read, caller_context_, caller_callback_)
+    , abort_if_tombstone{ abort_if_tombstone_ } {
   }
   /// The deep copy constructor.
   AsyncPendingReadContext(AsyncPendingReadContext& other, IAsyncContext* caller_context)
-    : PendingContext<key_t>(other, caller_context) {
+    : PendingContext<key_t>(other, caller_context)
+    , abort_if_tombstone{ other.abort_if_tombstone } {
   }
  public:
   virtual void Get(const void* rec) = 0;
   virtual void GetAtomic(const void* rec) = 0;
+
+  // If true, Read will return ABORT (instead of NOT_FOUND), if record is tombstone
+  bool abort_if_tombstone;
 };
 
 /// A synchronous Read() context preserves its type information.
@@ -170,8 +178,8 @@ class PendingReadContext : public AsyncPendingReadContext<typename RC::key_t> {
   typedef Record<key_t, value_t> record_t;
   constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
-  PendingReadContext(read_context_t& caller_context_, AsyncCallback caller_callback_)
-    : AsyncPendingReadContext<key_t>(caller_context_, caller_callback_) {
+  PendingReadContext(read_context_t& caller_context_, AsyncCallback caller_callback_, bool abort_if_tombstone_)
+    : AsyncPendingReadContext<key_t>(caller_context_, caller_callback_, abort_if_tombstone_) {
   }
   /// The deep copy constructor.
   PendingReadContext(PendingReadContext& other, IAsyncContext* caller_context_)
@@ -198,7 +206,8 @@ class PendingReadContext : public AsyncPendingReadContext<typename RC::key_t> {
     return read_context().key().size();
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    write_deep_key_at_helper<kIsShallowKey>::execute(read_context().key(), dst);
+    // this should never be called
+    assert(false);
   }
   inline KeyHash get_key_hash() const final {
     return read_context().key().GetHash();
@@ -305,12 +314,14 @@ class AsyncPendingRmwContext : public PendingContext<K> {
  public:
   typedef K key_t;
  protected:
-  AsyncPendingRmwContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_)
-    : PendingContext<key_t>(OperationType::RMW, caller_context_, caller_callback_) {
+  AsyncPendingRmwContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_, bool create_if_not_exists_)
+    : PendingContext<key_t>(OperationType::RMW, caller_context_, caller_callback_)
+    , create_if_not_exists{create_if_not_exists_} {
   }
   /// The deep copy constructor.
   AsyncPendingRmwContext(AsyncPendingRmwContext& other, IAsyncContext* caller_context)
-    : PendingContext<key_t>(other, caller_context) {
+    : PendingContext<key_t>(other, caller_context)
+    , create_if_not_exists{other.create_if_not_exists} {
   }
  public:
   /// Set initial value.
@@ -323,6 +334,9 @@ class AsyncPendingRmwContext : public PendingContext<K> {
   virtual uint32_t value_size() const = 0;
   /// Get value size for RCU
   virtual uint32_t value_size(const void* old_rec) const = 0;
+
+  /// If false, it will return NOT_FOUND instead of creating a new record
+  bool create_if_not_exists;
 };
 
 /// A synchronous Rmw() context preserves its type information.
@@ -336,8 +350,8 @@ class PendingRmwContext : public AsyncPendingRmwContext<typename MC::key_t> {
   typedef Record<key_t, value_t> record_t;
   constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
-  PendingRmwContext(rmw_context_t& caller_context_, AsyncCallback caller_callback_)
-    : AsyncPendingRmwContext<key_t>(caller_context_, caller_callback_) {
+  PendingRmwContext(rmw_context_t& caller_context_, AsyncCallback caller_callback_, bool create_if_not_exists_)
+    : AsyncPendingRmwContext<key_t>(caller_context_, caller_callback_, create_if_not_exists_) {
   }
   /// The deep copy constructor.
   PendingRmwContext(PendingRmwContext& other, IAsyncContext* caller_context_)
@@ -470,6 +484,106 @@ class PendingDeleteContext : public AsyncPendingDeleteContext<typename MC::key_t
   inline uint32_t value_size() const final {
     return delete_context().value_size();
   }
+};
+
+/// FASTER's internal RecordExists() context.
+
+/// An internal RecordExists() context that has gone async and lost its type information.
+template <class K>
+class AsyncPendingExistsContext : public PendingContext<K> {
+ public:
+  typedef K key_t;
+ protected:
+  AsyncPendingExistsContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_, Address min_offset_)
+    : PendingContext<key_t>(OperationType::Exists, caller_context_, caller_callback_)
+    , min_offset(min_offset_) {
+  }
+  /// The deep copy constructor.
+  AsyncPendingExistsContext(AsyncPendingExistsContext& other, IAsyncContext* caller_context)
+    : PendingContext<key_t>(other, caller_context)
+    , min_offset(other.min_offset) {
+  }
+ public:
+  Address min_offset;
+};
+
+/// A synchronous RecordExists() context preserves its type information.
+template <class MC>
+class PendingExistsContext : public AsyncPendingExistsContext<typename MC::key_t> {
+ public:
+  typedef MC exists_context_t;
+  typedef typename exists_context_t::key_t key_t;
+  typedef typename exists_context_t::value_t value_t;
+  using key_or_shallow_key_t = std::remove_const_t<std::remove_reference_t<std::result_of_t<decltype(&MC::key)(MC)>>>;
+  typedef Record<key_t, value_t> record_t;
+  constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
+
+  PendingExistsContext(exists_context_t& caller_context_, AsyncCallback caller_callback_, Address min_offset_)
+    : AsyncPendingExistsContext<key_t>(caller_context_, caller_callback_, min_offset_) {
+  }
+  /// The deep copy constructor.
+  PendingExistsContext(PendingExistsContext& other, IAsyncContext* caller_context_)
+    : AsyncPendingExistsContext<key_t>(other, caller_context_) {
+  }
+ protected:
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+    return IAsyncContext::DeepCopy_Internal(*this, PendingContext<key_t>::caller_context,
+                                            context_copy);
+  }
+ private:
+  const exists_context_t& exists_context() const {
+    return *static_cast<const exists_context_t*>(PendingContext<key_t>::caller_context);
+  }
+  exists_context_t& exists_context() {
+    return *static_cast<exists_context_t*>(PendingContext<key_t>::caller_context);
+  }
+ public:
+  /// Accessors.
+  inline const key_or_shallow_key_t& get_key_or_shallow_key() const {
+    return exists_context().key();
+  }
+  inline uint32_t key_size() const final {
+    return exists_context().key().size();
+  }
+  inline void write_deep_key_at(key_t* dst) const final {
+    // this should never be called
+    assert(false);
+  }
+  inline KeyHash get_key_hash() const final {
+    return exists_context().key().GetHash();
+  }
+  inline bool is_key_equal(const key_t& other) const final {
+    return exists_context().key() == other;
+  }
+};
+
+
+/// FASTER's internal ConditionalCopyToTail() base context.
+/// Used in Compaction and HC's Rmw operation
+template<class K>
+class CopyToTailContextBase {
+ public:
+  typedef K key_t;
+
+ protected:
+  CopyToTailContextBase(HashBucketEntry expected_entry_, void* dest_store_)
+    : expected_entry{ expected_entry_ }
+    , dest_store{ dest_store_ }
+    , search_min_offset{ Address::kInvalidAddress }
+  {}
+
+  virtual inline const key_t& key() const = 0;
+  virtual uint32_t key_size() const = 0;
+  virtual KeyHash get_key_hash() const = 0;
+  virtual bool is_key_equal(const key_t& other) const = 0;
+  virtual uint32_t value_size() const = 0;
+  virtual bool is_tombstone() const = 0;
+  virtual bool copy_at(void* dest, uint32_t alloc_size) const = 0;
+
+ public:
+  HashBucketEntry expected_entry;
+  Address search_min_offset;
+  void* dest_store;
 };
 
 class AsyncIOContext;

@@ -77,7 +77,7 @@ TEST(ScanIter, InMem) {
     ASSERT_EQ(Status::Ok, result);
   }
 
-  ScanIterator<faster_t> iter(&(store.hlog), Buffering::UN_BUFFERED,
+  LogRecordIterator<faster_t> iter(&(store.hlog), Buffering::UN_BUFFERED,
                               store.hlog.begin_address.load(),
                               store.hlog.GetTailAddress(), &(store.disk));
 

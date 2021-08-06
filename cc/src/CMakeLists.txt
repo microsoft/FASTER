@@ -8,6 +8,7 @@ set (FASTER_HEADERS
   core/checkpoint_locks.h
   core/checkpoint_state.h
   core/constants.h
+  core/faster_hc.h
   core/faster.h
   core/gc_state.h
   core/grow_state.h
@@ -42,7 +43,7 @@ else()
 set (FASTER_HEADERS ${FASTER_HEADERS}
   environment/file_linux.h
 )
-endif() 
+endif()
 
 set (FASTER_SOURCES
   core/address.cc
