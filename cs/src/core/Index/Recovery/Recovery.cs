@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -107,29 +108,41 @@ namespace FASTER.core
 
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        private void InternalRecoverFromLatestCheckpoints(int numPagesToPreload, bool undoNextVersion, long recoverTo)
+        private void FindRecoveryInfo(long requestedVersion, out HybridLogCheckpointInfo recoveredHlcInfo,
+            out IndexCheckpointInfo recoveredICInfo)
         {
-            GetRecoveryInfoFromLatestCheckpoints(out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo);
-            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion, recoverTo);
-        }
 
-        private ValueTask InternalRecoverFromLatestCheckpointsAsync(int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)
-        {
-            GetRecoveryInfoFromLatestCheckpoints(out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo);
-            return InternalRecoverAsync(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion, recoverTo, cancellationToken);
-        }
-
-        private void GetRecoveryInfoFromLatestCheckpoints(out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo)
-        {
             Debug.WriteLine("********* Primary Recovery Information ********");
 
-            recoveredHLCInfo = default;
+            HybridLogCheckpointInfo current, closest = default;
+            long closestVersion = long.MaxValue;
+            byte[] cookie = default;
+            
+            // Traverse through all current tokens to find either the largest version or the version that's closest to
+            // but smaller than the requested version. Need to iterate through all unpruned versions because file system
+            // is not guaranteed to return tokens in order of freshness.
             foreach (var hybridLogToken in checkpointManager.GetLogCheckpointTokens())
             {
                 try
                 {
-                    recoveredHLCInfo = new HybridLogCheckpointInfo();
-                    recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits, out recoveredCommitCookie);
+                    current = new HybridLogCheckpointInfo();
+                    current.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits,
+                        out var currCookie);
+                    var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
+                    // This is larger than intended version, cannot recover to this.
+                    if (distanceToTarget < 0) continue;
+                    // We have found the exact version to recover to --- the above conditional establishes that the
+                    // checkpointed version is <= requested version, and if next version is larger than requestedVersion,
+                    // there cannot be any closer version. 
+                    if (current.info.nextVersion > requestedVersion) break;
+                    
+                    // Otherwise, write it down and wait to see if there's a closer one;
+                    if (distanceToTarget < closestVersion)
+                    {
+                        closestVersion = distanceToTarget;
+                        closest = current;
+                        cookie = currCookie;
+                    }
                 }
                 catch
                 {
@@ -137,13 +150,14 @@ namespace FASTER.core
                 }
 
                 Debug.WriteLine("HybridLog Checkpoint: {0}", hybridLogToken);
-                break;
             }
 
-            if (recoveredHLCInfo.IsDefault())
+            recoveredHlcInfo = closest;
+            recoveredCommitCookie = cookie;
+            if (recoveredHlcInfo.IsDefault())
                 throw new FasterException("Unable to find valid index token");
 
-            recoveredHLCInfo.info.DebugPrint();
+            recoveredHlcInfo.info.DebugPrint();
 
             recoveredICInfo = default;
             foreach (var indexToken in checkpointManager.GetIndexCheckpointTokens())
@@ -159,7 +173,7 @@ namespace FASTER.core
                     continue;
                 }
 
-                if (!IsCompatible(recoveredICInfo.info, recoveredHLCInfo.info))
+                if (!IsCompatible(recoveredICInfo.info, recoveredHlcInfo.info))
                 {
                     recoveredICInfo = default;
                     continue;
@@ -186,6 +200,10 @@ namespace FASTER.core
         private void InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoNextVersion, long recoverTo)
         {
             GetRecoveryInfo(indexToken, hybridLogToken, out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo);
+            if (recoverTo != -1 && recoveredHLCInfo.deltaLog == null)
+            {
+                throw new FasterException("Recovering to a specific version within a token is only supported for incremental snapshots");
+            }
             InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion, recoverTo);
         }
 
