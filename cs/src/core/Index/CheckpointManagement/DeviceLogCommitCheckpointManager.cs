@@ -300,10 +300,10 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, long version)
+        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
             byte[] metadata = null;
-            if (deltaLog != null)
+            if (deltaLog != null && scanDelta)
             {
                 // Try to get latest valid metadata from delta-log
                 deltaLog.Reset();
@@ -325,7 +325,7 @@ namespace FASTER.core
                             using (StreamReader s = new(new MemoryStream(metadata))) {
                                 recoveryInfo.Initialize(s);
                                 // Finish recovery if only specific versions are requested
-                                if (recoveryInfo.version == version || recoveryInfo.version < version && recoveryInfo.nextVersion > version) goto LoopEnd;
+                                if (recoveryInfo.version == recoverTo || recoveryInfo.version < recoverTo && recoveryInfo.nextVersion > recoverTo) goto LoopEnd;
                             }
                             continue;
                         default:

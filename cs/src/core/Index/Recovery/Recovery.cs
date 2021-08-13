@@ -115,6 +115,7 @@ namespace FASTER.core
             Debug.WriteLine("********* Primary Recovery Information ********");
 
             HybridLogCheckpointInfo current, closest = default;
+            Guid closestToken = default;
             long closestVersion = long.MaxValue;
             byte[] cookie = default;
             
@@ -127,7 +128,7 @@ namespace FASTER.core
                 {
                     current = new HybridLogCheckpointInfo();
                     current.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits, 
-                        out var currCookie, requestedVersion);
+                        out var currCookie, false);
                     var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
                     // This is larger than intended version, cannot recover to this.
                     if (distanceToTarget < 0) continue;
@@ -137,6 +138,7 @@ namespace FASTER.core
                     if (current.info.nextVersion > requestedVersion)
                     {
                         closest = current;
+                        closestToken = hybridLogToken;
                         cookie = currCookie;
                         break;
                     }
@@ -146,6 +148,7 @@ namespace FASTER.core
                     {
                         closestVersion = distanceToTarget;
                         closest = current;
+                        closestToken = hybridLogToken;
                         cookie = currCookie;
                     }
                 }
@@ -162,6 +165,12 @@ namespace FASTER.core
             if (recoveredHlcInfo.IsDefault())
                 throw new FasterException("Unable to find valid index token");
 
+            if (recoveredHlcInfo.deltaLog != null)
+            {
+                // need to actually scan delta log now
+                recoveredHlcInfo.Recover(closestToken, checkpointManager, hlog.LogPageSizeBits, 
+                    out var currCookie, true);
+            }
             recoveredHlcInfo.info.DebugPrint();
 
             recoveredICInfo = default;
@@ -227,7 +236,7 @@ namespace FASTER.core
 
             // Recovery appropriate context information
             recoveredHLCInfo = new HybridLogCheckpointInfo();
-            recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits, out recoveredCommitCookie);
+            recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits, out recoveredCommitCookie, true);
             recoveredHLCInfo.info.DebugPrint();
             try
             {
