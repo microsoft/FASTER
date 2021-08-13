@@ -51,7 +51,7 @@ namespace FASTER.test
         private (Status status, OutputStruct output) CompletePendingResult()
         {
             session.CompletePendingWithOutputs(out var completedOutputs);
-            return CompletePendingResult(completedOutputs);
+            return TestUtils.GetSinglePendingResult(completedOutputs);
         }
 
         private static (Status status, OutputStruct output) CompletePendingResult(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty> completedOutputs)
@@ -660,7 +660,7 @@ namespace FASTER.test
                 if (status == Status.PENDING)
                 {
                     skipReadCacheSession.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                    (status, output) = CompletePendingResult(completedOutputs);
+                    (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
                 }
                 Assert.AreEqual(Status.OK, status);
                 VerifyOutput();
