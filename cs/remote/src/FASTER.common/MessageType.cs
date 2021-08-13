@@ -44,6 +44,17 @@ namespace FASTER.common
         /// <summary>
         /// Pending result
         /// </summary>
-        PendingResult
+        PendingResult,
+
+        /// <summary>
+        /// A request to subscribe to some key in a remote Faster instance
+        /// </summary>
+        SubscribeKV,
+
+        /// <summary>
+        /// A request to subscribe to some key prefix in a remote Faster instance
+        /// </summary>
+        PSubscribeKV,
+
     }
 }

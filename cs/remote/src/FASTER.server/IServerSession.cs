@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.common;
+using FASTER.core;
 using System;
 
 namespace FASTER.server

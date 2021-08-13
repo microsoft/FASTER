@@ -15,6 +15,15 @@ namespace FASTER.common
         /// <summary>
         /// Write element to given destination, with length bytes of space available
         /// </summary>
+        /// <param name="k">Element to write</param>
+        /// <param name="dst">Destination memory</param>
+        /// <param name="length">Space (bytes) available at destination</param>
+        /// <returns>True if write succeeded, false if not (insufficient space)</returns>
+        bool Write(ref Key k, ref byte* dst, int length);
+
+        /// <summary>
+        /// Write element to given destination, with length bytes of space available
+        /// </summary>
         /// <param name="o">Element to write</param>
         /// <param name="dst">Destination memory</param>
         /// <param name="length">Space (bytes) available at destination</param>

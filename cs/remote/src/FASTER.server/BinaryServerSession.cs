@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using FASTER.common;
@@ -20,9 +21,14 @@ namespace FASTER.server
         int seqNo, pendingSeqNo, msgnum, start;
         byte* dcurr;
 
-        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
+        readonly SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker;
+
+        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker)
             : base(socket, store, functions, serializer, maxSizeSettings)
         {
+            if (subscribeKVBroker != null)
+                this.subscribeKVBroker = subscribeKVBroker;
+
             readHead = 0;
 
             // Reserve minimum 4 bytes to send pending sequence number as output
@@ -122,7 +128,7 @@ namespace FASTER.server
                 dcurr += BatchHeader.Size;
                 start = 0;
                 msgnum = 0;
-                
+
                 for (msgnum = 0; msgnum < num; msgnum++)
                 {
                     var message = (MessageType)(*src++);
@@ -134,9 +140,14 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
+                            var keyPtr = src;
                             status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src), serialNo: serialNum);
+
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
+
+                            if (subscribeKVBroker != null)
+                                subscribeKVBroker.Publish(keyPtr);
                             break;
 
                         case MessageType.Read:
@@ -162,6 +173,8 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
 
+                            keyPtr = src;
+
                             ctx = ((long)message << 32) | (long)pendingSeqNo;
                             status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
                                 ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
@@ -172,6 +185,9 @@ namespace FASTER.server
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
                             else if (status == Status.OK || status == Status.NOTFOUND)
                                 serializer.SkipOutput(ref dcurr);
+
+                            if (subscribeKVBroker != null)
+                                subscribeKVBroker.Publish(keyPtr);
                             break;
 
                         case MessageType.Delete:
@@ -179,9 +195,49 @@ namespace FASTER.server
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
+                            keyPtr = src;
                             status = session.Delete(ref serializer.ReadKeyByRef(ref src), serialNo: serialNum);
+
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
+
+                            if (subscribeKVBroker != null)
+                                subscribeKVBroker.Publish(keyPtr);
+                            break;
+
+                        case MessageType.SubscribeKV:
+                            Debug.Assert(subscribeKVBroker != null);
+
+                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                            SendAndReset(ref d, ref dend);
+
+                            var keyStart = src;
+                            serializer.ReadKeyByRef(ref src);
+
+                            int sid = subscribeKVBroker.Subscribe(ref keyStart, this);
+                            status = Status.PENDING;
+                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                            Write(ref status, ref dcurr, (int)(dend - dcurr));
+                            Write(sid, ref dcurr, (int)(dend - dcurr));
+                            break;
+
+                        case MessageType.PSubscribeKV:
+                            Debug.Assert(subscribeKVBroker != null);
+
+                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                                SendAndReset(ref d, ref dend);
+
+                            if (subscribeKVBroker == null)
+                                break;
+
+                            keyStart = src;
+                            serializer.ReadKeyByRef(ref src);
+
+                            sid = subscribeKVBroker.PSubscribe(ref keyStart, this);
+                            status = Status.PENDING;
+                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                            Write(ref status, ref dcurr, (int)(dend - dcurr));
+                            Write(sid, ref dcurr, (int)(dend - dcurr));
                             break;
 
                         default:
@@ -198,6 +254,59 @@ namespace FASTER.server
                 else
                     responseObject.Dispose();
             }
+        }
+
+        public unsafe override void Publish(ref byte* keyPtr, int keyLength, int sid, bool prefix)
+        {
+            Input input = default;
+            MessageType message = MessageType.SubscribeKV;
+            if (prefix)
+                message = MessageType.PSubscribeKV;
+
+            GetResponseObject();
+
+            ref Key key = ref serializer.ReadKeyByRef(ref keyPtr);
+
+            byte* d = responseObject.obj.bufferPtr;
+            var dend = d + responseObject.obj.buffer.Length;
+            dcurr = d + sizeof(int); // reserve space for size
+            byte* outputDcurr;
+
+            dcurr += BatchHeader.Size;
+            start = 0;
+            msgnum = 0;
+
+            if ((int)(dend - dcurr) < 6 + maxSizeSettings.MaxOutputSize)
+                SendAndReset(ref d, ref dend);
+
+            long ctx = ((long)message << 32) | (long)sid;
+
+            if (prefix)
+                outputDcurr = dcurr + 6 + keyLength;
+            else
+                outputDcurr = dcurr + 6;
+
+            var status = session.Read(ref key, ref input, ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
+            msgnum++;
+
+            if (status != Status.PENDING)
+            {
+                // Write six bytes (message | status | sid)
+                hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                Write(ref status, ref dcurr, (int)(dend - dcurr));
+                Write(sid, ref dcurr, (int)(dend - dcurr));
+                if (prefix)
+                    serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
+
+                if (status == Status.OK)
+                    serializer.SkipOutput(ref dcurr);
+            }
+
+            // Send replies
+            if (msgnum - start > 0)
+                Send(d);
+            else
+                responseObject.Dispose();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -239,6 +348,12 @@ namespace FASTER.server
             *(int*)responseObject.obj.bufferPtr = -(payloadSize - sizeof(int));
             SendResponse(payloadSize);
             responseObject.obj = null;
+        }
+
+        public override void Dispose()
+        {
+            if (subscribeKVBroker != null)
+                subscribeKVBroker.RemoveSubscription(this);
         }
     }
 }

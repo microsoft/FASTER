@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Net.Sockets;
 using FASTER.common;
 using FASTER.core;
@@ -22,26 +24,30 @@ namespace FASTER.server
         readonly Func<WireFormat, Functions> functionsGen;
         readonly ParameterSerializer serializer;
         readonly MaxSizeSettings maxSizeSettings;
+        readonly SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker;
 
         /// <summary>
         /// Create FasterKV backend
         /// </summary>
         /// <param name="store"></param>
         /// <param name="functionsGen"></param>
+        /// <param name="subscribeKVBroker"></param>
         /// <param name="serializer"></param>
         /// <param name="maxSizeSettings"></param>
-        public FasterKVProvider(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
+        public FasterKVProvider(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker = default, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
             this.functionsGen = functionsGen;
             this.serializer = serializer;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
+            this.subscribeKVBroker = subscribeKVBroker;
         }
 
         /// <inheritdoc />
         public IServerSession GetSession(WireFormat wireFormat, Socket socket)
         {
-            return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(socket, store, functionsGen(wireFormat), serializer, maxSizeSettings);
+            return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
+                (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker);
         }
     }
 }

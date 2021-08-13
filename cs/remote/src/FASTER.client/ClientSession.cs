@@ -35,6 +35,7 @@ namespace FASTER.client
         readonly int bufferSize;
         readonly WireFormat wireFormat;
         readonly MaxSizeSettings maxSizeSettings;
+        private bool subscriptionSession;
 
         bool disposed;
         ReusableObject<SeaaBuffer> sendObject;
@@ -64,6 +65,7 @@ namespace FASTER.client
             this.bufferSize = BufferSizeUtils.ClientBufferSize(this.maxSizeSettings);
             this.messageManager = new NetworkSender(bufferSize);
             this.disposed = false;
+            this.subscriptionSession = false;
 
             upsertQueue = new ElasticCircularBuffer<(Key, Value, Context)>();
             readrmwQueue = new ElasticCircularBuffer<(Key, Input, Output, Context)>();
@@ -213,6 +215,30 @@ namespace FASTER.client
         /// <returns>Status of operation</returns>
         public Status Delete(Key key, Context userContext = default, long serialNo = 0)
             => InternalDelete(MessageType.Delete, ref key, userContext, serialNo);
+
+        /// <summary>
+        /// SubscribeKV operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public void SubscribeKV(Key key, Input input = default, Context userContext = default, long serialNo = 0)
+            => InternalSubscribeKV(MessageType.SubscribeKV, ref key, ref input, userContext, serialNo);
+
+        /// <summary>
+        /// PSubscribeKV operation
+        /// </summary>
+        /// <param name="prefix">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public void PSubscribeKV(Key prefix, Input input = default, Context userContext = default, long serialNo = 0)
+            => InternalSubscribeKV(MessageType.PSubscribeKV, ref prefix, ref input, userContext, serialNo);
+
+
 
         /// <summary>
         /// Flush current buffer of outgoing messages. Does not wait for responses.
@@ -401,6 +427,60 @@ namespace FASTER.client
                                 tcs.SetResult((status, default));
                                 break;
                             }
+                        case MessageType.SubscribeKV:
+                            {
+                                var status = ReadStatus(ref src);
+                                var p = hrw.ReadPendingSeqNo(ref src);
+                                if (status == Status.OK)
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, Status.OK);
+                                }
+                                else if (status == Status.NOTFOUND)
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, Status.NOTFOUND);
+                                }
+                                else if (status == Status.PENDING)
+                                {
+                                    var result = readrmwQueue.Dequeue();
+                                    readRmwPendingContext.Add(p, result);
+                                }
+                                else
+                                {
+                                    throw new Exception("Unexpected status of SubscribeKV");
+                                }
+                                break;
+                            }
+                        case MessageType.PSubscribeKV:
+                            {
+                                var status = ReadStatus(ref src);
+                                var p = hrw.ReadPendingSeqNo(ref src);
+                                if (status == Status.OK)
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item1 = serializer.ReadKey(ref src);
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, Status.OK);
+                                }
+                                else if (status == Status.NOTFOUND)
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item1 = serializer.ReadKey(ref src);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, Status.NOTFOUND);
+                                }
+                                else if (status == Status.PENDING)
+                                {
+                                    var result = readrmwQueue.Dequeue();
+                                    readRmwPendingContext.Add(p, result);
+                                }
+                                else
+                                {
+                                    throw new Exception("Unexpected status of SubscribeKV");
+                                }
+                                break;
+                            }
                         case MessageType.PendingResult:
                             {
                                 HandlePending(ref src);
@@ -491,6 +571,24 @@ namespace FASTER.client
                             result.SetResult((status, default));
                         break;
                     }
+                case MessageType.SubscribeKV:
+                    {
+                        var status = ReadStatus(ref src);
+                        if (!readRmwPendingContext.TryGetValue(p, out var result))
+                        {
+                            Debug.WriteLine("Received unexpected subsription key");
+                            break;
+                        }
+
+                        if (status == Status.OK)
+                        {
+                            result.Item3 = serializer.ReadOutput(ref src);
+                            functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
+                        }
+                        else
+                            functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
+                        break;
+                    }
                 default:
                     {
                         throw new NotImplementedException();
@@ -539,6 +637,8 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalRead(MessageType messageType, ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
+            Debug.Assert(!subscriptionSession);
+
             while (true)
             {
                 byte* end = sendObject.obj.bufferPtr + bufferSize;
@@ -558,8 +658,32 @@ namespace FASTER.client
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe Status InternalSubscribeKV(MessageType messageType, ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
+        {
+            subscriptionSession = true;
+
+            while (true)
+            {
+                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* curr = offset;
+                if (hrw.Write(messageType, ref curr, (int)(end - curr)))
+                    if (serializer.Write(ref key, ref curr, (int)(end - curr)))
+                        if (serializer.Write(ref input, ref curr, (int)(end - curr)))
+                        {
+                            numMessages++;
+                            offset = curr;
+                            readrmwQueue.Enqueue((key, input, default, userContext));
+                            return Status.PENDING;
+                        }
+                Flush();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalUpsert(MessageType messageType, ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0)
         {
+            Debug.Assert(!subscriptionSession);
+
             while (true)
             {
                 byte* end = sendObject.obj.bufferPtr + bufferSize;
@@ -581,6 +705,8 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalRMW(MessageType messageType, ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
+            Debug.Assert(!subscriptionSession);
+
             while (true)
             {
                 byte* end = sendObject.obj.bufferPtr + bufferSize;
@@ -602,6 +728,8 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalDelete(MessageType messageType, ref Key key, Context userContext = default, long serialNo = 0)
         {
+            Debug.Assert(!subscriptionSession);
+
             while (true)
             {
                 byte* end = sendObject.obj.bufferPtr + bufferSize;

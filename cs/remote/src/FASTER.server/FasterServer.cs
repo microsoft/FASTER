@@ -150,7 +150,7 @@ namespace FASTER.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HandleReceiveCompletion(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs) e.UserToken;
+            var connArgs = (ConnectionArgs)e.UserToken;
             if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || disposed)
             {
                 DisposeConnectionSession(e);
@@ -171,7 +171,7 @@ namespace FASTER.server
 
         private unsafe bool CreateSession(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs) e.UserToken;
+            var connArgs = (ConnectionArgs)e.UserToken;
 
             if (e.BytesTransferred < 4) return false;
 
@@ -212,7 +212,7 @@ namespace FASTER.server
 
         private void DisposeConnectionSession(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs) e.UserToken;
+            var connArgs = (ConnectionArgs)e.UserToken;
             connArgs.socket.Dispose();
             e.Dispose();
             var _session = connArgs.session;

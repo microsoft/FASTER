@@ -57,5 +57,24 @@ namespace FASTER.remote.test
 
         /// <inheritdoc />
         public virtual void UpsertCompletionCallback(ref ReadOnlyMemory<int> key, ref ReadOnlyMemory<int> value, long ctx) { }
+
+        /// <inheritdoc />
+        public virtual void SubscribeKVCallback(ref ReadOnlyMemory<int> key, ref ReadOnlyMemory<int> input, ref (IMemoryOwner<int>, int) output, long ctx, Status status) 
+        {
+            try
+            {
+                Assert.IsTrue(status == Status.OK);
+                int check = key.Span[0];
+                int len = key.Span[1];
+                Assert.IsTrue(output.Item2 == len);
+                Memory<int> expected = new Memory<int>(new int[len]);
+                expected.Span.Fill(check);
+                Assert.IsTrue(expected.Span.SequenceEqual(output.Item1.Memory.Span.Slice(0, output.Item2)));
+            }
+            finally
+            {
+                output.Item1.Dispose();
+            }
+        }
     }
 }

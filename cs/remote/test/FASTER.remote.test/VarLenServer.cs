@@ -20,8 +20,10 @@ namespace FASTER.remote.test
 
             store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
 
+            var broker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
+
             // Create session provider for VarLen
-            provider = new SpanByteFasterKVProvider(store);
+            provider = new SpanByteFasterKVProvider(store, broker);
 
             server = new FasterServer(address, port);
             server.Register(WireFormat.DefaultVarLenKV, provider);
