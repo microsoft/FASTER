@@ -65,6 +65,7 @@ namespace FASTER.core
         /// <param name="version"></param>
         /// <param name="commitMetadata"></param>
         /// <param name="deltaLog"></param>
+        /// <param name="cookie">any additional (user-specified) information to persist with the checkpoint</param>
         void CommitLogIncrementalCheckpoint(Guid logToken, int version, byte[] commitMetadata, DeltaLog deltaLog);
 
         /// <summary>
@@ -93,7 +94,6 @@ namespace FASTER.core
         /// </summary>
         /// <returns></returns>
         public IEnumerable<Guid> GetLogCheckpointTokens();
-
 
         /// <summary>
         /// Provide device to store index checkpoint (including overflow buckets)
