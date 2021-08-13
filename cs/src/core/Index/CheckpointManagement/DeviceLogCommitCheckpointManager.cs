@@ -325,7 +325,7 @@ namespace FASTER.core
                             using (StreamReader s = new(new MemoryStream(metadata))) {
                                 recoveryInfo.Initialize(s);
                                 // Finish recovery if only specific versions are requested
-                                if (recoveryInfo.version == version) goto LoopEnd;
+                                if (recoveryInfo.version == version || recoveryInfo.version < version && recoveryInfo.nextVersion > version) goto LoopEnd;
                             }
                             continue;
                         default:

@@ -607,7 +607,7 @@ namespace FASTER.test.recovery
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
             );
 
-            await fht3.RecoverAsync(default, _token2, recoverTo: version1);
+            await fht3.RecoverAsync(recoverTo: version1);
 
             Assert.IsTrue(fht3.EntryCount == 1000);
             using var s3 = fht3.NewSession(new MyFunctions2());

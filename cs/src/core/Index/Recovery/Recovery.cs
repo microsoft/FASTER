@@ -126,15 +126,20 @@ namespace FASTER.core
                 try
                 {
                     current = new HybridLogCheckpointInfo();
-                    current.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits,
-                        out var currCookie);
+                    current.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits, 
+                        out var currCookie, requestedVersion);
                     var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
                     // This is larger than intended version, cannot recover to this.
                     if (distanceToTarget < 0) continue;
                     // We have found the exact version to recover to --- the above conditional establishes that the
                     // checkpointed version is <= requested version, and if next version is larger than requestedVersion,
                     // there cannot be any closer version. 
-                    if (current.info.nextVersion > requestedVersion) break;
+                    if (current.info.nextVersion > requestedVersion)
+                    {
+                        closest = current;
+                        cookie = currCookie;
+                        break;
+                    }
                     
                     // Otherwise, write it down and wait to see if there's a closer one;
                     if (distanceToTarget < closestVersion)
