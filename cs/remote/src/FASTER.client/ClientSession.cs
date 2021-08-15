@@ -251,7 +251,6 @@ namespace FASTER.client
         public Status Publish(Key key, Value desiredValue, Context userContext = default, long serialNo = 0)
             => InternalPublish(MessageType.Publish, ref key, ref desiredValue, userContext, serialNo);
 
-
         /// <summary>
         /// SubscribeKV operation
         /// </summary>
@@ -273,7 +272,6 @@ namespace FASTER.client
         /// <returns>Status of operation</returns>
         public void PSubscribe(Key prefix, Context userContext = default, long serialNo = 0)
             => InternalSubscribe(MessageType.PSubscribe, ref prefix, userContext, serialNo);
-
 
         /// <summary>
         /// Flush current buffer of outgoing messages. Does not wait for responses.

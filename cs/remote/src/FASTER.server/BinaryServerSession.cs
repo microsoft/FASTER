@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using FASTER.common;
@@ -143,10 +144,12 @@ namespace FASTER.server
 
                             var keyPtr = src;
                             status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src), serialNo: serialNum);
+
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            subscribeKVBroker.Publish(keyPtr);
+                            if (subscribeKVBroker != null)
+                                subscribeKVBroker.Publish(keyPtr);
                             break;
 
                         case MessageType.Read:
@@ -185,7 +188,8 @@ namespace FASTER.server
                             else if (status == Status.OK || status == Status.NOTFOUND)
                                 serializer.SkipOutput(ref dcurr);
 
-                            subscribeKVBroker.Publish(keyPtr);
+                            if (subscribeKVBroker != null)
+                                subscribeKVBroker.Publish(keyPtr);
                             break;
 
                         case MessageType.Delete:
@@ -194,17 +198,20 @@ namespace FASTER.server
                                 SendAndReset(ref d, ref dend);
 
                             keyPtr = src;
-
                             status = session.Delete(ref serializer.ReadKeyByRef(ref src), serialNo: serialNum);
+
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            subscribeKVBroker.Publish(keyPtr);
+                            if (subscribeKVBroker != null)
+                                subscribeKVBroker.Publish(keyPtr);
                             break;
 
                         case MessageType.SubscribeKV:
+                            Debug.Assert(subscribeKVBroker != null);
+
                             if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
-                                SendAndReset(ref d, ref dend);
+                            SendAndReset(ref d, ref dend);
 
                             var keyStart = src;
                             serializer.ReadKeyByRef(ref src);
@@ -217,8 +224,13 @@ namespace FASTER.server
                             break;
 
                         case MessageType.PSubscribeKV:
+                            Debug.Assert(subscribeKVBroker != null);
+
                             if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
+
+                            if (subscribeKVBroker == null)
+                                break;
 
                             keyStart = src;
                             serializer.ReadKeyByRef(ref src);
@@ -244,7 +256,8 @@ namespace FASTER.server
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            subscribeBroker.Publish(keyPtr, valPtr, valueLength);
+                            if (subscribeBroker != null)
+                                subscribeBroker.Publish(keyPtr, valPtr, valueLength);
                             break;
 
                         case MessageType.Subscribe:
@@ -272,7 +285,6 @@ namespace FASTER.server
                             status = Status.PENDING;
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
-                            Write(sid, ref dcurr, (int)(dend - dcurr));
                             break;
 
                         default:
@@ -403,7 +415,8 @@ namespace FASTER.server
 
         public override void Dispose()
         {
-            subscribeKVBroker.RemoveSubscription(this);
+            if (subscribeKVBroker != null)
+                subscribeKVBroker.RemoveSubscription(this);
         }
     }
 }

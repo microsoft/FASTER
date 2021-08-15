@@ -14,7 +14,7 @@ namespace FASTER.remote.test
         readonly FasterServer server;
         readonly FasterKV<Key, Value> store;
 
-        public FixedLenServer(string folderName, Func<Value, Value, Value> merger, string address = "127.0.0.1", int port = 33278)
+        public FixedLenServer(string folderName, Func<Value, Value, Value> merger, string address = "127.0.0.1", int port = 33278, bool useBroker = false)
         {
             this.folderName = folderName;
             GetSettings(folderName, out var logSettings, out var checkpointSettings, out var indexSize);
