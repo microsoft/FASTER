@@ -243,6 +243,8 @@ namespace FASTER.server
                             break;
 
                         case MessageType.Publish:
+                            Debug.Assert(subscribeBroker != null);
+
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
@@ -261,6 +263,8 @@ namespace FASTER.server
                             break;
 
                         case MessageType.Subscribe:
+                            Debug.Assert(subscribeBroker != null);
+
                             if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
 
@@ -275,6 +279,8 @@ namespace FASTER.server
                             break;
 
                         case MessageType.PSubscribe:
+                            Debug.Assert(subscribeBroker != null);
+
                             if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
 
@@ -285,6 +291,7 @@ namespace FASTER.server
                             status = Status.PENDING;
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
+                            Write(sid, ref dcurr, (int)(dend - dcurr));
                             break;
 
                         default:

@@ -751,14 +751,15 @@ namespace FASTER.client
                 byte* end = sendObject.obj.bufferPtr + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
-                    if (serializer.Write(ref key, ref curr, (int)(end - curr)))
-                        if (serializer.Write(ref input, ref curr, (int)(end - curr)))
-                        {
-                            numMessages++;
-                            offset = curr;
-                            readrmwQueue.Enqueue((key, input, default, userContext));
-                            return Status.PENDING;
-                        }
+                    if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
+                        if (serializer.Write(ref key, ref curr, (int)(end - curr)))
+                            if (serializer.Write(ref input, ref curr, (int)(end - curr)))
+                            {
+                                numMessages++;
+                                offset = curr;
+                                readrmwQueue.Enqueue((key, input, default, userContext));
+                                return Status.PENDING;
+                            }
                 Flush();
             }
         }
@@ -773,14 +774,15 @@ namespace FASTER.client
                 byte* end = sendObject.obj.bufferPtr + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
-                    if (serializer.Write(ref key, ref curr, (int)(end - curr)))
-                        if (serializer.Write(ref desiredValue, ref curr, (int)(end - curr)))
-                        {
-                            numMessages++;
-                            offset = curr;
-                            upsertQueue.Enqueue((key, desiredValue, userContext));
-                            return Status.PENDING;
-                        }
+                    if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
+                        if (serializer.Write(ref key, ref curr, (int)(end - curr)))
+                            if (serializer.Write(ref desiredValue, ref curr, (int)(end - curr)))
+                            {
+                                numMessages++;
+                                offset = curr;
+                                upsertQueue.Enqueue((key, desiredValue, userContext));
+                                return Status.PENDING;
+                            }
                 Flush();
             }
         }
@@ -795,13 +797,14 @@ namespace FASTER.client
                 byte* end = sendObject.obj.bufferPtr + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
-                    if (serializer.Write(ref key, ref curr, (int)(end - curr)))
-                    {
-                        numMessages++;
-                        offset = curr;
-                        pubsubQueue.Enqueue((key, default, userContext));
-                        return Status.PENDING;
-                    }
+                    if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
+                        if (serializer.Write(ref key, ref curr, (int)(end - curr)))
+                        {
+                            numMessages++;
+                            offset = curr;
+                            pubsubQueue.Enqueue((key, default, userContext));
+                            return Status.PENDING;
+                        }
                 Flush();
             }
         }
