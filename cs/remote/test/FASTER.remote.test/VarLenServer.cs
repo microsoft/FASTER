@@ -25,8 +25,6 @@ namespace FASTER.remote.test
             if (useBroker)
                 broker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
 
-            var broker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
-
             // Create session provider for VarLen
             provider = new SpanByteFasterKVProvider(store, broker);
 
