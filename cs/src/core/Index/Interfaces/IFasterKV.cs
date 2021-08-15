@@ -78,31 +78,46 @@ namespace FASTER.core
         /// Initiate full (index + log) checkpoint of FASTER
         /// </summary>
         /// <param name="token">Token describing checkpoint</param>
+        /// <param name="targetVersion">
+        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
+        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
+        /// number is -1, checkpoint will unconditionally create a new version. 
+        /// </param>
         /// <returns>Whether we successfully initiated the checkpoint (initiation may fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to await completion.</returns>
         /// <remarks>Uses the checkpoint type specified in the <see cref="CheckpointSettings"/></remarks>
-        bool TakeFullCheckpoint(out Guid token);
+        bool TakeFullCheckpoint(out Guid token, long targetVersion = -1);
 
         /// <summary>
         /// Initiate full (index + log) checkpoint of FASTER
         /// </summary>
         /// <param name="token">Token describing checkpoint</param>
         /// <param name="checkpointType">The checkpoint type to use (ignores the checkpoint type specified in the <see cref="CheckpointSettings"/>)</param>
+        /// <param name="targetVersion">
+        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
+        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
+        /// number is -1, checkpoint will unconditionally create a new version. 
+        /// </param>
         /// <returns>Whether we successfully initiated the checkpoint (initiation mayfail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to await completion.</returns>
-        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType);
+        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1);
 
         /// <summary>
         /// Take full (index + log) checkpoint of FASTER asynchronously
         /// </summary>
         /// <param name="checkpointType">The checkpoint type to use (ignores the checkpoint type specified in the <see cref="CheckpointSettings"/>)</param>
         /// <param name="cancellationToken">A token to cancel the operation</param>
+        /// <param name="targetVersion">
+        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
+        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
+        /// number is -1, checkpoint will unconditionally create a new version. 
+        /// </param>
         /// <returns>A (bool success, Guid token) tuple.
         /// success: Whether we successfully initiated the checkpoint (initiation may fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index).
         /// token: Token for taken checkpoint.
         /// Await the task to complete checkpoint, if initiated successfully</returns>
-        public ValueTask<(bool success, Guid token)> TakeFullCheckpointAsync(CheckpointType checkpointType, CancellationToken cancellationToken = default);
+        public ValueTask<(bool success, Guid token)> TakeFullCheckpointAsync(CheckpointType checkpointType, CancellationToken cancellationToken = default, long targetVersion = -1);
 
         /// <summary>
         /// Initiate checkpoint of FASTER index only (not log)
@@ -126,8 +141,13 @@ namespace FASTER.core
         /// Initiate checkpoint of FASTER log only (not index)
         /// </summary>
         /// <param name="token">Token describing checkpoint</param>
+        /// <param name="targetVersion">
+        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
+        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
+        /// number is -1, checkpoint will unconditionally create a new version. 
+        /// </param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to await completion.</returns>
-        bool TakeHybridLogCheckpoint(out Guid token);
+        bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1);
 
         /// <summary>
         /// Take asynchronous checkpoint of FASTER log only (not index)
@@ -135,9 +155,14 @@ namespace FASTER.core
         /// <param name="token">Token describing checkpoint</param>
         /// <param name="checkpointType">The checkpoint type to use (ignores the checkpoint type specified in the <see cref="CheckpointSettings"/>)</param>
         /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
+        /// <param name="targetVersion">
+        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
+        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
+        /// number is -1, checkpoint will unconditionally create a new version. 
+        /// </param>
         /// <returns>Whether we successfully initiated the checkpoint (initiation mayfail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to await completion.</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false);
+        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false, long targetVersion = -1);
 
         /// <summary>
         /// Initiate checkpoint of FASTER log only (not index)
@@ -145,12 +170,17 @@ namespace FASTER.core
         /// <param name="checkpointType">The checkpoint type to use (ignores the checkpoint type specified in the <see cref="CheckpointSettings"/>)</param>
         /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
         /// <param name="cancellationToken">A token to cancel the operation</param>
+        /// <param name="targetVersion">
+        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
+        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
+        /// number is -1, checkpoint will unconditionally create a new version. 
+        /// </param>
         /// <returns>A (bool success, Guid token) tuple.
         /// success: Whether we successfully initiated the checkpoint (initiation may fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index).
         /// token: Token for taken checkpoint.
         /// Await the task to complete checkpoint, if initiated successfully</returns>
-        public ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType, bool tryIncremental = false, CancellationToken cancellationToken = default);
+        public ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType, bool tryIncremental = false, CancellationToken cancellationToken = default, long targetVersion = -1);
 
         /// <summary>
         /// Recover from last successful index and log checkpoints

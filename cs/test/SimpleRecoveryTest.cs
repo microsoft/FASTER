@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -16,12 +17,14 @@ namespace FASTER.test.recovery.sumstore.simple
         const int numOps = 5000;
         AdId[] inputArray;
 
+        private byte[] commitCookie;
         string checkpointDir;
         ICheckpointManager checkpointManager;
 
         private FasterKV<AdId, NumClicks> fht1;
         private FasterKV<AdId, NumClicks> fht2;
         private IDevice log;
+        
 
         [SetUp]
         public void Setup()
@@ -50,13 +53,13 @@ namespace FASTER.test.recovery.sumstore.simple
 
         [Test]
         [Category("FasterKV"), Category("CheckpointRestore")]
-        public async ValueTask PageBlobSimpleRecoveryTest([Values]CheckpointType checkpointType, [Values]bool isAsync)
+        public async ValueTask PageBlobSimpleRecoveryTest([Values]CheckpointType checkpointType, [Values]bool isAsync, [Values]bool testCommitCookie)
         {
             TestUtils.IgnoreIfNotRunningAzureTests();
             checkpointManager = new DeviceLogCommitCheckpointManager(
                 new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
                 new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
-            await SimpleRecoveryTest1_Worker(checkpointType, isAsync);
+            await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
             checkpointManager.PurgeAll();
         }
 
@@ -65,24 +68,30 @@ namespace FASTER.test.recovery.sumstore.simple
         [Category("CheckpointRestore")]
         [Category("Smoke")]
 
-        public async ValueTask LocalDeviceSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] bool isAsync)
+        public async ValueTask LocalDeviceSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values]bool testCommitCookie)
         {
             checkpointManager = new DeviceLogCommitCheckpointManager(
                 new LocalStorageNamedDeviceFactory(),
                 new DefaultCheckpointNamingScheme($"{TestUtils.MethodTestDir}/{TestUtils.AzureTestDirectory}"));
-            await SimpleRecoveryTest1_Worker(checkpointType, isAsync);
+            await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
             checkpointManager.PurgeAll();
         }
 
         [Test]
         [Category("FasterKV"), Category("CheckpointRestore")]
-        public async ValueTask SimpleRecoveryTest1([Values]CheckpointType checkpointType, [Values]bool isAsync)
+        public async ValueTask SimpleRecoveryTest1([Values]CheckpointType checkpointType, [Values]bool isAsync, [Values]bool testCommitCookie)
         {
-            await SimpleRecoveryTest1_Worker(checkpointType, isAsync);
+            await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
         }
 
-        private async ValueTask SimpleRecoveryTest1_Worker(CheckpointType checkpointType, bool isAsync)
+        private async ValueTask SimpleRecoveryTest1_Worker(CheckpointType checkpointType, bool isAsync, bool testCommitCookie)
         {
+            if (testCommitCookie)
+            {
+                // Generate a new unique byte sequence for test
+                commitCookie = Guid.NewGuid().ToByteArray();
+            }
+
             if (checkpointManager is null)
                 checkpointDir = TestUtils.MethodTestDir + $"/checkpoints";
 
@@ -108,6 +117,9 @@ namespace FASTER.test.recovery.sumstore.simple
                 value.numClicks = key;
                 session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
+
+            if (testCommitCookie)
+                fht1.CommitCookie = commitCookie;
             fht1.TakeFullCheckpoint(out Guid token);
             fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             session1.Dispose();
@@ -117,6 +129,11 @@ namespace FASTER.test.recovery.sumstore.simple
             else
                 fht2.Recover(token);
 
+            if (testCommitCookie)
+                Assert.IsTrue(fht2.RecoveredCommitCookie.SequenceEqual(commitCookie));
+            else
+                Assert.Null(fht2.RecoveredCommitCookie);
+            
             var session2 = fht2.NewSession(new AdSimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
