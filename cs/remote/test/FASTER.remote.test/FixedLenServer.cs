@@ -14,7 +14,7 @@ namespace FASTER.remote.test
         readonly FasterServer server;
         readonly FasterKV<Key, Value> store;
 
-        public FixedLenServer(string folderName, Func<Value, Value, Value> merger, string address = "127.0.0.1", int port = 33278)
+        public FixedLenServer(string folderName, Func<Value, Value, Value> merger, string address = "127.0.0.1", int port = 33278, bool useBroker = false)
         {
             this.folderName = folderName;
             GetSettings(folderName, out var logSettings, out var checkpointSettings, out var indexSize);
@@ -22,7 +22,10 @@ namespace FASTER.remote.test
             // We use blittable structs Key and Value to construct a costomized server for fixed-length types
             store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
 
-            var broker = new SubscribeKVBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>());
+            SubscribeKVBroker<Key, Value, IKeySerializer<Key>> broker = null;
+
+            if (useBroker)
+                broker = new SubscribeKVBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>());
 
             // Create session provider for FixedLen
             var provider = new FasterKVProvider<Key, Value, Value, Value, FixedLenServerFunctions<Key, Value>, FixedLenSerializer<Key, Value, Value, Value>>(store, e => new FixedLenServerFunctions<Key, Value>(merger), broker);
