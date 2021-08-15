@@ -25,6 +25,7 @@ namespace FASTER.server
         readonly ParameterSerializer serializer;
         readonly MaxSizeSettings maxSizeSettings;
         readonly SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker;
+        readonly SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker;
 
         /// <summary>
         /// Create FasterKV backend
@@ -32,22 +33,24 @@ namespace FASTER.server
         /// <param name="store"></param>
         /// <param name="functionsGen"></param>
         /// <param name="subscribeKVBroker"></param>
+        /// <param name="subscribeBroker"></param>
         /// <param name="serializer"></param>
         /// <param name="maxSizeSettings"></param>
-        public FasterKVProvider(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker = default, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
+        public FasterKVProvider(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker = null, SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker = null, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
             this.functionsGen = functionsGen;
             this.serializer = serializer;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
             this.subscribeKVBroker = subscribeKVBroker;
+            this.subscribeBroker = subscribeBroker;
         }
 
         /// <inheritdoc />
         public IServerSession GetSession(WireFormat wireFormat, Socket socket)
         {
             return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker);
+                (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker);
         }
     }
 }

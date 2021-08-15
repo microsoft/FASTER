@@ -64,6 +64,15 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
+        public bool Write(ref Value v, ref byte* dst, int length)
+        {
+            if (length < Unsafe.SizeOf<Value>()) return false;
+            Unsafe.AsRef<Value>(dst) = v;
+            dst += Unsafe.SizeOf<Value>();
+            return true;
+        }
+
+        /// <inheritdoc />
         public bool Write(ref Output o, ref byte* dst, int length)
         {
             if (length < Unsafe.SizeOf<Output>()) return false;

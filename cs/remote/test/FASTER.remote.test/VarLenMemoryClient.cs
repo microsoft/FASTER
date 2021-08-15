@@ -76,5 +76,18 @@ namespace FASTER.remote.test
                 output.Item1.Dispose();
             }
         }
+
+        /// <inheritdoc />
+        public void PublishCompletionCallback(ref ReadOnlyMemory<int> key, ref ReadOnlyMemory<int> value, long ctx) { }
+
+        /// <inheritdoc />
+        public void SubscribeCallback(ref ReadOnlyMemory<int> key, ref ReadOnlyMemory<int> value, long ctx)
+        {
+            int check = key.Span[0];
+            int len = key.Span[1];
+            Memory<int> expected = new Memory<int>(new int[len]);
+            expected.Span.Fill(check);
+            Assert.IsTrue(expected.Span.SequenceEqual(value.Span.Slice(0, value.Length)));
+        }
     }
 }

@@ -33,6 +33,8 @@ namespace VarLenClient
         {
         }
 
-
+        public override void SubscribeCallback(ref CustomType key, ref CustomType value, byte ctx)
+        {
+        }
     }
 }

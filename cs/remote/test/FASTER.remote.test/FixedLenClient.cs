@@ -44,5 +44,10 @@ namespace FASTER.remote.test
             Assert.IsTrue(output == 23);
         }
 
+        /// <inheritdoc />
+        public override void SubscribeCallback(ref long key, ref long value, long ctx)
+        {
+            Assert.IsTrue(value == 23);
+        }
     }
 }
