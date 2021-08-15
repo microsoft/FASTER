@@ -22,8 +22,8 @@ namespace FASTER.server
         where KeySerializer : IKeySerializer<Key>
     {
         private int sid = 0;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<ServerSessionBase, int>> subscriptions;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<ServerSessionBase, int>> prefixSubscriptions;
+        private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
+        private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> prefixSubscriptions;
         private AsyncQueue<byte[]> publishQueue;
         readonly IKeySerializer<Key> keySerializer;
 
@@ -48,10 +48,10 @@ namespace FASTER.server
                 foreach (var subscribedkey in subscriptions.Keys)
                 {
                     subscriptions.TryGetValue(subscribedkey, out var subscriptionDict);
-                    foreach (var serverSession in subscriptionDict.Keys)
+                    foreach (var sid in subscriptionDict.Keys)
                     {
-                        if (serverSession == session) {
-                            subscriptionDict.TryRemove(serverSession, out _);
+                        if (subscriptionDict[sid] == session) {
+                            subscriptionDict.TryRemove(sid, out _);
                             break;
                         }
                     }
@@ -63,10 +63,10 @@ namespace FASTER.server
                 foreach (var subscribedkey in prefixSubscriptions.Keys)
                 {
                     prefixSubscriptions.TryGetValue(subscribedkey, out var subscriptionDict);
-                    foreach (var serverSession in subscriptionDict.Keys)
+                    foreach (var sid in subscriptionDict.Keys)
                     {
-                        if (serverSession == session) {
-                            subscriptionDict.TryRemove(serverSession, out _);
+                        if (subscriptionDict[sid] == session) {
+                            subscriptionDict.TryRemove(sid, out _);
                             break;
                         }
                     }
@@ -101,11 +101,11 @@ namespace FASTER.server
                             bool foundSubscription = subscriptions.TryGetValue(keyBytes, out var subscriptionServerSessionDict);
                             if (foundSubscription)
                             {                                
-                                foreach (var serverSession in subscriptionServerSessionDict.Keys)
+                                foreach (var sid in subscriptionServerSessionDict.Keys)
                                 {
                                     byte* keyBytePtr = ptr;
-                                    var subscriptionId = subscriptionServerSessionDict[serverSession];
-                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, subscriptionId, false);
+                                    var serverSession = subscriptionServerSessionDict[sid];
+                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, sid, false);
                                 }
                             }
 
@@ -121,11 +121,11 @@ namespace FASTER.server
                                     if (match)
                                     {
                                         prefixSubscriptions.TryGetValue(subscribedPrefixBytes, out var prefixSubscriptionServerSessionDict);
-                                        foreach (var serverSession in prefixSubscriptionServerSessionDict.Keys)
+                                        foreach (var sid in prefixSubscriptionServerSessionDict.Keys)
                                         {
                                             byte* keyBytePtr = ptr;
-                                            var subscriptionId = prefixSubscriptionServerSessionDict[serverSession];
-                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, subscriptionId, true);
+                                            var serverSession = prefixSubscriptionServerSessionDict[sid];
+                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, sid, true);
                                         }
                                     }
                                 }
@@ -151,13 +151,13 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
-                subscriptions= new ConcurrentDictionary<byte[], ConcurrentDictionary<ServerSessionBase, int>>(new ByteArrayComparer());
-                prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<ServerSessionBase, int>>(new ByteArrayComparer());
+                subscriptions= new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
+                prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
                 Task.Run(() => Start());
             }
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
-            bool added = subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<ServerSessionBase, int>());
-            subscriptions[subscriptionKey].TryAdd(session, sid);
+            bool added = subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, ServerSessionBase>());
+            subscriptions[subscriptionKey].TryAdd(sid, session);
             return id;
         }
 
@@ -174,13 +174,13 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
-                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<ServerSessionBase, int>>(new ByteArrayComparer());
-                prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<ServerSessionBase, int>>(new ByteArrayComparer());
+                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
+                prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
                 Task.Run(() => Start());
             }
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
-            prefixSubscriptions.TryAdd(subscriptionPrefix, new ConcurrentDictionary<ServerSessionBase, int>());
-            prefixSubscriptions[subscriptionPrefix].TryAdd(session, sid);
+            prefixSubscriptions.TryAdd(subscriptionPrefix, new ConcurrentDictionary<int, ServerSessionBase>());
+            prefixSubscriptions[subscriptionPrefix].TryAdd(sid, session);
             return id;
         }
 
