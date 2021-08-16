@@ -17,21 +17,21 @@ namespace FASTER.server
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="KeySerializer"></typeparam>
-    public class SubscribeKVBroker<Key, Value, KeySerializer> : IDisposable
-        where KeySerializer : IKeySerializer<Key>
+    /// <typeparam name="KeyValueSerializer"></typeparam>
+    public class SubscribeBroker<Key, Value, KeyValueSerializer> : IDisposable
+        where KeyValueSerializer : IKeySerializer<Key>
     {
         private int sid = 0;
         private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
         private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> prefixSubscriptions;
-        private AsyncQueue<byte[]> publishQueue;
+        private AsyncQueue<(byte[], byte[])> publishQueue;
         readonly IKeySerializer<Key> keySerializer;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="keySerializer">Serializer for Prefix Match and serializing Key</param>
-        public SubscribeKVBroker(IKeySerializer<Key> keySerializer)
+        public SubscribeBroker(IKeySerializer<Key> keySerializer)
         {
             this.keySerializer = keySerializer;
         }
@@ -76,26 +76,29 @@ namespace FASTER.server
 
         internal async Task Start()
         {
-            var uniqueKeys = new HashSet<byte[]>(new ByteArrayComparer());
+            var uniqueKeys = new Dictionary<byte[], byte[]>(new ByteArrayComparer());
             var uniqueKeySubscriptions = new List<(ServerSessionBase, int, bool)>();
 
             while (true)
             {
 
-                var subscriptionKey = await publishQueue.DequeueAsync();
-                uniqueKeys.Add(subscriptionKey);
+                var (publishKey, publishValue) = await publishQueue.DequeueAsync();
+                uniqueKeys.Add(publishKey, publishValue);
 
                 while (publishQueue.Count > 0)
                 {
-                    subscriptionKey = await publishQueue.DequeueAsync();
-                    uniqueKeys.Add(subscriptionKey);
+                    (publishKey, publishValue) = await publishQueue.DequeueAsync();
+                    uniqueKeys.Add(publishKey, publishValue);
                 }
 
                 unsafe
                 {
-                    foreach (var keyBytes in uniqueKeys)
+                    var enumerator = uniqueKeys.GetEnumerator();
+                    while (enumerator.MoveNext())
                     {
-                        fixed (byte* ptr = &keyBytes[0])
+                        byte[] keyBytes = enumerator.Current.Key;
+                        byte[] valBytes = enumerator.Current.Value;
+                        fixed (byte* ptr = &keyBytes[0], valPtr = &valBytes[0])
                         {
                             byte* keyPtr = ptr;
                             bool foundSubscription = subscriptions.TryGetValue(keyBytes, out var subscriptionServerSessionDict);
@@ -104,9 +107,9 @@ namespace FASTER.server
                                 foreach (var sid in subscriptionServerSessionDict.Keys)
                                 {
                                     byte* keyBytePtr = ptr;
+                                    byte* valBytePtr = valPtr;
                                     var serverSession = subscriptionServerSessionDict[sid];
-                                    byte* nullBytePtr = null;
-                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytePtr, sid, false);
+                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref valBytePtr, sid, false);
                                 }
                             }
 
@@ -125,9 +128,9 @@ namespace FASTER.server
                                         foreach (var sid in prefixSubscriptionServerSessionDict.Keys)
                                         {
                                             byte* keyBytePtr = ptr;
+                                            byte* valBytePtr = valPtr;
                                             var serverSession = prefixSubscriptionServerSessionDict[sid];
-                                            byte* nullBytrPtr = null;
-                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, sid, true);
+                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref valBytePtr, sid, true);
                                         }
                                     }
                                 }
@@ -151,7 +154,7 @@ namespace FASTER.server
             var start = key;
             keySerializer.ReadKeyByRef(ref key);
             var id = Interlocked.Increment(ref sid);
-            if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
+            if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
                 subscriptions= new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
                 prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
@@ -174,7 +177,7 @@ namespace FASTER.server
             var start = prefix;
             keySerializer.ReadKeyByRef(ref prefix);
             var id = Interlocked.Increment(ref sid);
-            if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
+            if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
                 subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
                 prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
@@ -190,15 +193,18 @@ namespace FASTER.server
         /// Publish the update made to key to all the subscribers
         /// </summary>
         /// <param name="key">key that has been updated</param>
-        public unsafe void Publish(byte* key)
+        /// <param name="value">value that has been updated</param>
+        /// <param name="valueLength">value length that has been updated</param>
+        public unsafe void Publish(byte* key, byte* value, int valueLength)
         {
             if (subscriptions == null && prefixSubscriptions == null) return;
 
             var start = key;
             ref Key k = ref keySerializer.ReadKeyByRef(ref key);
             var keyBytes = new Span<byte>(start, (int)(key - start)).ToArray();
+            var valBytes = new Span<byte>(value, (int)(valueLength)).ToArray();
 
-            publishQueue.Enqueue(keyBytes);
+            publishQueue.Enqueue((keyBytes, valBytes));
         }
 
         /// <inheritdoc />

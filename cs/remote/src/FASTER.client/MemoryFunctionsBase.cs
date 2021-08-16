@@ -26,5 +26,9 @@ namespace FASTER.client
         public virtual void UpsertCompletionCallback(ref ReadOnlyMemory<T> key, ref ReadOnlyMemory<T> value, byte ctx) { }
         /// <inheritdoc />
         public virtual void SubscribeKVCallback(ref ReadOnlyMemory<T> key, ref ReadOnlyMemory<T> input, ref (IMemoryOwner<T>, int) output, byte ctx, Status status) { }
+        /// <inheritdoc/>
+        public virtual void PublishCompletionCallback(ref ReadOnlyMemory<T> key, ref ReadOnlyMemory<T> value, byte ctx) { }
+        /// <inheritdoc/>
+        public virtual void SubscribeCallback(ref ReadOnlyMemory<T> key, ref ReadOnlyMemory<T> value, byte ctx) { }
     }
 }

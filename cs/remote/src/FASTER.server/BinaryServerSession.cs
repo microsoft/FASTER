@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
@@ -22,12 +22,14 @@ namespace FASTER.server
         byte* dcurr;
 
         readonly SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker;
+        readonly SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker;
 
-        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker)
+
+        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker, SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker)
             : base(socket, store, functions, serializer, maxSizeSettings)
         {
-            if (subscribeKVBroker != null)
-                this.subscribeKVBroker = subscribeKVBroker;
+            this.subscribeKVBroker = subscribeKVBroker;
+            this.subscribeBroker = subscribeBroker;
 
             readHead = 0;
 
@@ -240,6 +242,58 @@ namespace FASTER.server
                             Write(sid, ref dcurr, (int)(dend - dcurr));
                             break;
 
+                        case MessageType.Publish:
+                            Debug.Assert(subscribeBroker != null);
+
+                            if ((int)(dend - dcurr) < 2)
+                                SendAndReset(ref d, ref dend);
+
+                            keyPtr = src;
+                            ref Key key = ref serializer.ReadKeyByRef(ref src);
+                            byte* valPtr = src;
+                            ref Value val = ref serializer.ReadValueByRef(ref src);
+                            int valueLength = (int)(src - valPtr);
+
+                            status = Status.OK;
+                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                            Write(ref status, ref dcurr, (int)(dend - dcurr));
+
+                            if (subscribeBroker != null)
+                                subscribeBroker.Publish(keyPtr, valPtr, valueLength);
+                            break;
+
+                        case MessageType.Subscribe:
+                            Debug.Assert(subscribeBroker != null);
+
+                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                                SendAndReset(ref d, ref dend);
+
+                            keyStart = src;
+                            serializer.ReadKeyByRef(ref src);
+
+                            sid = subscribeBroker.Subscribe(ref keyStart, this);
+                            status = Status.PENDING;
+                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                            Write(ref status, ref dcurr, (int)(dend - dcurr));
+                            Write(sid, ref dcurr, (int)(dend - dcurr));
+                            break;
+
+                        case MessageType.PSubscribe:
+                            Debug.Assert(subscribeBroker != null);
+
+                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                                SendAndReset(ref d, ref dend);
+
+                            keyStart = src;
+                            serializer.ReadKeyByRef(ref src);
+
+                            sid = subscribeBroker.PSubscribe(ref keyStart, this);
+                            status = Status.PENDING;
+                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                            Write(ref status, ref dcurr, (int)(dend - dcurr));
+                            Write(sid, ref dcurr, (int)(dend - dcurr));
+                            break;
+
                         default:
                             throw new NotImplementedException();
                     }
@@ -256,12 +310,22 @@ namespace FASTER.server
             }
         }
 
-        public unsafe override void Publish(ref byte* keyPtr, int keyLength, int sid, bool prefix)
+        public unsafe override void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int sid, bool prefix)
         {
             Input input = default;
-            MessageType message = MessageType.SubscribeKV;
-            if (prefix)
-                message = MessageType.PSubscribeKV;
+            MessageType message;
+
+            if (valPtr == null)
+            {
+                message = MessageType.SubscribeKV;
+                if (prefix)
+                    message = MessageType.PSubscribeKV;
+            } else
+            {
+                message = MessageType.Subscribe;
+                if (prefix)
+                    message = MessageType.PSubscribe;
+            }
 
             GetResponseObject();
 
@@ -286,7 +350,10 @@ namespace FASTER.server
             else
                 outputDcurr = dcurr + 6;
 
-            var status = session.Read(ref key, ref input, ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
+            var status = Status.OK;
+            if (valPtr == null)
+                status = session.Read(ref key, ref input, ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
+
             msgnum++;
 
             if (status != Status.PENDING)
@@ -297,8 +364,11 @@ namespace FASTER.server
                 Write(sid, ref dcurr, (int)(dend - dcurr));
                 if (prefix)
                     serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
-
-                if (status == Status.OK)
+                if (valPtr != null)
+                {
+                    ref Value value = ref serializer.ReadValueByRef(ref valPtr);
+                    serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
+                } else if (status == Status.OK)
                     serializer.SkipOutput(ref dcurr);
             }
 
