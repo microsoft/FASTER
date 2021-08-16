@@ -558,7 +558,7 @@ namespace FASTER.test.recovery
                 s1.Upsert(key, key+1);
             }
 
-            var version1 = fht1.SystemState.version;
+            var version1 = fht1.CurrentVersion;
             var _result1 = fht1.TakeHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
             await fht1.CompleteCheckpointAsync();
 
@@ -570,7 +570,7 @@ namespace FASTER.test.recovery
                 s1.Upsert(key, key + 1);
             }
 
-            var version2 = fht1.SystemState.version;
+            var version2 = fht1.CurrentVersion;
             var _result2 = fht1.TakeHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
             await fht1.CompleteCheckpointAsync();
 

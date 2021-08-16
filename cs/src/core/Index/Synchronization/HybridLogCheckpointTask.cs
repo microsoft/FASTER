@@ -174,7 +174,6 @@ namespace FASTER.core
     /// </summary>
     internal sealed class SnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
-        private long lastVersion;
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
         {
@@ -221,7 +220,6 @@ namespace FASTER.core
                         out faster._hybridLogCheckpoint.flushedSemaphore);
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
-                    faster.lastVersion = 
                     // update flushed-until address to the latest
                     faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
                     base.GlobalBeforeEnteringState(next, faster);
