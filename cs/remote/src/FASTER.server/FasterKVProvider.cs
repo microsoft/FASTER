@@ -53,10 +53,10 @@ namespace FASTER.server
             {
                 case WireFormat.WebSocket:
                     return new WebsocketServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker);
+                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker);
                 default:
                     return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker);
+                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker);
             }
         }
     }
