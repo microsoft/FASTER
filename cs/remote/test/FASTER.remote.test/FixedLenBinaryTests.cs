@@ -39,7 +39,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
-        public void SubscribeTest()
+        public void SubscribeKVTest()
         {
             var session = client.GetSession();
             var subSession = client.GetSession();
@@ -53,7 +53,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
-        public void PrefixSubscribeTest()
+        public void PrefixSubscribeKVTest()
         {
             var session = client.GetSession();
             var subSession = client.GetSession();
@@ -66,5 +66,32 @@ namespace FASTER.remote.test
             System.Threading.Thread.Sleep(1000);
         }
 
+        [Test]
+        public void SubscribeTest()
+        {
+            var session = client.GetSession();
+            var subSession = client.GetSession();
+
+            subSession.Subscribe(10);
+            subSession.CompletePending(true);
+            session.Publish(10, 23);
+            session.CompletePending(true);
+
+            System.Threading.Thread.Sleep(1000);
+        }
+
+        [Test]
+        public void PrefixSubscribeTest()
+        {
+            var session = client.GetSession();
+            var subSession = client.GetSession();
+
+            subSession.PSubscribe(10);
+            subSession.CompletePending(true);
+            session.Publish(10, 23);
+            session.CompletePending(true);
+
+            System.Threading.Thread.Sleep(1000);
+        }
     }
 }

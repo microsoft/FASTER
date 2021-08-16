@@ -38,6 +38,17 @@ namespace FASTER.client
         }
 
         /// <inheritdoc />
+        public ReadOnlyMemory<T> ReadValue(ref byte* src)
+        {
+            var len = (*(int*)src) / sizeof(T);
+            var mem = memoryPool.Rent(len);
+            new ReadOnlySpan<byte>(src + sizeof(int), (*(int*)src)).CopyTo(
+               MemoryMarshal.Cast<T, byte>(mem.Memory.Span));
+            src += sizeof(int) + (*(int*)src);
+            return (mem.Memory.Slice(0, len));
+        }
+
+        /// <inheritdoc />
         public (IMemoryOwner<T>, int) ReadOutput(ref byte* src)
         {
             var len = (*(int*)src) / sizeof(T);

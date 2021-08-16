@@ -41,10 +41,6 @@ namespace FASTER.common
         /// An async request to delete some value in a remote Faster instance
         /// </summary>
         DeleteAsync,
-        /// <summary>
-        /// Pending result
-        /// </summary>
-        PendingResult,
 
         /// <summary>
         /// A request to subscribe to some key in a remote Faster instance
@@ -56,5 +52,24 @@ namespace FASTER.common
         /// </summary>
         PSubscribeKV,
 
+        /// <summary>
+        /// A request to subscribe to some key 
+        /// </summary>
+        Subscribe,
+
+        /// <summary>
+        /// A request to publish to some key, value pair 
+        /// </summary>
+        Publish,
+
+        /// <summary>
+        /// A request to subscribe to some key prefix 
+        /// </summary>
+        PSubscribe,
+
+        /// <summary>
+        /// Pending result
+        /// </summary>
+        PendingResult,
     }
 }
