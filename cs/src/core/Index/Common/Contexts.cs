@@ -428,9 +428,10 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <param name="checkpointManager"></param>
         /// <param name="deltaLog"></param>
-        internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null)
+        /// <param name="toVersion"> specific version to recover to, if using delta log</param>
+        internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
-            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog);
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
             if (metadata == null)
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
             using StreamReader s = new(new MemoryStream(metadata));
@@ -444,9 +445,11 @@ namespace FASTER.core
         /// <param name="checkpointManager"></param>
         /// <param name="deltaLog"></param>
         /// <param name="commitCookie"> Any user-specified commit cookie written as part of the checkpoint </param>
-        internal void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie, DeltaLog deltaLog = null)
+        /// <param name="toVersion"> specific version to recover to, if using delta log</param>
+
+        internal void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
-            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog);
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
             if (metadata == null)
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
             using StreamReader s = new(new MemoryStream(metadata));
@@ -556,7 +559,9 @@ namespace FASTER.core
             checkpointManager.InitializeLogCheckpoint(token);
         }
 
-        public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits)
+
+        public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
+            bool scanDelta, long recoverTo)
         {
             deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
             deltaFileDevice.Initialize(-1);
@@ -564,7 +569,7 @@ namespace FASTER.core
             {
                 deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
                 deltaLog.InitializeForReads();
-                info.Recover(token, checkpointManager, deltaLog);
+                info.Recover(token, checkpointManager, deltaLog, scanDelta, recoverTo);
             }
             else
             {
@@ -573,7 +578,7 @@ namespace FASTER.core
         }
 
         public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
-            out byte[] commitCookie)
+            out byte[] commitCookie, bool scanDelta = false, long recoverTo = -1)
         {
             deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
             deltaFileDevice.Initialize(-1);
@@ -581,7 +586,7 @@ namespace FASTER.core
             {
                 deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
                 deltaLog.InitializeForReads();
-                info.Recover(token, checkpointManager, out commitCookie, deltaLog);
+                info.Recover(token, checkpointManager, out commitCookie, deltaLog, scanDelta, recoverTo);
             }
             else
             {
@@ -665,6 +670,7 @@ namespace FASTER.core
 
         public void Recover(Guid guid, ICheckpointManager checkpointManager)
         {
+            this.token = guid;
             var metadata = checkpointManager.GetIndexCheckpointMetadata(guid);
             if (metadata == null)
                 throw new FasterException("Invalid index commit metadata for ID " + guid.ToString());

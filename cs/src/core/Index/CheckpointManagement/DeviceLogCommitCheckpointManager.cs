@@ -76,6 +76,15 @@ namespace FASTER.core
             deviceFactory.Delete(new FileDescriptor { directoryName = "" });
         }
 
+        /// <inheritdoc />
+        public void Purge(Guid token)
+        {
+            // Try both because we do not know which type the guid denotes
+            deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(token));
+            deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(token));
+
+        }
+
         /// <summary>
         /// Create new instance of log commit manager
         /// </summary>
@@ -268,7 +277,7 @@ namespace FASTER.core
             deltaLog.Allocate(out int length, out long physicalAddress);
             if (length < commitMetadata.Length)
             {
-                deltaLog.Seal(0, type: 1);
+                deltaLog.Seal(0, DeltaLogEntryType.CHECKPOINT_METADATA);
                 deltaLog.Allocate(out length, out physicalAddress);
                 if (length < commitMetadata.Length)
                 {
@@ -280,7 +289,7 @@ namespace FASTER.core
             {
                 Buffer.MemoryCopy(ptr, (void*)physicalAddress, commitMetadata.Length, commitMetadata.Length);
             }
-            deltaLog.Seal(commitMetadata.Length, type: 1);
+            deltaLog.Seal(commitMetadata.Length, DeltaLogEntryType.CHECKPOINT_METADATA);
             deltaLog.FlushAsync().Wait();
         }
 
@@ -291,25 +300,42 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog)
+        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
             byte[] metadata = null;
-            if (deltaLog != null)
+            if (deltaLog != null && scanDelta)
             {
                 // Try to get latest valid metadata from delta-log
                 deltaLog.Reset();
-                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out int type))
+                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out var type))
                 {
-                    if (type != 1) continue; // consider only metadata records
-                    long endAddress = physicalAddress + entryLength;
-                    metadata = new byte[entryLength];
-                    unsafe
+                    switch (type)
                     {
-                        fixed (byte* m = metadata)
-                            Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                        case DeltaLogEntryType.DELTA:
+                            // consider only metadata records
+                            continue;
+                        case DeltaLogEntryType.CHECKPOINT_METADATA:
+                            metadata = new byte[entryLength];
+                            unsafe
+                            {
+                                fixed (byte* m = metadata)
+                                    Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                            }
+                            HybridLogRecoveryInfo recoveryInfo = new();
+                            using (StreamReader s = new(new MemoryStream(metadata))) {
+                                recoveryInfo.Initialize(s);
+                                // Finish recovery if only specific versions are requested
+                                if (recoveryInfo.version == recoverTo || recoveryInfo.version < recoverTo && recoveryInfo.nextVersion > recoverTo) goto LoopEnd;
+                            }
+                            continue;
+                        default:
+                            throw new FasterException("Unexpected entry type");
                     }
+                    LoopEnd:
+                        break;
                 }
                 if (metadata != null) return metadata;
+                
             }
 
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));

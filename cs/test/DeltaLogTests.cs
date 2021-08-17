@@ -66,16 +66,16 @@ namespace FASTER.test
                 {
                     unsafe { *(byte*)(address + j) = (byte)_len; }
                 }
-                deltaLog.Seal(_len, i);
+                deltaLog.Seal(_len, i % 2 == 0 ? DeltaLogEntryType.DELTA : DeltaLogEntryType.CHECKPOINT_METADATA);
             }
             deltaLog.FlushAsync().Wait();
 
             deltaLog.InitializeForReads();
             r = new (20);
-            for (i = 0; deltaLog.GetNext(out long address, out int len, out int type); i++)
+            for (i = 0; deltaLog.GetNext(out long address, out int len, out var type); i++)
             {
                 int _len = 1 + r.Next(254);
-                Assert.AreEqual(i, type);
+                Assert.AreEqual( i % 2 == 0 ? DeltaLogEntryType.DELTA : DeltaLogEntryType.CHECKPOINT_METADATA, type);
                 Assert.AreEqual(len, _len);
                 for (int j = 0; j < len; j++)
                 {
