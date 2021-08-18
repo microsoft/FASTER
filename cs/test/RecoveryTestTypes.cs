@@ -40,14 +40,16 @@ namespace FASTER.test.recovery.sumstore
     public class Functions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
         // Read functions
-        public override void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
+        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
+            return true;
         }
 
-        public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
+        public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
+            return true;
         }
 
         // RMW functions

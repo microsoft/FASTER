@@ -86,15 +86,17 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public unsafe override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
         {
             value.CopyTo(ref dst, memoryPool);
+            return true;
         }
 
         /// <inheritdoc />
-        public unsafe override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
         {
             value.CopyTo(ref dst, memoryPool);
+            return true;
         }
 
         /// <inheritdoc />
@@ -126,15 +128,17 @@ namespace FASTER.core
         public SpanByteFunctions_ByteArrayOutput(bool locking = false) : base(locking) { }
 
         /// <inheritdoc />
-        public override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
+        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
         {
             dst = value.ToByteArray();
+            return true;
         }
 
         /// <inheritdoc />
-        public override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
+        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
         {
             dst = value.ToByteArray();
+            return true;
         }
 
         /// <inheritdoc />

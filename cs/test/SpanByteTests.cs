@@ -123,8 +123,17 @@ namespace FASTER.test
 
         class MultiReadSpanByteKeyTestFunctions : FunctionsBase<SpanByte, long, long, long, Empty>
         {
-            public override void SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst) => dst = value;
-            public override void ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst) => dst = value;
+            public override bool SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst)
+            {
+                dst = value;
+                return true;
+            }
+
+            public override bool ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst)
+            {
+                dst = value;
+                return true;
+            }
         }
     }
 }

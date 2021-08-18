@@ -108,14 +108,16 @@ namespace FASTER.test
         }
 
         // Read functions
-        public override void SingleReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst)
+        public override bool SingleReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst)
         {
             value.ToIntArray(ref dst);
+            return true;
         }
 
-        public override void ConcurrentReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst)
+        public override bool ConcurrentReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst)
         {
             value.ToIntArray(ref dst);
+            return true;
         }
 
         // Upsert functions
@@ -151,14 +153,16 @@ namespace FASTER.test
         }
 
         // Read functions
-        public override void SingleReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst)
+        public override bool SingleReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst)
         {
             value.ToIntArray(ref dst);
+            return true;
         }
 
-        public override void ConcurrentReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst)
+        public override bool ConcurrentReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst)
         {
             value.ToIntArray(ref dst);
+            return true;
         }
 
         // Upsert functions

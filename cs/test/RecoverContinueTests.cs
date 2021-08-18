@@ -169,9 +169,17 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         }
 
         // Read functions
-        public override void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
+        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
+        {
+            dst.value = value;
+            return true;
+        }
 
-        public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
+        public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
+        {
+            dst.value = value;
+            return true;
+        }
 
         // RMW functions
         public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
