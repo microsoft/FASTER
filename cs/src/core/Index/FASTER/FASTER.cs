@@ -747,8 +747,7 @@ namespace FASTER.core
             Free();
             hlog.Dispose();
             readcache?.Dispose();
-            _lastSnapshotCheckpoint.deltaLog?.Dispose();
-            _lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
+            _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
         }

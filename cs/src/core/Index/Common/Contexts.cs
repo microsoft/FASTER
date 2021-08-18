@@ -428,7 +428,11 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <param name="checkpointManager"></param>
         /// <param name="deltaLog"></param>
-        /// <param name="toVersion"> specific version to recover to, if using delta log</param>
+        /// <param name = "scanDelta">
+        /// whether to scan the delta log to obtain the latest info contained in an incremental snapshot checkpoint.
+        /// If false, this will recover the base snapshot info but avoid potentially expensive scans.
+        /// </param>
+        /// <param name="recoverTo"> specific version to recover to, if using delta log</param>
         internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
             var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
@@ -445,7 +449,11 @@ namespace FASTER.core
         /// <param name="checkpointManager"></param>
         /// <param name="deltaLog"></param>
         /// <param name="commitCookie"> Any user-specified commit cookie written as part of the checkpoint </param>
-        /// <param name="toVersion"> specific version to recover to, if using delta log</param>
+        /// <param name = "scanDelta">
+        /// whether to scan the delta log to obtain the latest info contained in an incremental snapshot checkpoint.
+        /// If false, this will recover the base snapshot info but avoid potentially expensive scans.
+        /// </param>
+        /// <param name="recoverTo"> specific version to recover to, if using delta log</param>
 
         internal void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
@@ -543,7 +551,7 @@ namespace FASTER.core
         }
     }
 
-    internal struct HybridLogCheckpointInfo
+    internal struct HybridLogCheckpointInfo : IDisposable
     {
         public HybridLogRecoveryInfo info;
         public IDevice snapshotFileDevice;
@@ -559,6 +567,13 @@ namespace FASTER.core
             checkpointManager.InitializeLogCheckpoint(token);
         }
 
+        public void Dispose()
+        {
+            snapshotFileDevice?.Dispose();
+            snapshotFileObjectLogDevice?.Dispose();
+            deltaLog?.Dispose();
+            deltaFileDevice?.Dispose();
+        }
 
         public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
             bool scanDelta, long recoverTo)

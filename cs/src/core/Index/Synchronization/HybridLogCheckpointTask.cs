@@ -116,8 +116,7 @@ namespace FASTER.core
 
             if (next.phase == Phase.PREPARE)
             {
-                faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
-                faster._lastSnapshotCheckpoint.deltaLog?.Dispose();
+                faster._lastSnapshotCheckpoint.Dispose();
                 faster._lastSnapshotCheckpoint = default;
             }
             if (next.phase != Phase.WAIT_FLUSH) return;
@@ -180,8 +179,7 @@ namespace FASTER.core
             switch (next.phase)
             {
                 case Phase.PREPARE:
-                    faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
-                    faster._lastSnapshotCheckpoint.deltaLog?.Dispose();
+                    faster._lastSnapshotCheckpoint.Dispose();
                     faster._lastSnapshotCheckpoint = default;
                     base.GlobalBeforeEnteringState(next, faster);
                     faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.FlushedUntilAddress;

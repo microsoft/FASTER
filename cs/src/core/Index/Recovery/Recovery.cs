@@ -18,7 +18,6 @@ namespace FASTER.core
 
     internal class RecoveryStatus
     {
-        public long startPage;
         public long endPage;
         public long snapshotEndPage;
         public long untilAddress;
@@ -28,7 +27,6 @@ namespace FASTER.core
         public IDevice recoveryDevice;
         public long recoveryDevicePageOffset;
         public IDevice objectLogRecoveryDevice;
-        public IDevice deltaRecoveryDevice;
 
         // These are circular buffers of 'capacity' size; the indexing wraps due to hlog.GetPageIndexForPage().
         public ReadStatus[] readStatus;
@@ -38,11 +36,9 @@ namespace FASTER.core
         private readonly SemaphoreSlim flushSemaphore = new(0);
 
         public RecoveryStatus(int capacity,
-                              long startPage,
                               long endPage, long untilAddress, CheckpointType checkpointType)
         {
             this.capacity = capacity;
-            this.startPage = startPage;
             this.endPage = endPage;
             this.untilAddress = untilAddress;
             this.checkpointType = checkpointType;
@@ -102,7 +98,6 @@ namespace FASTER.core
         {
             recoveryDevice.Dispose();
             objectLogRecoveryDevice.Dispose();
-            deltaRecoveryDevice?.Dispose();
         }
     }
 
@@ -147,9 +142,14 @@ namespace FASTER.core
                     if (distanceToTarget < closestVersion)
                     {
                         closestVersion = distanceToTarget;
+                        closest.Dispose();
                         closest = current;
                         closestToken = hybridLogToken;
                         cookie = currCookie;
+                    }
+                    else
+                    {
+                        current.Dispose();
                     }
                 }
                 catch
@@ -304,11 +304,8 @@ namespace FASTER.core
             // Recover session information
             hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
-
-            recoveredHLCInfo.deltaLog?.Dispose();
-            recoveredHLCInfo.deltaFileDevice?.Dispose();
-
             checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
+            recoveredHLCInfo.Dispose(); ;
         }
 
         private async ValueTask InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)
@@ -351,8 +348,7 @@ namespace FASTER.core
             hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
 
-            recoveredHLCInfo.deltaLog?.Dispose();
-            recoveredHLCInfo.deltaFileDevice?.Dispose();
+            recoveredHLCInfo.Dispose();
         }
 
         /// <summary>
@@ -531,7 +527,7 @@ namespace FASTER.core
             capacity = hlog.GetCapacityNumPages();
             int totalPagesToRead = (int)(endPage - startPage);
             numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
-            return new RecoveryStatus(capacity, startPage, endPage, untilAddress, checkpointType);
+            return new RecoveryStatus(capacity, endPage, untilAddress, checkpointType);
         }
 
         private bool ProcessReadPage(long recoverFromAddress, long untilAddress, int nextVersion, bool undoNextVersion, RecoveryStatus recoveryStatus, long page, int pageIndex)
@@ -705,16 +701,13 @@ namespace FASTER.core
             capacity = hlog.GetCapacityNumPages();
             var recoveryDevice = checkpointManager.GetSnapshotLogDevice(guid);
             var objectLogRecoveryDevice = checkpointManager.GetSnapshotObjectLogDevice(guid);
-            var deltaRecoveryDevice = checkpointManager.GetDeltaLogDevice(guid);
 
             recoveryDevice.Initialize(hlog.GetSegmentSize());
             objectLogRecoveryDevice.Initialize(-1);
-            deltaRecoveryDevice.Initialize(-1);
-            recoveryStatus = new RecoveryStatus(capacity, startPage, endPage, untilAddress, CheckpointType.Snapshot)
+            recoveryStatus = new RecoveryStatus(capacity, endPage, untilAddress, CheckpointType.Snapshot)
             {
                 recoveryDevice = recoveryDevice,
                 objectLogRecoveryDevice = objectLogRecoveryDevice,
-                deltaRecoveryDevice = deltaRecoveryDevice,
                 recoveryDevicePageOffset = snapshotStartPage,
                 snapshotEndPage = snapshotEndPage
             };
@@ -951,7 +944,7 @@ namespace FASTER.core
                     tailPage = GetPage(fromAddress);
                     headPage = GetPage(headAddress);
 
-                    recoveryStatus = new RecoveryStatus(GetCapacityNumPages(), headPage, tailPage, untilAddress, 0);
+                    recoveryStatus = new RecoveryStatus(GetCapacityNumPages(), tailPage, untilAddress, 0);
                     for (int i = 0; i < recoveryStatus.capacity; i++)
                     {
                         recoveryStatus.readStatus[i] = ReadStatus.Done;
