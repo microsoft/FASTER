@@ -94,13 +94,22 @@ namespace FASTER.server
             }
         }
 
-        
         /// <summary>
         /// Dispose
         /// </summary>
         public virtual void Dispose()
         {
             socket.Dispose();
+            if (responseObject.obj != null)
+                responseObject.Dispose();
+            messageManager.Dispose();
+        }
+
+        /// <summary>
+        /// Wait for ongoing outgoing calls to complete
+        /// </summary>
+        public virtual void CompleteSends()
+        {
             if (responseObject.obj != null)
                 responseObject.Dispose();
             messageManager.Dispose();

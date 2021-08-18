@@ -18,7 +18,7 @@ namespace FASTER.core
             if (spanByte.Serialized)
             {
                 byte* ptr = (byte*)Unsafe.AsPointer(ref spanByte);
-                return Utility.HashBytes(ptr + sizeof(int), *(int*)ptr);
+                return Utility.HashBytes(ptr + sizeof(int), spanByte.Length);
             }
             else
             {
@@ -27,11 +27,12 @@ namespace FASTER.core
             }
         }
 
-        /// <inheritdoc />
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            /// <inheritdoc />
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool Equals(ref SpanByte k1, ref SpanByte k2)
         {
-            return k1.AsReadOnlySpan().SequenceEqual(k2.AsReadOnlySpan());
+            return k1.AsReadOnlySpanWithMetadata().SequenceEqual(k2.AsReadOnlySpanWithMetadata())
+                && (k1.MetadataSize == k2.MetadataSize);
         }
     }
 }
