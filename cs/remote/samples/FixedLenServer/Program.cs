@@ -37,10 +37,16 @@ namespace FixedLenServer
             var store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
-            // Create a broker for pub-sub of key-value pairs in remote FASTER instance
-            var kvBroker = new SubscribeKVBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>());
-            // Create a broker for pub-sub of key-value pairs
-            var broker = new SubscribeBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>());
+            SubscribeKVBroker<Key, Value, IKeySerializer<Key>> kvBroker = null;
+            SubscribeBroker<Key, Value, IKeySerializer<Key>> broker = null;
+
+            if (opts.EnablePubSub)
+            {
+                // Create a broker for pub-sub of key-value pairs in remote FASTER instance
+                kvBroker = new SubscribeKVBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>());
+                // Create a broker for pub-sub of key-value pairs
+                broker = new SubscribeBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>());
+            }
 
             // This fixed-length session provider can be used with compatible clients such as FixedLenClient and FASTER.benchmark
             // Uses FixedLenSerializer as our in-built serializer for blittable (fixed length) types

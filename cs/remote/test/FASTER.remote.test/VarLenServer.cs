@@ -13,15 +13,21 @@ namespace FASTER.remote.test
         readonly FasterKV<SpanByte, SpanByte> store;
         readonly SpanByteFasterKVProvider provider;
 
-        public VarLenServer(string folderName, string address = "127.0.0.1", int port = 33278, bool useBroker = false)
+        public VarLenServer(string folderName, string address = "127.0.0.1", int port = 33278, bool enablePubSub = false)
         {
             this.folderName = folderName;
             GetSettings(folderName, out var logSettings, out var checkpointSettings, out var indexSize);
 
             store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
-            
-            var kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
-            var broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
+
+            SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> kvBroker = null;
+            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null;
+
+            if (enablePubSub)
+            {
+                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
+                broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
+            }
 
             // Create session provider for VarLen
             provider = new SpanByteFasterKVProvider(store, kvBroker, broker);

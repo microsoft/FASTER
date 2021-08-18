@@ -13,7 +13,7 @@ namespace FASTER.common
     public unsafe interface IServerSerializer<Key, Value, Input, Output>
     {
         /// <summary>
-        /// Write key to given destination, with length bytes of space available
+        /// Write element to given destination, with length bytes of space available
         /// </summary>
         /// <param name="k">Element to write</param>
         /// <param name="dst">Destination memory</param>
@@ -22,7 +22,7 @@ namespace FASTER.common
         bool Write(ref Key k, ref byte* dst, int length);
 
         /// <summary>
-        /// Write key to given destination, with length bytes of space available
+        /// Write element to given destination, with length bytes of space available
         /// </summary>
         /// <param name="v">Element to write</param>
         /// <param name="dst">Destination memory</param>

@@ -148,8 +148,7 @@ namespace FASTER.server
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            if (subscribeKVBroker != null)
-                                subscribeKVBroker.Publish(keyPtr);
+                            subscribeKVBroker?.Publish(keyPtr);
                             break;
 
                         case MessageType.Read:
@@ -188,8 +187,7 @@ namespace FASTER.server
                             else if (status == Status.OK || status == Status.NOTFOUND)
                                 serializer.SkipOutput(ref dcurr);
 
-                            if (subscribeKVBroker != null)
-                                subscribeKVBroker.Publish(keyPtr);
+                            subscribeKVBroker?.Publish(keyPtr);
                             break;
 
                         case MessageType.Delete:
@@ -203,99 +201,12 @@ namespace FASTER.server
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            if (subscribeKVBroker != null)
-                                subscribeKVBroker.Publish(keyPtr);
-                            break;
-
-                        case MessageType.SubscribeKV:
-                            Debug.Assert(subscribeKVBroker != null);
-
-                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
-                            SendAndReset(ref d, ref dend);
-
-                            var keyStart = src;
-                            serializer.ReadKeyByRef(ref src);
-
-                            int sid = subscribeKVBroker.Subscribe(ref keyStart, this);
-                            status = Status.PENDING;
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
-                            Write(sid, ref dcurr, (int)(dend - dcurr));
-                            break;
-
-                        case MessageType.PSubscribeKV:
-                            Debug.Assert(subscribeKVBroker != null);
-
-                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
-                                SendAndReset(ref d, ref dend);
-
-                            if (subscribeKVBroker == null)
-                                break;
-
-                            keyStart = src;
-                            serializer.ReadKeyByRef(ref src);
-
-                            sid = subscribeKVBroker.PSubscribe(ref keyStart, this);
-                            status = Status.PENDING;
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
-                            Write(sid, ref dcurr, (int)(dend - dcurr));
-                            break;
-
-                        case MessageType.Publish:
-                            Debug.Assert(subscribeBroker != null);
-
-                            if ((int)(dend - dcurr) < 2)
-                                SendAndReset(ref d, ref dend);
-
-                            keyPtr = src;
-                            ref Key key = ref serializer.ReadKeyByRef(ref src);
-                            byte* valPtr = src;
-                            ref Value val = ref serializer.ReadValueByRef(ref src);
-                            int valueLength = (int)(src - valPtr);
-
-                            status = Status.OK;
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
-
-                            if (subscribeBroker != null)
-                                subscribeBroker.Publish(keyPtr, valPtr, valueLength);
-                            break;
-
-                        case MessageType.Subscribe:
-                            Debug.Assert(subscribeBroker != null);
-
-                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
-                                SendAndReset(ref d, ref dend);
-
-                            keyStart = src;
-                            serializer.ReadKeyByRef(ref src);
-
-                            sid = subscribeBroker.Subscribe(ref keyStart, this);
-                            status = Status.PENDING;
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
-                            Write(sid, ref dcurr, (int)(dend - dcurr));
-                            break;
-
-                        case MessageType.PSubscribe:
-                            Debug.Assert(subscribeBroker != null);
-
-                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
-                                SendAndReset(ref d, ref dend);
-
-                            keyStart = src;
-                            serializer.ReadKeyByRef(ref src);
-
-                            sid = subscribeBroker.PSubscribe(ref keyStart, this);
-                            status = Status.PENDING;
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
-                            Write(sid, ref dcurr, (int)(dend - dcurr));
+                            subscribeKVBroker?.Publish(keyPtr);
                             break;
 
                         default:
-                            throw new NotImplementedException();
+                            if (!HandlePubSub(message, ref src, ref d, ref dend)) throw new NotImplementedException();
+                            break;
                     }
                 }
 
@@ -418,6 +329,103 @@ namespace FASTER.server
             *(int*)responseObject.obj.bufferPtr = -(payloadSize - sizeof(int));
             SendResponse(payloadSize);
             responseObject.obj = null;
+        }
+
+        private bool HandlePubSub(MessageType message, ref byte* src, ref byte* d, ref byte* dend)
+        {
+            switch (message)
+            {
+                case MessageType.SubscribeKV:
+                    if (subscribeKVBroker == null) return false;
+
+                    if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                        SendAndReset(ref d, ref dend);
+
+                    var keyStart = src;
+                    serializer.ReadKeyByRef(ref src);
+
+                    int sid = subscribeKVBroker.Subscribe(ref keyStart, this);
+                    var status = Status.PENDING;
+                    hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                    Write(ref status, ref dcurr, (int)(dend - dcurr));
+                    Write(sid, ref dcurr, (int)(dend - dcurr));
+                    break;
+
+                case MessageType.PSubscribeKV:
+                    if (subscribeKVBroker == null) return false;
+
+                    if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                        SendAndReset(ref d, ref dend);
+
+                    if (subscribeKVBroker == null)
+                        break;
+
+                    keyStart = src;
+                    serializer.ReadKeyByRef(ref src);
+
+                    sid = subscribeKVBroker.PSubscribe(ref keyStart, this);
+                    status = Status.PENDING;
+                    hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                    Write(ref status, ref dcurr, (int)(dend - dcurr));
+                    Write(sid, ref dcurr, (int)(dend - dcurr));
+                    break;
+
+                case MessageType.Publish:
+                    if (subscribeBroker == null) return false;
+
+                    if ((int)(dend - dcurr) < 2)
+                        SendAndReset(ref d, ref dend);
+
+                    var keyPtr = src;
+                    ref Key key = ref serializer.ReadKeyByRef(ref src);
+                    byte* valPtr = src;
+                    ref Value val = ref serializer.ReadValueByRef(ref src);
+                    int valueLength = (int)(src - valPtr);
+
+                    status = Status.OK;
+                    hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                    Write(ref status, ref dcurr, (int)(dend - dcurr));
+
+                    if (subscribeBroker != null)
+                        subscribeBroker.Publish(keyPtr, valPtr, valueLength);
+                    break;
+
+                case MessageType.Subscribe:
+                    if (subscribeBroker == null) return false;
+
+                    if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                        SendAndReset(ref d, ref dend);
+
+                    keyStart = src;
+                    serializer.ReadKeyByRef(ref src);
+
+                    sid = subscribeBroker.Subscribe(ref keyStart, this);
+                    status = Status.PENDING;
+                    hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                    Write(ref status, ref dcurr, (int)(dend - dcurr));
+                    Write(sid, ref dcurr, (int)(dend - dcurr));
+                    break;
+
+                case MessageType.PSubscribe:
+                    if (subscribeBroker == null) return false;
+
+                    if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                        SendAndReset(ref d, ref dend);
+
+                    keyStart = src;
+                    serializer.ReadKeyByRef(ref src);
+
+                    sid = subscribeBroker.PSubscribe(ref keyStart, this);
+                    status = Status.PENDING;
+                    hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                    Write(ref status, ref dcurr, (int)(dend - dcurr));
+                    Write(sid, ref dcurr, (int)(dend - dcurr));
+                    break;
+
+                default:
+                    return false;
+            }
+            return true;
         }
 
         public override void Dispose()

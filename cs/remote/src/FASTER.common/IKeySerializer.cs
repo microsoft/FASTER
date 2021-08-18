@@ -4,7 +4,7 @@
 namespace FASTER.common
 {
     /// <summary>
-    /// Serializer interface for server-side processing
+    /// Serializer interface for keys, needed for pub-sub
     /// </summary>
     /// <typeparam name="Key">Key</typeparam>
     public unsafe interface IKeySerializer<Key>

@@ -18,7 +18,7 @@ namespace FASTER.server
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     /// <typeparam name="KeyValueSerializer"></typeparam>
-    public class SubscribeBroker<Key, Value, KeyValueSerializer> : IDisposable
+    public sealed class SubscribeBroker<Key, Value, KeyValueSerializer> : IDisposable
         where KeyValueSerializer : IKeySerializer<Key>
     {
         private int sid = 0;
