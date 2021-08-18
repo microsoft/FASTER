@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
@@ -110,6 +110,16 @@ namespace FASTER.server
         public virtual void Dispose()
         {
             socket.Dispose();
+            if (responseObject.obj != null)
+                responseObject.Dispose();
+            messageManager.Dispose();
+        }
+
+        /// <summary>
+        /// Wait for ongoing outgoing calls to complete
+        /// </summary>
+        public virtual void CompleteSends()
+        {
             if (responseObject.obj != null)
                 responseObject.Dispose();
             messageManager.Dispose();

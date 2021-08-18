@@ -19,6 +19,7 @@ namespace FASTER.core
         // if no state machine is active at this time.
         private ISynchronizationStateMachine currentSyncStateMachine;
         private List<IStateMachineCallback> callbacks = new List<IStateMachineCallback>();
+        internal long lastVersion;
 
         /// <summary>
         /// Any additional (user specified) metadata to write out with commit
@@ -35,6 +36,16 @@ namespace FASTER.core
         /// Get the current state machine state of the system
         /// </summary>
         public SystemState SystemState => systemState;
+
+        /// <summary>
+        /// Version number of the last checkpointed state
+        /// </summary>
+        public long LastCheckpointedVersion => lastVersion;
+
+        /// <summary>
+        /// Current version number of the store
+        /// </summary>
+        public long CurrentVersion => systemState.version;
         
         /// <summary>
         /// Registers the given callback to be invoked for every state machine transition. Not safe to call with

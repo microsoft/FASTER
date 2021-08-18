@@ -120,30 +120,40 @@ namespace FASTER.server
 
         private void AcceptEventArg_Completed(object sender, SocketAsyncEventArgs e)
         {
-            do
+            try
             {
-                if (!HandleNewConnection(e)) break;
-                e.AcceptSocket = null;
-            } while (!servSocket.AcceptAsync(e));
+                do
+                {
+                    if (!HandleNewConnection(e)) break;
+                    e.AcceptSocket = null;
+                } while (!servSocket.AcceptAsync(e));
+            }
+            // socket disposed
+            catch (ObjectDisposedException) { }
         }
 
         private void DisposeActiveSessions()
         {
-            while (activeSessionCount > 0)
+            while (true)
             {
-                foreach (var kvp in activeSessions)
+                while (activeSessionCount > 0)
                 {
-                    var _session = kvp.Key;
-                    if (_session != null)
+                    foreach (var kvp in activeSessions)
                     {
-                        if (activeSessions.TryRemove(_session, out _))
+                        var _session = kvp.Key;
+                        if (_session != null)
                         {
-                            _session.Dispose();
-                            Interlocked.Decrement(ref activeSessionCount);
+                            if (activeSessions.TryRemove(_session, out _))
+                            {
+                                _session.Dispose();
+                                Interlocked.Decrement(ref activeSessionCount);
+                            }
                         }
                     }
+                    Thread.Yield();
                 }
-                Thread.Yield();
+                if (Interlocked.CompareExchange(ref activeSessionCount, int.MinValue, 0) == 0)
+                    break;
             }
         }
 
@@ -159,8 +169,7 @@ namespace FASTER.server
 
             if (connArgs.session == null)
             {
-                if (!CreateSession(e))
-                    return false;
+                return CreateSession(e);
             }
 
             connArgs.session.AddBytesRead(e.BytesTransferred);
@@ -171,9 +180,16 @@ namespace FASTER.server
 
         private unsafe bool CreateSession(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs) e.UserToken;
+            var connArgs = (ConnectionArgs)e.UserToken;
 
-            if (e.BytesTransferred < 4) return false;
+            connArgs.bytesRead += e.BytesTransferred;
+
+            // We need at least 4 bytes to determine session
+            if (connArgs.bytesRead < 4)
+            {
+                e.SetBuffer(connArgs.bytesRead, e.Buffer.Length - connArgs.bytesRead);
+                return true;
+            }
 
             WireFormat protocol;
 
@@ -181,7 +197,11 @@ namespace FASTER.server
             // This results in a fourth byte value (little endian) > 127, denoting a non-ASCII wire format.
             if (e.Buffer[3] > 127)
             {
-                if (e.BytesTransferred < 4 + BatchHeader.Size) return false;
+                if (connArgs.bytesRead < 4 + BatchHeader.Size)
+                {
+                    e.SetBuffer(connArgs.bytesRead, e.Buffer.Length - connArgs.bytesRead);
+                    return true;
+                }
                 fixed (void* bh = &e.Buffer[4])
                     protocol = ((BatchHeader*)bh)->Protocol;
             }
@@ -196,21 +216,30 @@ namespace FASTER.server
 
             if (!sessionProviders.TryGetValue(protocol, out var provider))
             {
-                throw new FasterException($"Unsupported wire format {protocol}");
+                Console.WriteLine($"Unsupported incoming wire format {protocol}");
+                DisposeConnectionSession(e);
+                return false;
+            }
+
+            if (Interlocked.Increment(ref activeSessionCount) <= 0)
+            {
+                DisposeConnectionSession(e);
+                return false;
             }
 
             connArgs.session = provider.GetSession(protocol, connArgs.socket);
 
-            if (activeSessions.TryAdd(connArgs.session, default))
-                Interlocked.Increment(ref activeSessionCount);
-            else
-                throw new Exception("Unexpected: unable to add session to activeSessions");
+            activeSessions.TryAdd(connArgs.session, default);
 
             if (disposed)
             {
                 DisposeConnectionSession(e);
                 return false;
             }
+
+            connArgs.session.AddBytesRead(connArgs.bytesRead);
+            var _newHead = connArgs.session.TryConsumeMessages(e.Buffer);
+            e.SetBuffer(_newHead, e.Buffer.Length - _newHead);
             return true;
         }
 
@@ -241,8 +270,11 @@ namespace FASTER.server
                     if (!HandleReceiveCompletion(e)) break;
                 } while (!connArgs.socket.ReceiveAsync(e));
             }
-            // ignore session socket disposed due to server dispose
-            catch (ObjectDisposedException) { }
+            // socket disposed
+            catch (ObjectDisposedException)
+            {
+                DisposeConnectionSession(e);
+            }
         }
     }
 }
