@@ -12,6 +12,7 @@ namespace FASTER.core
     /// </summary>
     internal abstract class HybridLogCheckpointOrchestrationTask : ISynchronizationTask
     {
+        private long lastVersion;
         /// <inheritdoc />
         public virtual void GlobalBeforeEnteringState<Key, Value>(SystemState next,
             FasterKV<Key, Value> faster)
@@ -19,6 +20,7 @@ namespace FASTER.core
             switch (next.phase)
             {
                 case Phase.PREPARE:
+                    lastVersion = faster.systemState.version;
                     if (faster._hybridLogCheckpoint.IsDefault())
                     {
                         faster._hybridLogCheckpointToken = Guid.NewGuid();
@@ -35,6 +37,7 @@ namespace FASTER.core
                 case Phase.PERSISTENCE_CALLBACK:
                     CollectMetadata(next, faster);
                     faster.WriteHybridLogMetaInfo();
+                    faster.lastVersion = lastVersion;
                     break;
                 case Phase.REST:
                     faster._hybridLogCheckpoint.Reset();
