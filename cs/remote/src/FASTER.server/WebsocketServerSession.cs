@@ -39,7 +39,7 @@ namespace FASTER.server
         readonly SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker;
 
         public WebsocketServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker, SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker)
-            : base(socket, store, functions, serializer, maxSizeSettings)
+            : base(socket, store, functions, null, serializer, maxSizeSettings)
         {
             this.subscribeKVBroker = subscribeKVBroker;
             this.subscribeBroker = subscribeBroker;
