@@ -14,7 +14,7 @@ namespace FASTER.server
     {
         readonly FasterKV<SpanByte, SpanByte> store;
         readonly SpanByteServerSerializer serializer;
-        readonly SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> kvBroker;
+        readonly SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
         readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
         readonly MaxSizeSettings maxSizeSettings;
 
@@ -25,7 +25,7 @@ namespace FASTER.server
         /// <param name="kvBroker"></param>
         /// <param name="broker"></param>
         /// <param name="maxSizeSettings"></param>
-        public SpanByteFasterKVProvider(FasterKV<SpanByte, SpanByte> store, SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> kvBroker = null, SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null, MaxSizeSettings maxSizeSettings = default)
+        public SpanByteFasterKVProvider(FasterKV<SpanByte, SpanByte> store, SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker = null, SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
             this.kvBroker = kvBroker;

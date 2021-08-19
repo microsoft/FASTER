@@ -12,7 +12,7 @@ namespace FASTER.remote.test
         readonly FasterServer server;
         readonly FasterKV<SpanByte, SpanByte> store;
         readonly SpanByteFasterKVProvider provider;
-        readonly SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> kvBroker;
+        readonly SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
         readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
 
         public VarLenServer(string folderName, string address = "127.0.0.1", int port = 33278, bool enablePubSub = false)
@@ -24,7 +24,7 @@ namespace FASTER.remote.test
 
             if (enablePubSub)
             {
-                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, true);
+                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>>(new SpanByteKeyInputSerializer(), null, true);
                 broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, true);
             }
 

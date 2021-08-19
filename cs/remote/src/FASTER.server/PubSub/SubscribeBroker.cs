@@ -125,7 +125,8 @@ namespace FASTER.server
                                     byte* keyBytePtr = ptr;
                                     byte* valBytePtr = valPtr;
                                     var serverSession = subscriptionServerSessionDict[sid];
-                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref valBytePtr, sid, false);
+                                    byte* nullBytePtr = null;
+                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref valBytePtr, ref nullBytePtr, sid, false);
                                 }
                             }
 
@@ -146,7 +147,8 @@ namespace FASTER.server
                                             byte* keyBytePtr = ptr;
                                             byte* valBytePtr = valPtr;
                                             var serverSession = prefixSubscriptionServerSessionDict[sid];
-                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref valBytePtr, sid, true);
+                                            byte* nullBytePtr = null;
+                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref valBytePtr, ref nullBytePtr, sid, true);
                                         }
                                     }
                                 }

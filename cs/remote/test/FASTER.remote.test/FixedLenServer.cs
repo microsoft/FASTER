@@ -13,7 +13,7 @@ namespace FASTER.remote.test
         readonly string folderName;
         readonly FasterServer server;
         readonly FasterKV<Key, Value> store;
-        SubscribeKVBroker<Key, Value, IKeySerializer<Key>> kvBroker;
+        SubscribeKVBroker<Key, Value, Value, IKeyInputSerializer<Key, Value>> kvBroker;
         SubscribeBroker<Key, Value, IKeySerializer<Key>> broker;
 
         public FixedLenServer(string folderName, Func<Value, Value, Value> merger, string address = "127.0.0.1", int port = 33278, bool enablePubSub = false)
@@ -26,7 +26,7 @@ namespace FASTER.remote.test
 
             if (enablePubSub)
             {
-                kvBroker = new SubscribeKVBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>(), null, true);
+                kvBroker = new SubscribeKVBroker<Key, Value, Value, IKeyInputSerializer<Key, Value>>(new FixedLenKeyInputSerializer<Key, Value>(), null, true);
                 broker = new SubscribeBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>(), null, true);
             }
 

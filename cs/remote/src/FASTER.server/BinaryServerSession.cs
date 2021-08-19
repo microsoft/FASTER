@@ -21,11 +21,11 @@ namespace FASTER.server
         int seqNo, pendingSeqNo, msgnum, start;
         byte* dcurr;
 
-        readonly SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker;
+        readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker;
         readonly SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker;
 
 
-        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker, SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker)
+        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker, SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker)
             : base(socket, store, functions, null, serializer, maxSizeSettings)
         {
             this.subscribeKVBroker = subscribeKVBroker;
@@ -221,9 +221,8 @@ namespace FASTER.server
             }
         }
 
-        public unsafe override void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int sid, bool prefix)
+        public unsafe override void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, ref byte* inputPtr, int sid, bool prefix)
         {
-            Input input = default;
             MessageType message;
 
             if (valPtr == null)
@@ -263,7 +262,7 @@ namespace FASTER.server
 
             var status = Status.OK;
             if (valPtr == null)
-                status = session.Read(ref key, ref input, ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
+                status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
 
             msgnum++;
 
@@ -279,7 +278,8 @@ namespace FASTER.server
                 {
                     ref Value value = ref serializer.ReadValueByRef(ref valPtr);
                     serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
-                } else if (status == Status.OK)
+                }
+                else if (status == Status.OK)
                     serializer.SkipOutput(ref dcurr);
             }
 
@@ -344,7 +344,10 @@ namespace FASTER.server
                     var keyStart = src;
                     serializer.ReadKeyByRef(ref src);
 
-                    int sid = subscribeKVBroker.Subscribe(ref keyStart, this);
+                    var inputStart = src;
+                    serializer.ReadInputByRef(ref src);
+
+                    int sid = subscribeKVBroker.Subscribe(ref keyStart, ref inputStart, this);
                     var status = Status.PENDING;
                     hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                     Write(ref status, ref dcurr, (int)(dend - dcurr));
@@ -363,7 +366,10 @@ namespace FASTER.server
                     keyStart = src;
                     serializer.ReadKeyByRef(ref src);
 
-                    sid = subscribeKVBroker.PSubscribe(ref keyStart, this);
+                    inputStart = src;
+                    serializer.ReadInputByRef(ref src);
+
+                    sid = subscribeKVBroker.PSubscribe(ref keyStart, ref inputStart, this);
                     status = Status.PENDING;
                     hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                     Write(ref status, ref dcurr, (int)(dend - dcurr));

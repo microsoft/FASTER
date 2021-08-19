@@ -10,14 +10,14 @@ namespace FASTER.server
     /// <summary>
     /// Serializer for SpanByte. Used only on server-side.
     /// </summary>
-    public unsafe sealed class SpanByteKeyInputSerializer : IKeyInputSerializer<SpanByte, SpanByte>
+    public unsafe sealed class SpanByteKeySerializer : IKeySerializer<SpanByte>
     {
         readonly SpanByteVarLenStruct settings;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public SpanByteKeyInputSerializer()
+        public SpanByteKeySerializer()
         {
             settings = new SpanByteVarLenStruct();
         }
@@ -25,15 +25,6 @@ namespace FASTER.server
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref SpanByte ReadKeyByRef(ref byte* src)
-        {
-            ref var ret = ref Unsafe.AsRef<SpanByte>(src);
-            src += settings.GetLength(ref ret);
-            return ref ret;
-        }
-
-        /// <inheritdoc />
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref SpanByte ReadInputByRef(ref byte* src)
         {
             ref var ret = ref Unsafe.AsRef<SpanByte>(src);
             src += settings.GetLength(ref ret);

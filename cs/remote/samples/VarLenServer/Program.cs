@@ -37,13 +37,13 @@ namespace VarLenServer
             var store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
-            SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> kvBroker = null;
+            SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker = null;
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null;
 
             if (opts.EnablePubSub)
             {
                 // Create a broker for pub-sub of key value-pairs in FASTER instance
-                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), opts.LogDir, true);
+                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>>(new SpanByteKeyInputSerializer(), opts.LogDir, true);
                 // Create a broker for topic-based pub-sub of key-value pairs
                 broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, true);
             }

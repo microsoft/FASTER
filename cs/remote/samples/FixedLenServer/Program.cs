@@ -37,13 +37,13 @@ namespace FixedLenServer
             var store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
-            SubscribeKVBroker<Key, Value, IKeySerializer<Key>> kvBroker = null;
+            SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> kvBroker = null;
             SubscribeBroker<Key, Value, IKeySerializer<Key>> broker = null;
 
             if (opts.EnablePubSub)
             {
                 // Create a broker for pub-sub of key-value pairs in remote FASTER instance
-                kvBroker = new SubscribeKVBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>(), opts.LogDir, true);
+                kvBroker = new SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>>(new FixedLenKeyInputSerializer<Key, Input>(), opts.LogDir, true);
                 // Create a broker for pub-sub of key-value pairs
                 broker = new SubscribeBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>(), null, true);
             }

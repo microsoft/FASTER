@@ -24,7 +24,7 @@ namespace FASTER.server
         readonly Func<WireFormat, Functions> functionsGen;
         readonly ParameterSerializer serializer;
         readonly MaxSizeSettings maxSizeSettings;
-        readonly SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker;
+        readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker;
         readonly SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker;
 
         /// <summary>
@@ -36,7 +36,7 @@ namespace FASTER.server
         /// <param name="subscribeBroker"></param>
         /// <param name="serializer"></param>
         /// <param name="maxSizeSettings"></param>
-        public FasterKVProvider(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, SubscribeKVBroker<Key, Value, IKeySerializer<Key>> subscribeKVBroker = null, SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker = null, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
+        public FasterKVProvider(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker = null, SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker = null, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
             this.functionsGen = functionsGen;
