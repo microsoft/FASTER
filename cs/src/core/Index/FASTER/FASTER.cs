@@ -521,7 +521,7 @@ namespace FASTER.core
                 catch (Exception)
                 {
                     this._indexCheckpoint.Reset();
-                    this._hybridLogCheckpoint.Reset();
+                    this._hybridLogCheckpoint.Dispose();
                     throw;
                 }
 

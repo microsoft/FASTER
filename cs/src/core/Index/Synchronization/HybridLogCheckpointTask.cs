@@ -40,7 +40,7 @@ namespace FASTER.core
                     faster.lastVersion = lastVersion;
                     break;
                 case Phase.REST:
-                    faster._hybridLogCheckpoint.Reset();
+                    faster._hybridLogCheckpoint.Dispose();
                     var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                     faster.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });
                     faster.checkpointTcs = nextTcs;
@@ -117,7 +117,6 @@ namespace FASTER.core
             if (next.phase == Phase.PREPARE)
             {
                 faster._lastSnapshotCheckpoint.Dispose();
-                faster._lastSnapshotCheckpoint = default;
             }
             if (next.phase != Phase.WAIT_FLUSH) return;
 
@@ -180,7 +179,6 @@ namespace FASTER.core
             {
                 case Phase.PREPARE:
                     faster._lastSnapshotCheckpoint.Dispose();
-                    faster._lastSnapshotCheckpoint = default;
                     base.GlobalBeforeEnteringState(next, faster);
                     faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.FlushedUntilAddress;
                     faster._hybridLogCheckpoint.info.useSnapshotFile = 1;
@@ -221,7 +219,7 @@ namespace FASTER.core
                     // update flushed-until address to the latest
                     faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
                     base.GlobalBeforeEnteringState(next, faster);
-                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
+                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint.Transfer();
                     break;
                 default:
                     base.GlobalBeforeEnteringState(next, faster);
@@ -312,7 +310,8 @@ namespace FASTER.core
                     CollectMetadata(next, faster);
                     faster.WriteHybridLogIncrementalMetaInfo(faster._hybridLogCheckpoint.deltaLog);
                     faster._hybridLogCheckpoint.info.deltaTailAddress = faster._hybridLogCheckpoint.deltaLog.TailAddress;
-                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
+                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint.Transfer();
+                    faster._hybridLogCheckpoint.Dispose();
                     break;
             }
         }

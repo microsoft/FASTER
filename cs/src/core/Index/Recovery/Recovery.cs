@@ -163,14 +163,13 @@ namespace FASTER.core
             recoveredHlcInfo = closest;
             recoveredCommitCookie = cookie;
             if (recoveredHlcInfo.IsDefault())
-                throw new FasterException("Unable to find valid index token");
+                throw new FasterException("Unable to find valid HybridLog token");
 
             if (recoveredHlcInfo.deltaLog != null)
             {
                 recoveredHlcInfo.Dispose();
                 // need to actually scan delta log now
-                recoveredHlcInfo.Recover(closestToken, checkpointManager, hlog.LogPageSizeBits, 
-                    out var currCookie, true);
+                recoveredHlcInfo.Recover(closestToken, checkpointManager, hlog.LogPageSizeBits, out _, true);
             }
             recoveredHlcInfo.info.DebugPrint();
 
@@ -306,7 +305,7 @@ namespace FASTER.core
             hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
             checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
-            recoveredHLCInfo.Dispose(); ;
+            recoveredHLCInfo.Dispose();
         }
 
         private async ValueTask InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)

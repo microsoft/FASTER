@@ -569,12 +569,22 @@ namespace FASTER.core
 
         public void Dispose()
         {
-            if (deltaLog == null) { 
-                snapshotFileDevice?.Dispose();
-                snapshotFileObjectLogDevice?.Dispose();
-            }
+            snapshotFileDevice?.Dispose();
+            snapshotFileObjectLogDevice?.Dispose();
             deltaLog?.Dispose();
             deltaFileDevice?.Dispose();
+            this = default;
+        }
+
+        public HybridLogCheckpointInfo Transfer()
+        {
+            // Ownership transfer of handles across struct copies
+            var dest = this;
+            dest.snapshotFileDevice = default;
+            dest.snapshotFileObjectLogDevice = default;
+            this.deltaLog = default;
+            this.deltaFileDevice = default;
+            return dest;
         }
 
         public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
@@ -609,16 +619,6 @@ namespace FASTER.core
             {
                 info.Recover(token, checkpointManager, out commitCookie);
             }
-        }
-
-        public void Reset()
-        {
-            flushedSemaphore = null;
-            info = default;
-            snapshotFileDevice?.Dispose();
-            snapshotFileDevice = null;
-            snapshotFileObjectLogDevice?.Dispose();
-            snapshotFileObjectLogDevice = null;
         }
 
         public bool IsDefault()
