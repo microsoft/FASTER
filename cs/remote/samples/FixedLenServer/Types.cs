@@ -72,10 +72,18 @@ namespace FixedLenServer
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) => dst.value = value;
+        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        {
+            dst.value = value; 
+            return true;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) => dst.value = value;
+        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        {
+            dst.value = value;
+            return true;
+        }
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

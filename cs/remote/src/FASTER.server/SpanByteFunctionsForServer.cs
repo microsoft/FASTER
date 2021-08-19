@@ -27,17 +27,19 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public unsafe override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
         {
             if (wireFormat != WireFormat.ASCII)
                 CopyWithHeaderTo(ref value, ref dst, memoryPool);
+            return true;
         }
 
         /// <inheritdoc />
-        public unsafe override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
         {
             if (wireFormat != WireFormat.ASCII)
                 CopyWithHeaderTo(ref value, ref dst, memoryPool);
+            return true;
         }
 
         /// <summary>
