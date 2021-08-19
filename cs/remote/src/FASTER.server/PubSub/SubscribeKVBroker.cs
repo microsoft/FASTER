@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.common;
@@ -26,14 +27,22 @@ namespace FASTER.server
         private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> prefixSubscriptions;
         private AsyncQueue<byte[]> publishQueue;
         readonly IKeySerializer<Key> keySerializer;
+        readonly FasterLog log;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="keySerializer">Serializer for Prefix Match and serializing Key</param>
-        public SubscribeKVBroker(IKeySerializer<Key> keySerializer)
+        /// <param name="logDir">Directory where the log will be stored</param>
+        /// <param name="startFresh">start the log from scratch, do not continue</param>
+        public SubscribeKVBroker(IKeySerializer<Key> keySerializer, string logDir, bool startFresh = true)
         {
             this.keySerializer = keySerializer;
+            var device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
+            device.Initialize((long)(1 << 30)*64);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            if (startFresh)
+                log.TruncateUntil(log.CommittedUntilAddress);
         }
 
         /// <summary>
@@ -78,18 +87,21 @@ namespace FASTER.server
         {
             var uniqueKeys = new HashSet<byte[]>(new ByteArrayComparer());
             var uniqueKeySubscriptions = new List<(ServerSessionBase, int, bool)>();
+            long truncateUntilAddress = log.BeginAddress;
 
             while (true)
             {
-
-                var subscriptionKey = await publishQueue.DequeueAsync();
-                uniqueKeys.Add(subscriptionKey);
-
-                while (publishQueue.Count > 0)
+                var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                await iter.WaitAsync();
+                while (iter.GetNext(out byte[] subscriptionKey, out int entryLength, out long currentAddress, out long nextAddress))
                 {
-                    subscriptionKey = await publishQueue.DequeueAsync();
+                    if (currentAddress >= long.MaxValue) return;
                     uniqueKeys.Add(subscriptionKey);
+                    truncateUntilAddress = nextAddress;
                 }
+
+                if (truncateUntilAddress > log.BeginAddress)
+                    log.TruncateUntil(truncateUntilAddress);
 
                 unsafe
                 {
@@ -196,16 +208,16 @@ namespace FASTER.server
 
             var start = key;
             ref Key k = ref keySerializer.ReadKeyByRef(ref key);
-            var keyBytes = new Span<byte>(start, (int)(key - start)).ToArray();
-
-            publishQueue.Enqueue(keyBytes);
+            log.Enqueue(new Span<byte>(start, (int)(key - start)));
+            log.RefreshUncommitted();
         }
 
         /// <inheritdoc />
         public void Dispose()
         {
-            subscriptions.Clear();
-            prefixSubscriptions.Clear();
+            subscriptions?.Clear();
+            prefixSubscriptions?.Clear();
+            log.Dispose();
         }
     }
 }

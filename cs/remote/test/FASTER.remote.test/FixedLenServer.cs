@@ -13,6 +13,8 @@ namespace FASTER.remote.test
         readonly string folderName;
         readonly FasterServer server;
         readonly FasterKV<Key, Value> store;
+        SubscribeKVBroker<Key, Value, IKeySerializer<Key>> kvBroker;
+        SubscribeBroker<Key, Value, IKeySerializer<Key>> broker;
 
         public FixedLenServer(string folderName, Func<Value, Value, Value> merger, string address = "127.0.0.1", int port = 33278, bool enablePubSub = false)
         {
@@ -22,13 +24,10 @@ namespace FASTER.remote.test
             // We use blittable structs Key and Value to construct a costomized server for fixed-length types
             store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
 
-            SubscribeKVBroker<Key, Value, IKeySerializer<Key>> kvBroker = null;
-            SubscribeBroker<Key, Value, IKeySerializer<Key>> broker = null;
-
             if (enablePubSub)
             {
-                kvBroker = new SubscribeKVBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>());
-                broker = new SubscribeBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>());
+                kvBroker = new SubscribeKVBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>(), null, true);
+                broker = new SubscribeBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>(), null, true);
             }
 
             // Create session provider for FixedLen
@@ -43,6 +42,8 @@ namespace FASTER.remote.test
         {
             server.Dispose();
             store.Dispose();
+            kvBroker?.Dispose();
+            broker?.Dispose();
             new DirectoryInfo(folderName).Delete(true);
         }
 

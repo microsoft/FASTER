@@ -12,6 +12,8 @@ namespace FASTER.remote.test
         readonly FasterServer server;
         readonly FasterKV<SpanByte, SpanByte> store;
         readonly SpanByteFasterKVProvider provider;
+        readonly SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> kvBroker;
+        readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
 
         public VarLenServer(string folderName, string address = "127.0.0.1", int port = 33278, bool enablePubSub = false)
         {
@@ -20,13 +22,10 @@ namespace FASTER.remote.test
 
             store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
 
-            SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> kvBroker = null;
-            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null;
-
             if (enablePubSub)
             {
-                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
-                broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
+                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, true);
+                broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, true);
             }
 
             // Create session provider for VarLen
@@ -41,6 +40,8 @@ namespace FASTER.remote.test
         {
             server.Dispose();
             provider.Dispose();
+            broker?.Dispose();
+            kvBroker?.Dispose();
             store.Dispose();
             new DirectoryInfo(folderName).Delete(true);
         }

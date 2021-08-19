@@ -43,9 +43,9 @@ namespace VarLenServer
             if (opts.EnablePubSub)
             {
                 // Create a broker for pub-sub of key value-pairs in FASTER instance
-                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
+                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), opts.LogDir, true);
                 // Create a broker for topic-based pub-sub of key-value pairs
-                broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer());
+                broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, true);
             }
 
             // This variable-length session provider can be used with compatible clients such as VarLenClient
