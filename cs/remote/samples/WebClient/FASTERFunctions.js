@@ -27,5 +27,21 @@ class FASTERFunctions extends CallbackFunctionsBase {
 
     RMWCompletionCallback(keyBytes, outputBytes, status) { }
 
-    SubscribeKVCompletionCallback(keyBytes, outputBytes, status) { }
+    SubscribeKVCompletionCallback(keyBytes, outputBytes, status)
+    {
+        if (status == Status.OK) {
+            var key = deserialize(keyBytes, 0, keyBytes.length);
+            var output = deserialize(outputBytes, 0, outputBytes.length);
+            writeToScreen("<span> subscribed key: " + key + " value: " + output + " </span>");
+        }
+    }
+
+    SubscribeCompletionCallback(keyBytes, valueBytes, status)
+    {
+        if (status == Status.OK) {
+            var key = deserialize(keyBytes, 0, keyBytes.length);
+            var value = deserialize(valueBytes, 0, valueBytes.length);
+            writeToScreen("<span> subscribed key: " + key + " value: " + value + " </span>");
+        }
+    }
 }

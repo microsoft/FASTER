@@ -42,8 +42,11 @@ const MessageType = {
     UpsertAsync: 5,
     RMWAsync: 6,
     DeleteAsync: 7,
-    PendingResult: 8,
-    SubscribeKV: 9,
-    PSubscribeKV: 10
+    SubscribeKV: 8,
+    PSubscribeKV: 9,
+    Subscribe: 10,
+    Publish: 11,
+    PSubscribe: 12,
+    PendingResult: 13,
 };
 Object.freeze(MessageType);
