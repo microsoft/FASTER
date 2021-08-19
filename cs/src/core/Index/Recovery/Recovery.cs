@@ -167,6 +167,7 @@ namespace FASTER.core
 
             if (recoveredHlcInfo.deltaLog != null)
             {
+                recoveredHlcInfo.Dispose();
                 // need to actually scan delta log now
                 recoveredHlcInfo.Recover(closestToken, checkpointManager, hlog.LogPageSizeBits, 
                     out var currCookie, true);

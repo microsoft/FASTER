@@ -569,8 +569,10 @@ namespace FASTER.core
 
         public void Dispose()
         {
-            snapshotFileDevice?.Dispose();
-            snapshotFileObjectLogDevice?.Dispose();
+            if (deltaLog == null) { 
+                snapshotFileDevice?.Dispose();
+                snapshotFileObjectLogDevice?.Dispose();
+            }
             deltaLog?.Dispose();
             deltaFileDevice?.Dispose();
         }
