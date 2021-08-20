@@ -37,7 +37,7 @@ namespace FASTER.test
             }
 
             var path = TestUtils.MethodTestDir + "/";
-            var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+            using var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
             TestUtils.RecreateDirectory(path);
 
             using var fht = new FasterKV<long, long>
