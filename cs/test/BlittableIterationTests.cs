@@ -20,10 +20,6 @@ namespace FASTER.test
 
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path, wait:true);
-
-            log = Devices.CreateLogDevice(path + "/BlittableIterationTests.log", deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
         }
 
         [TearDown]

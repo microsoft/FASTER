@@ -9,4 +9,4 @@ classes: wide
 
 For C#, clone the Git repo, open cs/FASTER.sln in Visual Studio, and build.
 
-For C++, click [here](/docs/fasterkv-cpp/).
+For C++, click [here](/FASTER/docs/fasterkv-cpp/).

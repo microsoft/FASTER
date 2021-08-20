@@ -75,7 +75,6 @@ namespace FASTER.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path, wait: true);
 
-            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
             manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(path));
         }
 
@@ -184,6 +183,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         public async ValueTask FasterLogTest1([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
@@ -250,6 +250,7 @@ namespace FASTER.test
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
 
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
@@ -457,6 +458,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         public async ValueTask TruncateUntil2([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
             var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
@@ -524,6 +526,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         public async ValueTask TruncateUntilPageStart([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
             log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
