@@ -39,6 +39,9 @@
     <label><b>Key :</b> </label> <input type="text" id="getKey" />
     <p> Click <button class="btn btn-xs btn-primary" id="getButton">Get</button> button to Get key and value</p><br>
     <br>
+    <label><b>Key :</b> </label> <input type="text" id="subscribeKey" />
+    <p> Click <button class="btn btn-xs btn-primary" id="subButton">Subscribe</button> button to Subscribe to a key</p><br>
+    <br>
 
     <div id=output></div>
 
@@ -84,10 +87,12 @@
     <script>
         // http://www.websocket.org/echo.html
         var buttonPut = document.querySelector("#putButton"),
-            buttonGet = document.querySelector("#getButton");
+            buttonGet = document.querySelector("#getButton"),
+            buttonSub = document.querySelector("#subButton");
 
         buttonPut.addEventListener("click", onClickButtonPut);
         buttonGet.addEventListener("click", onClickButtonGet);
+        buttonSub.addEventListener("click", onClickButtonSub);
 
         var address = "127.0.0.1";
         var port = 3278;
@@ -102,9 +107,16 @@
         }
 
         function onClickButtonGet() {
-            var keyBytes = serialize(putKey.value);
+            var keyBytes = serialize(getKey.value);
 
             remoteSession.Read(keyBytes);
+            remoteSession.CompletePending(true);
+        }
+
+        function onClickButtonSub() {
+            var keyBytes = serialize(subscribeKey.value);
+
+            remoteSession.SubscribeKV(keyBytes);
             remoteSession.CompletePending(true);
         }
     </script>

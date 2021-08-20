@@ -100,9 +100,10 @@ namespace FASTER.server
         /// <param name="keyPtr"></param>
         /// <param name="keyLength"></param>
         /// <param name="valPtr"></param>
+        /// <param name="inputPtr"></param>
         /// <param name="sid"></param>
         /// <param name="prefix"></param>
-        public abstract unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int sid, bool prefix);
+        public abstract unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, ref byte* inputPtr, int sid, bool prefix);
 
         /// <summary>
         /// Dispose

@@ -3,10 +3,12 @@
     constructor(address, port, functions, maxSizeSettings) {
         this.functions = functions;
         this.readrmwPendingContext = {};
+        this.pubsubPendingContext = {};
         this.maxSizeSettings  = maxSizeSettings ?? new MaxSizeSettings();
         this.bufferSize = JSUtils.ClientBufferSize(this.maxSizeSettings);
         this.serializer = new ParameterSerializer();
         this.readrmwQueue = new Queue();
+        this.pubsubQueue = new Queue();
         this.upsertQueue = new Queue();
         this.sendSocket = new ClientNetworkSession(this, address, port);
         this.intSerializer = new IntSerializer();
@@ -88,6 +90,24 @@
                     }
                     break;
 
+                case MessageType.Subscribe:
+                    var sid = this.intSerializer.deserialize(arrayBuf, arrIdx);
+                    arrIdx += 4;
+                    if (status == Status.OK || status == Status.NOTFOUND) {
+                        var key = this.pubsubPendingContext[sid];
+                        output = this.serializer.ReadOutput(arrayBuf, arrIdx);
+                        arrIdx += output.length + 4;
+                        this.functions.SubscribeCompletionCallback(key, output, status);
+                    } else if (status == Status.PENDING) {
+                        var key = this.pubsubQueue.dequeue();
+                        this.pubsubPendingContext[sid] = key;
+                    } else {
+                        var key = this.pubsubPendingContext[sid];
+                        value = []
+                        this.functions.SubscribeCompletionCallback(key, value, status);
+                    }
+                    break;
+
                 case MessageType.HandlePending:
                     HandlePending(view, arrayBuf, arrIdx - 1);
                     break;
@@ -165,10 +185,6 @@
     /// </summary>
     CompletePending(wait = true) {
         this.Flush();
-    //    if (wait)
-    //        while (this.numPendingBatches > 0) {
-    //            // Do nothing
-    //        }
     }
 
     Upsert(key, value) {
@@ -244,6 +260,21 @@
         arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
 
         this.readrmwQueue.enqueue(key);
+
+        this.offset = arrIdx;
+        this.numMessages++;
+    }
+
+    Subscribe(key) {
+        // OP SEQ NUMBER, OP, LEN(KEY), KEY
+        var view = new Uint8Array(this.reusableBuffer);
+
+        var arrIdx = this.offset;
+        view[arrIdx++] = MessageType.Subscribe;
+
+        arrIdx = this.serializer.WriteKVI(this.reusableBuffer, arrIdx, key, key.length);
+
+        this.pubsubQueue.enqueue(key);
 
         this.offset = arrIdx;
         this.numMessages++;

@@ -11,4 +11,6 @@
     RMWCompletionCallback(key, output, status) { }
 
     SubscribeKVCompletionCallback(key, output, status) { }
+
+    SubscribeCompletionCallback(key, output, status) { }
 }

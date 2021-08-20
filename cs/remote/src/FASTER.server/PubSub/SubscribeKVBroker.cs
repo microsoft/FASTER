@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.common;
@@ -17,23 +18,32 @@ namespace FASTER.server
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="KeySerializer"></typeparam>
-    public sealed class SubscribeKVBroker<Key, Value, KeySerializer> : IDisposable
-        where KeySerializer : IKeySerializer<Key>
+    /// <typeparam name="Input"></typeparam>
+    /// <typeparam name="KeyInputSerializer"></typeparam>
+    public sealed class SubscribeKVBroker<Key, Value, Input, KeyInputSerializer> : IDisposable
+        where KeyInputSerializer : IKeyInputSerializer<Key, Input>
     {
         private int sid = 0;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> prefixSubscriptions;
+        private ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>> subscriptions;
+        private ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>> prefixSubscriptions;
         private AsyncQueue<byte[]> publishQueue;
-        readonly IKeySerializer<Key> keySerializer;
+        readonly IKeyInputSerializer<Key, Input> keyInputSerializer;
+        readonly FasterLog log;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="keySerializer">Serializer for Prefix Match and serializing Key</param>
-        public SubscribeKVBroker(IKeySerializer<Key> keySerializer)
+        /// <param name="keyInputSerializer">Serializer for Prefix Match and serializing Key and Input</param>
+        /// <param name="logDir">Directory where the log will be stored</param>
+        /// <param name="startFresh">start the log from scratch, do not continue</param>
+        public SubscribeKVBroker(IKeyInputSerializer<Key, Input> keyInputSerializer, string logDir, bool startFresh = true)
         {
-            this.keySerializer = keySerializer;
+            this.keyInputSerializer = keyInputSerializer;
+            var device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
+            device.Initialize((long)(1 << 30)*64);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            if (startFresh)
+                log.TruncateUntil(log.CommittedUntilAddress);
         }
 
         /// <summary>
@@ -50,7 +60,7 @@ namespace FASTER.server
                     subscriptions.TryGetValue(subscribedkey, out var subscriptionDict);
                     foreach (var sid in subscriptionDict.Keys)
                     {
-                        if (subscriptionDict[sid] == session) {
+                        if (subscriptionDict[sid].Item1 == session) {
                             subscriptionDict.TryRemove(sid, out _);
                             break;
                         }
@@ -65,7 +75,7 @@ namespace FASTER.server
                     prefixSubscriptions.TryGetValue(subscribedkey, out var subscriptionDict);
                     foreach (var sid in subscriptionDict.Keys)
                     {
-                        if (subscriptionDict[sid] == session) {
+                        if (subscriptionDict[sid].Item1 == session) {
                             subscriptionDict.TryRemove(sid, out _);
                             break;
                         }
@@ -78,18 +88,21 @@ namespace FASTER.server
         {
             var uniqueKeys = new HashSet<byte[]>(new ByteArrayComparer());
             var uniqueKeySubscriptions = new List<(ServerSessionBase, int, bool)>();
+            long truncateUntilAddress = log.BeginAddress;
 
             while (true)
             {
-
-                var subscriptionKey = await publishQueue.DequeueAsync();
-                uniqueKeys.Add(subscriptionKey);
-
-                while (publishQueue.Count > 0)
+                var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                await iter.WaitAsync();
+                while (iter.GetNext(out byte[] subscriptionKey, out int entryLength, out long currentAddress, out long nextAddress))
                 {
-                    subscriptionKey = await publishQueue.DequeueAsync();
+                    if (currentAddress >= long.MaxValue) return;
                     uniqueKeys.Add(subscriptionKey);
+                    truncateUntilAddress = nextAddress;
                 }
+
+                if (truncateUntilAddress > log.BeginAddress)
+                    log.TruncateUntil(truncateUntilAddress);
 
                 unsafe
                 {
@@ -104,9 +117,14 @@ namespace FASTER.server
                                 foreach (var sid in subscriptionServerSessionDict.Keys)
                                 {
                                     byte* keyBytePtr = ptr;
-                                    var serverSession = subscriptionServerSessionDict[sid];
+                                    var serverSession = subscriptionServerSessionDict[sid].Item1;
                                     byte* nullBytePtr = null;
-                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytePtr, sid, false);
+
+                                    fixed (byte* inputPtr = &subscriptionServerSessionDict[sid].Item2[0])
+                                    {
+                                        byte* inputBytePtr = inputPtr;
+                                        serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytePtr, ref inputBytePtr, sid, false);
+                                    }
                                 }
                             }
 
@@ -117,17 +135,22 @@ namespace FASTER.server
                                     byte* subPrefixPtr = subscribedPrefixPtr;
                                     byte* reqKeyPtr = ptr;
 
-                                    bool match = keySerializer.Match(ref keySerializer.ReadKeyByRef(ref reqKeyPtr),
-                                        ref keySerializer.ReadKeyByRef(ref subPrefixPtr));
+                                    bool match = keyInputSerializer.Match(ref keyInputSerializer.ReadKeyByRef(ref reqKeyPtr),
+                                        ref keyInputSerializer.ReadKeyByRef(ref subPrefixPtr));
                                     if (match)
                                     {
                                         prefixSubscriptions.TryGetValue(subscribedPrefixBytes, out var prefixSubscriptionServerSessionDict);
                                         foreach (var sid in prefixSubscriptionServerSessionDict.Keys)
                                         {
                                             byte* keyBytePtr = ptr;
-                                            var serverSession = prefixSubscriptionServerSessionDict[sid];
+                                            var serverSession = prefixSubscriptionServerSessionDict[sid].Item1;
                                             byte* nullBytrPtr = null;
-                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, sid, true);
+
+                                            fixed (byte* inputPtr = &prefixSubscriptionServerSessionDict[sid].Item2[0])
+                                            {
+                                                byte* inputBytePtr = inputPtr;
+                                                serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, ref inputBytePtr, sid, true);
+                                            }
                                         }
                                     }
                                 }
@@ -144,22 +167,26 @@ namespace FASTER.server
         /// Subscribe to a particular Key
         /// </summary>
         /// <param name="key">Key to subscribe to</param>
+        /// <param name="input">Input from subscriber</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe int Subscribe(ref byte* key, ServerSessionBase session)
+        public unsafe int Subscribe(ref byte* key, ref byte* input, ServerSessionBase session)
         {
             var start = key;
-            keySerializer.ReadKeyByRef(ref key);
+            var inputStart = input;
+            keyInputSerializer.ReadKeyByRef(ref key);
+            keyInputSerializer.ReadInputByRef(ref input);
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
-                subscriptions= new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
-                prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
+                subscriptions= new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
+                prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
                 Task.Run(() => Start());
             }
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
-            bool added = subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, ServerSessionBase>());
-            subscriptions[subscriptionKey].TryAdd(sid, session);
+            var subscriptionInput = new Span<byte>(inputStart, (int)(input - inputStart)).ToArray();
+            bool added = subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, (ServerSessionBase, byte[])>());
+            subscriptions[subscriptionKey].TryAdd(sid, (session, subscriptionInput));
             return id;
         }
 
@@ -167,22 +194,26 @@ namespace FASTER.server
         /// Subscribe to a particular prefix
         /// </summary>
         /// <param name="prefix">prefix to subscribe to</param>
+        /// <param name="input">Input from subscriber</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe int PSubscribe(ref byte* prefix, ServerSessionBase session)
+        public unsafe int PSubscribe(ref byte* prefix, ref byte* input, ServerSessionBase session)
         {
             var start = prefix;
-            keySerializer.ReadKeyByRef(ref prefix);
+            var inputStart = input;
+            keyInputSerializer.ReadKeyByRef(ref prefix);
+            keyInputSerializer.ReadInputByRef(ref input);
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
-                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
-                prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
+                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
+                prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
                 Task.Run(() => Start());
             }
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
-            prefixSubscriptions.TryAdd(subscriptionPrefix, new ConcurrentDictionary<int, ServerSessionBase>());
-            prefixSubscriptions[subscriptionPrefix].TryAdd(sid, session);
+            var subscriptionInput = new Span<byte>(inputStart, (int)(input - inputStart)).ToArray();
+            prefixSubscriptions.TryAdd(subscriptionPrefix, new ConcurrentDictionary<int, (ServerSessionBase, byte[])>());
+            prefixSubscriptions[subscriptionPrefix].TryAdd(sid, (session, subscriptionInput));
             return id;
         }
 
@@ -195,17 +226,17 @@ namespace FASTER.server
             if (subscriptions == null && prefixSubscriptions == null) return;
 
             var start = key;
-            ref Key k = ref keySerializer.ReadKeyByRef(ref key);
-            var keyBytes = new Span<byte>(start, (int)(key - start)).ToArray();
-
-            publishQueue.Enqueue(keyBytes);
+            ref Key k = ref keyInputSerializer.ReadKeyByRef(ref key);
+            log.Enqueue(new Span<byte>(start, (int)(key - start)));
+            log.RefreshUncommitted();
         }
 
         /// <inheritdoc />
         public void Dispose()
         {
-            subscriptions.Clear();
-            prefixSubscriptions.Clear();
+            subscriptions?.Clear();
+            prefixSubscriptions?.Clear();
+            log.Dispose();
         }
     }
 }

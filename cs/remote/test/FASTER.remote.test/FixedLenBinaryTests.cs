@@ -11,7 +11,7 @@ namespace FASTER.remote.test
         [SetUp]
         public void Setup()
         {
-            server = new FixedLenServer<long, long>(TestContext.CurrentContext.TestDirectory + "/FixedLenBinaryTests", (a, b) => a + b, enablePubSub: true);
+            server = new FixedLenServer<long, long>(TestContext.CurrentContext.TestDirectory + "/FixedLenBinaryTests", (a, b) => a + b, enablePubSub: false);
             client = new FixedLenClient<long, long>();
         }
 
@@ -36,62 +36,6 @@ namespace FASTER.remote.test
             session.CompletePending();
             session.Read(20, userContext: 23 * 3);
             session.CompletePending(true);
-        }
-
-        [Test]
-        public void SubscribeKVTest()
-        {
-            var session = client.GetSession();
-            var subSession = client.GetSession();
-
-            subSession.SubscribeKV(10);
-            subSession.CompletePending(true);
-            session.Upsert(10, 23);
-            session.CompletePending(true);
-
-            System.Threading.Thread.Sleep(1000);
-        }
-
-        [Test]
-        public void PrefixSubscribeKVTest()
-        {
-            var session = client.GetSession();
-            var subSession = client.GetSession();
-
-            subSession.PSubscribeKV(10);
-            subSession.CompletePending(true);
-            session.Upsert(10, 23);
-            session.CompletePending(true);
-
-            System.Threading.Thread.Sleep(1000);
-        }
-
-        [Test]
-        public void SubscribeTest()
-        {
-            var session = client.GetSession();
-            var subSession = client.GetSession();
-
-            subSession.Subscribe(10);
-            subSession.CompletePending(true);
-            session.Publish(10, 23);
-            session.CompletePending(true);
-
-            System.Threading.Thread.Sleep(1000);
-        }
-
-        [Test]
-        public void PrefixSubscribeTest()
-        {
-            var session = client.GetSession();
-            var subSession = client.GetSession();
-
-            subSession.PSubscribe(10);
-            subSession.CompletePending(true);
-            session.Publish(10, 23);
-            session.CompletePending(true);
-
-            System.Threading.Thread.Sleep(1000);
         }
     }
 }
