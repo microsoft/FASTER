@@ -40,6 +40,17 @@ namespace FASTER.core
         internal IntPtr Pointer => payload;
 
         /// <summary>
+        /// Get payload pointer
+        /// </summary>
+        public byte* ToPointer()
+        {
+            if (Serialized)
+                return MetadataSize + (byte*)Unsafe.AsPointer(ref payload);
+            else
+                return MetadataSize + (byte*)payload;
+        }
+
+        /// <summary>
         /// Length of payload, including metadata if any
         /// </summary>
         public int Length

@@ -521,7 +521,7 @@ namespace FASTER.core
                 catch (Exception)
                 {
                     this._indexCheckpoint.Reset();
-                    this._hybridLogCheckpoint.Reset();
+                    this._hybridLogCheckpoint.Dispose();
                     throw;
                 }
 
@@ -747,8 +747,7 @@ namespace FASTER.core
             Free();
             hlog.Dispose();
             readcache?.Dispose();
-            _lastSnapshotCheckpoint.deltaLog?.Dispose();
-            _lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
+            _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
         }
