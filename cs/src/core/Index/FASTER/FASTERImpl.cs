@@ -13,6 +13,25 @@ namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
+        /// <summary>
+        /// This is a wrapper for checking the record's version instead of just peeking at the latest record at the tail of the bucket.
+        /// By calling with the address of the traced record, we can prevent a different key sharing the same bucket from deceiving 
+        /// the operation to think that the version of the key has reached v+1 and thus to incorrectly update in place.
+        /// </summary>
+        /// <typeparam name="Input"></typeparam>
+        /// <typeparam name="Output"></typeparam>
+        /// <typeparam name="Context"></typeparam>
+        /// <param name="logicalAddress">The logical address of the traced record for the key</param>
+        /// <param name="sessionCtx"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool InVersionNew<Input, Output, Context>(long logicalAddress, FasterExecutionContext<Input, Output, Context> sessionCtx)
+        {
+            HashBucketEntry entry = default;
+            entry.word = logicalAddress;
+            return InVersionNew(ref entry, sessionCtx);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool InVersionNew<Input, Output, Context>(ref HashBucketEntry entry, FasterExecutionContext<Input, Output, Context> sessionCtx)
         {
@@ -21,7 +40,7 @@ namespace FASTER.core
             // Otherwise, check if the version suffix of the entry matches v_new.
             return GetLatestRecordVersion(ref entry, sessionCtx.version) == RecordInfo.GetShortVersion(currentSyncStateMachine.ToVersion());
         }
-        
+
         internal enum LatchOperation : byte
         {
             None,
@@ -370,7 +389,7 @@ namespace FASTER.core
 #region Entry latch operation
             if (sessionCtx.phase != Phase.REST)
             {
-                latchDestination = AcquireLatchUpsert(sessionCtx, bucket, ref status, ref latchOperation, ref entry);
+                latchDestination = AcquireLatchUpsert(sessionCtx, bucket, ref status, ref latchOperation, ref entry, logicalAddress);
             }
             #endregion
 
@@ -444,7 +463,7 @@ namespace FASTER.core
         }
 
         private LatchDestination AcquireLatchUpsert<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, ref OperationStatus status, 
-                                                                            ref LatchOperation latchOperation, ref HashBucketEntry entry)
+                                                                            ref LatchOperation latchOperation, ref HashBucketEntry entry, long logicalAddress)
         {
             switch (sessionCtx.phase)
             {
@@ -454,6 +473,10 @@ namespace FASTER.core
                         {
                             // Set to release shared latch (default)
                             latchOperation = LatchOperation.Shared;
+                            // Here (and in InternalRead, AcquireLatchRMW, and InternalDelete) we still check the tail record of the bucket (entry.Address)
+                            // rather than the traced record (logicalAddress), because I'm worried that the implementation
+                            // may not allow in-place updates for version v when the bucket arrives v+1. 
+                            // This is safer but potentially unnecessary.
                             if (InVersionNew(ref entry, sessionCtx))
                             {
                                 status = OperationStatus.CPR_SHIFT_DETECTED;
@@ -469,7 +492,7 @@ namespace FASTER.core
                     }
                 case Phase.IN_PROGRESS:
                     {
-                        if (!InVersionNew(ref entry, sessionCtx))
+                        if (!InVersionNew(logicalAddress, sessionCtx))
                         {
                             if (HashBucket.TryAcquireExclusiveLatch(bucket))
                             {
@@ -487,7 +510,7 @@ namespace FASTER.core
                     }
                 case Phase.WAIT_PENDING:
                     {
-                        if (!InVersionNew(ref entry, sessionCtx))
+                        if (!InVersionNew(logicalAddress, sessionCtx))
                         {
                             if (HashBucket.NoSharedLatches(bucket))
                             {
@@ -503,7 +526,7 @@ namespace FASTER.core
                     }
                 case Phase.WAIT_FLUSH:
                     {
-                        if (!InVersionNew(ref entry, sessionCtx))
+                        if (!InVersionNew(logicalAddress, sessionCtx))
                         {
                             return LatchDestination.CreateNewRecord; // Create a (v+1) record
                         }
@@ -827,7 +850,7 @@ namespace FASTER.core
                     }
                 case Phase.IN_PROGRESS:
                     {
-                        if (!InVersionNew(ref entry, sessionCtx))
+                        if (!InVersionNew(logicalAddress, sessionCtx))
                         {
                             Debug.Assert(pendingContext.heldLatch != LatchOperation.Shared);
                             if (pendingContext.heldLatch == LatchOperation.Exclusive || HashBucket.TryAcquireExclusiveLatch(bucket))
@@ -847,7 +870,7 @@ namespace FASTER.core
                     }
                 case Phase.WAIT_PENDING:
                     {
-                        if (!InVersionNew(ref entry, sessionCtx))
+                        if (!InVersionNew(logicalAddress, sessionCtx))
                         {
                             if (HashBucket.NoSharedLatches(bucket))
                             {
@@ -864,7 +887,7 @@ namespace FASTER.core
                     }
                 case Phase.WAIT_FLUSH:
                     {
-                        if (!InVersionNew(ref entry, sessionCtx))
+                        if (!InVersionNew(logicalAddress, sessionCtx))
                         {
                             if (logicalAddress >= hlog.HeadAddress)
                                 return LatchDestination.CreateNewRecord; // Create a (v+1) record
@@ -1060,7 +1083,7 @@ namespace FASTER.core
                         }
                     case Phase.IN_PROGRESS:
                         {
-                            if (!InVersionNew(ref entry, sessionCtx))
+                            if (!InVersionNew(logicalAddress, sessionCtx))
                             {
                                 if (HashBucket.TryAcquireExclusiveLatch(bucket))
                                 {
@@ -1078,7 +1101,7 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_PENDING:
                         {
-                            if (!InVersionNew(ref entry, sessionCtx))
+                            if (!InVersionNew(logicalAddress, sessionCtx))
                             {
                                 if (HashBucket.NoSharedLatches(bucket))
                                 {
@@ -1094,7 +1117,7 @@ namespace FASTER.core
                         }
                     case Phase.WAIT_FLUSH:
                         {
-                            if (!InVersionNew(ref entry, sessionCtx))
+                            if (!InVersionNew(logicalAddress, sessionCtx))
                             {
                                 goto CreateNewRecord; // Create a (v+1) record
                             }
