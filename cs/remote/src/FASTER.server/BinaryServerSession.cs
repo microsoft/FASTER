@@ -21,7 +21,7 @@ namespace FASTER.server
         byte* dcurr;
 
         public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
-            : base(socket, store, functions, serializer, maxSizeSettings)
+            : base(socket, store, functions, null, serializer, maxSizeSettings)
         {
             readHead = 0;
 

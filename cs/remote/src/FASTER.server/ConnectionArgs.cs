@@ -9,5 +9,6 @@ namespace FASTER.server
     {
         public Socket socket;
         public IServerSession session;
+        public int bytesRead;
     }
 }

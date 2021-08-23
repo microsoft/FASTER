@@ -18,9 +18,44 @@ namespace FASTER.core
         // The current state machine in the system. The value could be stale and point to the previous state machine
         // if no state machine is active at this time.
         private ISynchronizationStateMachine currentSyncStateMachine;
+        private List<IStateMachineCallback> callbacks = new List<IStateMachineCallback>();
+        internal long lastVersion;
 
-        internal SystemState SystemState => systemState;
+        /// <summary>
+        /// Any additional (user specified) metadata to write out with commit
+        /// </summary>
+        public byte[] CommitCookie { get; set; }
 
+        private byte[] recoveredCommitCookie;
+        /// <summary>
+        /// User-specified commit cookie persisted with last recovered commit
+        /// </summary>
+        public byte[] RecoveredCommitCookie => recoveredCommitCookie; 
+
+        /// <summary>
+        /// Get the current state machine state of the system
+        /// </summary>
+        public SystemState SystemState => systemState;
+
+        /// <summary>
+        /// Version number of the last checkpointed state
+        /// </summary>
+        public long LastCheckpointedVersion => lastVersion;
+
+        /// <summary>
+        /// Current version number of the store
+        /// </summary>
+        public long CurrentVersion => systemState.version;
+        
+        /// <summary>
+        /// Registers the given callback to be invoked for every state machine transition. Not safe to call with
+        /// concurrent FASTER operations. Note that registered callbacks execute as part of the critical
+        /// section of FASTER's state transitions. Excessive synchronization or expensive computation in the callback
+        /// may slow or halt state machine execution. For advanced users only. 
+        /// </summary>
+        /// <param name="callback"> callback to register </param>
+        public void UnsafeRegisterCallback(IStateMachineCallback callback) => callbacks.Add(callback);
+        
         /// <summary>
         /// Attempt to start the given state machine in the system if no other state machine is active.
         /// </summary>
@@ -64,6 +99,10 @@ namespace FASTER.core
 
             // Execute custom task logic
             currentSyncStateMachine.GlobalBeforeEnteringState(nextState, this);
+            // Execute any additional callbacks in critical section
+            foreach (var callback in callbacks)
+                callback.BeforeEnteringState(nextState, this);
+            
             var success = MakeTransition(intermediate, nextState);
             // Guaranteed to succeed, because other threads will always block while the system is in intermediate.
             Debug.Assert(success);

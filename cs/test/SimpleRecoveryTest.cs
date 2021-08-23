@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -13,16 +14,17 @@ namespace FASTER.test.recovery.sumstore.simple
     [TestFixture]
     public class RecoveryTests
     {
-        const int numOps = 250;
-        const long logSize = 64;
+        const int numOps = 5000;
         AdId[] inputArray;
 
+        private byte[] commitCookie;
         string checkpointDir;
         ICheckpointManager checkpointManager;
 
         private FasterKV<AdId, NumClicks> fht1;
         private FasterKV<AdId, NumClicks> fht2;
         private IDevice log;
+        
 
         [SetUp]
         public void Setup()
@@ -51,13 +53,13 @@ namespace FASTER.test.recovery.sumstore.simple
 
         [Test]
         [Category("FasterKV"), Category("CheckpointRestore")]
-        public async ValueTask PageBlobSimpleRecoveryTest([Values]CheckpointType checkpointType, [Values]bool isAsync)
+        public async ValueTask PageBlobSimpleRecoveryTest([Values]CheckpointType checkpointType, [Values]bool isAsync, [Values]bool testCommitCookie)
         {
             TestUtils.IgnoreIfNotRunningAzureTests();
             checkpointManager = new DeviceLogCommitCheckpointManager(
                 new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
                 new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
-            await SimpleRecoveryTest1_Worker(checkpointType, isAsync);
+            await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
             checkpointManager.PurgeAll();
         }
 
@@ -65,35 +67,42 @@ namespace FASTER.test.recovery.sumstore.simple
         [Category("FasterKV")]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
-        public async ValueTask LocalDeviceSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] bool isAsync)
+
+        public async ValueTask LocalDeviceSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values]bool testCommitCookie)
         {
             checkpointManager = new DeviceLogCommitCheckpointManager(
                 new LocalStorageNamedDeviceFactory(),
                 new DefaultCheckpointNamingScheme($"{TestUtils.MethodTestDir}/{TestUtils.AzureTestDirectory}"));
-            await SimpleRecoveryTest1_Worker(checkpointType, isAsync);
+            await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
             checkpointManager.PurgeAll();
         }
 
         [Test]
         [Category("FasterKV"), Category("CheckpointRestore")]
-        public async ValueTask SimpleRecoveryTest1([Values]CheckpointType checkpointType, [Values]bool isAsync)
+        public async ValueTask SimpleRecoveryTest1([Values]CheckpointType checkpointType, [Values]bool isAsync, [Values]bool testCommitCookie)
         {
-            await SimpleRecoveryTest1_Worker(checkpointType, isAsync);
+            await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
         }
 
-        private async ValueTask SimpleRecoveryTest1_Worker(CheckpointType checkpointType, bool isAsync)
+        private async ValueTask SimpleRecoveryTest1_Worker(CheckpointType checkpointType, bool isAsync, bool testCommitCookie)
         {
+            if (testCommitCookie)
+            {
+                // Generate a new unique byte sequence for test
+                commitCookie = Guid.NewGuid().ToByteArray();
+            }
+
             if (checkpointManager is null)
                 checkpointDir = TestUtils.MethodTestDir + $"/checkpoints";
 
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest1.log", deleteOnClose: true);
 
-            fht1 = new FasterKV<AdId, NumClicks>(logSize,
+            fht1 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
 
-            fht2 = new FasterKV<AdId, NumClicks>(logSize,
+            fht2 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
@@ -108,8 +117,11 @@ namespace FASTER.test.recovery.sumstore.simple
                 value.numClicks = key;
                 session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
+
+            if (testCommitCookie)
+                fht1.CommitCookie = commitCookie;
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             session1.Dispose();
 
             if (isAsync)
@@ -117,6 +129,11 @@ namespace FASTER.test.recovery.sumstore.simple
             else
                 fht2.Recover(token);
 
+            if (testCommitCookie)
+                Assert.IsTrue(fht2.RecoveredCommitCookie.SequenceEqual(commitCookie));
+            else
+                Assert.Null(fht2.RecoveredCommitCookie);
+            
             var session2 = fht2.NewSession(new AdSimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
@@ -125,7 +142,7 @@ namespace FASTER.test.recovery.sumstore.simple
                 if (status == Status.PENDING)
                     session2.CompletePending(true);
                 else
-                    Assert.AreEqual(key, output.value.numClicks);
+                    Assert.IsTrue(output.value.numClicks == key);
             }
             session2.Dispose();
         }
@@ -137,12 +154,12 @@ namespace FASTER.test.recovery.sumstore.simple
             checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir + "/checkpoints4"), false);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest2.log", deleteOnClose: true);
 
-            fht1 = new FasterKV<AdId, NumClicks>(logSize,
+            fht1 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
 
-            fht2 = new FasterKV<AdId, NumClicks>(logSize,
+            fht2 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
                 );
@@ -159,7 +176,7 @@ namespace FASTER.test.recovery.sumstore.simple
                 session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             session1.Dispose();
 
             if (isAsync)
@@ -176,7 +193,7 @@ namespace FASTER.test.recovery.sumstore.simple
                     session2.CompletePending(true);
                 else
                 {
-                    Assert.AreEqual(key, output.value.numClicks);
+                    Assert.IsTrue(output.value.numClicks == key);
                 }
             }
             session2.Dispose();
@@ -189,12 +206,12 @@ namespace FASTER.test.recovery.sumstore.simple
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest2.log", deleteOnClose: true);
             checkpointDir = TestUtils.MethodTestDir + "/checkpoints6";
 
-            fht1 = new FasterKV<AdId, NumClicks>(logSize,
+            fht1 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.FoldOver }
                 );
 
-            fht2 = new FasterKV<AdId, NumClicks>(logSize,
+            fht2 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.FoldOver }
                 );
@@ -208,14 +225,14 @@ namespace FASTER.test.recovery.sumstore.simple
                 value.numClicks = key;
                 session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
 
-                if (key == 65)
+                if (key == 2999)
                     address = fht1.Log.TailAddress;
             }
 
             fht1.Log.ShiftBeginAddress(address);
 
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             session1.Dispose();
 
             if (isAsync)
@@ -231,8 +248,8 @@ namespace FASTER.test.recovery.sumstore.simple
     {
         public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
-            Assert.AreEqual(Status.OK, status);
-            Assert.AreEqual(key.adId, output.value.numClicks);
+            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(output.value.numClicks == key.adId);
         }
 
         // Read functions

@@ -21,7 +21,7 @@ namespace FASTER.core
         public long word;
     }
 
-    internal enum Phase : int {
+    public enum Phase : int {
         IN_PROGRESS, 
         WAIT_PENDING,
         WAIT_INDEX_CHECKPOINT,
@@ -37,7 +37,7 @@ namespace FASTER.core
     };
 
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    internal struct SystemState
+    public struct SystemState
     {
         [FieldOffset(0)]
         public Phase phase;
@@ -83,6 +83,21 @@ namespace FASTER.core
         public override string ToString()
         {
             return $"[{phase},{version}]";
+        }
+
+        public bool Equals(SystemState other)
+        {
+            return word == other.word;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is SystemState other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            return word.GetHashCode();
         }
     }
 }

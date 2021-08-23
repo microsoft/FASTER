@@ -121,6 +121,60 @@ namespace FASTER.test
             }
         }
 
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+        public unsafe void SpanByteUnitTest1()
+        {
+            Span<byte> payload = stackalloc byte[20];
+            Span<byte> serialized = stackalloc byte[24];
+
+            SpanByte sb = SpanByte.FromFixedSpan(payload);
+            Assert.IsFalse(sb.Serialized);
+            Assert.AreEqual(20, sb.Length);
+            Assert.AreEqual(24, sb.TotalSize);
+            Assert.AreEqual(20, sb.AsSpan().Length);
+            Assert.AreEqual(20, sb.AsReadOnlySpan().Length);
+
+            fixed (byte* ptr = serialized)
+                sb.CopyTo(ptr);
+            ref SpanByte ssb = ref SpanByte.ReinterpretWithoutLength(serialized);
+            Assert.IsTrue(ssb.Serialized);
+            Assert.AreEqual(0, ssb.MetadataSize);
+            Assert.AreEqual(20, ssb.Length);
+            Assert.AreEqual(24, ssb.TotalSize);
+            Assert.AreEqual(20, ssb.AsSpan().Length);
+            Assert.AreEqual(20, ssb.AsReadOnlySpan().Length);
+
+            ssb.MarkExtraMetadata();
+            Assert.IsTrue(ssb.Serialized);
+            Assert.AreEqual(8, ssb.MetadataSize);
+            Assert.AreEqual(20, ssb.Length);
+            Assert.AreEqual(24, ssb.TotalSize);
+            Assert.AreEqual(20 - 8, ssb.AsSpan().Length);
+            Assert.AreEqual(20 - 8, ssb.AsReadOnlySpan().Length);
+            ssb.ExtraMetadata = 31337;
+            Assert.AreEqual(31337, ssb.ExtraMetadata);
+
+            sb.MarkExtraMetadata();
+            Assert.AreEqual(20, sb.Length);
+            Assert.AreEqual(24, sb.TotalSize);
+            Assert.AreEqual(20 - 8, sb.AsSpan().Length);
+            Assert.AreEqual(20 - 8, sb.AsReadOnlySpan().Length);
+            sb.ExtraMetadata = 31337;
+            Assert.AreEqual(31337, sb.ExtraMetadata);
+
+            fixed (byte* ptr = serialized)
+                sb.CopyTo(ptr);
+            Assert.IsTrue(ssb.Serialized);
+            Assert.AreEqual(8, ssb.MetadataSize);
+            Assert.AreEqual(20, ssb.Length);
+            Assert.AreEqual(24, ssb.TotalSize);
+            Assert.AreEqual(20 - 8, ssb.AsSpan().Length);
+            Assert.AreEqual(20 - 8, ssb.AsReadOnlySpan().Length);
+            Assert.AreEqual(31337, ssb.ExtraMetadata);
+        }
+
         class MultiReadSpanByteKeyTestFunctions : FunctionsBase<SpanByte, long, long, long, Empty>
         {
             public override void SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst) => dst = value;

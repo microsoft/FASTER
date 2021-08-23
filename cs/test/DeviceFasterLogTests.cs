@@ -26,8 +26,8 @@ namespace FASTER.test
         public async ValueTask PageBlobFasterLogTest1([Values] LogChecksumType logChecksum, [Values]FasterLogTestBase.IteratorType iteratorType)
         {
             TestUtils.IgnoreIfNotRunningAzureTests();
-            using var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "fasterlog.log", deleteOnClose: true);
-            using var checkpointManager = new DeviceLogCommitCheckpointManager(
+            var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "fasterlog.log", deleteOnClose: true);
+            var checkpointManager = new DeviceLogCommitCheckpointManager(
                 new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
                 new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             await FasterLogTest1(logChecksum, device, checkpointManager, iteratorType);
@@ -69,8 +69,8 @@ namespace FASTER.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // Create devices \ log for test for in memory device
-            using var device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyMs: 20);
-            using var LocalMemorylog = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
+            using LocalMemoryDevice device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyMs: 20);
+            using FasterLog LocalMemorylog = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
 
             int entryLength = 10;
 
@@ -86,11 +86,13 @@ namespace FASTER.test
 
             // Read the log just to verify was actually committed
             int currentEntry = 0;
-            using var iter = LocalMemorylog.Scan(0, 100_000_000);
-            while (iter.GetNext(out byte[] result, out _, out _))
+            using (var iter = LocalMemorylog.Scan(0, 100_000_000))
             {
-                Assert.AreEqual(currentEntry, result[currentEntry]);
-                currentEntry++;
+                while (iter.GetNext(out byte[] result, out _, out _))
+                {
+                    Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as " + currentEntry.ToString());
+                    currentEntry++;
+                }
             }
         }
 
@@ -153,7 +155,7 @@ namespace FASTER.test
                         Assert.Fail("Unknown IteratorType");
                         break;
                 }
-                Assert.AreEqual(numEntries, counter.count);
+                Assert.IsTrue(counter.count == numEntries);
             }
 
             log.Dispose();

@@ -12,6 +12,7 @@ namespace FASTER.core
     /// </summary>
     internal abstract class HybridLogCheckpointOrchestrationTask : ISynchronizationTask
     {
+        private long lastVersion;
         /// <inheritdoc />
         public virtual void GlobalBeforeEnteringState<Key, Value>(SystemState next,
             FasterKV<Key, Value> faster)
@@ -19,6 +20,7 @@ namespace FASTER.core
             switch (next.phase)
             {
                 case Phase.PREPARE:
+                    lastVersion = faster.systemState.version;
                     if (faster._hybridLogCheckpoint.IsDefault())
                     {
                         faster._hybridLogCheckpointToken = Guid.NewGuid();
@@ -35,9 +37,10 @@ namespace FASTER.core
                 case Phase.PERSISTENCE_CALLBACK:
                     CollectMetadata(next, faster);
                     faster.WriteHybridLogMetaInfo();
+                    faster.lastVersion = lastVersion;
                     break;
                 case Phase.REST:
-                    faster._hybridLogCheckpoint.Reset();
+                    faster._hybridLogCheckpoint.Dispose();
                     var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                     faster.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });
                     faster.checkpointTcs = nextTcs;
@@ -113,9 +116,7 @@ namespace FASTER.core
 
             if (next.phase == Phase.PREPARE)
             {
-                faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
-                faster._lastSnapshotCheckpoint.deltaLog?.Dispose();
-                faster._lastSnapshotCheckpoint = default;
+                faster._lastSnapshotCheckpoint.Dispose();
             }
             if (next.phase != Phase.WAIT_FLUSH) return;
 
@@ -177,9 +178,7 @@ namespace FASTER.core
             switch (next.phase)
             {
                 case Phase.PREPARE:
-                    faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
-                    faster._lastSnapshotCheckpoint.deltaLog?.Dispose();
-                    faster._lastSnapshotCheckpoint = default;
+                    faster._lastSnapshotCheckpoint.Dispose();
                     base.GlobalBeforeEnteringState(next, faster);
                     faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.FlushedUntilAddress;
                     faster._hybridLogCheckpoint.info.useSnapshotFile = 1;
@@ -220,7 +219,7 @@ namespace FASTER.core
                     // update flushed-until address to the latest
                     faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
                     base.GlobalBeforeEnteringState(next, faster);
-                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
+                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint.Transfer();
                     break;
                 default:
                     base.GlobalBeforeEnteringState(next, faster);
@@ -311,7 +310,8 @@ namespace FASTER.core
                     CollectMetadata(next, faster);
                     faster.WriteHybridLogIncrementalMetaInfo(faster._hybridLogCheckpoint.deltaLog);
                     faster._hybridLogCheckpoint.info.deltaTailAddress = faster._hybridLogCheckpoint.deltaLog.TailAddress;
-                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
+                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint.Transfer();
+                    faster._hybridLogCheckpoint.Dispose();
                     break;
             }
         }
