@@ -37,8 +37,19 @@ namespace VarLenServer
             var store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
             if (opts.Recover) store.Recover();
 
+            SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker = null;
+            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null;
+
+            if (opts.EnablePubSub)
+            {
+                // Create a broker for pub-sub of key value-pairs in FASTER instance
+                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>>(new SpanByteKeyInputSerializer(), opts.LogDir, true);
+                // Create a broker for topic-based pub-sub of key-value pairs
+                broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, true);
+            }
+
             // This variable-length session provider can be used with compatible clients such as VarLenClient
-            var provider = new SpanByteFasterKVProvider(store);
+            var provider = new SpanByteFasterKVProvider(store, kvBroker, broker);
 
             // Create server
             var server = new FasterServer(opts.Address, opts.Port);
@@ -46,6 +57,8 @@ namespace VarLenServer
             // Register provider as backend provider for WireFormat.DefaultFixedLenKV
             // You can register multiple providers with the same server, with different wire protocol specifications
             server.Register(WireFormat.DefaultVarLenKV, provider);
+            // Register provider as backend provider for WireFormat.WebSocket
+            server.Register(WireFormat.WebSocket, provider);
 
             // Start server
             server.Start();

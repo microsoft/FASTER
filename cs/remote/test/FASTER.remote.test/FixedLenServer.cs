@@ -13,8 +13,10 @@ namespace FASTER.remote.test
         readonly string folderName;
         readonly FasterServer server;
         readonly FasterKV<Key, Value> store;
+        SubscribeKVBroker<Key, Value, Value, IKeyInputSerializer<Key, Value>> kvBroker;
+        SubscribeBroker<Key, Value, IKeySerializer<Key>> broker;
 
-        public FixedLenServer(string folderName, Func<Value, Value, Value> merger, string address = "127.0.0.1", int port = 33278)
+        public FixedLenServer(string folderName, Func<Value, Value, Value> merger, string address = "127.0.0.1", int port = 33278, bool enablePubSub = false)
         {
             this.folderName = folderName;
             GetSettings(folderName, out var logSettings, out var checkpointSettings, out var indexSize);
@@ -22,8 +24,14 @@ namespace FASTER.remote.test
             // We use blittable structs Key and Value to construct a costomized server for fixed-length types
             store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
 
+            if (enablePubSub)
+            {
+                kvBroker = new SubscribeKVBroker<Key, Value, Value, IKeyInputSerializer<Key, Value>>(new FixedLenKeyInputSerializer<Key, Value>(), null, true);
+                broker = new SubscribeBroker<Key, Value, IKeySerializer<Key>>(new FixedLenKeySerializer<Key>(), null, true);
+            }
+
             // Create session provider for FixedLen
-            var provider = new FasterKVProvider<Key, Value, Value, Value, FixedLenServerFunctions<Key, Value>, FixedLenSerializer<Key, Value, Value, Value>>(store, e => new FixedLenServerFunctions<Key, Value>(merger));
+            var provider = new FasterKVProvider<Key, Value, Value, Value, FixedLenServerFunctions<Key, Value>, FixedLenSerializer<Key, Value, Value, Value>>(store, e => new FixedLenServerFunctions<Key, Value>(merger), kvBroker, broker);
             
             server = new FasterServer(address, port);
             server.Register(WireFormat.DefaultFixedLenKV, provider);
@@ -34,6 +42,8 @@ namespace FASTER.remote.test
         {
             server.Dispose();
             store.Dispose();
+            kvBroker?.Dispose();
+            broker?.Dispose();
             new DirectoryInfo(folderName).Delete(true);
         }
 

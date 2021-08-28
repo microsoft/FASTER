@@ -36,6 +36,9 @@ namespace ServerOptions
         [Option('r', "recover", Required = false, Default = false, HelpText = "Recover from latest checkpoint.")]
         public bool Recover { get; set; }
 
+        [Option("pubsub", Required = false, Default = true, HelpText = "Enable pub/sub feature on server.")]
+        public bool EnablePubSub { get; set; }
+
         public int MemorySizeBits()
         {
             long size = ParseSize(MemorySize);

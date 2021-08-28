@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
@@ -32,6 +32,20 @@ namespace FASTER.server
             new ReadOnlySpan<byte>(src + sizeof(int), length).CopyTo(mem.Memory.Span);
             src += length + sizeof(int);
             return new SpanByteAndMemory(mem, length);
+        }
+
+        /// <inheritdoc />
+        public SpanByte ReadKey(ref byte* src)
+        {
+            int length = *(int*)src;
+            return SpanByte.FromPointer(src, length);
+        }
+
+        /// <inheritdoc />
+        public SpanByte ReadValue(ref byte* src)
+        {
+            int length = *(int*)src;
+            return SpanByte.FromPointer(src, length);
         }
 
         /// <inheritdoc />

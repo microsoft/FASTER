@@ -14,16 +14,22 @@ namespace FASTER.server
     {
         readonly FasterKV<SpanByte, SpanByte> store;
         readonly SpanByteServerSerializer serializer;
+        readonly SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
+        readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
         readonly MaxSizeSettings maxSizeSettings;
 
         /// <summary>
         /// Create SpanByte FasterKV backend
         /// </summary>
         /// <param name="store"></param>
+        /// <param name="kvBroker"></param>
+        /// <param name="broker"></param>
         /// <param name="maxSizeSettings"></param>
-        public SpanByteFasterKVProvider(FasterKV<SpanByte, SpanByte> store, MaxSizeSettings maxSizeSettings = default)
+        public SpanByteFasterKVProvider(FasterKV<SpanByte, SpanByte> store, SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker = null, SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
+            this.kvBroker = kvBroker;
+            this.broker = broker;
             this.serializer = new SpanByteServerSerializer();
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
         }
@@ -31,8 +37,14 @@ namespace FASTER.server
         /// <inheritdoc />
         public IServerSession GetSession(WireFormat wireFormat, Socket socket)
         {
-            return new BinaryServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
-                (socket, store, new SpanByteFunctionsForServer<long>(wireFormat), serializer, maxSizeSettings);
+            switch (wireFormat) {
+                case WireFormat.WebSocket:
+                    return new WebsocketServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
+                        (socket, store, new SpanByteFunctionsForServer<long>(wireFormat), serializer, maxSizeSettings, kvBroker, broker);
+                default:
+                    return new BinaryServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
+                        (socket, store, new SpanByteFunctionsForServer<long>(wireFormat), serializer, maxSizeSettings, kvBroker, broker);
+            }
         }
 
         /// <inheritdoc />

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
@@ -34,7 +34,7 @@ namespace FASTER.server
 
         private readonly NetworkSender messageManager;
         private readonly int serverBufferSize;
-        
+
 
         /// <summary>
         /// Create new instance
@@ -93,6 +93,17 @@ namespace FASTER.server
                 responseObject.Dispose();
             }
         }
+
+        /// <summary>
+        /// Publish an update to a key to all the subscribers of the key
+        /// </summary>
+        /// <param name="keyPtr"></param>
+        /// <param name="keyLength"></param>
+        /// <param name="valPtr"></param>
+        /// <param name="inputPtr"></param>
+        /// <param name="sid"></param>
+        /// <param name="prefix"></param>
+        public abstract unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, ref byte* inputPtr, int sid, bool prefix);
 
         /// <summary>
         /// Dispose

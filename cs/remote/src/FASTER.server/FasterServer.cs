@@ -205,6 +205,10 @@ namespace FASTER.server
                 fixed (void* bh = &e.Buffer[4])
                     protocol = ((BatchHeader*)bh)->Protocol;
             }
+            else if (e.Buffer[0] == 71 && e.Buffer[1] == 69 && e.Buffer[2] == 84)
+            {
+                protocol = WireFormat.WebSocket;
+            }
             else
             {
                 protocol = WireFormat.ASCII;

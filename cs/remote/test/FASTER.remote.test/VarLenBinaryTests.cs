@@ -12,7 +12,7 @@ namespace FASTER.remote.test
         [SetUp]
         public void Setup()
         {
-            server = new VarLenServer(TestContext.CurrentContext.TestDirectory + "/VarLenBinaryTests");
+            server = new VarLenServer(TestContext.CurrentContext.TestDirectory + "/VarLenBinaryTests", enablePubSub: false);
             client = new VarLenMemoryClient();
         }
 
@@ -39,5 +39,6 @@ namespace FASTER.remote.test
             session.Read(key, userContext: key.Span[0]);
             session.CompletePending(true);
         }
+
     }
 }
