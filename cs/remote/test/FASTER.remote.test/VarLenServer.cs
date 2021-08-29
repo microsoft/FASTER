@@ -9,17 +9,25 @@ namespace FASTER.remote.test
     class VarLenServer : IDisposable
     {
         readonly string folderName;
-        readonly FasterServer server;
-        readonly FasterKV<SpanByte, SpanByte> store;
-        readonly SpanByteFasterKVProvider provider;
+        readonly string address;
+        readonly int port;
+
+        FasterServer server;
+        FasterKV<SpanByte, SpanByte> store;
+        SpanByteFasterKVProvider provider;
         readonly SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
         readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
 
         public VarLenServer(string folderName, string address = "127.0.0.1", int port = 33278, bool enablePubSub = false)
         {
             this.folderName = folderName;
-            GetSettings(folderName, out var logSettings, out var checkpointSettings, out var indexSize);
+            this.address = address;
+            this.port = port;
 
+            if (!Directory.Exists(folderName))
+                Directory.CreateDirectory(folderName);
+
+            GetSettings(folderName, out var logSettings, out var checkpointSettings, out var indexSize);
             store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
 
             if (enablePubSub)
@@ -29,7 +37,23 @@ namespace FASTER.remote.test
             }
 
             // Create session provider for VarLen
-            provider = new SpanByteFasterKVProvider(store, kvBroker, broker);
+            provider = new SpanByteFasterKVProvider(store, kvBroker, broker, false);
+
+            server = new FasterServer(address, port);
+            server.Register(WireFormat.DefaultVarLenKV, provider);
+            server.Start();
+        }
+
+        public void KillAndRecover()
+        {
+            server.Dispose();
+            store.Dispose();
+
+            GetSettings(folderName, out var logSettings, out var checkpointSettings, out var indexSize);
+            store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
+
+            // Create session provider for VarLen
+            provider = new SpanByteFasterKVProvider(store, kvBroker, broker, true);
 
             server = new FasterServer(address, port);
             server.Register(WireFormat.DefaultVarLenKV, provider);
@@ -39,11 +63,10 @@ namespace FASTER.remote.test
         public void Dispose()
         {
             server.Dispose();
-            provider.Dispose();
             broker?.Dispose();
             kvBroker?.Dispose();
             store.Dispose();
-            new DirectoryInfo(folderName).Delete(true);
+            TestUtils.DeleteDirectory(folderName);
         }
 
         private static void GetSettings(string LogDir, out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
@@ -58,15 +81,12 @@ namespace FASTER.remote.test
             var device = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "/hlog", preallocateFile: false);
             logSettings.LogDevice = device;
 
-            string CheckpointDir = null;
-            if (CheckpointDir == null && LogDir == null)
-                checkpointSettings = null;
-            else
-                checkpointSettings = new CheckpointSettings
-                {
-                    CheckPointType = CheckpointType.FoldOver,
-                    CheckpointDir = CheckpointDir ?? (LogDir + "/checkpoints")
-                };
+            checkpointSettings = new CheckpointSettings
+            {
+                CheckPointType = CheckpointType.Snapshot,
+                CheckpointDir = LogDir + "/checkpoints",
+                RemoveOutdated = true,
+            };
         }
     }
 }

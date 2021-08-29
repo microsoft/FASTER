@@ -32,7 +32,7 @@ namespace FASTER.remote.test
 
             // Create session provider for FixedLen
             var provider = new FasterKVProvider<Key, Value, Value, Value, FixedLenServerFunctions<Key, Value>, FixedLenSerializer<Key, Value, Value, Value>>(store, e => new FixedLenServerFunctions<Key, Value>(merger), kvBroker, broker);
-            
+
             server = new FasterServer(address, port);
             server.Register(WireFormat.DefaultFixedLenKV, provider);
             server.Start();

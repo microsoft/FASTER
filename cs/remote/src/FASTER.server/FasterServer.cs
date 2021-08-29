@@ -160,7 +160,7 @@ namespace FASTER.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HandleReceiveCompletion(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs) e.UserToken;
+            var connArgs = (ConnectionArgs)e.UserToken;
             if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || disposed)
             {
                 DisposeConnectionSession(e);
@@ -174,7 +174,15 @@ namespace FASTER.server
 
             connArgs.session.AddBytesRead(e.BytesTransferred);
             var newHead = connArgs.session.TryConsumeMessages(e.Buffer);
-            e.SetBuffer(newHead, e.Buffer.Length - newHead);
+            if (newHead == e.Buffer.Length)
+            {
+                // Need to grow input buffer
+                var newBuffer = new byte[e.Buffer.Length * 2];
+                Array.Copy(e.Buffer, newBuffer, e.Buffer.Length);
+                e.SetBuffer(newBuffer, newHead, newBuffer.Length - newHead);
+            }
+            else
+                e.SetBuffer(newHead, e.Buffer.Length - newHead);
             return true;
         }
 
@@ -245,7 +253,7 @@ namespace FASTER.server
 
         private void DisposeConnectionSession(SocketAsyncEventArgs e)
         {
-            var connArgs = (ConnectionArgs) e.UserToken;
+            var connArgs = (ConnectionArgs)e.UserToken;
             connArgs.socket.Dispose();
             e.Dispose();
             var _session = connArgs.session;
