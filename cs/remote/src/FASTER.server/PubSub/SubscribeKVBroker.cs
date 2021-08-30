@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.common;
@@ -29,6 +28,9 @@ namespace FASTER.server
         private AsyncQueue<byte[]> publishQueue;
         readonly IKeyInputSerializer<Key, Input> keyInputSerializer;
         readonly FasterLog log;
+        readonly CancellationTokenSource cts = new();
+        readonly ManualResetEvent done = new(true);
+        bool disposed = false;
 
         /// <summary>
         /// Constructor
@@ -40,7 +42,7 @@ namespace FASTER.server
         {
             this.keyInputSerializer = keyInputSerializer;
             var device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
-            device.Initialize((long)(1 << 30)*64);
+            device.Initialize((long)(1 << 30) * 64);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
             if (startFresh)
                 log.TruncateUntil(log.CommittedUntilAddress);
@@ -60,7 +62,8 @@ namespace FASTER.server
                     subscriptions.TryGetValue(subscribedkey, out var subscriptionDict);
                     foreach (var sid in subscriptionDict.Keys)
                     {
-                        if (subscriptionDict[sid].Item1 == session) {
+                        if (subscriptionDict[sid].Item1 == session)
+                        {
                             subscriptionDict.TryRemove(sid, out _);
                             break;
                         }
@@ -75,7 +78,8 @@ namespace FASTER.server
                     prefixSubscriptions.TryGetValue(subscribedkey, out var subscriptionDict);
                     foreach (var sid in subscriptionDict.Keys)
                     {
-                        if (subscriptionDict[sid].Item1 == session) {
+                        if (subscriptionDict[sid].Item1 == session)
+                        {
                             subscriptionDict.TryRemove(sid, out _);
                             break;
                         }
@@ -84,82 +88,94 @@ namespace FASTER.server
             }
         }
 
-        internal async Task Start()
+        internal async Task Start(CancellationToken cancellationToken = default)
         {
-            var uniqueKeys = new HashSet<byte[]>(new ByteArrayComparer());
-            var uniqueKeySubscriptions = new List<(ServerSessionBase, int, bool)>();
-            long truncateUntilAddress = log.BeginAddress;
+            done.Reset();
 
-            while (true)
+            try
             {
-                var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
-                await iter.WaitAsync();
-                while (iter.GetNext(out byte[] subscriptionKey, out int entryLength, out long currentAddress, out long nextAddress))
-                {
-                    if (currentAddress >= long.MaxValue) return;
-                    uniqueKeys.Add(subscriptionKey);
-                    truncateUntilAddress = nextAddress;
-                }
+                var uniqueKeys = new HashSet<byte[]>(new ByteArrayComparer());
+                var uniqueKeySubscriptions = new List<(ServerSessionBase, int, bool)>();
+                long truncateUntilAddress = log.BeginAddress;
 
-                if (truncateUntilAddress > log.BeginAddress)
-                    log.TruncateUntil(truncateUntilAddress);
-
-                unsafe
+                while (true)
                 {
-                    foreach (var keyBytes in uniqueKeys)
+                    if (disposed)
+                        break;
+
+                    var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                    await iter.WaitAsync(cancellationToken);
+                    while (iter.GetNext(out byte[] subscriptionKey, out int entryLength, out long currentAddress, out long nextAddress))
                     {
-                        fixed (byte* ptr = &keyBytes[0])
-                        {
-                            byte* keyPtr = ptr;
-                            bool foundSubscription = subscriptions.TryGetValue(keyBytes, out var subscriptionServerSessionDict);
-                            if (foundSubscription)
-                            {                                
-                                foreach (var sid in subscriptionServerSessionDict.Keys)
-                                {
-                                    byte* keyBytePtr = ptr;
-                                    var serverSession = subscriptionServerSessionDict[sid].Item1;
-                                    byte* nullBytePtr = null;
+                        if (currentAddress >= long.MaxValue) return;
+                        uniqueKeys.Add(subscriptionKey);
+                        truncateUntilAddress = nextAddress;
+                    }
 
-                                    fixed (byte* inputPtr = &subscriptionServerSessionDict[sid].Item2[0])
+                    if (truncateUntilAddress > log.BeginAddress)
+                        log.TruncateUntil(truncateUntilAddress);
+
+                    unsafe
+                    {
+                        foreach (var keyBytes in uniqueKeys)
+                        {
+                            fixed (byte* ptr = &keyBytes[0])
+                            {
+                                byte* keyPtr = ptr;
+                                bool foundSubscription = subscriptions.TryGetValue(keyBytes, out var subscriptionServerSessionDict);
+                                if (foundSubscription)
+                                {
+                                    foreach (var sid in subscriptionServerSessionDict.Keys)
                                     {
-                                        byte* inputBytePtr = inputPtr;
-                                        serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytePtr, ref inputBytePtr, sid, false);
+                                        byte* keyBytePtr = ptr;
+                                        var serverSession = subscriptionServerSessionDict[sid].Item1;
+                                        byte* nullBytePtr = null;
+
+                                        fixed (byte* inputPtr = &subscriptionServerSessionDict[sid].Item2[0])
+                                        {
+                                            byte* inputBytePtr = inputPtr;
+                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytePtr, ref inputBytePtr, sid, false);
+                                        }
                                     }
                                 }
-                            }
 
-                            foreach (var subscribedPrefixBytes in prefixSubscriptions.Keys)
-                            {
-                                fixed (byte* subscribedPrefixPtr = &subscribedPrefixBytes[0])
+                                foreach (var subscribedPrefixBytes in prefixSubscriptions.Keys)
                                 {
-                                    byte* subPrefixPtr = subscribedPrefixPtr;
-                                    byte* reqKeyPtr = ptr;
-
-                                    bool match = keyInputSerializer.Match(ref keyInputSerializer.ReadKeyByRef(ref reqKeyPtr),
-                                        ref keyInputSerializer.ReadKeyByRef(ref subPrefixPtr));
-                                    if (match)
+                                    fixed (byte* subscribedPrefixPtr = &subscribedPrefixBytes[0])
                                     {
-                                        prefixSubscriptions.TryGetValue(subscribedPrefixBytes, out var prefixSubscriptionServerSessionDict);
-                                        foreach (var sid in prefixSubscriptionServerSessionDict.Keys)
-                                        {
-                                            byte* keyBytePtr = ptr;
-                                            var serverSession = prefixSubscriptionServerSessionDict[sid].Item1;
-                                            byte* nullBytrPtr = null;
+                                        byte* subPrefixPtr = subscribedPrefixPtr;
+                                        byte* reqKeyPtr = ptr;
 
-                                            fixed (byte* inputPtr = &prefixSubscriptionServerSessionDict[sid].Item2[0])
+                                        bool match = keyInputSerializer.Match(ref keyInputSerializer.ReadKeyByRef(ref reqKeyPtr),
+                                            ref keyInputSerializer.ReadKeyByRef(ref subPrefixPtr));
+                                        if (match)
+                                        {
+                                            prefixSubscriptions.TryGetValue(subscribedPrefixBytes, out var prefixSubscriptionServerSessionDict);
+                                            foreach (var sid in prefixSubscriptionServerSessionDict.Keys)
                                             {
-                                                byte* inputBytePtr = inputPtr;
-                                                serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, ref inputBytePtr, sid, true);
+                                                byte* keyBytePtr = ptr;
+                                                var serverSession = prefixSubscriptionServerSessionDict[sid].Item1;
+                                                byte* nullBytrPtr = null;
+
+                                                fixed (byte* inputPtr = &prefixSubscriptionServerSessionDict[sid].Item2[0])
+                                                {
+                                                    byte* inputBytePtr = inputPtr;
+                                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, ref inputBytePtr, sid, true);
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
+                            uniqueKeySubscriptions.Clear();
                         }
-                        uniqueKeySubscriptions.Clear();
+                        uniqueKeys.Clear();
                     }
-                    uniqueKeys.Clear();
                 }
+            }
+            finally
+            {
+                done.Set();
             }
         }
 
@@ -179,9 +195,9 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
-                subscriptions= new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
+                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
                 prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
-                Task.Run(() => Start());
+                Task.Run(() => Start(cts.Token));
             }
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             var subscriptionInput = new Span<byte>(inputStart, (int)(input - inputStart)).ToArray();
@@ -208,7 +224,7 @@ namespace FASTER.server
             {
                 subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
                 prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
-                Task.Run(() => Start());
+                Task.Run(() => Start(cts.Token));
             }
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
             var subscriptionInput = new Span<byte>(inputStart, (int)(input - inputStart)).ToArray();
@@ -234,6 +250,9 @@ namespace FASTER.server
         /// <inheritdoc />
         public void Dispose()
         {
+            disposed = true;
+            cts.Cancel();
+            done.WaitOne();
             subscriptions?.Clear();
             prefixSubscriptions?.Clear();
             log.Dispose();

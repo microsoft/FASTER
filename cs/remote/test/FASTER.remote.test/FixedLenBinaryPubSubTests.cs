@@ -62,9 +62,9 @@ namespace FASTER.remote.test
             var session = client.GetSession(f);
             var subSession = client.GetSession(f);
 
-            subSession.SubscribeKV(10);
+            subSession.Subscribe(10);
             subSession.CompletePending(true);
-            session.Upsert(10, 23);
+            session.Publish(10, 23);
             session.CompletePending(true);
 
             f.WaitSubscribe();
@@ -77,9 +77,9 @@ namespace FASTER.remote.test
             var session = client.GetSession(f);
             var subSession = client.GetSession(f);
 
-            subSession.PSubscribeKV(10);
+            subSession.PSubscribe(10);
             subSession.CompletePending(true);
-            session.Upsert(10, 23);
+            session.Publish(10, 23);
             session.CompletePending(true);
 
             f.WaitSubscribe();

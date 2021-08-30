@@ -26,6 +26,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
+        [Repeat(100)]
         public void SubscribeKVTest()
         {
             Random r = new Random(23);
@@ -86,9 +87,9 @@ namespace FASTER.remote.test
             key.Span[1] = value.Length;
             value.Span.Fill(key.Span[0]);
 
-            subSession.SubscribeKV(key);
+            subSession.Subscribe(key);
             subSession.CompletePending(true);
-            session.Upsert(key, value);
+            session.Publish(key, value);
             session.CompletePending(true);
 
             f.WaitSubscribe();
@@ -112,9 +113,9 @@ namespace FASTER.remote.test
             upsertKey.Span[0] = randomNum;
             upsertKey.Span[1] = value.Length;
 
-            subSession.PSubscribeKV(key);
+            subSession.PSubscribe(key);
             subSession.CompletePending(true);
-            session.Upsert(upsertKey, value);
+            session.Publish(upsertKey, value);
             session.CompletePending(true);
 
             f.WaitSubscribe();
