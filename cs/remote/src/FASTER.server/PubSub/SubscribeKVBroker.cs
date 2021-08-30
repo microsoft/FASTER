@@ -57,14 +57,13 @@ namespace FASTER.server
         {
             if (subscriptions != null)
             {
-                foreach (var subscribedkey in subscriptions.Keys)
+                foreach (var kvp in subscriptions)
                 {
-                    subscriptions.TryGetValue(subscribedkey, out var subscriptionDict);
-                    foreach (var sid in subscriptionDict.Keys)
+                    foreach (var sub in kvp.Value)
                     {
-                        if (subscriptionDict[sid].Item1 == session)
+                        if (sub.Value.Item1 == session)
                         {
-                            subscriptionDict.TryRemove(sid, out _);
+                            kvp.Value.TryRemove(sub.Key, out _);
                             break;
                         }
                     }
@@ -73,14 +72,13 @@ namespace FASTER.server
 
             if (prefixSubscriptions != null)
             {
-                foreach (var subscribedkey in prefixSubscriptions.Keys)
+                foreach (var kvp in prefixSubscriptions)
                 {
-                    prefixSubscriptions.TryGetValue(subscribedkey, out var subscriptionDict);
-                    foreach (var sid in subscriptionDict.Keys)
+                    foreach (var sub in kvp.Value)
                     {
-                        if (subscriptionDict[sid].Item1 == session)
+                        if (sub.Value.Item1 == session)
                         {
-                            subscriptionDict.TryRemove(sid, out _);
+                            kvp.Value.TryRemove(sub.Key, out _);
                             break;
                         }
                     }
@@ -125,22 +123,24 @@ namespace FASTER.server
                                 bool foundSubscription = subscriptions.TryGetValue(keyBytes, out var subscriptionServerSessionDict);
                                 if (foundSubscription)
                                 {
-                                    foreach (var sid in subscriptionServerSessionDict.Keys)
+                                    foreach (var sub in subscriptionServerSessionDict)
                                     {
                                         byte* keyBytePtr = ptr;
-                                        var serverSession = subscriptionServerSessionDict[sid].Item1;
+                                        var serverSession = sub.Value.Item1;
                                         byte* nullBytePtr = null;
 
-                                        fixed (byte* inputPtr = &subscriptionServerSessionDict[sid].Item2[0])
+                                        fixed (byte* inputPtr = &sub.Value.Item2[0])
                                         {
                                             byte* inputBytePtr = inputPtr;
-                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytePtr, ref inputBytePtr, sid, false);
+                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytePtr, ref inputBytePtr, sub.Key, false);
                                         }
                                     }
                                 }
 
-                                foreach (var subscribedPrefixBytes in prefixSubscriptions.Keys)
+                                foreach (var kvp in prefixSubscriptions)
                                 {
+                                    var subscribedPrefixBytes = kvp.Key;
+                                    var prefixSubscriptionServerSessionDict = kvp.Value;
                                     fixed (byte* subscribedPrefixPtr = &subscribedPrefixBytes[0])
                                     {
                                         byte* subPrefixPtr = subscribedPrefixPtr;
@@ -150,17 +150,16 @@ namespace FASTER.server
                                             ref keyInputSerializer.ReadKeyByRef(ref subPrefixPtr));
                                         if (match)
                                         {
-                                            prefixSubscriptions.TryGetValue(subscribedPrefixBytes, out var prefixSubscriptionServerSessionDict);
-                                            foreach (var sid in prefixSubscriptionServerSessionDict.Keys)
+                                            foreach (var sub in prefixSubscriptionServerSessionDict)
                                             {
                                                 byte* keyBytePtr = ptr;
-                                                var serverSession = prefixSubscriptionServerSessionDict[sid].Item1;
+                                                var serverSession = sub.Value.Item1;
                                                 byte* nullBytrPtr = null;
 
-                                                fixed (byte* inputPtr = &prefixSubscriptionServerSessionDict[sid].Item2[0])
+                                                fixed (byte* inputPtr = &sub.Value.Item2[0])
                                                 {
                                                     byte* inputBytePtr = inputPtr;
-                                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, ref inputBytePtr, sid, true);
+                                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, ref inputBytePtr, sub.Key, true);
                                                 }
                                             }
                                         }

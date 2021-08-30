@@ -29,8 +29,8 @@ namespace FASTER.remote.test
         public void SubscribeKVTest()
         {
             var f = new FixedLenClientFunctions();
-            var session = client.GetSession(f);
-            var subSession = client.GetSession(f);
+            using var session = client.GetSession(f);
+            using var subSession = client.GetSession(f);
 
             subSession.SubscribeKV(10);
             subSession.CompletePending(true);
@@ -44,8 +44,8 @@ namespace FASTER.remote.test
         public void PrefixSubscribeKVTest()
         {
             var f = new FixedLenClientFunctions();
-            var session = client.GetSession(f);
-            var subSession = client.GetSession(f);
+            using var session = client.GetSession(f);
+            using var subSession = client.GetSession(f);
 
             subSession.PSubscribeKV(10);
             subSession.CompletePending(true);
@@ -59,8 +59,8 @@ namespace FASTER.remote.test
         public void SubscribeTest()
         {
             var f = new FixedLenClientFunctions();
-            var session = client.GetSession(f);
-            var subSession = client.GetSession(f);
+            using var session = client.GetSession(f);
+            using var subSession = client.GetSession(f);
 
             subSession.Subscribe(10);
             subSession.CompletePending(true);
@@ -74,8 +74,8 @@ namespace FASTER.remote.test
         public void PrefixSubscribeTest()
         {
             var f = new FixedLenClientFunctions();
-            var session = client.GetSession(f);
-            var subSession = client.GetSession(f);
+            using var session = client.GetSession(f);
+            using var subSession = client.GetSession(f);
 
             subSession.PSubscribe(10);
             subSession.CompletePending(true);

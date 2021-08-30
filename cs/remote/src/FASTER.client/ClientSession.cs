@@ -352,7 +352,7 @@ namespace FASTER.client
                 var src = b;
                 var seqNo = ((BatchHeader*)src)->SeqNo;
                 var count = ((BatchHeader*)src)->NumMessages;
-                if (seqNo != lastSeqNo + 1)
+                if (seqNo != lastSeqNo + 1 && !subscriptionSession)
                     throw new Exception("Out of order message within session");
                 lastSeqNo = seqNo;
 

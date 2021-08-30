@@ -26,14 +26,13 @@ namespace FASTER.remote.test
         }
 
         [Test]
-        [Repeat(100)]
         public void SubscribeKVTest()
         {
             Random r = new Random(23);
 
             var f = new MemoryFunctions();
-            var session = client.GetSession(f);
-            var subSession = client.GetSession(f);
+            using var session = client.GetSession(f);
+            using var subSession = client.GetSession(f);
             var key = new Memory<int>(new int[2 + r.Next(50)]);
             var value = new Memory<int>(new int[1 + r.Next(50)]);
             key.Span[0] = r.Next(100);
@@ -53,8 +52,8 @@ namespace FASTER.remote.test
         {
             Random r = new Random(23);
             var f = new MemoryFunctions();
-            var session = client.GetSession(f);
-            var subSession = client.GetSession(f);
+            using var session = client.GetSession(f);
+            using var subSession = client.GetSession(f);
             var key = new Memory<int>(new int[2 + r.Next(50)]);
             var value = new Memory<int>(new int[1 + r.Next(50)]);
             int randomNum = r.Next(100);
@@ -79,8 +78,8 @@ namespace FASTER.remote.test
         {
             Random r = new Random(23);
             var f = new MemoryFunctions();
-            var session = client.GetSession(f);
-            var subSession = client.GetSession(f);
+            using var session = client.GetSession(f);
+            using var subSession = client.GetSession(f);
             var key = new Memory<int>(new int[2 + r.Next(50)]);
             var value = new Memory<int>(new int[1 + r.Next(50)]);
             key.Span[0] = r.Next(100);
@@ -100,8 +99,8 @@ namespace FASTER.remote.test
         {
             Random r = new Random(23);
             var f = new MemoryFunctions();
-            var session = client.GetSession(f);
-            var subSession = client.GetSession(f);
+            using var session = client.GetSession(f);
+            using var subSession = client.GetSession(f);
             var key = new Memory<int>(new int[2 + r.Next(50)]);
             var value = new Memory<int>(new int[1 + r.Next(50)]);
             int randomNum = r.Next(100);
