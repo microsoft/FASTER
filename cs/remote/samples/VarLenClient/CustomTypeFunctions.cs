@@ -28,5 +28,13 @@ namespace VarLenClient
                 throw new Exception("Unexpected user context");
             }
         }
+
+        public override void SubscribeKVCallback(ref CustomType key, ref CustomType input, ref CustomType output, byte ctx, Status status) 
+        {
+        }
+
+        public override void SubscribeCallback(ref CustomType key, ref CustomType value, byte ctx)
+        {
+        }
     }
 }

@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using FASTER.client;
 
@@ -31,13 +32,17 @@ namespace FixedLenClient
 
             // Create a client session to the FasterKV server.
             // Sessions are mono-threaded, similar to normal FasterKV sessions.
-            using var session = client.NewSession(new Functions()); // Uses protocol WireFormat.DefaultFixedLenKV by default
+            using var session = client.NewSession(new Functions());
+            using var session2 = client.NewSession(new Functions());
 
             // Explicit version of NewSession call, where you provide all types, callback functions, and serializer
             // using var session = client.NewSession<long, long, byte, Functions, FixedLenSerializer<long, long, long, long>>(new Functions(), new FixedLenSerializer<long, long, long, long>());
 
             // Samples using sync client API
             SyncSamples(session);
+
+            // Samples using sync subscription client API
+            SyncSubscriptionSamples(session, session2);
 
             // Samples using async client API
             AsyncSamples(session).Wait();
@@ -47,6 +52,9 @@ namespace FixedLenClient
 
         static void SyncSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session)
         {
+            session.Upsert(23, 23 + 10000);
+            session.CompletePending(true);
+
             for (int i = 0; i < 1000; i++)
                 session.Upsert(i, i + 10000);
 
@@ -93,6 +101,28 @@ namespace FixedLenClient
 
             session.CompletePending(true);
         }
+
+        static void SyncSubscriptionSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session, ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session2)
+        {
+            session2.SubscribeKV(23);
+            session2.CompletePending(true);
+
+            for (int i = 0; i < 1000000; i++)
+                session.Upsert(23, i + 10);
+
+            // Flushes partially filled batches, does not wait for responses
+            session.Flush();
+            session.CompletePending(true);
+
+            session.RMW(23, 25);
+            session.CompletePending(true);
+
+            session.Flush();
+            session.CompletePending(true);
+
+            Thread.Sleep(1000);
+        }
+
 
         static async Task AsyncSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session)
         {

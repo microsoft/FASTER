@@ -31,6 +31,10 @@ namespace FixedLenClient
             }
         }
 
+        public override void SubscribeKVCallback(ref long key, ref long input, ref long output, byte ctx, Status status)
+        {
+        }
+
         public override void RMWCompletionCallback(ref long key, ref long input, ref long output, byte ctx, Status status)
         {
             if (ctx == 1)
