@@ -1,4 +1,5 @@
 ﻿using System;
+using FASTER.server;
 using NUnit.Framework;
 
 namespace FASTER.remote.test
@@ -6,13 +7,14 @@ namespace FASTER.remote.test
     [TestFixture]
     public class VarLenBinaryTests
     {
-        VarLenServer  server;
+        VarLenServer server;
         VarLenMemoryClient client;
 
         [SetUp]
         public void Setup()
         {
-            server = new VarLenServer(TestContext.CurrentContext.TestDirectory + "/VarLenBinaryTests", enablePubSub: false);
+            server = TestUtils.CreateVarLenServer(TestContext.CurrentContext.TestDirectory + "/VarLenBinaryTests");
+            server.Start();
             client = new VarLenMemoryClient();
         }
 

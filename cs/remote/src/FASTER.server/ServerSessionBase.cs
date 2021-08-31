@@ -32,7 +32,11 @@ namespace FASTER.server
         /// </summary>
         protected int bytesRead;
 
-        private readonly NetworkSender messageManager;
+        /// <summary>
+        /// Message manager
+        /// </summary>
+        protected readonly NetworkSender messageManager;
+
         private readonly int serverBufferSize;
 
 

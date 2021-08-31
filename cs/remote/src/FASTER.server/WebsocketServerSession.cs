@@ -542,7 +542,6 @@ namespace FASTER.server
 
         public unsafe override void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, ref byte* inputPtr, int sid, bool prefix)
         {
-            Input input = default;
             MessageType message;
 
             if (valPtr == null)

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Buffers;
+using System.Threading;
 using FASTER.client;
 using FASTER.common;
 using NUnit.Framework;
@@ -22,6 +23,9 @@ namespace FASTER.remote.test
 
         public ClientSession<ReadOnlyMemory<int>, ReadOnlyMemory<int>, ReadOnlyMemory<int>, (IMemoryOwner<int>, int), long, MemoryFunctions, MemoryParameterSerializer<int>> GetSession()
             => client.NewSession<ReadOnlyMemory<int>, (IMemoryOwner<int>, int), long, MemoryFunctions, MemoryParameterSerializer<int>>(new MemoryFunctions(), WireFormat.DefaultVarLenKV, new MemoryParameterSerializer<int>());
+
+        public ClientSession<ReadOnlyMemory<int>, ReadOnlyMemory<int>, ReadOnlyMemory<int>, (IMemoryOwner<int>, int), long, MemoryFunctions, MemoryParameterSerializer<int>> GetSession(MemoryFunctions f)
+            => client.NewSession<ReadOnlyMemory<int>, (IMemoryOwner<int>, int), long, MemoryFunctions, MemoryParameterSerializer<int>>(f, WireFormat.DefaultVarLenKV, new MemoryParameterSerializer<int>());
     }
 
     /// <summary>
@@ -29,6 +33,8 @@ namespace FASTER.remote.test
     /// </summary>
     public class MemoryFunctions : ICallbackFunctions<ReadOnlyMemory<int>, ReadOnlyMemory<int>, ReadOnlyMemory<int>, (IMemoryOwner<int>, int), long>
     {
+        readonly AutoResetEvent evt = new AutoResetEvent(false);
+
         /// <inheritdoc />
         public virtual void DeleteCompletionCallback(ref ReadOnlyMemory<int> key, long ctx) { }
 
@@ -59,7 +65,7 @@ namespace FASTER.remote.test
         public virtual void UpsertCompletionCallback(ref ReadOnlyMemory<int> key, ref ReadOnlyMemory<int> value, long ctx) { }
 
         /// <inheritdoc />
-        public virtual void SubscribeKVCallback(ref ReadOnlyMemory<int> key, ref ReadOnlyMemory<int> input, ref (IMemoryOwner<int>, int) output, long ctx, Status status) 
+        public virtual void SubscribeKVCallback(ref ReadOnlyMemory<int> key, ref ReadOnlyMemory<int> input, ref (IMemoryOwner<int>, int) output, long ctx, Status status)
         {
             try
             {
@@ -70,6 +76,7 @@ namespace FASTER.remote.test
                 Memory<int> expected = new Memory<int>(new int[len]);
                 expected.Span.Fill(check);
                 Assert.IsTrue(expected.Span.SequenceEqual(output.Item1.Memory.Span.Slice(0, output.Item2)));
+                evt.Set();
             }
             finally
             {
@@ -88,6 +95,9 @@ namespace FASTER.remote.test
             Memory<int> expected = new Memory<int>(new int[len]);
             expected.Span.Fill(check);
             Assert.IsTrue(expected.Span.SequenceEqual(value.Span.Slice(0, value.Length)));
+            evt.Set();
         }
+
+        public void WaitSubscribe() => evt.WaitOne();
     }
 }
