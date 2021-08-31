@@ -37,7 +37,7 @@ namespace FASTER.server
         /// <param name="src"></param>
         /// <param name="dst"></param>
         /// <param name="memoryPool"></param>
-        private static unsafe void CopyWithHeaderTo(ref SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
+        private static unsafe bool CopyWithHeaderTo(ref SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
             if (dst.IsSpanByte)
             {
@@ -60,5 +60,6 @@ namespace FASTER.server
                 *(int*)ptr = src.Length;
             src.AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
         }
+        return true;
     }
 }
