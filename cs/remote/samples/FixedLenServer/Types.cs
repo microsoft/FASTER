@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using FASTER.core;
 
-namespace FixedLenServer
+namespace FasterFixedLenServer
 {
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct Key : IFasterEqualityComparer<Key>
