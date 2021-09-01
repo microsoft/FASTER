@@ -22,6 +22,7 @@ namespace VarLenClient
                 port = int.Parse(args[1]);
 
             new MemoryBenchmark().Run(ip, port);
+            new SpanByteBenchmark().Run(ip, port);
             new MemorySamples().Run(ip, port);
             new CustomTypeSamples().Run(ip, port);
             Console.WriteLine("Success!");

@@ -67,10 +67,12 @@ namespace VarLenClient
         {
             try
             {
-                if (ctx == 0 && key.AsSpan().SequenceEqual(output.SpanByte.AsSpan()))
+                if (ctx == 0)
                 {
-                    if (status != Status.OK)
-                        Console.Write(++count);
+                    var expected = output.IsSpanByte ? output.SpanByte.AsSpan() : output.Memory.Memory.Span;
+                    if (status != Status.OK || key.AsSpan().SequenceEqual(expected))
+                        throw new Exception("Incorrect read result");
+
                 }
                 else
                 {
