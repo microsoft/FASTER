@@ -53,7 +53,7 @@ namespace VarLenClient
             session.CompletePending(true);
             sw.Stop();
 
-            Console.WriteLine("Total time: {0}ms for {1} gets", sw.ElapsedMilliseconds, NumBatches * BatchSize);
+            Console.WriteLine("Total time: {0}ms for {1} gets with Memory", sw.ElapsedMilliseconds, NumBatches * BatchSize);
         }
     }
 }

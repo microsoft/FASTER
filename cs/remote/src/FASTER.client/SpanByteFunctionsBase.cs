@@ -12,18 +12,18 @@ namespace FASTER.client
     public class SpanByteFunctionsBase : CallbackFunctionsBase<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte>
     {
         /// <inheritdoc />
-        public override void DeleteCompletionCallback(ref SpanByte key, byte ctx) { }
+        public virtual void DeleteCompletionCallback(ref SpanByte key, byte ctx) { }
         /// <inheritdoc />
-        public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, byte ctx, Status status) { }
+        public virtual void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, byte ctx, Status status) { }
         /// <inheritdoc />
-        public override void RMWCompletionCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, byte ctx, Status status) { }
+        public virtual void RMWCompletionCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, byte ctx, Status status) { }
         /// <inheritdoc />
-        public override void UpsertCompletionCallback(ref SpanByte key, ref SpanByte value, byte ctx) { }
+        public virtual void UpsertCompletionCallback(ref SpanByte key, ref SpanByte value, byte ctx) { }
         /// <inheritdoc />
-        public override void SubscribeKVCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, byte ctx, Status status) { }
+        public virtual void SubscribeKVCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, byte ctx, Status status) { }
         /// <inheritdoc/>
-        public override void PublishCompletionCallback(ref SpanByte key, ref SpanByte value, byte ctx) { }
+        public virtual void PublishCompletionCallback(ref SpanByte key, ref SpanByte value, byte ctx) { }
         /// <inheritdoc/>
-        public override void SubscribeCallback(ref SpanByte key, ref SpanByte value, byte ctx) { }
+        public virtual void SubscribeCallback(ref SpanByte key, ref SpanByte value, byte ctx) { }
     }
 }
