@@ -118,5 +118,28 @@ namespace FASTER.client
             return new ClientSession<Key, Value, Input, Output, byte, Functions, FixedLenSerializer<Key, Value, Input, Output>>
                 (store.address, store.port, functions, wireFormat, new FixedLenSerializer<Key, Value, Input, Output>(), maxSizeSettings);
         }
+        
+        /// <summary>
+        /// Create new session
+        /// </summary>
+        public static ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte, SpanByteFunctionsBase, SpanByteClientSerializer> NewSession(this FasterKVClient<SpanByte, SpanByte> store, SpanByteFunctionsBase functions, WireFormat wireFormat = WireFormat.DefaultVarLenKV, MaxSizeSettings maxSizeSettings = default, MemoryPool<byte> memoryPool = default)
+
+        {
+            return new ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte, SpanByteFunctionsBase, SpanByteClientSerializer>
+            (store.address, store.port, functions, wireFormat, new SpanByteClientSerializer(memoryPool),
+                maxSizeSettings);
+        }
+
+        /// <summary>
+        /// Create new session
+        /// </summary>
+        public static ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte, Functions, SpanByteClientSerializer> NewSession<Functions>(this FasterKVClient<SpanByte, SpanByte> store, Functions functions, WireFormat wireFormat = WireFormat.DefaultVarLenKV, MaxSizeSettings maxSizeSettings = default, MemoryPool<byte> memoryPool = default)
+           where Functions : SpanByteFunctionsBase
+
+        {
+            return new ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte, Functions, SpanByteClientSerializer>
+            (store.address, store.port, functions, wireFormat, new SpanByteClientSerializer(memoryPool),
+                maxSizeSettings);
+        }
     }
 }
