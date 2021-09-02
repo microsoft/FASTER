@@ -122,23 +122,23 @@ namespace FASTER.client
         /// <summary>
         /// Create new session
         /// </summary>
-        public static ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte, SpanByteFunctionsBase, SpanByteClientSerializer> NewSession(this FasterKVClient<SpanByte, SpanByte> store, SpanByteFunctionsBase functions, WireFormat wireFormat = WireFormat.DefaultVarLenKV, MaxSizeSettings maxSizeSettings = default, MemoryPool<byte> memoryPool = default)
+        public static ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte, SpanByteFunctionsBase, SpanByteClientSerializer> NewSession(this FasterKVClient<SpanByte, SpanByte> store, SpanByteFunctionsBase functions, WireFormat wireFormat = WireFormat.DefaultVarLenKV, MaxSizeSettings maxSizeSettings = default)
 
         {
             return new ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte, SpanByteFunctionsBase, SpanByteClientSerializer>
-            (store.address, store.port, functions, wireFormat, new SpanByteClientSerializer(memoryPool),
+            (store.address, store.port, functions, wireFormat, new SpanByteClientSerializer(),
                 maxSizeSettings);
         }
 
         /// <summary>
         /// Create new session
         /// </summary>
-        public static ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte, Functions, SpanByteClientSerializer> NewSession<Functions>(this FasterKVClient<SpanByte, SpanByte> store, Functions functions, WireFormat wireFormat = WireFormat.DefaultVarLenKV, MaxSizeSettings maxSizeSettings = default, MemoryPool<byte> memoryPool = default)
+        public static ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte, Functions, SpanByteClientSerializer> NewSession<Functions>(this FasterKVClient<SpanByte, SpanByte> store, Functions functions, WireFormat wireFormat = WireFormat.DefaultVarLenKV, MaxSizeSettings maxSizeSettings = default)
            where Functions : SpanByteFunctionsBase
 
         {
             return new ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte, Functions, SpanByteClientSerializer>
-            (store.address, store.port, functions, wireFormat, new SpanByteClientSerializer(memoryPool),
+            (store.address, store.port, functions, wireFormat, new SpanByteClientSerializer(),
                 maxSizeSettings);
         }
     }
