@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using FASTER.client;
 using FASTER.common;
@@ -22,13 +23,17 @@ namespace VarLenClient
 
             // Create a session to FasterKV server
             // Sessions are mono-threaded, similar to normal FasterKV sessions
-            using var session = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
-
-            // Explicit version of NewSession call, where you provide all types, callback functions, and serializer
-            // using var session = client.NewSession<long, long, long, Functions, BlittableParameterSerializer<long, long, long, long>>(new Functions(), new BlittableParameterSerializer<long, long, long, long>());
+            var session = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
+            var subSession = client.NewSession(new CustomTypeFunctions(), WireFormat.DefaultVarLenKV);
 
             // Samples using sync client API
             SyncVarLenSamples(session);
+
+            // Samples using sync client API
+            SyncVarLenSubscriptionKVSamples(session, subSession);
+
+            // Samples using sync client API
+            SyncVarLenSubscriptionSamples(session, subSession);
 
             // Samples using async client API
             AsyncVarLenSamples(session).Wait();
@@ -51,6 +56,54 @@ namespace VarLenClient
             session.Flush();
 
             session.CompletePending(true);
+        }
+
+        void SyncVarLenSubscriptionKVSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session,
+                                            ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session2)
+        {
+            session2.SubscribeKV(new CustomType(23));
+            session2.CompletePending(true);
+
+            session2.SubscribeKV(new CustomType(24));
+            session2.CompletePending(true);
+
+            session2.PSubscribeKV(new CustomType(25));
+            session2.CompletePending(true);
+
+            session.Upsert(new CustomType(23), new CustomType(2300));
+            session.CompletePending(true);
+
+            session.Upsert(new CustomType(24), new CustomType(2400));
+            session.CompletePending(true);
+
+            session.Upsert(new CustomType(25), new CustomType(2500));
+            session.CompletePending(true);
+
+            System.Threading.Thread.Sleep(1000);
+        }
+
+        void SyncVarLenSubscriptionSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session,
+                                            ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session2)
+        {
+            session2.Subscribe(new CustomType(23));
+            session2.CompletePending(true);
+
+            session2.Subscribe(new CustomType(24));
+            session2.CompletePending(true);
+
+            session2.PSubscribe(new CustomType(25));
+            session2.CompletePending(true);
+
+            session.Publish(new CustomType(23), new CustomType(2300));
+            session.CompletePending(true);
+
+            session.Publish(new CustomType(24), new CustomType(2400));
+            session.CompletePending(true);
+
+            session.Publish(new CustomType(25), new CustomType(2500));
+            session.CompletePending(true);
+
+            System.Threading.Thread.Sleep(1000);
         }
 
         async Task AsyncVarLenSamples(ClientSession<CustomType, CustomType, CustomType, CustomType, byte, CustomTypeFunctions, FixedLenSerializer<CustomType, CustomType, CustomType, CustomType>> session)
