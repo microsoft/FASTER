@@ -50,8 +50,9 @@ namespace VarLenClient
             sw.Start();
             for (int b = 0; b < NumBatches; b++)
             {
-                for (int c=0; c<BatchSize; c++)
+                for (int c = 0; c < BatchSize; c++)
                     session.Read(ref getBatch[c], ref input, ref output);
+
                 session.Flush();
             }
             session.CompletePending(true);
@@ -65,13 +66,16 @@ namespace VarLenClient
         private int count = 0;
         public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, byte ctx, Status status)
         {
+            count++;
             try
             {
                 if (ctx == 0)
                 {
                     var expected = output.IsSpanByte ? output.SpanByte.AsSpan() : output.Memory.Memory.Span;
-                    if (status != Status.OK || key.AsSpan().SequenceEqual(expected))
+                    if (status != Status.OK || !key.AsSpan().SequenceEqual(expected.Slice(0, output.Length)))
+                        //TODO:fails to read on the 139,999 call. Key 9998 which has been read 13 times prior.
                         throw new Exception("Incorrect read result");
+                    
 
                 }
                 else

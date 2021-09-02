@@ -9,7 +9,7 @@ namespace FASTER.client
     /// <summary>
     /// Base class for callback functions on SpanByte
     /// </summary>
-    public class SpanByteFunctionsBase : CallbackFunctionsBase<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte>
+    public class SpanByteFunctionsBase : ICallbackFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte>
     {
         /// <inheritdoc />
         public virtual void DeleteCompletionCallback(ref SpanByte key, byte ctx) { }
