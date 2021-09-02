@@ -11,7 +11,7 @@ namespace VarLenClient
     /// <summary>
     /// Variable length byte arrays as key value pairs
     /// </summary>
-     class SpanByteBenchmark
+    class SpanByteBenchmark
     {
         public void Run(string ip, int port)
         {
@@ -20,7 +20,7 @@ namespace VarLenClient
 
             SyncMemoryBenchmark(session);
         }
-        
+
 
         private unsafe void SyncMemoryBenchmark(ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, byte, SpanByteFunctionsClient, SpanByteClientSerializer> session)
         {
@@ -31,7 +31,7 @@ namespace VarLenClient
             for (int k = 0; k < BatchSize; k++)
             {
                 Span<byte> bytes = Encoding.ASCII.GetBytes(k.ToString());
-                fixed(byte* b = bytes)
+                fixed (byte* b = bytes)
                 {
                     getBatch[k] = SpanByte.FromPointer(b, bytes.Length);
                 }
@@ -52,41 +52,33 @@ namespace VarLenClient
             {
                 for (int c = 0; c < BatchSize; c++)
                     session.Read(ref getBatch[c], ref input, ref output);
-
                 session.Flush();
             }
             session.CompletePending(true);
             sw.Stop();
-
             Console.WriteLine("Total time: {0}ms for {1} gets with SpanByte", sw.ElapsedMilliseconds, NumBatches * BatchSize);
         }
     }
-     public class SpanByteFunctionsClient : SpanByteFunctionsBase
+    public class SpanByteFunctionsClient : SpanByteFunctionsBase
     {
-        private int count = 0;
         public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, byte ctx, Status status)
         {
-            count++;
-            try
-            {
+            
                 if (ctx == 0)
                 {
-                    var expected = output.IsSpanByte ? output.SpanByte.AsSpan() : output.Memory.Memory.Span;
-                    if (status != Status.OK || !key.AsSpan().SequenceEqual(expected.Slice(0, output.Length)))
-                        //TODO:fails to read on the 139,999 call. Key 9998 which has been read 13 times prior.
+                    if (status != Status.OK ||
+                        !key.AsSpan().SequenceEqual(output.SpanByte.AsSpan()))
+                    {
+                        
                         throw new Exception("Incorrect read result");
-                    
+                    }
 
                 }
                 else
                 {
                     throw new Exception("Unexpected user context");
                 }
-            }
-            finally
-            {
-                output.Memory.Dispose();
-            }
+         
         }
     }
 }
