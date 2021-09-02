@@ -12,27 +12,24 @@ namespace FASTER.client
     /// </summary>
     public unsafe class SpanByteClientSerializer : IClientSerializer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory>
     {
-        readonly MemoryPool<byte> memoryPool;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
-        public SpanByteClientSerializer(MemoryPool<byte> memoryPool = default)
+        public SpanByteClientSerializer()
         {
-            this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
 
-        /// <inheritdoc />
+        ///// <inheritdoc />
         public SpanByteAndMemory ReadOutput(ref byte* src)
         {
             int length = *(int*)src;
-            var mem = memoryPool.Rent(length);
-            new ReadOnlySpan<byte>(src + sizeof(int), length).CopyTo(mem.Memory.Span);
+            var sb = SpanByte.FromPointer(src + sizeof(int), length);
             src += length + sizeof(int);
-            return new SpanByteAndMemory(mem, length);
+            return new SpanByteAndMemory(sb);
         }
-
+        
         /// <inheritdoc />
         public SpanByte ReadKey(ref byte* src)
         {
