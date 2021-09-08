@@ -138,7 +138,7 @@ public class PersistenceExample
         long key = 1, input = 10;
         while (true)
         {
-            key = (seq % 1L << 20);
+            key = seq % (1L << 20);
             session.RMW(ref key, ref input, Empty.Default, seq++);
         }
     }
@@ -151,7 +151,7 @@ public class PersistenceExample
         long key = 1, input = 10;
         while (true)
         {
-            key = (seq % 1L << 20);
+            key = seq % (1L << 20);
             session.RMW(ref key, ref input, Empty.Default, seq++);
         }
     }
