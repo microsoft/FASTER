@@ -75,7 +75,7 @@ namespace FASTER.test
             var compactUntil = fht.Log.BeginAddress + (fht.Log.TailAddress - fht.Log.BeginAddress) / 5;
             compactUntil = session.Compact(compactUntil, true);
 
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read total keys - all but first 5 (deleted) should be present
             for (int i = 0; i < totalRecords; i++)
@@ -87,11 +87,11 @@ namespace FASTER.test
                     session.CompletePending(true);
                 else
                 {
-                    if (i < 10) 
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                    if (i < 10)
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     else
                     {
-                        Assert.IsTrue(status == Status.OK);
+                        Assert.AreEqual(Status.OK, status);
                         Assert.IsTrue(output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(key.Span));
                         output.Item1.Dispose();
                     }
@@ -105,10 +105,10 @@ namespace FASTER.test
                 while (iter.GetNext(out RecordInfo recordInfo))
                 {
                     var k = iter.GetKey();
-                    Assert.IsTrue(k.Span[0] >= 10); 
+                    Assert.GreaterOrEqual(k.Span[0], 10); 
                     count++;
                 }
-                Assert.IsTrue(count == 190); 
+                Assert.AreEqual(190, count); 
             }
 
             // Test iteration of all log records
@@ -118,11 +118,11 @@ namespace FASTER.test
                 while (iter.GetNext(out RecordInfo recordInfo))
                 {
                     var k = iter.GetKey();
-                    Assert.IsTrue(k.Span[0] >= 5);  
+                    Assert.GreaterOrEqual(k.Span[0], 5);  
                     count++;
                 }
                 // Includes 190 live records + 5 deleted records
-                Assert.IsTrue(count == 195);  
+                Assert.AreEqual(195, count);  
             }
         }
     }
@@ -131,7 +131,7 @@ namespace FASTER.test
     {
         public override void RMWCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
+            Assert.AreEqual(Status.OK, status);
         }
 
         public override void ReadCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status)
@@ -140,12 +140,12 @@ namespace FASTER.test
             {
                 if (ctx == 0)
                 {
-                    Assert.IsTrue(status == Status.OK);
+                    Assert.AreEqual(Status.OK, status);
                     Assert.IsTrue(output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(key.Span));
                 }
                 else
                 {
-                    Assert.IsTrue(status == Status.NOTFOUND);
+                    Assert.AreEqual(Status.NOTFOUND, status);
                 }
             }
             finally

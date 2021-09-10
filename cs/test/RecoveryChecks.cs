@@ -563,7 +563,7 @@ namespace FASTER.test.recovery
             await fht1.CompleteCheckpointAsync();
 
             Assert.IsTrue(_result1);
-            Assert.IsTrue(_token1 == token);
+            Assert.AreEqual(token, _token1);
 
             for (long key = 1000; key < 2000; key++)
             {
@@ -575,7 +575,7 @@ namespace FASTER.test.recovery
             await fht1.CompleteCheckpointAsync();
 
             Assert.IsTrue(_result2);
-            Assert.IsTrue(_token2 == token);
+            Assert.AreEqual(token, _token2);
 
             // Test that we can recover to latest version
             using var fht2 = new FasterKV<long, long>
@@ -586,7 +586,7 @@ namespace FASTER.test.recovery
 
             await fht2.RecoverAsync(default, _token2);
 
-            Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress, $"fht1 tail = {fht1.Log.TailAddress}; fht2 tail = {fht2.Log.TailAddress}");
+            Assert.AreEqual(fht2.Log.TailAddress, fht1.Log.TailAddress);
 
             using var s2 = fht2.NewSession(new MyFunctions2());
             for (long key = 0; key < 2000; key++)

@@ -64,7 +64,7 @@ namespace FASTER.test
                 session.Upsert(ref _key, ref _value, Empty.Default, 0);
             }
             session.CompletePending(true);
-            Assert.IsTrue(fht.EntryCount == totalRecords);
+            Assert.AreEqual(totalRecords, fht.EntryCount);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -79,7 +79,7 @@ namespace FASTER.test
                 }
                 else
                 {
-                    Assert.IsTrue(output == value,$"Output failure. Output:{output} and value: {value}");
+                    Assert.AreEqual(value, output);
                 }
             }
         }
@@ -88,7 +88,7 @@ namespace FASTER.test
         {
             public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status)
             {
-                Assert.IsTrue(output == key, $"Output failure in call back. Output:{output} and key: {key}");
+                Assert.AreEqual(key, output);
             }
         }
     }

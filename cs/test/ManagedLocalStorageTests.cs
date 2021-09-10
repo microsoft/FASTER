@@ -127,12 +127,12 @@ namespace FASTER.test
                             while (iter.GetNext(out byte[] result, out _, out _))
                             {
                                 if (numEnqueueThreads == 1)
-                                    Assert.IsTrue(result[0] == (byte)currentEntry, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString());
+                                    Assert.AreEqual((byte)currentEntry, result[0]);
                                 currentEntry++;
                             }
                         }
 
-                        Assert.IsTrue(currentEntry == numEntries * numEnqueueThreads);
+                        Assert.AreEqual(numEntries * numEnqueueThreads, currentEntry);
                     });
             }
 
@@ -143,7 +143,6 @@ namespace FASTER.test
 
             // Make sure number of entries is same as current - also makes sure that data verification was not skipped
             Assert.AreEqual(numEntries, currentEntry);
-
         }
 
         [Test]
@@ -169,19 +168,13 @@ namespace FASTER.test
 
             // Read the log just to verify can actually read it
             int currentEntry = 0;
-            using (var iter = logFullParams.Scan(0, 100_000_000))
+            using var iter = logFullParams.Scan(0, 100_000_000);
+            while (iter.GetNext(out byte[] result, out _, out _))
             {
-                while (iter.GetNext(out byte[] result, out _, out _))
-                {
-                    Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as " + currentEntry.ToString());
-
-                    currentEntry++;
-                }
+                Assert.AreEqual(currentEntry, result[currentEntry]);
+                currentEntry++;
             }
         }
-
-
-
     }
 }
 

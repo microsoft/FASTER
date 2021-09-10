@@ -91,7 +91,7 @@ namespace FASTER.test.async
             var guid = s1.ID;
             using (var s3 = fht2.For(functions).ResumeSession<AdSimpleFunctions>(guid, out CommitPoint lsn))
             {
-                Assert.IsTrue(lsn.UntilSerialNo == numOps - 1);
+                Assert.AreEqual(numOps - 1, lsn.UntilSerialNo);
 
                 for (int key = 0; key < numOps; key++)
                 {
@@ -101,7 +101,7 @@ namespace FASTER.test.async
                         s3.CompletePending(true,true);
                     else
                     {
-                        Assert.IsTrue(output.value.numClicks == key);
+                        Assert.AreEqual(key, output.value.numClicks);
                     }
                 }
             }
@@ -116,8 +116,8 @@ namespace FASTER.test.async
     {
         public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.numClicks == key.adId);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(key.adId, output.value.numClicks);
         }
 
         // Read functions

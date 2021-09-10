@@ -44,7 +44,7 @@ namespace FASTER.test.recovery
 
         private static unsafe void Finish_MallocFixedPageSizeRecoveryTest(int seed, IDevice device, int numBucketsToAdd, long[] logicalAddresses, ulong numBytesWritten, MallocFixedPageSize<HashBucket> recoveredAllocator, ulong numBytesRead)
         {
-            Assert.IsTrue(numBytesWritten == numBytesRead);
+            Assert.AreEqual(numBytesRead, numBytesWritten);
 
             var rand2 = new Random(seed);
             for (int i = 0; i < numBucketsToAdd; i++)
@@ -53,7 +53,7 @@ namespace FASTER.test.recovery
                 var bucket = (HashBucket*)recoveredAllocator.GetPhysicalAddress(logicalAddress);
                 for (int j = 0; j < Constants.kOverflowBucketIndex; j++)
                 {
-                    Assert.IsTrue(bucket->bucket_entries[j] == rand2.Next());
+                    Assert.AreEqual(rand2.Next(), bucket->bucket_entries[j]);
                 }
             }
 
@@ -149,11 +149,11 @@ namespace FASTER.test.recovery
                 var exists1 = hash_table1.FindTag(hash, tag, ref bucket1, ref slot1, ref entry1);
                 var exists2 = hash_table2.FindTag(hash, tag, ref bucket2, ref slot2, ref entry2);
 
-                Assert.IsTrue(exists1 == exists2);
+                Assert.AreEqual(exists2, exists1);
 
                 if (exists1)
                 {
-                    Assert.IsTrue(entry1.word == entry2.word);
+                    Assert.AreEqual(entry2.word, entry1.word);
                 }
             }
 

@@ -84,7 +84,8 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await readtasks[key].ConfigureAwait(false)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
         }
 
@@ -125,7 +126,8 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await readtasks[key].ConfigureAwait(false)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key + key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key + key, output);
             }
         }
     }

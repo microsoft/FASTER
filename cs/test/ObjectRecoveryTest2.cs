@@ -131,8 +131,8 @@ namespace FASTER.test.recovery.objects
                     context.FinalizeRead(ref status, ref g1);
                 }
 
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(g1.value.value == i.ToString());
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(i.ToString(), g1.value.value);
             }
 
             if (delete)
@@ -149,7 +149,7 @@ namespace FASTER.test.recovery.objects
                     context.FinalizeRead(ref status, ref output);
                 }
 
-                Assert.IsTrue(status == Status.NOTFOUND);
+                Assert.AreEqual(Status.NOTFOUND, status);
             }
         }
     }

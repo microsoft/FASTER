@@ -63,11 +63,11 @@ namespace FASTER.test
                 }
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.Length == len);
+                    Assert.AreEqual(Status.OK, status);
+                    Assert.AreEqual(len, output.Length);
                     for (int j = 0; j < len; j++)
                     {
-                        Assert.IsTrue(output[j] == len);
+                        Assert.AreEqual(len, output[j]);
                     }
                 }
             }
@@ -134,11 +134,11 @@ namespace FASTER.test
                 }
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.Length == len);
+                    Assert.AreEqual(Status.OK, status);
+                    Assert.AreEqual(len, output.Length);
                     for (int j = 0; j < len; j++)
                     {
-                        Assert.IsTrue(output[j] == len);
+                        Assert.AreEqual(len, output[j]);
                     }
                 }
             }

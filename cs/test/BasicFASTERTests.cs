@@ -84,8 +84,8 @@ namespace FASTER.test
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
             AssertCompleted(Status.OK, status);
-            Assert.IsTrue(output.value.vfield1 == value.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            Assert.AreEqual(value.vfield1, output.value.vfield1);
+            Assert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
         [Test]
@@ -121,8 +121,8 @@ namespace FASTER.test
             status = session.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
             AssertCompleted(Status.OK, status);
-            Assert.IsTrue(output.value.vfield1 == value2.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value2.vfield2);
+            Assert.AreEqual(value2.vfield1, output.value.vfield1);
+            Assert.AreEqual(value2.vfield2, output.value.vfield2);
         }
 
 
@@ -221,8 +221,8 @@ namespace FASTER.test
                     session.CompletePending(true);
                 }
 
-                Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // Clean up and retry - should not find now
@@ -234,7 +234,7 @@ namespace FASTER.test
                 var i = r.Next(10000);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                Assert.IsTrue(session.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.NOTFOUND);
+                Assert.AreEqual(Status.NOTFOUND, session.Read(ref key1, ref input, ref output, Empty.Default, 0));
             }
         }
 
@@ -276,8 +276,8 @@ namespace FASTER.test
                     session.CompletePending(true);
                 }
 
-                Assert.IsTrue(output.value.vfield1 == value.vfield1, "output1:" + output.value.vfield1.ToString() + " value1:" + value.vfield1.ToString());
-                Assert.IsTrue(output.value.vfield2 == value.vfield2, "output2:" + output.value.vfield2.ToString() + " value2:" + value.vfield2.ToString());
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // Shift head and retry - should not find in main memory now
@@ -290,7 +290,7 @@ namespace FASTER.test
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 Status foundStatus = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(foundStatus == Status.PENDING, "Found Status:" + foundStatus.ToString() + " Expected Status: PENDING");
+                Assert.AreEqual(Status.PENDING, foundStatus);
                 session.CompletePending(true);
             }
         }
@@ -355,8 +355,8 @@ namespace FASTER.test
                 status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
 
                 AssertCompleted(Status.OK, status);
-                Assert.IsTrue(output.value.vfield1 == 2 * value.vfield1, "found " + output.value.vfield1 + ", expected " + 2 * value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == 2 * value.vfield2);
+                Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
+                Assert.AreEqual(2 * value.vfield2, output.value.vfield2);
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
@@ -416,8 +416,8 @@ namespace FASTER.test
                 status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
 
                 AssertCompleted(Status.OK, status);
-                Assert.IsTrue(output.value.vfield1 == 2 * value.vfield1, "found " + output.value.vfield1 + ", expected " + 2 * value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == 2 * value.vfield2);
+                Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
+                Assert.AreEqual(2 * value.vfield2, output.value.vfield2);
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
@@ -447,10 +447,10 @@ namespace FASTER.test
             AssertCompleted(Status.OK, status);
 
             // Verify the read data
-            Assert.IsTrue(output.value.vfield1 == value.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value.vfield2);
-            Assert.IsTrue(13 == key1.kfield1);
-            Assert.IsTrue(14 == key1.kfield2);
+            Assert.AreEqual(value.vfield1, output.value.vfield1);
+            Assert.AreEqual(value.vfield2, output.value.vfield2);
+            Assert.AreEqual(key1.kfield1, 13);
+            Assert.AreEqual(key1.kfield2, 14);
         }
 
         // Test the overload call of .Read (key, out output, userContext, serialNo)
@@ -472,10 +472,10 @@ namespace FASTER.test
             AssertCompleted(Status.OK, status);
 
             // Verify the read data
-            Assert.IsTrue(output.value.vfield1 == value.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value.vfield2);
-            Assert.IsTrue(13 == key1.kfield1);
-            Assert.IsTrue(14 == key1.kfield2);
+            Assert.AreEqual(value.vfield1, output.value.vfield1);
+            Assert.AreEqual(value.vfield2, output.value.vfield2);
+            Assert.AreEqual(key1.kfield1, 13);
+            Assert.AreEqual(key1.kfield2, 14);
         }
 
 
@@ -501,10 +501,10 @@ namespace FASTER.test
             AssertCompleted(Status.OK, status);
 
             // Verify the read data
-            Assert.IsTrue(output.value.vfield1 == value.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value.vfield2);
-            Assert.IsTrue(13 == key1.kfield1);
-            Assert.IsTrue(14 == key1.kfield2);
+            Assert.AreEqual(value.vfield1, output.value.vfield1);
+            Assert.AreEqual(value.vfield2, output.value.vfield2);
+            Assert.AreEqual(key1.kfield1, 13);
+            Assert.AreEqual(key1.kfield2, 14);
         }
 
 
@@ -533,10 +533,10 @@ namespace FASTER.test
             var status = session.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(Status.OK, status);
 
-            Assert.IsTrue(output.value.vfield1 == value.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value.vfield2);
-            Assert.IsTrue(13 == key1.kfield1);
-            Assert.IsTrue(14 == key1.kfield2);
+            Assert.AreEqual(value.vfield1, output.value.vfield1);
+            Assert.AreEqual(value.vfield2, output.value.vfield2);
+            Assert.AreEqual(key1.kfield1, 13);
+            Assert.AreEqual(key1.kfield2, 14);
         }
 
         // Test the overload call of .Read (key)
@@ -559,10 +559,10 @@ namespace FASTER.test
             var (status, output) = session.Read(key1);
             AssertCompleted(Status.OK, status);
 
-            Assert.IsTrue(output.value.vfield1 == value.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value.vfield2);
-            Assert.IsTrue(13 == key1.kfield1);
-            Assert.IsTrue(14 == key1.kfield2);
+            Assert.AreEqual(value.vfield1, output.value.vfield1);
+            Assert.AreEqual(value.vfield2, output.value.vfield2);
+            Assert.AreEqual(key1.kfield1, 13);
+            Assert.AreEqual(key1.kfield2, 14);
         }
 
         // Test the ReadAtAddress where ReadFlags = ReadFlags.none
@@ -591,10 +591,10 @@ namespace FASTER.test
             var status = session.ReadAtAddress(readAtAddress, ref input, ref output, ReadFlags.None, Empty.Default, 0);
             AssertCompleted(Status.OK, status);
 
-            Assert.IsTrue(output.value.vfield1 == value.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value.vfield2);
-            Assert.IsTrue(13 == key1.kfield1);
-            Assert.IsTrue(14 == key1.kfield2);
+            Assert.AreEqual(value.vfield1, output.value.vfield1);
+            Assert.AreEqual(value.vfield2, output.value.vfield2);
+            Assert.AreEqual(key1.kfield1, 13);
+            Assert.AreEqual(key1.kfield2, 14);
         }
 
         // Test the ReadAtAddress where ReadFlags = ReadFlags.SkipReadCache
@@ -721,15 +721,15 @@ namespace FASTER.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            Assert.IsTrue(fht.EntryCount == 0);
+            Assert.AreEqual(0, fht.EntryCount);
 
             session.Upsert(ref key1, ref value);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
             AssertCompleted(Status.OK, status);
 
-            Assert.IsTrue(fht.EntryCount == 1);
-            Assert.IsTrue(output.value.vfield1 == value.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            Assert.AreEqual(1, fht.EntryCount);
+            Assert.AreEqual(value.vfield1, output.value.vfield1);
+            Assert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
         // Simple Upsert test of overload where not using Ref for key and value and setting all parameters
@@ -757,8 +757,8 @@ namespace FASTER.test
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
             AssertCompleted(Status.OK, status);
 
-            Assert.IsTrue(output.value.vfield1 == value.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            Assert.AreEqual(value.vfield1, output.value.vfield1);
+            Assert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
 
@@ -799,8 +799,8 @@ namespace FASTER.test
                 var status = session.Read(ref key, ref input, ref output, serialNo: maxLap + 1);
 
                 AssertCompleted(Status.OK, status);
-                Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
         }
 
@@ -818,11 +818,11 @@ namespace FASTER.test
             long key = 1, value = 1, input = 10, output = 0;
             s.Upsert(ref key, ref value);
             s.Read(ref key, ref output);
-            Assert.IsTrue(output == value);
+            Assert.AreEqual(value, output);
             s.RMW(ref key, ref input);
             s.RMW(ref key, ref input);
             s.Read(ref key, ref output);
-            Assert.IsTrue(output == 10);
+            Assert.AreEqual(10, output);
         }
     }
 }
