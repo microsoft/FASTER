@@ -65,5 +65,16 @@ namespace FASTER.benchmark
         public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx)
         {
         }
+
+        public void SubscribeKVCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
+        {
+        }
+
+        public void PublishCompletionCallback(ref Key key, ref Value value, Empty ctx)
+        {
+        }
+        public void SubscribeCallback(ref Key key, ref Value value, Empty ctx)
+        {
+        }
     }
 }

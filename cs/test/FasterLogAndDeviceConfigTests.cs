@@ -72,7 +72,7 @@ namespace FASTER.test
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
-                       Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as "+currentEntry.ToString() );
+                       Assert.AreEqual(currentEntry, result[currentEntry]);
                        currentEntry++;
                 }
             }

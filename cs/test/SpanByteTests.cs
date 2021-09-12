@@ -66,11 +66,11 @@ namespace FASTER.test
             {
                 using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/MultiReadSpanByteKeyTest.log", deleteOnClose: true);
                 using var fht = new FasterKV<SpanByte, long>(
-                    size: 1L << 20,
+                    size: 1L << 10,
                     new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
                 using var session = fht.For(new MultiReadSpanByteKeyTestFunctions()).NewSession<MultiReadSpanByteKeyTestFunctions>();
 
-                for (int i = 0; i < 3000; i++)
+                for (int i = 0; i < 200; i++)
                 {
                     var key = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
                     fixed (byte* _ = key)

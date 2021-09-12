@@ -17,9 +17,9 @@ namespace FASTER.test.recovery.sumstore
     [TestFixture]
     internal class SharedDirectoryTests
     {
-        const long numUniqueKeys = (1 << 14);
-        const long keySpace = (1L << 14);
-        const long numOps = (1L << 19);
+        const long numUniqueKeys = (1 << 5);
+        const long keySpace = (1L << 5);
+        const long numOps = (1L << 10);
         const long completePendingInterval = (1L << 10);
         private string rootPath;
         private string sharedLogDirectory;
@@ -214,7 +214,7 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < numUniqueKeys; i++)
             {
                 var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                Assert.IsTrue(status == Status.OK);
+                Assert.AreEqual(Status.OK, status);
                 inputArray[i].numClicks = output.value;
             }
 

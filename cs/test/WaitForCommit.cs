@@ -15,6 +15,7 @@ namespace FASTER.test
         private string path;
         static readonly byte[] entry = new byte[10];
         static readonly AutoResetEvent ev = new AutoResetEvent(false);
+        static readonly AutoResetEvent done = new AutoResetEvent(false);
 
         [SetUp]
         public void Setup()
@@ -82,7 +83,7 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        Assert.IsTrue(result[currentEntry] == (byte)currentEntry, $"Fail - Result[{currentEntry}]:{result[0]} not match expected:{currentEntry}");
+                        Assert.AreEqual((byte)currentEntry, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -90,6 +91,8 @@ namespace FASTER.test
 
             // Make sure expected entries is same as current - also makes sure that data verification was not skipped
             Assert.AreEqual(expectedEntries, currentEntry,$"expectedEntries:{expectedEntries} does not equal currentEntry:{currentEntry}");
+
+            done.WaitOne();
         }
 
         static void LogWriter()
@@ -100,6 +103,7 @@ namespace FASTER.test
             log.Enqueue(entry);
             ev.Set();
             log.WaitForCommit(log.TailAddress);
+            done.Set();
         }
 
         static void LogWriterAsync()
@@ -111,6 +115,7 @@ namespace FASTER.test
             log.EnqueueAsync(entry).AsTask().GetAwaiter().GetResult();
             ev.Set();
             log.WaitForCommitAsync(log.TailAddress).AsTask().GetAwaiter().GetResult();
+            done.Set();
         }
     }
 }

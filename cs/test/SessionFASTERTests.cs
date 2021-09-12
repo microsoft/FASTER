@@ -53,11 +53,11 @@ namespace FASTER.test.async
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
+                Assert.AreEqual(Status.OK, status);
             }
 
-            Assert.IsTrue(output.value.vfield1 == value.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value.vfield2);
+            Assert.AreEqual(value.vfield1, output.value.vfield1);
+            Assert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
         [Test]
@@ -85,11 +85,11 @@ namespace FASTER.test.async
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
+                Assert.AreEqual(Status.OK, status);
             }
 
-            Assert.IsTrue(output.value.vfield1 == value1.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value1.vfield2);
+            Assert.AreEqual(value1.vfield1, output.value.vfield1);
+            Assert.AreEqual(value1.vfield2, output.value.vfield2);
 
             status = session2.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
@@ -99,11 +99,11 @@ namespace FASTER.test.async
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
+                Assert.AreEqual(Status.OK, status);
             }
 
-            Assert.IsTrue(output.value.vfield1 == value2.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value2.vfield2);
+            Assert.AreEqual(value2.vfield1, output.value.vfield1);
+            Assert.AreEqual(value2.vfield2, output.value.vfield2);
         }
 
         [Test]
@@ -128,11 +128,11 @@ namespace FASTER.test.async
                 }
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
+                    Assert.AreEqual(Status.OK, status);
                 }
 
-                Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }).Wait();
         }
 
@@ -159,11 +159,11 @@ namespace FASTER.test.async
                 }
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
+                    Assert.AreEqual(Status.OK, status);
                 }
 
-                Assert.IsTrue(output.value.vfield1 == value1.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value1.vfield2);
+                Assert.AreEqual(value1.vfield1, output.value.vfield1);
+                Assert.AreEqual(value1.vfield2, output.value.vfield2);
             });
 
             var t2 = Task.CompletedTask.ContinueWith((t) =>
@@ -184,11 +184,11 @@ namespace FASTER.test.async
                 }
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
+                    Assert.AreEqual(Status.OK, status);
                 }
 
-                Assert.IsTrue(output.value.vfield1 == value2.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value2.vfield2);
+                Assert.AreEqual(value2.vfield1, output.value.vfield1);
+                Assert.AreEqual(value2.vfield2, output.value.vfield2);
             });
 
             t1.Wait();
@@ -216,11 +216,11 @@ namespace FASTER.test.async
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
+                Assert.AreEqual(Status.OK, status);
             }
 
-            Assert.IsTrue(output.value.vfield1 == value1.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value1.vfield2);
+            Assert.AreEqual(value1.vfield1, output.value.vfield1);
+            Assert.AreEqual(value1.vfield2, output.value.vfield2);
 
             session.Dispose();
 
@@ -239,7 +239,7 @@ namespace FASTER.test.async
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
+                Assert.AreEqual(Status.OK, status);
             }
 
             status = session.Read(ref key2, ref input, ref output, Empty.Default, 0);
@@ -250,11 +250,11 @@ namespace FASTER.test.async
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
+                Assert.AreEqual(Status.OK, status);
             }
 
-            Assert.IsTrue(output.value.vfield1 == value2.vfield1);
-            Assert.IsTrue(output.value.vfield2 == value2.vfield2);
+            Assert.AreEqual(value2.vfield1, output.value.vfield1);
+            Assert.AreEqual(value2.vfield2, output.value.vfield2);
 
             session.Dispose();
         }

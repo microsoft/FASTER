@@ -64,7 +64,8 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(ref key)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
         }
 
@@ -85,7 +86,8 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(ref key, Empty.Default, 99, cancellationToken)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
         }
 
@@ -105,7 +107,8 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(key,Empty.Default, 99)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
         }
 
@@ -194,12 +197,13 @@ namespace FASTER.test.async
                     r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
-            Assert.IsTrue(numOps > 100);
+            Assert.Greater(numOps, 100);
 
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(ref key)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
 
             {   // Scope for variables
@@ -209,7 +213,7 @@ namespace FASTER.test.async
                     r = await r.CompleteAsync(); // test async version of Delete completion
 
                 var (status, _) = (await s1.ReadAsync(ref deleteKey)).Complete();
-                Assert.IsTrue(status == Status.NOTFOUND);
+                Assert.AreEqual(Status.NOTFOUND, status);
             }
         }
 
@@ -226,12 +230,13 @@ namespace FASTER.test.async
                 Assert.AreNotEqual(Status.PENDING, status);
             }
 
-            Assert.IsTrue(numOps > 100);
+            Assert.Greater(numOps, 100);
 
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(key)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
 
             {   // Scope for variables
@@ -240,7 +245,7 @@ namespace FASTER.test.async
                 Assert.AreNotEqual(Status.PENDING, status);
 
                 (status, _) = (await s1.ReadAsync(deleteKey)).Complete();
-                Assert.IsTrue(status == Status.NOTFOUND);
+                Assert.AreEqual(Status.NOTFOUND, status);
             }
         }
 

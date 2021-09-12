@@ -57,26 +57,26 @@ namespace FASTER.test
             int val = 0;
             while (iter.GetNext(out _, out KeyStruct key, out ValueStruct value))
             {
-                Assert.IsTrue(key.kfield1 == val);
-                Assert.IsTrue(key.kfield2 == val + 1);
-                Assert.IsTrue(value.vfield1 == val);
-                Assert.IsTrue(value.vfield2 == val + 1);
+                Assert.AreEqual(val, key.kfield1);
+                Assert.AreEqual(val + 1, key.kfield2);
+                Assert.AreEqual(val, value.vfield1);
+                Assert.AreEqual(val + 1, value.vfield2);
                 val++;
             }
-            Assert.IsTrue(totalRecords == val);
+            Assert.AreEqual(val, totalRecords);
 
             iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.DoublePageBuffering);
 
             val = 0;
             while (iter.GetNext(out RecordInfo recordInfo, out KeyStruct key, out ValueStruct value))
             {
-                Assert.IsTrue(key.kfield1 == val);
-                Assert.IsTrue(key.kfield2 == val + 1);
-                Assert.IsTrue(value.vfield1 == val);
-                Assert.IsTrue(value.vfield2 == val + 1);
+                Assert.AreEqual(val, key.kfield1);
+                Assert.AreEqual(val + 1, key.kfield2);
+                Assert.AreEqual(val, value.vfield1);
+                Assert.AreEqual(val + 1, value.vfield2);
                 val++;
             }
-            Assert.IsTrue(totalRecords == val);
+            Assert.AreEqual(val, totalRecords);
 
             s.Dispose();
         }
@@ -87,7 +87,7 @@ namespace FASTER.test
 
             public void OnCompleted()
             {
-                Assert.IsTrue(val == totalRecords);
+                Assert.AreEqual(totalRecords, val);
             }
 
             public void OnError(Exception error)
@@ -98,10 +98,10 @@ namespace FASTER.test
             {
                 while (iter.GetNext(out _, out KeyStruct key, out ValueStruct value))
                 {
-                    Assert.IsTrue(key.kfield1 == val);
-                    Assert.IsTrue(key.kfield2 == val + 1);
-                    Assert.IsTrue(value.vfield1 == val);
-                    Assert.IsTrue(value.vfield2 == val + 1);
+                    Assert.AreEqual(val, key.kfield1);
+                    Assert.AreEqual(val + 1, key.kfield2);
+                    Assert.AreEqual(val, value.vfield1);
+                    Assert.AreEqual(val + 1, value.vfield2);
                     val++;
                 }
             }

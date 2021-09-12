@@ -68,7 +68,7 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.PENDING);
+                Assert.AreEqual(Status.PENDING, status);
                 session.CompletePending(true);
             }
 
@@ -80,8 +80,8 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.value == value.value);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(value.value, output.value.value);
             }
 
             // Evict the read cache entirely
@@ -95,7 +95,7 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.PENDING);
+                Assert.AreEqual(Status.PENDING, status);
                 session.CompletePending(true);
             }
 
@@ -107,8 +107,8 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.value == value.value);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(value.value, output.value.value);
             }
 
 
@@ -138,8 +138,8 @@ namespace FASTER.test
                 var value = new MyValue { value = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.value == value.value);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(value.value, output.value.value);
             }
         }
 
@@ -170,7 +170,7 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.PENDING);
+                Assert.AreEqual(Status.PENDING, status);
                 session.CompletePending(true);
             }
 
@@ -182,8 +182,8 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.value == value.value);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(value.value, output.value.value);
             }
 
             // Evict the read cache entirely
@@ -197,7 +197,7 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.PENDING);
+                Assert.AreEqual(Status.PENDING, status);
                 session.CompletePending(true);
             }
 
@@ -209,8 +209,8 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.value == value.value);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(value.value, output.value.value);
             }
         }
     }
