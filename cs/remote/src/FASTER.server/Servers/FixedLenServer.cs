@@ -24,7 +24,7 @@ namespace FASTER.server
         /// <param name="functionsGen"></param>
         /// <param name="maxSizeSettings"></param>
         public FixedLenServer(ServerOptions opts, Func<WireFormat, Functions> functionsGen, MaxSizeSettings maxSizeSettings = default)
-            : base(opts, functionsGen, new FixedLenSerializer<Key, Value, Input, Output>(), new FixedLenKeyInputSerializer<Key, Input>(), maxSizeSettings)
+            : base(opts, functionsGen, new FixedLenSerializer<Key, Value, Input, Output>(), new FixedLenKeySerializer<Key, Input>(), maxSizeSettings)
         {
         }
     }

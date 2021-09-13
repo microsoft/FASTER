@@ -132,7 +132,7 @@ namespace FASTER.server
                                         fixed (byte* inputPtr = &sub.Value.Item2[0])
                                         {
                                             byte* inputBytePtr = inputPtr;
-                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytePtr, ref inputBytePtr, sub.Key, false);
+                                            serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytePtr, 0, ref inputBytePtr, sub.Key);
                                         }
                                     }
                                 }
@@ -146,8 +146,8 @@ namespace FASTER.server
                                         byte* subPrefixPtr = subscribedPrefixPtr;
                                         byte* reqKeyPtr = ptr;
 
-                                        bool match = keyInputSerializer.Match(ref keyInputSerializer.ReadKeyByRef(ref reqKeyPtr),
-                                            ref keyInputSerializer.ReadKeyByRef(ref subPrefixPtr));
+                                        bool match = keyInputSerializer.Match(ref keyInputSerializer.ReadKeyByRef(ref reqKeyPtr), false,
+                                            ref keyInputSerializer.ReadKeyByRef(ref subPrefixPtr), false);
                                         if (match)
                                         {
                                             foreach (var sub in prefixSubscriptionServerSessionDict)
@@ -159,7 +159,7 @@ namespace FASTER.server
                                                 fixed (byte* inputPtr = &sub.Value.Item2[0])
                                                 {
                                                     byte* inputBytePtr = inputPtr;
-                                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, ref inputBytePtr, sub.Key, true);
+                                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, 0, ref inputBytePtr, sub.Key);
                                                 }
                                             }
                                         }
