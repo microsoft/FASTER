@@ -92,9 +92,9 @@ namespace FASTER.test
                     var foundEntry = record.Result.Item1[1];  // 1
                     var foundTotal = record.Result.Item2;
 
-                    Assert.IsTrue(foundFlagged == (byte)entryFlag, $"Fail reading data - Found Flagged Entry:{foundFlagged}  Expected Flagged entry:{entryFlag}");
-                    Assert.IsTrue(foundEntry == 1, $"Fail reading data - Found Normal Entry:{foundEntry} Expected Value: 1");
-                    Assert.IsTrue(foundTotal == entryLength, $"Fail reading data - Found Total:{foundTotal}  Expected Total: {entryLength}");
+                    Assert.AreEqual((byte)entryFlag, foundFlagged, $"Fail reading Flagged Entry");
+                    Assert.AreEqual(1, foundEntry, $"Fail reading Normal Entry");
+                    Assert.AreEqual(entryLength, foundTotal, $"Fail reading Total");
 
                     break;
                 case ParameterDefaultsIteratorType.LengthParam:
@@ -104,9 +104,9 @@ namespace FASTER.test
                     foundEntry = record.Result.Item1[1];  // 1
                     foundTotal = record.Result.Item2;
 
-                    Assert.IsTrue(foundFlagged == (byte)entryFlag, $"Fail reading data - Found Flagged Entry:{foundFlagged}  Expected Flagged entry:{entryFlag}");
-                    Assert.IsTrue(foundEntry == 1, $"Fail reading data - Found Normal Entry:{foundEntry} Expected Value: 1");
-                    Assert.IsTrue(foundTotal == entryLength, $"Fail reading data - Found Total:{foundTotal}  Expected Total: {entryLength}");
+                    Assert.AreEqual((byte)entryFlag, foundFlagged, $"Fail reading Flagged Entry");
+                    Assert.AreEqual(1, foundEntry, $"Fail reading Normal Entry");
+                    Assert.AreEqual(entryLength, foundTotal, $"Fail readingTotal");
 
                     break;
                 case ParameterDefaultsIteratorType.TokenParam:
@@ -118,9 +118,9 @@ namespace FASTER.test
                     foundEntry = record.Result.Item1[1];  // 1
                     foundTotal = record.Result.Item2;
 
-                    Assert.IsTrue(foundFlagged == (byte)entryFlag, $"Fail reading data - Found Flagged Entry:{foundFlagged}  Expected Flagged entry:{entryFlag}");
-                    Assert.IsTrue(foundEntry == 1, $"Fail reading data - Found Normal Entry:{foundEntry} Expected Value: 1");
-                    Assert.IsTrue(foundTotal == entryLength, $"Fail reading data - Found Total:{foundTotal}  Expected Total: {entryLength}");
+                    Assert.AreEqual((byte)entryFlag, foundFlagged, $"Fail readingFlagged Entry");
+                    Assert.AreEqual(1, foundEntry, $"Fail reading Normal Entry");
+                    Assert.AreEqual(entryLength, foundTotal, $"Fail reading Total");
 
                     // Read one entry as IMemoryOwner and verify
                     var recordMemoryOwner = log.ReadAsync(log.BeginAddress, MemoryPool<byte>.Shared, 104, cts);

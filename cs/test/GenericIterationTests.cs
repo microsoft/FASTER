@@ -67,12 +67,11 @@ namespace FASTER.test
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
-                Assert.IsTrue(iter.GetValue().value == iter.GetKey().key);
+                Assert.AreEqual(iter.GetKey().key, iter.GetValue().value);
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords);
-
+            Assert.AreEqual(totalRecords, count);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -86,11 +85,11 @@ namespace FASTER.test
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
-                Assert.IsTrue(iter.GetValue().value == iter.GetKey().key * 2);
+                Assert.AreEqual(iter.GetKey().key * 2, iter.GetValue().value);
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords);
+            Assert.AreEqual(totalRecords, count);
 
             for (int i = totalRecords / 2; i < totalRecords; i++)
             {
@@ -107,7 +106,7 @@ namespace FASTER.test
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords);
+            Assert.AreEqual(totalRecords, count);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
@@ -124,7 +123,7 @@ namespace FASTER.test
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords);
+            Assert.AreEqual(totalRecords, count);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
@@ -141,7 +140,7 @@ namespace FASTER.test
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords / 2);
+            Assert.AreEqual(totalRecords / 2, count);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -155,12 +154,11 @@ namespace FASTER.test
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
-                Assert.IsTrue(iter.GetValue().value == iter.GetKey().key * 3);
+                Assert.AreEqual(iter.GetKey().key * 3, iter.GetValue().value);
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords);
-
+            Assert.AreEqual(totalRecords, count);
         }
     }
 }

@@ -57,7 +57,7 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -71,9 +71,9 @@ namespace FASTER.test
                     session.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                    Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                    Assert.AreEqual(Status.OK, status);
+                    Assert.AreEqual(value.vfield1, output.value.vfield1);
+                    Assert.AreEqual(value.vfield2, output.value.vfield2);
                 }
             }
         }
@@ -114,8 +114,8 @@ namespace FASTER.test
 
             var tail = fht.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
-            Assert.IsTrue(fht.Log.TailAddress == tail);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
+            Assert.AreEqual(tail, fht.Log.TailAddress);
 
             // Read 2000 keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -129,9 +129,9 @@ namespace FASTER.test
                     session.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                    Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                    Assert.AreEqual(Status.OK, status);
+                    Assert.AreEqual(value.vfield1, output.value.vfield1);
+                    Assert.AreEqual(value.vfield2, output.value.vfield2);
                 }
             }
         }
@@ -169,7 +169,7 @@ namespace FASTER.test
 
             var tail = fht.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -187,13 +187,13 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status == Status.OK);
-                        Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                        Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                        Assert.AreEqual(Status.OK, status);
+                        Assert.AreEqual(value.vfield1, output.value.vfield1);
+                        Assert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                     else
                     {
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     }
                 }
             }
@@ -228,7 +228,7 @@ namespace FASTER.test
 
             // Only leave records with even vfield1
             compactUntil = session.Compact(compactUntil, true, default(EvenCompactionFunctions));
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (var i = 0; i < totalRecords; i++)
@@ -248,13 +248,13 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status == Status.OK);
-                        Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                        Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                        Assert.AreEqual(Status.OK, status);
+                        Assert.AreEqual(value.vfield1, output.value.vfield1);
+                        Assert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                     else
                     {
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     }
                 }
             }
@@ -294,9 +294,9 @@ namespace FASTER.test
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
         }
 

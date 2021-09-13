@@ -126,7 +126,7 @@ namespace FASTER.test
                 }
 
                 // Verify each Enqueue worked
-                Assert.IsTrue(appendResult == true, "Fail - TryEnqueue failed with a 'false' result for entry:" + i.ToString());
+                Assert.IsTrue(appendResult, "Fail - TryEnqueue failed with a 'false' result for entry: " + i.ToString());
 
                 // logical address has new entry every x bytes which is one entry less than the TailAddress
                 if (iteratorType == TryEnqueueIteratorType.SpanBatch)
@@ -134,7 +134,7 @@ namespace FASTER.test
                 else
                     ExpectedOutAddress = log.TailAddress - 104;
 
-                Assert.IsTrue(logicalAddress == ExpectedOutAddress, "Fail - returned LogicalAddr: " + logicalAddress.ToString() + " is not equal to Expected LogicalAddr: " + ExpectedOutAddress.ToString());
+                Assert.AreEqual(ExpectedOutAddress, logicalAddress);
             }
 
             // Commit to the log
@@ -150,9 +150,9 @@ namespace FASTER.test
                     {
                         // Span Batch only added first entry several times so have separate verification
                         if (iteratorType == TryEnqueueIteratorType.SpanBatch)
-                            Assert.IsTrue(result[0] == (byte)entryFlag, $"Fail - Result[0]:{result[0]} entryFlag: {entryFlag}");  
+                            Assert.AreEqual((byte)entryFlag, result[0]);
                         else
-                            Assert.IsTrue(result[currentEntry] == (byte)entryFlag, $"Fail - Result[{currentEntry}]: {result[0]} entryFlag: {entryFlag}");
+                            Assert.AreEqual((byte)entryFlag, result[currentEntry]);
 
                         currentEntry++;
                     }

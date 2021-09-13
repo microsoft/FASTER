@@ -83,7 +83,7 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        Assert.IsTrue(result[currentEntry] == (byte)currentEntry, $"Fail - Result[{currentEntry}]:{result[0]} not match expected:{currentEntry}");
+                        Assert.AreEqual((byte)currentEntry, result[currentEntry]);
                         currentEntry++;
                     }
                 }

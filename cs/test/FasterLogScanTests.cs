@@ -121,7 +121,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result["+ currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -153,7 +153,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -185,7 +185,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -217,7 +217,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -249,7 +249,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -279,7 +279,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -310,7 +310,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
