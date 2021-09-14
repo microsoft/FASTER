@@ -53,7 +53,7 @@ namespace FasterFixedLenServer
     }
 
 
-    public struct Functions : IFunctions<Key, Value, Input, Output, long>
+    public struct Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
     {
         // No locking needed for atomic types such as Value
         public bool SupportsLocking => false;
@@ -61,7 +61,7 @@ namespace FasterFixedLenServer
         // Callbacks
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status) { }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status) { }
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status, RecordInfo recordInfo) { }
 
         public void UpsertCompletionCallback(ref Key key, ref Value value, long ctx) { }
 
@@ -72,14 +72,14 @@ namespace FasterFixedLenServer
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
         {
-            dst.value = value; 
+            dst.value = value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -90,7 +90,7 @@ namespace FasterFixedLenServer
         public void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
             return true;
@@ -105,7 +105,7 @@ namespace FasterFixedLenServer
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             Interlocked.Add(ref value.value, input.value);
             output.value = value;
@@ -113,7 +113,7 @@ namespace FasterFixedLenServer
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
+        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
         {
             newValue.value = input.value + oldValue.value;
             output.value = newValue;
@@ -122,5 +122,7 @@ namespace FasterFixedLenServer
         public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) { }
 
         public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => true;
+
+        public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
     }
 }
