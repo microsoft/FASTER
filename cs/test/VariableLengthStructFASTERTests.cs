@@ -13,7 +13,8 @@ namespace FASTER.test
         // VarLenMax is the variable-length portion; 2 is for the fixed fields
         const int VarLenMax = 10;
         const int StackAllocMax = VarLenMax + 2;
-        int GetVarLen(Random r) => r.Next(VarLenMax) + 2;
+
+        static int GetVarLen(Random r) => r.Next(VarLenMax) + 2;
 
         [Test]
         [Category("FasterKV")]
@@ -31,7 +32,7 @@ namespace FASTER.test
             var s = fht.NewSession(new VLFunctions());
 
             Input input = default;
-            Random r = new Random(100);
+            Random r = new(100);
 
             // Single alloc outside the loop, to the max length we'll need.
             int* val = stackalloc int[StackAllocMax];
@@ -92,7 +93,7 @@ namespace FASTER.test
             var s = fht.NewSession(new VLFunctions2());
 
             Input input = default;
-            Random r = new Random(100);
+            Random r = new(100);
 
             // Single alloc outside the loop, to the max length we'll need.
             int* keyval = stackalloc int[StackAllocMax];

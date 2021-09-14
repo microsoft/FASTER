@@ -14,8 +14,8 @@ namespace FASTER.test
         public IDevice device;
         private string path;
         static readonly byte[] entry = new byte[10];
-        static readonly AutoResetEvent ev = new AutoResetEvent(false);
-        static readonly AutoResetEvent done = new AutoResetEvent(false);
+        static readonly AutoResetEvent ev = new(false);
+        static readonly AutoResetEvent done = new(false);
 
         [SetUp]
         public void Setup()
@@ -49,7 +49,7 @@ namespace FASTER.test
         [Category("Smoke")]
         public void WaitForCommitBasicTest(string SyncTest)
         {
-            CancellationTokenSource cts = new CancellationTokenSource();
+            CancellationTokenSource cts = new();
             CancellationToken token = cts.Token;
 
             // make it small since launching each on separate threads 

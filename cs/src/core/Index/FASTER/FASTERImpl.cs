@@ -1954,7 +1954,7 @@ namespace FASTER.core
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
 
             long newLogicalAddress, newPhysicalAddress;
-            bool copyToReadCache = noReadCache ? false : UseReadCache;
+            bool copyToReadCache = !noReadCache && UseReadCache;
             if (copyToReadCache)
             {
                 BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);

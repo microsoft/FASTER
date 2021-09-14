@@ -160,5 +160,21 @@ namespace FASTER.core
         {
             return Word == other.Word;
         }
+
+        /// <summary>
+        /// Equals
+        /// </summary>
+        public static bool operator ==(SystemState left, SystemState right)
+        {
+            return left.Equals(right);
+        }
+
+        /// <summary>
+        /// Not Equals
+        /// </summary>
+        public static bool operator !=(SystemState left, SystemState right)
+        {
+            return !(left == right);
+        }
     }
 }

@@ -757,7 +757,7 @@ namespace FASTER.core
                 checkpointManager?.Dispose();
         }
 
-        private void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
+        private static void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
         {
             if (typeof(Key) == typeof(SpanByte))
             {
