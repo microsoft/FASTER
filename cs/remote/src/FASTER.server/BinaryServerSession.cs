@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using FASTER.common;
@@ -221,7 +220,15 @@ namespace FASTER.server
             }
         }
 
-        public unsafe override void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, ref byte* inputPtr, int sid, bool prefix)
+        /// <inheritdoc />
+        public unsafe override void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
+            => Publish(ref keyPtr, keyLength, ref valPtr, ref inputPtr, sid, false);
+
+        /// <inheritdoc />
+        public unsafe override void PrefixPublish(byte* prefixPtr, int prefixLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
+            => Publish(ref keyPtr, keyLength, ref valPtr, ref inputPtr, sid, true);
+
+        private unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, ref byte* inputPtr, int sid, bool prefix)
         {
             MessageType message;
 

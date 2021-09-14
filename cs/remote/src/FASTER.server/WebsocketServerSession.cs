@@ -540,7 +540,15 @@ namespace FASTER.server
             return completeWSCommand;
         }
 
-        public unsafe override void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, ref byte* inputPtr, int sid, bool prefix)
+        /// <inheritdoc />
+        public unsafe override void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
+            => Publish(ref keyPtr, keyLength, ref valPtr, ref inputPtr, sid, false);
+
+        /// <inheritdoc />
+        public unsafe override void PrefixPublish(byte* prefixPtr, int prefixLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
+            => Publish(ref keyPtr, keyLength, ref valPtr, ref inputPtr, sid, true);
+
+        private unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, ref byte* inputPtr, int sid, bool prefix)
         {
             MessageType message;
 
@@ -557,24 +565,16 @@ namespace FASTER.server
                     message = MessageType.PSubscribe;
             }
 
-            GetResponseObject();
+            var respObj = messageManager.GetReusableSeaaBuffer();
 
             ref Key key = ref serializer.ReadKeyByRef(ref keyPtr);
 
-            byte* d = responseObject.obj.bufferPtr;
-            var dend = d + responseObject.obj.buffer.Length;
-            dcurr = d; // reserve space for size
-            dcurr += 10;
-            dcurr += sizeof(int); // reserve space for size
-            dcurr += BatchHeader.Size;
-
+            byte* d = respObj.obj.bufferPtr;
+            var dend = d + respObj.obj.buffer.Length;
+            var dcurr = d + sizeof(int); // reserve space for size
             byte* outputDcurr;
 
-            start = 0;
-            msgnum = 0;
-
-            if ((int)(dend - dcurr) < 6 + maxSizeSettings.MaxOutputSize)
-                SendAndReset(ref d, ref dend);
+            dcurr += BatchHeader.Size;
 
             long ctx = ((long)message << 32) | (long)sid;
 
@@ -587,8 +587,6 @@ namespace FASTER.server
             if (valPtr == null)
                 status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
 
-            msgnum++;
-
             if (status != Status.PENDING)
             {
                 // Write six bytes (message | status | sid)
@@ -597,20 +595,34 @@ namespace FASTER.server
                 Write(sid, ref dcurr, (int)(dend - dcurr));
                 if (prefix)
                     serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
-
                 if (valPtr != null)
                 {
                     ref Value value = ref serializer.ReadValueByRef(ref valPtr);
                     serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
-                } else if (status == Status.OK)
+                }
+                else if (status == Status.OK)
                     serializer.SkipOutput(ref dcurr);
+            }
+            else
+            {
+                throw new Exception("Pending reads not supported with pub/sub");
             }
 
             // Send replies
-            if (msgnum - start > 0)
-                Send(d);
-            else
-                responseObject.Dispose();
+            var dstart = d + sizeof(int);
+            Unsafe.AsRef<BatchHeader>(dstart).NumMessages = 1;
+            Unsafe.AsRef<BatchHeader>(dstart).SeqNo = 0;
+            int payloadSize = (int)(dcurr - d);
+            // Set packet size in header
+            *(int*)respObj.obj.bufferPtr = -(payloadSize - sizeof(int));
+            try
+            {
+                messageManager.Send(socket, respObj, 0, payloadSize);
+            }
+            catch
+            {
+                respObj.Dispose();
+            }
         }
 
 

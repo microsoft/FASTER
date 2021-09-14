@@ -118,7 +118,7 @@ namespace FASTER.server
             indexSize = IndexSizeCachelines();
             Trace.WriteLine($"[Store] Using hash index size of {PrettySize(indexSize * 64L)} ({PrettySize(indexSize)} cache lines)");
 
-            var device = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "Store/hlog", preallocateFile: false);
+            var device = LogDir == null ? new NullDevice() : Devices.CreateLogDevice(LogDir + "Store/hlog", preallocateFile: false);
             logSettings.LogDevice = device;
 
             checkpointSettings = new CheckpointSettings {
