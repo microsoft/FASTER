@@ -22,8 +22,7 @@ namespace FASTER.server
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
             => functions.CheckpointCompletionCallback(sessionId, commitPoint);
 
-        public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
-            => ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
+        public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
 
         public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             => functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
