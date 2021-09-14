@@ -25,40 +25,40 @@ namespace FASTER.core
     /// The current phase of a state-machine operation such as a checkpoint
     /// </summary>
     public enum Phase : int {
-        /// <summary>State machine task has started</summary>
+        /// <summary>In-progress phase, entering (v+1) version</summary>
         IN_PROGRESS,
 
-        /// <summary>Waiting for a pending operation to complete</summary>
+        /// <summary>Wait-pending phase, waiting for pending (v) operations to complete</summary>
         WAIT_PENDING,
 
-        /// <summary>Waiting for the index portion of a full checkpoint to complete</summary>
+        /// <summary>Wait for an index checkpoint to finish</summary>
         WAIT_INDEX_CHECKPOINT,
 
-        /// <summary>Waiting for a flush to complete</summary>
+        /// <summary>Wait for data flush to complete</summary>
         WAIT_FLUSH,
 
-        /// <summary>After flush has completed, write metadata</summary>
+        /// <summary>After flush has completed, write metadata to persistent storage and issue user callbacks</summary>
         PERSISTENCE_CALLBACK, 
 
-        /// <summary>The default phase; no state-machine operation is happening</summary>
+        /// <summary>The default phase; no state-machine operation is operating</summary>
         REST,
 
         /// <summary>Prepare for an index checkpoint</summary>
         PREP_INDEX_CHECKPOINT,
 
-        /// <summary>Waiting for an index-only checkpoint to complete</summary>
+        /// <summary>Wait for an index-only checkpoint to complete</summary>
         WAIT_INDEX_ONLY_CHECKPOINT,
 
-        /// <summary>State machine task is being prepared and version is being updated</summary>
+        /// <summary>Prepare for a checkpoint, still in (v) version</summary>
         PREPARE,
 
-        /// <summary>State machine is preparing to resize the index</summary>
+        /// <summary>Prepare to resize the index</summary>
         PREPARE_GROW,
 
         /// <summary>Index resizing is in progress</summary>
         IN_PROGRESS_GROW,
 
-        /// <summary></summary>
+        /// <summary>Internal intermediate state of state machine</summary>
         INTERMEDIATE = 16,
     };
 
@@ -84,13 +84,13 @@ namespace FASTER.core
         /// The word containing information in bitfields
         /// </summary>
         [FieldOffset(0)]
-        public long Word;
+        internal long Word;
 
         /// <summary>
         /// Copy the <paramref name="other"/> <see cref="SystemState"/> into this <see cref="SystemState"/>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static SystemState Copy(ref SystemState other)
+        internal static SystemState Copy(ref SystemState other)
         {
             var info = default(SystemState);
             info.Word = other.Word;
@@ -101,7 +101,7 @@ namespace FASTER.core
         /// Create a <see cref="SystemState"/> with the specified values
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static SystemState Make(Phase status, int version)
+        internal static SystemState Make(Phase status, int version)
         {
             var info = default(SystemState);
             info.Phase = status;
@@ -113,14 +113,14 @@ namespace FASTER.core
         /// Create a copy of the passed <see cref="SystemState"/> that is marked with the <see cref="Phase.INTERMEDIATE"/> phase
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static SystemState MakeIntermediate(SystemState state) 
+        internal static SystemState MakeIntermediate(SystemState state) 
             => Make(state.Phase | Phase.INTERMEDIATE, state.Version);
 
         /// <summary>
         /// Create a copy of the passed <see cref="SystemState"/> that is not marked with the <see cref="Phase.INTERMEDIATE"/> phase
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void RemoveIntermediate(ref SystemState state)
+        internal static void RemoveIntermediate(ref SystemState state)
         {
             state.Phase &= ~Phase.INTERMEDIATE;
         }
@@ -128,7 +128,7 @@ namespace FASTER.core
         /// <summary>
         /// Compare two <see cref="SystemState"/>s for equality
         /// </summary>
-        public static bool Equal(SystemState s1, SystemState s2)
+        internal static bool Equal(SystemState s1, SystemState s2)
         {
             return s1.Word == s2.Word;
         }
@@ -137,14 +137,6 @@ namespace FASTER.core
         public override string ToString()
         {
             return $"[{Phase},{Version}]";
-        }
-
-        /// <summary>
-        /// Compare the current <see cref="SystemState"/> to <paramref name="other"/> for equality
-        /// </summary>
-        public bool Equals(SystemState other)
-        {
-            return Word == other.Word;
         }
 
         /// <summary>
@@ -159,6 +151,14 @@ namespace FASTER.core
         public override int GetHashCode()
         {
             return Word.GetHashCode();
+        }
+
+        /// <summary>
+        /// Compare the current <see cref="SystemState"/> to <paramref name="other"/> for equality
+        /// </summary>
+        private bool Equals(SystemState other)
+        {
+            return Word == other.Word;
         }
     }
 }
