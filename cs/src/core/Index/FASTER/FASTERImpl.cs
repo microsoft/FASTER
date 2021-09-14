@@ -1735,7 +1735,7 @@ namespace FASTER.core
             {
                 // We spin-wait as a simplification
                 // Could instead do a "heavy operation" here
-                while (systemState.phase != Phase.IN_PROGRESS_GROW)
+                while (systemState.Phase != Phase.IN_PROGRESS_GROW)
                     Thread.SpinWait(100);
                 InternalRefresh(ctx, session);
             }
