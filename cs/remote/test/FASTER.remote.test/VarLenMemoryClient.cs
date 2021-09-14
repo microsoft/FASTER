@@ -33,7 +33,7 @@ namespace FASTER.remote.test
     /// </summary>
     public class MemoryFunctions : ICallbackFunctions<ReadOnlyMemory<int>, ReadOnlyMemory<int>, ReadOnlyMemory<int>, (IMemoryOwner<int>, int), long>
     {
-        readonly AutoResetEvent evt = new AutoResetEvent(false);
+        readonly ManualResetEvent evt = new ManualResetEvent(false);
 
         /// <inheritdoc />
         public virtual void DeleteCompletionCallback(ref ReadOnlyMemory<int> key, long ctx) { }
@@ -76,10 +76,10 @@ namespace FASTER.remote.test
                 Memory<int> expected = new Memory<int>(new int[len]);
                 expected.Span.Fill(check);
                 Assert.IsTrue(expected.Span.SequenceEqual(output.Item1.Memory.Span.Slice(0, output.Item2)));
-                evt.Set();
             }
             finally
             {
+                evt.Set();
                 output.Item1.Dispose();
             }
         }
@@ -90,14 +90,23 @@ namespace FASTER.remote.test
         /// <inheritdoc />
         public void SubscribeCallback(ref ReadOnlyMemory<int> key, ref ReadOnlyMemory<int> value, long ctx)
         {
-            int check = key.Span[0];
-            int len = key.Span[1];
-            Memory<int> expected = new Memory<int>(new int[len]);
-            expected.Span.Fill(check);
-            Assert.IsTrue(expected.Span.SequenceEqual(value.Span.Slice(0, value.Length)));
-            evt.Set();
+            try
+            {
+                int check = key.Span[0];
+                int len = key.Span[1];
+                Memory<int> expected = new Memory<int>(new int[len]);
+                expected.Span.Fill(check);
+                Assert.IsTrue(expected.Span.SequenceEqual(value.Span.Slice(0, value.Length)));
+            }
+            finally
+            {
+                evt.Set();
+            }
         }
 
-        public void WaitSubscribe() => evt.WaitOne();
+        public void WaitSubscribe()
+        {
+            evt.WaitOne();
+        }
     }
 }

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
-using FASTER.core;
 using FASTER.common;
 
 namespace FASTER.server
@@ -10,10 +9,8 @@ namespace FASTER.server
     /// <summary>
     /// Serializer for SpanByte. Used only on server-side.
     /// </summary>
-    public unsafe sealed class FixedLenKeySerializer<Key> : IKeySerializer<Key>
+    public unsafe sealed class FixedLenKeySerializer<Key, Input> : IKeyInputSerializer<Key, Input>
     {
-        readonly SpanByteVarLenStruct settings;
-
         /// <summary>
         /// Constructor
         /// </summary>
@@ -31,7 +28,16 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public bool Match(ref Key k, ref Key pattern)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref Input ReadInputByRef(ref byte* src)
+        {
+            var _src = (void*)src;
+            src += Unsafe.SizeOf<Input>();
+            return ref Unsafe.AsRef<Input>(_src);
+        }
+
+        /// <inheritdoc />
+        public bool Match(ref Key k, bool asciiKey, ref Key pattern, bool asciiPattern)
         {
             if (k.Equals(pattern))
                 return true;
