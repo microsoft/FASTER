@@ -225,8 +225,8 @@ namespace FASTER.core
             Initialize(size, sectorSize);
 
             systemState = default;
-            systemState.phase = Phase.REST;
-            systemState.version = 1;
+            systemState.Phase = Phase.REST;
+            systemState.Version = 1;
         }
 
         /// <summary>
@@ -404,6 +404,11 @@ namespace FASTER.core
         /// <param name="checkpointType">Checkpoint type</param>
         /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
         /// <param name="cancellationToken">Cancellation token</param>
+        /// <param name="targetVersion">
+        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
+        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
+        /// number is -1, checkpoint will unconditionally create a new version. 
+        /// </param>
         /// <returns>
         /// (bool success, Guid token)
         /// success: Whether we successfully initiated the checkpoint (initiation may
@@ -508,8 +513,8 @@ namespace FASTER.core
             while (true)
             {
                 var systemState = this.systemState;
-                if (systemState.phase == Phase.REST || systemState.phase == Phase.PREPARE_GROW ||
-                    systemState.phase == Phase.IN_PROGRESS_GROW)
+                if (systemState.Phase == Phase.REST || systemState.Phase == Phase.PREPARE_GROW ||
+                    systemState.Phase == Phase.IN_PROGRESS_GROW)
                     return;
 
                 List<ValueTask> valueTasks = new();
@@ -718,7 +723,7 @@ namespace FASTER.core
                 while (true)
                 {
                     SystemState _systemState = SystemState.Copy(ref systemState);
-                    if (_systemState.phase == Phase.IN_PROGRESS_GROW)
+                    if (_systemState.Phase == Phase.IN_PROGRESS_GROW)
                     {
                         SplitBuckets(0);
                         epoch.ProtectAndDrain();
@@ -726,7 +731,7 @@ namespace FASTER.core
                     else
                     {
                         SystemState.RemoveIntermediate(ref _systemState);
-                        if (_systemState.phase != Phase.PREPARE_GROW && _systemState.phase != Phase.IN_PROGRESS_GROW)
+                        if (_systemState.Phase != Phase.PREPARE_GROW && _systemState.Phase != Phase.IN_PROGRESS_GROW)
                         {
                             return true;
                         }
@@ -752,7 +757,7 @@ namespace FASTER.core
                 checkpointManager?.Dispose();
         }
 
-        private void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
+        private static void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
         {
             if (typeof(Key) == typeof(SpanByte))
             {

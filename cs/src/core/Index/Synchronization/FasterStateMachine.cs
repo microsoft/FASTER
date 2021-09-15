@@ -45,7 +45,7 @@ namespace FASTER.core
         /// <summary>
         /// Current version number of the store
         /// </summary>
-        public long CurrentVersion => systemState.version;
+        public long CurrentVersion => systemState.Version;
         
         /// <summary>
         /// Registers the given callback to be invoked for every state machine transition. Not safe to call with
@@ -76,9 +76,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool MakeTransition(SystemState expectedState, SystemState nextState)
         {
-            if (Interlocked.CompareExchange(ref systemState.word, nextState.word, expectedState.word) !=
-                expectedState.word) return false;
-            Debug.WriteLine("Moved to {0}, {1}", nextState.phase, nextState.version);
+            if (Interlocked.CompareExchange(ref systemState.Word, nextState.Word, expectedState.Word) !=
+                expectedState.Word) return false;
+            Debug.WriteLine("Moved to {0}, {1}", nextState.Phase, nextState.Version);
             return true;
         }
 
@@ -109,7 +109,7 @@ namespace FASTER.core
             currentSyncStateMachine.GlobalAfterEnteringState(nextState, this);
 
             // Mark the state machine done as we exit the state machine.
-            if (nextState.phase == Phase.REST) stateMachineActive = 0;
+            if (nextState.Phase == Phase.REST) stateMachineActive = 0;
         }
 
 
@@ -117,9 +117,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private SystemState StartOfCurrentCycle(SystemState currentGlobalState)
         {
-            return currentGlobalState.phase < Phase.REST
-                ? SystemState.Make(Phase.REST, currentGlobalState.version - 1)
-                : SystemState.Make(Phase.REST, currentGlobalState.version);
+            return currentGlobalState.Phase < Phase.REST
+                ? SystemState.Make(Phase.REST, currentGlobalState.Version - 1)
+                : SystemState.Make(Phase.REST, currentGlobalState.Version);
         }
 
         // Given the current thread state and global state, fast forward the thread state to the
@@ -127,8 +127,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private SystemState FastForwardToCurrentCycle(SystemState threadState, SystemState targetStartState)
         {
-            if (threadState.version < targetStartState.version ||
-                threadState.version == targetStartState.version && threadState.phase < targetStartState.phase)
+            if (threadState.Version < targetStartState.Version ||
+                threadState.Version == targetStartState.Version && threadState.Phase < targetStartState.Phase)
             {
                 return targetStartState;
             }
@@ -148,7 +148,7 @@ namespace FASTER.core
             {
                 var _systemState = SystemState.Copy(ref systemState);
                 SystemState.RemoveIntermediate(ref _systemState);
-                return StartOfCurrentCycle(threadState).version == StartOfCurrentCycle(_systemState).version;
+                return StartOfCurrentCycle(threadState).Version == StartOfCurrentCycle(_systemState).Version;
             }
             return ctx.threadStateMachine == currentSyncStateMachine;
         }
@@ -189,7 +189,7 @@ namespace FASTER.core
             #region Get returning thread to start of current cycle, issuing completion callbacks if needed
             if (ctx != null)
             {
-                if (ctx.version < targetStartState.version)
+                if (ctx.version < targetStartState.Version)
                 {
                     // Issue CPR callback for full session
                     if (ctx.serialNum != -1)
@@ -214,7 +214,7 @@ namespace FASTER.core
                         fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
                     }
                 }
-                if ((ctx.version == targetStartState.version) && (ctx.phase < Phase.REST) && !(ctx.threadStateMachine is IndexSnapshotStateMachine))
+                if ((ctx.version == targetStartState.Version) && (ctx.phase < Phase.REST) && !(ctx.threadStateMachine is IndexSnapshotStateMachine))
                 {
                     IssueCompletionCallback(ctx, fasterSession);
                 }
@@ -223,12 +223,12 @@ namespace FASTER.core
 
             // No state machine associated with target, or target is in REST phase:
             // we can directly fast forward session to target state
-            if (currentTask == null || targetState.phase == Phase.REST)
+            if (currentTask == null || targetState.Phase == Phase.REST)
             {
                 if (ctx != null)
                 {
-                    ctx.phase = targetState.phase;
-                    ctx.version = targetState.version;
+                    ctx.phase = targetState.Phase;
+                    ctx.version = targetState.Version;
                     ctx.threadStateMachine = currentTask;
                 }
                 return;
@@ -257,22 +257,22 @@ namespace FASTER.core
             do
             {
                 Debug.Assert(
-                    (threadState.version < targetState.version) ||
-                       (threadState.version == targetState.version && 
-                       (threadState.phase <= targetState.phase || currentTask is IndexSnapshotStateMachine)
+                    (threadState.Version < targetState.Version) ||
+                       (threadState.Version == targetState.Version && 
+                       (threadState.Phase <= targetState.Phase || currentTask is IndexSnapshotStateMachine)
                     ));
 
                 currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, valueTasks, token);
 
                 if (ctx != null)
                 {
-                    ctx.phase = threadState.phase;
-                    ctx.version = threadState.version;
+                    ctx.phase = threadState.Phase;
+                    ctx.version = threadState.Version;
                 }
 
-                previousState.word = threadState.word;
+                previousState.Word = threadState.Word;
                 threadState = currentTask.NextState(threadState);
-                if (systemState.word != targetState.word)
+                if (systemState.Word != targetState.Word)
                 {
                     var tmp = SystemState.Copy(ref systemState);
                     if (currentSyncStateMachine == currentTask)
@@ -281,7 +281,7 @@ namespace FASTER.core
                         SystemState.RemoveIntermediate(ref targetState);
                     }
                 }
-            } while (previousState.word != targetState.word);
+            } while (previousState.Word != targetState.Word);
             #endregion
 
             return;
