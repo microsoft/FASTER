@@ -211,7 +211,7 @@ namespace FASTER.core
             do
             {
                 CompletePending();
-                if (_fasterKV.systemState.phase == Phase.REST)
+                if (_fasterKV.systemState.Phase == Phase.REST)
                 {
                     CompletePending();
                     return true;
@@ -228,7 +228,7 @@ namespace FASTER.core
         {
             _fasterKV.epoch.Resume();
             _threadCtx.InitializeThread();
-            Phase phase = _fasterKV.systemState.phase;
+            Phase phase = _fasterKV.systemState.Phase;
             if (phase != Phase.REST)
             {
                 throw new FasterException("Can acquire only in REST phase!");

@@ -10,9 +10,20 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// The type of a record in the delta (incremental) log
+    /// </summary>
     public enum DeltaLogEntryType : int
     {
-        DELTA, CHECKPOINT_METADATA
+        /// <summary>
+        /// The entry is a delta record
+        /// </summary>
+        DELTA,
+
+        /// <summary>
+        /// The entry is checkpoint metadata
+        /// </summary>
+        CHECKPOINT_METADATA
     }
     
     [StructLayout(LayoutKind.Explicit, Size = DeltaLog.HeaderSize)]

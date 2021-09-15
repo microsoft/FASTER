@@ -568,7 +568,7 @@ namespace FASTER.test.statemachine
 
     public class TestCallback : IStateMachineCallback
     {
-        private HashSet<SystemState> invokedStates = new();
+        private readonly HashSet<SystemState> invokedStates = new();
 
 
         public void BeforeEnteringState<Key1, Value>(SystemState next, FasterKV<Key1, Value> faster)

@@ -1735,7 +1735,7 @@ namespace FASTER.core
             {
                 // We spin-wait as a simplification
                 // Could instead do a "heavy operation" here
-                while (systemState.phase != Phase.IN_PROGRESS_GROW)
+                while (systemState.Phase != Phase.IN_PROGRESS_GROW)
                     Thread.SpinWait(100);
                 InternalRefresh(ctx, session);
             }
@@ -1954,7 +1954,7 @@ namespace FASTER.core
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
 
             long newLogicalAddress, newPhysicalAddress;
-            bool copyToReadCache = noReadCache ? false : UseReadCache;
+            bool copyToReadCache = !noReadCache && UseReadCache;
             if (copyToReadCache)
             {
                 BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
