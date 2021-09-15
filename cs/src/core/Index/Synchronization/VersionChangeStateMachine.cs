@@ -37,7 +37,7 @@ namespace FASTER.core
             CancellationToken token = default)
             where FasterSession : IFasterSession
         {
-            switch (current.phase)
+            switch (current.Phase)
             {
                 case Phase.PREPARE:
                     if (ctx != null)
@@ -49,17 +49,17 @@ namespace FASTER.core
                             ctx.markers[EpochPhaseIdx.Prepare] = true;
                         }
 
-                        faster.epoch.Mark(EpochPhaseIdx.Prepare, current.version);
+                        faster.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
                     }
 
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.version))
+                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version))
                         faster.GlobalStateMachineStep(current);
                     break;
                 case Phase.IN_PROGRESS:
                     if (ctx != null)
                     {
                         // Need to be very careful here as threadCtx is changing
-                        var _ctx = prev.phase == Phase.IN_PROGRESS ? ctx.prevCtx : ctx;
+                        var _ctx = prev.Phase == Phase.IN_PROGRESS ? ctx.prevCtx : ctx;
                         var tokens = faster._hybridLogCheckpoint.info.checkpointTokens;
                         if (!faster.SameCycle(ctx, current) || tokens == null)
                             return;
@@ -73,11 +73,11 @@ namespace FASTER.core
                             ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;
                         }
 
-                        faster.epoch.Mark(EpochPhaseIdx.InProgress, current.version);
+                        faster.epoch.Mark(EpochPhaseIdx.InProgress, current.Version);
                     }
 
                     // Has to be prevCtx, not ctx
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.version))
+                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.Version))
                         faster.GlobalStateMachineStep(current);
                     break;
                 case Phase.WAIT_PENDING:
@@ -91,10 +91,10 @@ namespace FASTER.core
                                 break;
                         }
 
-                        faster.epoch.Mark(EpochPhaseIdx.WaitPending, current.version);
+                        faster.epoch.Mark(EpochPhaseIdx.WaitPending, current.Version);
                     }
 
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitPending, current.version))
+                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitPending, current.Version))
                         faster.GlobalStateMachineStep(current);
                     break;
                 case Phase.REST:
@@ -114,7 +114,7 @@ namespace FASTER.core
             SystemState next,
             FasterKV<Key, Value> faster)
         {
-            if (next.phase == Phase.REST)
+            if (next.Phase == Phase.REST)
                 // Before leaving the checkpoint, make sure all previous versions are read-only.
                 faster.hlog.ShiftReadOnlyToTail(out _, out _);
         }
@@ -166,30 +166,30 @@ namespace FASTER.core
         public override SystemState NextState(SystemState start)
         {
             var nextState = SystemState.Copy(ref start);
-            switch (start.phase)
+            switch (start.Phase)
             {
                 case Phase.REST:
-                    nextState.phase = Phase.PREPARE;
+                    nextState.Phase = Phase.PREPARE;
                     break;
                 case Phase.PREPARE:
-                    nextState.phase = Phase.IN_PROGRESS;
+                    nextState.Phase = Phase.IN_PROGRESS;
                     // 13 bits of 1s --- FASTER records only store 13 bits of version number, and we need to ensure that
                     // the next version is distinguishable from the last in those 13 bits.
                     var bitMask = (1L << 13) - 1;
                     // If they are not distinguishable, simply increment target version to resolve this
-                    if (((targetVersion - start.version) & bitMask) == 0)
+                    if (((targetVersion - start.Version) & bitMask) == 0)
                         targetVersion++;
 
                     // TODO: Move to long for system state as well. 
-                    SetToVersion(targetVersion == -1 ? start.version + 1 : targetVersion);
-                    nextState.version = (int) ToVersion();
+                    SetToVersion(targetVersion == -1 ? start.Version + 1 : targetVersion);
+                    nextState.Version = (int) ToVersion();
                     break;
                 case Phase.IN_PROGRESS:
                     // This phase has no effect if using relaxed CPR model
-                    nextState.phase = Phase.WAIT_PENDING;
+                    nextState.Phase = Phase.WAIT_PENDING;
                     break;
                 case Phase.WAIT_PENDING:
-                    nextState.phase = Phase.REST;
+                    nextState.Phase = Phase.REST;
                     break;
                 default:
                     throw new FasterException("Invalid Enum Argument");

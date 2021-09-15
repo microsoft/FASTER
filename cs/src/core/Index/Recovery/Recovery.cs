@@ -364,8 +364,8 @@ namespace FASTER.core
             currentSyncStateMachine = null;
 
             // Set new system state after recovery
-            systemState.phase = Phase.REST;
-            systemState.version = recoveredHLCInfo.info.version + 1;
+            systemState.Phase = Phase.REST;
+            systemState.Version = recoveredHLCInfo.info.version + 1;
 
             if (!recoveredICInfo.IsDefault() && recoveryCountdown != null)
             {

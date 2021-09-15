@@ -14,7 +14,7 @@ namespace FASTER.core
             SystemState next,
             FasterKV<Key, Value> faster)
         {
-            switch (next.phase)
+            switch (next.Phase)
             {
                 case Phase.PREPARE_GROW:
                     // nothing to do
@@ -45,7 +45,7 @@ namespace FASTER.core
             SystemState next,
             FasterKV<Key, Value> faster)
         {
-            switch (next.phase)
+            switch (next.Phase)
             {
                 case Phase.PREPARE_GROW:
                     faster.epoch.BumpCurrentEpoch(() => faster.GlobalStateMachineStep(next));
@@ -70,7 +70,7 @@ namespace FASTER.core
             CancellationToken token = default)
             where FasterSession : IFasterSession
         {
-            switch (current.phase)
+            switch (current.Phase)
             {
                 case Phase.PREPARE_GROW:
                 case Phase.IN_PROGRESS_GROW:
@@ -96,16 +96,16 @@ namespace FASTER.core
         public override SystemState NextState(SystemState start)
         {
             var nextState = SystemState.Copy(ref start);
-            switch (start.phase)
+            switch (start.Phase)
             {
                 case Phase.REST:
-                    nextState.phase = Phase.PREPARE_GROW;
+                    nextState.Phase = Phase.PREPARE_GROW;
                     break;
                 case Phase.PREPARE_GROW:
-                    nextState.phase = Phase.IN_PROGRESS_GROW;
+                    nextState.Phase = Phase.IN_PROGRESS_GROW;
                     break;
                 case Phase.IN_PROGRESS_GROW:
-                    nextState.phase = Phase.REST;
+                    nextState.Phase = Phase.REST;
                     break;
                 default:
                     throw new FasterException("Invalid Enum Argument");
