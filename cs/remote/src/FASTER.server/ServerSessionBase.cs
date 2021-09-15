@@ -104,10 +104,23 @@ namespace FASTER.server
         /// <param name="keyPtr"></param>
         /// <param name="keyLength"></param>
         /// <param name="valPtr"></param>
+        /// <param name="valLength"></param>
         /// <param name="inputPtr"></param>
         /// <param name="sid"></param>
-        /// <param name="prefix"></param>
-        public abstract unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, ref byte* inputPtr, int sid, bool prefix);
+        public abstract unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
+
+        /// <summary>
+        /// Publish an update to a key to all the (prefix) subscribers of the key
+        /// </summary>
+        /// <param name="prefixPtr"></param>
+        /// <param name="prefixLength"></param>
+        /// <param name="keyPtr"></param>
+        /// <param name="keyLength"></param>
+        /// <param name="valPtr"></param>
+        /// <param name="valLength"></param>
+        /// <param name="inputPtr"></param>
+        /// <param name="sid"></param>
+        public abstract unsafe void PrefixPublish(byte* prefixPtr, int prefixLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
 
         /// <summary>
         /// Dispose

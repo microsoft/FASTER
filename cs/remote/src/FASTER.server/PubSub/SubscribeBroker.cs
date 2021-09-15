@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.common;
@@ -23,7 +24,7 @@ namespace FASTER.server
     {
         private int sid = 0;
         private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> prefixSubscriptions;
+        private ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)> prefixSubscriptions;
         private AsyncQueue<(byte[], byte[])> publishQueue;
         readonly IKeySerializer<Key> keySerializer;
         readonly FasterLog log;
@@ -52,49 +53,86 @@ namespace FASTER.server
         /// called during dispose of server session
         /// </summary>
         /// <param name="session">server session</param>
-        public void RemoveSubscription(IServerSession session)
+        public unsafe void RemoveSubscription(IServerSession session)
         {
             if (subscriptions != null)
             {
-                foreach (var kvp in subscriptions)
+                foreach (var subscribedkey in subscriptions.Keys)
                 {
-                    foreach (var sub in kvp.Value)
-                    {
-                        if (sub.Value == session)
-                        {
-                            kvp.Value.TryRemove(sub.Key, out _);
-                            break;
-                        }
-                    }
+                    fixed (byte* keyPtr = &subscribedkey[0])
+                        this.Unsubscribe(keyPtr, (ServerSessionBase)session);
                 }
             }
 
             if (prefixSubscriptions != null)
             {
-                foreach (var kvp in prefixSubscriptions)
+                foreach (var subscribedkey in prefixSubscriptions.Keys)
                 {
-                    foreach (var sub in kvp.Value)
-                    {
-                        if (sub.Value == session)
-                        {
-                            kvp.Value.TryRemove(sub.Key, out _);
-                            break;
-                        }
-                    }
+                    fixed (byte* keyPtr = &subscribedkey[0])
+                        this.PUnsubscribe(keyPtr, (ServerSessionBase)session);
                 }
             }
         }
 
-        internal async Task Start(CancellationToken cancellationToken = default)
+        private unsafe int Broadcast(byte[] key, byte* valPtr, int valLength, bool ascii)
+        {
+            int numSubscribers = 0;
+
+            fixed (byte* ptr = &key[0])
+            {
+                byte* keyPtr = ptr;
+
+                if (subscriptions != null)
+                {
+                    bool foundSubscription = subscriptions.TryGetValue(key, out var subscriptionServerSessionDict);
+                    if (foundSubscription)
+                    {
+                        foreach (var sub in subscriptionServerSessionDict)
+                        {
+                            byte* keyBytePtr = ptr;
+                            byte* nullBytePtr = null;
+                            sub.Value.Publish(ref keyBytePtr, key.Length, ref valPtr, valLength, ref nullBytePtr, sub.Key);
+                            numSubscribers++;
+                        }
+                    }
+                }
+
+                if (prefixSubscriptions != null)
+                {
+                    foreach (var kvp in prefixSubscriptions)
+                    {
+                        fixed (byte* subscribedPrefixPtr = &kvp.Key[0])
+                        {
+                            byte* subPrefixPtr = subscribedPrefixPtr;
+                            byte* reqKeyPtr = ptr;
+
+                            bool match = keySerializer.Match(ref keySerializer.ReadKeyByRef(ref reqKeyPtr), ascii,
+                                ref keySerializer.ReadKeyByRef(ref subPrefixPtr), kvp.Value.Item1);
+                            if (match)
+                            {
+                                foreach (var sub in kvp.Value.Item2)
+                                {
+                                    byte* keyBytePtr = ptr;
+                                    byte* nullBytePtr = null;
+                                    sub.Value.PrefixPublish(subscribedPrefixPtr, kvp.Key.Length, ref keyBytePtr, key.Length, ref valPtr, valLength, ref nullBytePtr, sub.Key);
+                                    numSubscribers++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return numSubscribers;
+        }
+
+        private async Task Start(CancellationToken cancellationToken = default)
         {
             done.Reset();
 
             try
             {
-                var uniqueKeys = new Dictionary<byte[], byte[]>(new ByteArrayComparer());
-                var uniqueKeySubscriptions = new List<(ServerSessionBase, int, bool)>();
+                var uniqueKeys = new Dictionary<byte[], (byte[], byte[])>(new ByteArrayComparer());
                 long truncateUntilAddress = log.BeginAddress;
-                byte[] subscriptionKey, subscriptionValue;
 
                 while (true)
                 {
@@ -102,15 +140,19 @@ namespace FASTER.server
                         break;
 
                     var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
-                    await iter.WaitAsync(cancellationToken);
-                    while (iter.GetNext(out subscriptionKey, out _, out _, out _))
+                    await iter.WaitAsync(cts.Token);
+                    while (iter.GetNext(out byte[] subscriptionKey, out _, out _, out _))
                     {
-                        if (!iter.GetNext(out subscriptionValue, out int entryLength, out long currentAddress, out long nextAddress))
+                        if (!iter.GetNext(out byte[] subscriptionValue, out _, out long currentAddress, out long nextAddress))
+                        {
+                            if (currentAddress >= long.MaxValue) return;
+                        }
+                        if (!iter.GetNext(out byte[] ascii, out _, out currentAddress, out nextAddress))
                         {
                             if (currentAddress >= long.MaxValue) return;
                         }
                         truncateUntilAddress = nextAddress;
-                        uniqueKeys.Add(subscriptionKey, subscriptionValue);
+                        uniqueKeys.Add(subscriptionKey, (subscriptionValue, ascii));
                     }
 
                     if (truncateUntilAddress > log.BeginAddress)
@@ -122,49 +164,12 @@ namespace FASTER.server
                         while (enumerator.MoveNext())
                         {
                             byte[] keyBytes = enumerator.Current.Key;
-                            byte[] valBytes = enumerator.Current.Value;
-                            fixed (byte* ptr = &keyBytes[0], valPtr = &valBytes[0])
-                            {
-                                byte* keyPtr = ptr;
-                                bool foundSubscription = subscriptions.TryGetValue(keyBytes, out var subscriptionServerSessionDict);
-                                if (foundSubscription)
-                                {
-                                    foreach (var sub in subscriptionServerSessionDict)
-                                    {
-                                        byte* keyBytePtr = ptr;
-                                        byte* valBytePtr = valPtr;
-                                        var serverSession = sub.Value;
-                                        byte* nullBytePtr = null;
-                                        serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref valBytePtr, ref nullBytePtr, sub.Key, false);
-                                    }
-                                }
+                            byte[] valBytes = enumerator.Current.Value.Item1;
+                            byte[] asciiBytes = enumerator.Current.Value.Item2;
+                            bool ascii = asciiBytes[0] != 0;
 
-                                foreach (var kvp in prefixSubscriptions)
-                                {
-                                    var subscribedPrefixBytes = kvp.Key;
-                                    var prefixSubscriptionServerSessionDict = kvp.Value;
-                                    fixed (byte* subscribedPrefixPtr = &subscribedPrefixBytes[0])
-                                    {
-                                        byte* subPrefixPtr = subscribedPrefixPtr;
-                                        byte* reqKeyPtr = ptr;
-
-                                        bool match = keySerializer.Match(ref keySerializer.ReadKeyByRef(ref reqKeyPtr),
-                                            ref keySerializer.ReadKeyByRef(ref subPrefixPtr));
-                                        if (match)
-                                        {
-                                            foreach (var sub in prefixSubscriptionServerSessionDict)
-                                            {
-                                                byte* keyBytePtr = ptr;
-                                                byte* valBytePtr = valPtr;
-                                                var serverSession = sub.Value;
-                                                byte* nullBytePtr = null;
-                                                serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref valBytePtr, ref nullBytePtr, sub.Key, true);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            uniqueKeySubscriptions.Clear();
+                            fixed (byte* valPtr = valBytes)
+                                Broadcast(keyBytes, valPtr, valBytes.Length, ascii);
                         }
                         uniqueKeys.Clear();
                     }
@@ -190,12 +195,17 @@ namespace FASTER.server
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
                 subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
-                prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
+                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(new ByteArrayComparer());
                 Task.Run(() => Start(cts.Token));
             }
+            else
+            {
+                while (prefixSubscriptions == null) Thread.Yield();
+            }
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
-            bool added = subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, ServerSessionBase>());
-            subscriptions[subscriptionKey].TryAdd(sid, session);
+            subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, ServerSessionBase>());
+            if (subscriptions.TryGetValue(subscriptionKey, out var val))
+                val.TryAdd(sid, session);
             return id;
         }
 
@@ -204,8 +214,9 @@ namespace FASTER.server
         /// </summary>
         /// <param name="prefix">prefix to subscribe to</param>
         /// <param name="session">Server session</param>
+        /// <param name="ascii">is key ascii?</param>
         /// <returns></returns>
-        public unsafe int PSubscribe(ref byte* prefix, ServerSessionBase session)
+        public unsafe int PSubscribe(ref byte* prefix, ServerSessionBase session, bool ascii = false)
         {
             var start = prefix;
             keySerializer.ReadKeyByRef(ref prefix);
@@ -213,29 +224,146 @@ namespace FASTER.server
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
                 subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
-                prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
+                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(new ByteArrayComparer());
                 Task.Run(() => Start(cts.Token));
             }
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
-            prefixSubscriptions.TryAdd(subscriptionPrefix, new ConcurrentDictionary<int, ServerSessionBase>());
-            prefixSubscriptions[subscriptionPrefix].TryAdd(sid, session);
+            prefixSubscriptions.TryAdd(subscriptionPrefix, (ascii, new ConcurrentDictionary<int, ServerSessionBase>()));
+            if (prefixSubscriptions.TryGetValue(subscriptionPrefix, out var val))
+                val.Item2.TryAdd(sid, session);
             return id;
         }
 
         /// <summary>
-        /// Publish the update made to key to all the subscribers
+        /// Unsubscribe to a particular Key
+        /// </summary>
+        /// <param name="key">Key to subscribe to</param>
+        /// <param name="session">Server session</param>
+        /// <returns></returns>
+        public unsafe bool Unsubscribe(byte* key, ServerSessionBase session)
+        {
+            bool ret = false;
+            var start = key;
+            var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
+            if (subscriptions != null)
+            {
+                if (subscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))
+                {
+                    foreach (var sid in subscriptionDict.Keys)
+                    {
+                        if (subscriptionDict[sid] == session)
+                        {
+                            subscriptionDict.TryRemove(sid, out _);
+                            ret = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            return ret;
+        }
+
+        /// <summary>
+        /// Unsubscribe to a particular pattern
+        /// </summary>
+        /// <param name="key">Pattern to subscribe to</param>
+        /// <param name="session">Server session</param>
+        /// <returns></returns>
+        public unsafe void PUnsubscribe(byte* key, ServerSessionBase session)
+        {
+            var start = key;
+            var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
+            if (prefixSubscriptions != null)
+            {
+                if (prefixSubscriptions.ContainsKey(subscriptionKey))
+                {
+                    {
+                        prefixSubscriptions.TryGetValue(subscriptionKey, out var subscriptionDict);
+                        foreach (var sid in subscriptionDict.Item2.Keys)
+                        {
+                            if (subscriptionDict.Item2[sid] == session)
+                            {
+                                subscriptionDict.Item2.TryRemove(sid, out _);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// List all subscriptions made by a session
+        /// </summary>
+        /// <param name="session"></param>
+        /// <returns></returns>
+        public unsafe List<byte[]> ListAllSubscriptions(ServerSessionBase session)
+        {
+            List<byte[]> sessionSubscriptions = new();
+            if (subscriptions != null)
+            {
+                foreach (var subscription in subscriptions)
+                {
+                    if (subscription.Value.Values.Contains(session))
+                        sessionSubscriptions.Add(subscription.Key);
+                }
+            }
+            return sessionSubscriptions;
+        }
+
+        /// <summary>
+        /// List all pattern subscriptions made by a session
+        /// </summary>
+        /// <param name="session"></param>
+        /// <returns></returns>
+        public unsafe List<byte[]> ListAllPSubscriptions(ServerSessionBase session)
+        {
+            List<byte[]> sessionPSubscriptions = new();
+            foreach (var psubscription in prefixSubscriptions)
+            {
+                if (psubscription.Value.Item2.Values.Contains(session))
+                    sessionPSubscriptions.Add(psubscription.Key);
+            }
+
+            return sessionPSubscriptions;
+        }
+
+        /// <summary>
+        /// Publish the update made to key to all the subscribers, synchronously
         /// </summary>
         /// <param name="key">key that has been updated</param>
         /// <param name="value">value that has been updated</param>
         /// <param name="valueLength">value length that has been updated</param>
-        public unsafe void Publish(byte* key, byte* value, int valueLength)
+        /// <param name="ascii">whether ascii</param>
+        public unsafe int PublishNow(byte* key, byte* value, int valueLength, bool ascii)
+        {
+            if (subscriptions == null && prefixSubscriptions == null) return 0;
+
+            var start = key;
+            ref Key k = ref keySerializer.ReadKeyByRef(ref key);
+            var keyBytes = new Span<byte>(start, (int)(key - start)).ToArray();
+            int numSubscribedSessions = Broadcast(keyBytes, value, valueLength, ascii);
+            return numSubscribedSessions;
+        }
+
+        /// <summary>
+        /// Publish the update made to key to all the subscribers, asynchronously
+        /// </summary>
+        /// <param name="key">key that has been updated</param>
+        /// <param name="value">value that has been updated</param>
+        /// <param name="valueLength">value length that has been updated</param>
+        /// <param name="ascii">is payload ascii</param>
+        public unsafe void Publish(byte* key, byte* value, int valueLength, bool ascii = false)
         {
             if (subscriptions == null && prefixSubscriptions == null) return;
 
             var start = key;
             ref Key k = ref keySerializer.ReadKeyByRef(ref key);
+            // TODO: this needs to be a single atomic enqueue
             log.Enqueue(new Span<byte>(start, (int)(key - start)));
             log.Enqueue(new Span<byte>(value, valueLength));
+            log.Enqueue(new Span<byte>(Unsafe.AsPointer(ref ascii), sizeof(bool)));
             log.RefreshUncommitted();
         }
 

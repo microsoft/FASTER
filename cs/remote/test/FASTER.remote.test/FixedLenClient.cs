@@ -35,7 +35,7 @@ namespace FASTER.remote.test
     /// </summary>
     sealed class FixedLenClientFunctions : CallbackFunctionsBase<long, long, long, long, long>
     {
-        readonly AutoResetEvent evt = new AutoResetEvent(false);
+        readonly ManualResetEvent evt = new ManualResetEvent(false);
 
         public override void ReadCompletionCallback(ref long key, ref long input, ref long output, long ctx, Status status)
         {
@@ -58,6 +58,9 @@ namespace FASTER.remote.test
             evt.Set();
         }
 
-        public void WaitSubscribe() => evt.WaitOne();
+        public void WaitSubscribe()
+        {
+            evt.WaitOne();
+        }
     }
 }
