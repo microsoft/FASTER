@@ -971,20 +971,22 @@ namespace FASTER.core
             foundEntry.word = Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word);
             if (foundEntry.word == entry.word)
             {
-                pendingContext.logicalAddress = newLogicalAddress;
-                if (status == OperationStatus.SUCCESS &&
-                    !fasterSession.PostCopyUpdater(ref key, ref input,
+                // If IU, return notfound. Else (CU), call PCU. If PCU is true, return success. Else retry op.
+                if (status != OperationStatus.SUCCESS ||
+                    fasterSession.PostCopyUpdater(ref key, ref input,
                         ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                         ref output, ref hlog.GetInfo(physicalAddress), newLogicalAddress))
-                    status = OperationStatus.RETRY_NOW;
+                {
+                    pendingContext.logicalAddress = newLogicalAddress;
+                    return status;
+                }
             }
             else
             {
                 // CAS failed
                 hlog.GetInfo(newPhysicalAddress).Invalid = true;
-                status = OperationStatus.RETRY_NOW;
             }
-
+            status = OperationStatus.RETRY_NOW;
             return status;
         }
 
@@ -1545,22 +1547,26 @@ namespace FASTER.core
                 updatedEntry.Tentative = false;
 
                 var foundEntry = default(HashBucketEntry);
-                foundEntry.word = Interlocked.CompareExchange(
-                                            ref bucket->bucket_entries[slot],
-                                            updatedEntry.word, entry.word);
-
+                foundEntry.word = Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word);
                 if (foundEntry.word == entry.word)
                 {
+                    // If IU, return notfound. Else (CU), call PCU. If PCU is true, return success. Else retry op.
                     if (status != OperationStatus.SUCCESS ||
                         fasterSession.PostCopyUpdater(ref key,
-                                          ref pendingContext.input.Get(), 
+                                          ref pendingContext.input.Get(),
                                           ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                           ref pendingContext.output, ref hlog.GetInfo(newPhysicalAddress), newLogicalAddress))
+                    {
+                        pendingContext.logicalAddress = newLogicalAddress;
                         return status;
+                    }
                 }
-                // CAS failed. Fall through to call InternalRMW again to restart the sequence and return that status.
-                hlog.GetInfo(newPhysicalAddress).Invalid = true;
-#endregion
+                else
+                {
+                    // CAS failed. Retry in loop.
+                    hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                }
+                #endregion
             }
 
             OperationStatus internalStatus;
