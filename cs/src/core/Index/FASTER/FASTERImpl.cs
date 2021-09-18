@@ -972,6 +972,11 @@ namespace FASTER.core
             if (foundEntry.word == entry.word)
             {
                 pendingContext.logicalAddress = newLogicalAddress;
+                if (status == OperationStatus.SUCCESS &&
+                    !fasterSession.PostCopyUpdater(ref key, ref input,
+                        ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+                        ref output, ref hlog.GetInfo(physicalAddress), newLogicalAddress))
+                    status = OperationStatus.RETRY_NOW;
             }
             else
             {
@@ -1546,12 +1551,15 @@ namespace FASTER.core
 
                 if (foundEntry.word == entry.word)
                 {
-                    return status;
+                    if (status != OperationStatus.SUCCESS ||
+                        fasterSession.PostCopyUpdater(ref key,
+                                          ref pendingContext.input.Get(), 
+                                          ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+                                          ref pendingContext.output, ref hlog.GetInfo(newPhysicalAddress), newLogicalAddress))
+                        return status;
                 }
-                else
-                {
-                    hlog.GetInfo(newPhysicalAddress).Invalid = true;
-                }
+                // CAS failed. Fall through to call InternalRMW again to restart the sequence and return that status.
+                hlog.GetInfo(newPhysicalAddress).Invalid = true;
 #endregion
             }
 
