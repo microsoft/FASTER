@@ -1053,7 +1053,7 @@ namespace FASTER.core
                 try
                 {
                     // KeyIndexes do not need notification of in-place updates because the key does not change.
-                    return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address);
+                    return !recordInfo.Tombstone && PostCopyUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address);
                 }
                 finally
                 {

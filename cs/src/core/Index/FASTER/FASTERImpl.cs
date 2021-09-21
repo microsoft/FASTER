@@ -974,7 +974,7 @@ namespace FASTER.core
                 // If IU, return notfound. Else (CU), call PCU. If PCU is true, return success. Else retry op.
                 if (status != OperationStatus.SUCCESS ||
                     fasterSession.PostCopyUpdater(ref key, ref input,
-                        ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+                        ref hlog.GetValue(newPhysicalAddress),
                         ref output, ref hlog.GetInfo(physicalAddress), newLogicalAddress))
                 {
                     pendingContext.logicalAddress = newLogicalAddress;
@@ -1554,7 +1554,7 @@ namespace FASTER.core
                     if (status != OperationStatus.SUCCESS ||
                         fasterSession.PostCopyUpdater(ref key,
                                           ref pendingContext.input.Get(),
-                                          ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+                                          ref hlog.GetValue(newPhysicalAddress),
                                           ref pendingContext.output, ref hlog.GetInfo(newPhysicalAddress), newLogicalAddress))
                     {
                         pendingContext.logicalAddress = newLogicalAddress;
