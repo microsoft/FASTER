@@ -342,6 +342,11 @@ namespace FASTER.core
                 _fasterKV._functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
             }
 
+            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+            {
+                return true;
+            }
+
             public void DeleteCompletionCallback(ref Key key, Context ctx)
             {
                 _fasterKV._functions.DeleteCompletionCallback(ref key, ctx);

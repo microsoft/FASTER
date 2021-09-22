@@ -1111,10 +1111,11 @@ namespace FASTER.core
                 _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
             }
 
-            public void DeleteCompletionCallback(ref Key key, Context ctx)
-            {
-                _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
-            }
+            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+                => true;
+
+            public void DeleteCompletionCallback(ref Key key, Context ctx) 
+                => _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
 
             public int GetInitialLength(ref Input input)
             {

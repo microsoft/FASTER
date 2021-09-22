@@ -98,7 +98,8 @@ namespace FASTER.test
                 {
                     ref var result = ref completedOutputs.Current;
                     VerifyStructs((int)result.Key.kfield1, ref result.Key, ref result.Input, ref result.Output, ref result.Context, useRMW);
-                    Assert.AreEqual(keyAddressDict[(int)result.Key.kfield1], result.Address);
+                    if (!useRMW)
+                        Assert.AreEqual(keyAddressDict[(int)result.Key.kfield1], result.Address);
                 }
                 completedOutputs.Dispose();
                 Assert.AreEqual(deferredPending + 1, count);
