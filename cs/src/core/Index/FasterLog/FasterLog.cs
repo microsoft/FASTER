@@ -875,6 +875,36 @@ namespace FASTER.core
             return GetRecordAsMemoryOwnerAndFree(ctx.record, memoryPool);
         }
 
+        /// <summary>
+        /// Random read record from log, at given address
+        /// </summary>
+        /// <param name="address">Logical address to read from</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns></returns>
+        public async ValueTask<int> ReadRecordLengthAsync(long address, CancellationToken token = default)
+        {
+            token.ThrowIfCancellationRequested();
+            epoch.Resume();
+            if (address >= CommittedUntilAddress || address < BeginAddress)
+            {
+                epoch.Suspend();
+                return default;
+            }
+            var ctx = new SimpleReadContext
+            {
+                logicalAddress = address,
+                completedRead = new SemaphoreSlim(0)
+            };
+            unsafe
+            {
+                allocator.AsyncReadRecordToMemory(address, headerSize, AsyncGetHeaderOnlyFromDiskCallback, ref ctx);
+            }
+            epoch.Suspend();
+            await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
+            
+            return GetRecordLengthAndFree(ctx.record);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int Align(int length)
         {
@@ -1204,6 +1234,29 @@ namespace FASTER.core
             }
         }
 
+        private void AsyncGetHeaderOnlyFromDiskCallback(uint errorCode, uint numBytes, object context)
+        {
+            var ctx = (SimpleReadContext)context;
+
+            if (errorCode != 0)
+            {
+                Trace.TraceError("AsyncGetFromDiskCallback error: {0}", errorCode);
+                ctx.record.Return();
+                ctx.record = null;
+                ctx.completedRead.Release();
+            }
+            else
+            {
+                if (ctx.record.available_bytes < headerSize)
+                {
+                    Debug.WriteLine("No record header present at address: " + ctx.logicalAddress);
+                    ctx.record.Return();
+                    ctx.record = null;
+                }
+                ctx.completedRead.Release();
+            }
+        }
+
         private (byte[], int) GetRecordAndFree(SectorAlignedMemory record)
         {
             if (record == null)
@@ -1254,6 +1307,27 @@ namespace FASTER.core
             
             record.Return();
             return (result, length);
+        }
+
+        private int GetRecordLengthAndFree(SectorAlignedMemory record)
+        {
+            if (record == null)
+                return 0;
+
+            int length;
+            unsafe
+            {
+                var ptr = record.GetValidPointer();
+                length = GetLength(ptr);
+
+                if (!VerifyChecksum(ptr, length))
+                {
+                    throw new FasterException("Checksum failed for read");
+                }
+            }
+
+            record.Return();
+            return length;
         }
 
         private long CommitInternal(bool spinWait = false)
