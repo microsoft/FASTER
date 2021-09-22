@@ -19,8 +19,7 @@ namespace FASTER.core
         /// <summary>
         /// No reads during compaction
         /// </summary>
-        public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
-        { }
+        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) => true;
 
         /// <summary>
         /// For compaction, we never perform concurrent writes as rolled over data defers to
@@ -36,6 +35,8 @@ namespace FASTER.core
 
         public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => true;
 
+        public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output) => true;
+
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
 
         public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
@@ -45,7 +46,7 @@ namespace FASTER.core
         /// <summary>
         /// No reads during compaction
         /// </summary>
-        public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) => true;
 
         /// <summary>
         /// Write compacted live value to store

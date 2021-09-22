@@ -55,11 +55,11 @@ namespace StoreDiskReadBenchmark
     public sealed class MyFuncs : FunctionsBase<Key, Value, Input, Output, Empty>
     {
         // Read functions
-        public override void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
-        { if (dst == null) dst = new Output(); dst.value = value; }
+        public override bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        { if (dst == null) dst = new Output(); dst.value = value; return true; }
 
-        public override void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
-        { if (dst == null) dst = new Output(); dst.value = value; }
+        public override bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        { if (dst == null) dst = new Output(); dst.value = value; return true; }
 
         // RMW functions
         public override void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)

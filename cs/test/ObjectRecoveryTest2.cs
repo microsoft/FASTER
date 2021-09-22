@@ -47,7 +47,7 @@ namespace FASTER.test.recovery.objects
             session1.Dispose();
 
             h.TakeFullCheckpoint(out _);
-            h.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            h.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             Destroy(log, objlog, h);
 
@@ -111,7 +111,7 @@ namespace FASTER.test.recovery.objects
                 if (i % 100 == 0)
                 {
                     fht.TakeFullCheckpoint(out _);
-                    fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                    fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                 }
             }
         }
@@ -241,9 +241,20 @@ namespace FASTER.test.recovery.objects
         }
 
 
-        public override void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        {
+            dst.value = value;
+            return true;
+        }
+
         public override void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst) => dst = src;
-        public override void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
+
+        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        {
+            dst.value = value;
+            return true;
+        }
+
         public override bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
         {
             if (src == null)

@@ -83,14 +83,16 @@ namespace FASTER.test
 
     public class RefCountedReader : FunctionsBase<int, RefCountedValue, Empty, RefCountedValue, Empty>
     {
-        public override void SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst)
+        public override bool SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst)
         {
             dst = value;
+            return true;
         }
 
-        public override void ConcurrentReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst)
+        public override bool ConcurrentReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst)
         {
             dst = value;
+            return true;
         }
     }
 

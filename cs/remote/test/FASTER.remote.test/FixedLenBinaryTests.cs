@@ -7,7 +7,7 @@ namespace FASTER.remote.test
     [TestFixture]
     public class FixedLenBinaryTests
     {
-        FixedLenServer<long, long, long, long, SimpleFunctions<long, long, long>> server;
+        FixedLenServer<long, long, long, long, AdvancedSimpleFunctions<long, long, long>> server;
         FixedLenClient<long, long> client;
 
         [SetUp]

@@ -603,11 +603,17 @@ namespace FASTER.test
         {
             internal long expectedReadAddress;
 
-            public override void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, long address) 
-                => Assign(ref value, ref dst, address);
+            public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, long address)
+            {
+                Assign(ref value, ref dst, address);
+                return true;
+            }
 
-            public override void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address) 
-                => Assign(ref value, ref dst, address);
+            public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address)
+            {
+                Assign(ref value, ref dst, address);
+                return true;
+            }
 
             void Assign(ref ValueStruct value, ref OutputStruct dst, long address)
             {

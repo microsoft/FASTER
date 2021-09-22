@@ -12,7 +12,7 @@ namespace FASTER.server
     /// FASTER server for generic types
     /// </summary>
     public class GenericServer<Key, Value, Input, Output, Functions, ParameterSerializer> : IDisposable
-            where Functions : IFunctions<Key, Value, Input, Output, long>
+            where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
             where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly ServerOptions opts;
