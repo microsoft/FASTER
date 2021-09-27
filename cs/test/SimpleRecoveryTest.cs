@@ -72,7 +72,7 @@ namespace FASTER.test.recovery.sumstore.simple
         {
             checkpointManager = new DeviceLogCommitCheckpointManager(
                 new LocalStorageNamedDeviceFactory(),
-                new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
+                new DefaultCheckpointNamingScheme($"{TestUtils.MethodTestDir}/chkpt"));
             await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
             checkpointManager.PurgeAll();
         }
