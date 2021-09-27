@@ -72,7 +72,7 @@ namespace FASTER.test.recovery.sumstore.simple
         {
             checkpointManager = new DeviceLogCommitCheckpointManager(
                 new LocalStorageNamedDeviceFactory(),
-                new DefaultCheckpointNamingScheme($"{TestUtils.MethodTestDir}/{TestUtils.AzureTestDirectory}"));
+                new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
             await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
             checkpointManager.PurgeAll();
         }
@@ -140,9 +140,16 @@ namespace FASTER.test.recovery.sumstore.simple
                 var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
 
                 if (status == Status.PENDING)
-                    session2.CompletePending(true);
+                {
+                    session2.CompletePendingWithOutputs(out var outputs, wait: true);
+                    Assert.IsTrue(outputs.Next());
+                    output = outputs.Current.Output;
+                    Assert.IsFalse(outputs.Next());
+                    outputs.Current.Dispose();
+                }
                 else
-                    Assert.IsTrue(output.value.numClicks == key);
+                    Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output.value.numClicks);
             }
             session2.Dispose();
         }
@@ -193,7 +200,7 @@ namespace FASTER.test.recovery.sumstore.simple
                     session2.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(output.value.numClicks == key);
+                    Assert.AreEqual(key, output.value.numClicks);
                 }
             }
             session2.Dispose();
@@ -248,8 +255,8 @@ namespace FASTER.test.recovery.sumstore.simple
     {
         public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.numClicks == key.adId);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(key.adId, output.value.numClicks);
         }
 
         // Read functions

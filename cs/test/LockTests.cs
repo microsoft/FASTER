@@ -15,11 +15,6 @@ namespace FASTER.test
     {
         internal class Functions : AdvancedSimpleFunctions<int, int>
         {
-            public override void ConcurrentReader(ref int key, ref int input, ref int value, ref int dst, ref RecordInfo recordInfo, long address)
-            {
-                dst = value;
-            }
-
             bool Increment(ref int dst)
             {
                 ++dst;

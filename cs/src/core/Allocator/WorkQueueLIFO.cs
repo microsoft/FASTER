@@ -54,7 +54,7 @@ namespace FASTER.core
 
         private void ProcessQueue()
         {
-            // Process items in qork queue
+            // Process items in work queue
             while (true)
             {
                 while (_queue.TryPop(out var workItem))
