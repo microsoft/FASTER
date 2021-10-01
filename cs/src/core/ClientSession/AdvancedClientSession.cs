@@ -178,6 +178,21 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Unsafe read operation, assumes caller handles epoch resume and suspend. Can be used to issue
+        /// multiple Read operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread
+        /// to manage epochs.
+        /// </summary>
+        /// <param name="key">The key to look up</param>
+        /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
+        /// <param name="output">The location to place the retrieved value</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeRead(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
+            => fht.ContextRead(ref key, ref input, ref output, userContext, FasterSession, serialNo, ctx);
+
+        /// <summary>
         /// Read operation
         /// </summary>
         /// <param name="key">The key to look up</param>
@@ -904,7 +919,7 @@ namespace FASTER.core
         /// Call SuspendThread before any async op
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeResumeThread()
+        public void UnsafeResumeThread()
         {
             fht.epoch.Resume();
             fht.InternalRefresh(ctx, FasterSession);
@@ -914,9 +929,21 @@ namespace FASTER.core
         /// Suspend session on current thread
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeSuspendThread()
+        public void UnsafeSuspendThread()
         {
             fht.epoch.Suspend();
+        }
+
+        /// <summary>
+        /// Resume session on current thread
+        /// Call SuspendThread before any async op
+        /// </summary>
+        /// <param name="resumeEpoch">Epoch that session resumes on</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UnsafeResumeThread(out int resumeEpoch)
+        {
+            fht.epoch.Resume(out resumeEpoch);
+            fht.InternalRefresh(ctx, FasterSession);
         }
 
         void IClientSession.AtomicSwitch(int version)
