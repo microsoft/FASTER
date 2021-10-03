@@ -291,7 +291,6 @@ namespace FASTER.test
 
         public MyLargeValue()
         {
-
         }
 
         public MyLargeValue(int size)
