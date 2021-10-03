@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using FASTER.core;
 using NUnit.Framework;
@@ -244,7 +245,12 @@ namespace FASTER.test
         public unsafe void TestShiftHeadAddress([Values] TestUtils.DeviceType deviceType)
         {
             InputStruct input = default;
-            int count = 200;
+            const int RandSeed = 10;
+            const int RandRange = 10000;
+            const int NumRecs = 200;
+
+            Random r = new Random(RandSeed);
+            var sw = Stopwatch.StartNew();
 
             string filename = path + "TestShiftHeadAddress" + deviceType.ToString() + ".log";
             log = TestUtils.CreateTestDevice(deviceType, filename);
@@ -253,20 +259,21 @@ namespace FASTER.test
             session = fht.For(new Functions()).NewSession<Functions>();
 
 
-            Random r = new Random(10);
-            for (int c = 0; c < count; c++)
+            for (int c = 0; c < NumRecs; c++)
             {
-                var i = r.Next(10000);
+                var i = r.Next(RandRange);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
+            Console.WriteLine($"Time to insert {NumRecs} records: {sw.ElapsedMilliseconds} ms");
 
-            r = new Random(10);
+            r = new Random(RandSeed);
+            sw.Restart();
 
-            for (int c = 0; c < count; c++)
+            for (int c = 0; c < NumRecs; c++)
             {
-                var i = r.Next(10000);
+                var i = r.Next(RandRange);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
@@ -279,20 +286,30 @@ namespace FASTER.test
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
+            Console.WriteLine($"Time to read {NumRecs} in-memory records: {sw.ElapsedMilliseconds} ms");
 
             // Shift head and retry - should not find in main memory now
             fht.Log.FlushAndEvict(true);
 
-            r = new Random(10);
-            for (int c = 0; c < count; c++)
+            r = new Random(RandSeed);
+            sw.Restart();
+
+            for (int c = 0; c < NumRecs; c++)
             {
-                var i = r.Next(10000);
+                var i = r.Next(RandRange);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+
                 Status foundStatus = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.AreEqual(Status.PENDING, foundStatus);
-                session.CompletePending(true);
+                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                Assert.IsTrue(outputs.Next());
+                Assert.AreEqual(value.vfield1, outputs.Current.Output.value.vfield1);
+                outputs.Current.Dispose();
+                Assert.IsFalse(outputs.Next());
             }
+            Console.WriteLine($"Time to read {NumRecs} on-disk records: {sw.ElapsedMilliseconds} ms");
         }
 
         [Test]

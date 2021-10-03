@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 
 namespace FASTER.core
 {
@@ -94,7 +93,7 @@ namespace FASTER.core
         public ref TInput Input => ref inputContainer.Get();
 
         /// <summary>
-        /// The output for this pending operation.
+        /// The output for this pending operation. It is the caller's responsibility to dispose this if necessary; <see cref="Dispose()"/> will not try to dispose this member.
         /// </summary>
         public TOutput Output;
 

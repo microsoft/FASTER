@@ -396,7 +396,7 @@ namespace FASTER.core
                 goto CreateNewRecord;
             }
 
-#region Entry latch operation
+            #region Entry latch operation
             if (sessionCtx.phase != Phase.REST)
             {
                 latchDestination = AcquireLatchUpsert(sessionCtx, bucket, ref status, ref latchOperation, ref entry, logicalAddress);
@@ -717,8 +717,8 @@ namespace FASTER.core
                 {
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                     if (!recordInfo.Tombstone)
-                    { 
-                        if (FoldOverSnapshot)
+                    {
+                        if (UseFoldOverCheckpoint)
                         {
                             Debug.Assert(recordInfo.Version == sessionCtx.version);
                         }
@@ -780,9 +780,9 @@ namespace FASTER.core
                 }
             }
 
-#endregion
+        #endregion
 
-#region Create new record
+        #region Create new record
         CreateNewRecord:
             if (latchDestination != LatchDestination.CreatePendingContext)
             {
@@ -1402,7 +1402,9 @@ namespace FASTER.core
         {
             Debug.Assert(RelaxedCPR || pendingContext.version == opCtx.version);
 
+            // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
             ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
+
             byte* physicalAddress = request.record.GetValidPointer();
             long logicalAddress = pendingContext.entry.Address;
             ref RecordInfo oldRecordInfo = ref hlog.GetInfoFromBytePointer(physicalAddress);
@@ -2007,7 +2009,7 @@ namespace FASTER.core
 
         #endregion
 
-        #region Split Index
+#region Split Index
         private void SplitBuckets(long hash)
         {
             long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;

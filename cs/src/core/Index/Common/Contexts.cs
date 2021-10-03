@@ -18,7 +18,6 @@ namespace FASTER.core
         READ,
         RMW,
         UPSERT,
-        INSERT,
         DELETE
     }
 
@@ -266,7 +265,7 @@ namespace FASTER.core
         /// </summary>
         public int nextVersion;
         /// <summary>
-        /// Flushed logical address
+        /// Flushed logical address; indicates the latest immutable address on the main FASTER log at recovery time.
         /// </summary>
         public long flushedLogicalAddress;
         /// <summary>
@@ -588,37 +587,39 @@ namespace FASTER.core
         }
 
         public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
-            bool scanDelta, long recoverTo)
+            bool scanDelta = false, long recoverTo = -1)
         {
             deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
-            deltaFileDevice.Initialize(-1);
-            if (deltaFileDevice.GetFileSize(0) > 0)
+            if (deltaFileDevice is not null)
             {
-                deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
-                deltaLog.InitializeForReads();
-                info.Recover(token, checkpointManager, deltaLog, scanDelta, recoverTo);
+                deltaFileDevice.Initialize(-1);
+                if (deltaFileDevice.GetFileSize(0) > 0)
+                {
+                    deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
+                    deltaLog.InitializeForReads();
+                    info.Recover(token, checkpointManager, deltaLog, scanDelta, recoverTo);
+                    return;
+                }
             }
-            else
-            {
-                info.Recover(token, checkpointManager, null);
-            }
+            info.Recover(token, checkpointManager, null);
         }
 
         public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
             out byte[] commitCookie, bool scanDelta = false, long recoverTo = -1)
         {
             deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
-            deltaFileDevice.Initialize(-1);
-            if (deltaFileDevice.GetFileSize(0) > 0)
+            if (deltaFileDevice is not null)
             {
-                deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
-                deltaLog.InitializeForReads();
-                info.Recover(token, checkpointManager, out commitCookie, deltaLog, scanDelta, recoverTo);
+                deltaFileDevice.Initialize(-1);
+                if (deltaFileDevice.GetFileSize(0) > 0)
+                {
+                    deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
+                    deltaLog.InitializeForReads();
+                    info.Recover(token, checkpointManager, out commitCookie, deltaLog, scanDelta, recoverTo);
+                    return;
+                }
             }
-            else
-            {
-                info.Recover(token, checkpointManager, out commitCookie);
-            }
+            info.Recover(token, checkpointManager, out commitCookie);
         }
 
         public bool IsDefault()

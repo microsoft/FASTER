@@ -1,4 +1,7 @@
-﻿namespace FASTER.core
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+namespace FASTER.core
 {
     /// <summary>
     /// Provides thread management and callback to checkpoint completion (called state machine).
