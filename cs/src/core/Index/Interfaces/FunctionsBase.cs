@@ -38,6 +38,9 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output) { }
         /// <inheritdoc/>
+        public virtual bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => true;
+
+        /// <inheritdoc/>
         public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => true;
 
         /// <inheritdoc/>
