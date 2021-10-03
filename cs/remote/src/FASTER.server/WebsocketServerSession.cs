@@ -24,7 +24,7 @@ namespace FASTER.server
 
     internal unsafe sealed class WebsocketServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
         : FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>
-        where Functions : IFunctions<Key, Value, Input, Output, long>
+        where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly HeaderReaderWriter hrw;

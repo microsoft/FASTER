@@ -22,9 +22,9 @@ namespace FASTER.core
         protected FunctionsBase(bool locking = false) => this.locking = locking;
 
         /// <inheritdoc/>
-        public virtual void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+        public virtual bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) => true;
         /// <inheritdoc/>
-        public virtual void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) { }
+        public virtual bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) => true;
 
         /// <inheritdoc/>
         public virtual bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
@@ -33,6 +33,8 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) { }
+        /// <inheritdoc/>
+        public virtual bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output) => true;
         /// <inheritdoc/>
         public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
         /// <inheritdoc/>
@@ -83,9 +85,17 @@ namespace FASTER.core
         public SimpleFunctions(Func<Value, Value, Value> merger) => this.merger = merger;
 
         /// <inheritdoc/>
-        public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst) => dst = value;
+        public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst)
+        {
+            dst = value;
+            return true;
+        }
         /// <inheritdoc/>
-        public override void SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst) => dst = value;
+        public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst)
+        {
+            dst = value;
+            return true;
+        }
 
         /// <inheritdoc/>
         public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) { dst = src; return true; }
@@ -132,9 +142,9 @@ namespace FASTER.core
         protected AdvancedFunctionsBase(bool locking = false) => this.locking = locking;
 
         /// <inheritdoc/>
-        public virtual void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) { }
+        public virtual bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
         /// <inheritdoc/>
-        public virtual void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address) { }
+        public virtual bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address) => true;
 
         /// <inheritdoc/>
         public virtual bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { dst = src; return true; }
@@ -144,9 +154,11 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) { }
         /// <inheritdoc/>
+        public virtual bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output) => true;
+        /// <inheritdoc/>
         public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
         /// <inheritdoc/>
-        public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output) { }
+        public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) { }
         /// <inheritdoc/>
         public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
@@ -196,9 +208,18 @@ namespace FASTER.core
         public AdvancedSimpleFunctions(Func<Value, Value, Value> merger) => this.merger = merger;
 
         /// <inheritdoc/>
-        public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref RecordInfo recordInfo, long address) => dst = value;
+        public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref RecordInfo recordInfo, long address)
+        {
+            dst = value;
+            return true;
+        }
+
         /// <inheritdoc/>
-        public override void SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address) => dst = value;
+        public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address)
+        {
+            dst = value;
+            return true;
+        }
 
         /// <inheritdoc/>
         public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { dst = src; return true; }
@@ -208,7 +229,8 @@ namespace FASTER.core
         /// <inheritdoc/>
         public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output) => value = input;
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output) => newValue = merger(input, oldValue);
+        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, long address) => newValue = merger(input, oldValue);
+
         /// <inheritdoc/>
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) { value = merger(input, value); return true; }
 

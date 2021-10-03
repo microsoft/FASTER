@@ -45,14 +45,16 @@ namespace SumStore
         }
 
         // Read functions
-        public override void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public override bool SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
+            return true;
         }
 
-        public override void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public override bool ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
+            return true;
         }
 
         // RMW functions

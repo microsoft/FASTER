@@ -26,7 +26,7 @@ namespace FasterServerOptions
         [Option('i', "index", Required = false, Default = "8g", HelpText = "Size of hash index in bytes (rounds down to power of 2)")]
         public string IndexSize { get; set; }
 
-        [Option('l', "logdir", Required = false, Default = null, HelpText = "Storage directory for data (hybrid log). Runs memory-only if unspecified.")]
+        [Option('l', "logdir", Required = false, Default = null, HelpText = "Storage directory for data (hybrid log). Current folder if unspecified, and memory-only if empty string provided.")]
         public string LogDir { get; set; }
 
         [Option('c', "checkpointdir", Required = false, Default = null, HelpText = "Storage directory for checkpoints. Uses 'checkpoints' folder under logdir if unspecified.")]
