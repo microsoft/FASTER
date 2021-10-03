@@ -53,6 +53,16 @@ namespace FASTER.core
         public long NextAddress => nextAddress;
 
         /// <summary>
+        /// The starting address of the scan
+        /// </summary>
+        public long BeginAddress => beginAddress;
+
+        /// <summary>
+        /// The ending address of the scan
+        /// </summary>
+        public long EndAddress => endAddress;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="beginAddress"></param>

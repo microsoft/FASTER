@@ -5,8 +5,8 @@ using FASTER.core;
 
 namespace FASTER.server
 {
-    internal struct ServerKVFunctions<Key, Value, Input, Output, Functions> : IFunctions<Key, Value, Input, Output, long>
-        where Functions : IFunctions<Key, Value, Input, Output, long>
+    internal struct ServerKVFunctions<Key, Value, Input, Output, Functions> : IAdvancedFunctions<Key, Value, Input, Output, long>
+        where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
     {
         private readonly Functions functions;
         private readonly FasterKVServerSessionBase<Output> serverNetworkSession;
@@ -22,17 +22,23 @@ namespace FASTER.server
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
             => functions.CheckpointCompletionCallback(sessionId, commitPoint);
 
-        public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
-            => functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
+        public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+            => functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
 
-        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
-            => functions.ConcurrentWriter(ref key, ref src, ref dst);
+        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
+            => functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
+
+        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            => functions.ConcurrentWriter(ref key, ref src, ref dst, ref recordInfo, address);
+
+        public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output)
+            => functions.NeedInitialUpdate(ref key, ref input, ref output);
 
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
             => functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
-            => functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
+        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
+            => functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
 
         public void DeleteCompletionCallback(ref Key key, long ctx)
             => functions.DeleteCompletionCallback(ref key, ctx);
@@ -40,13 +46,13 @@ namespace FASTER.server
         public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
             => functions.InitialUpdater(ref key, ref input, ref value, ref output);
 
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
-            => functions.InPlaceUpdater(ref key, ref input, ref value, ref output);
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+            => functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status, RecordInfo recordInfo)
         {
             serverNetworkSession.CompleteRead(ref output, ctx, status);
-            functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+            functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordInfo);
         }
 
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status)
@@ -55,8 +61,8 @@ namespace FASTER.server
             functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
         }
 
-        public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
-            => functions.SingleReader(ref key, ref input, ref value, ref dst);
+        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
+            => functions.SingleReader(ref key, ref input, ref value, ref dst, address);
 
         public void SingleWriter(ref Key key, ref Value src, ref Value dst)
             => functions.SingleWriter(ref key, ref src, ref dst);

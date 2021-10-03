@@ -35,11 +35,15 @@ namespace FASTER.core
     {
         internal readonly AllocatorBase<Key, Value> hlog;
         private readonly AllocatorBase<Key, Value> readcache;
-        private readonly IFasterEqualityComparer<Key> comparer;
+
+        /// <summary>
+        /// Compares two keys
+        /// </summary>
+        protected readonly IFasterEqualityComparer<Key> comparer;
 
         internal readonly bool UseReadCache;
         private readonly CopyReadsToTail CopyReadsToTail;
-        private readonly bool FoldOverSnapshot;
+        private readonly bool UseFoldOverCheckpoint;
         internal readonly int sectorSize;
         private readonly bool WriteDefaultOnDelete;
         internal bool RelaxedCPR;
@@ -145,7 +149,7 @@ namespace FASTER.core
             if (checkpointSettings.CheckpointManager == null)
                 disposeCheckpointManager = true;
 
-            FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
+            UseFoldOverCheckpoint = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
             CopyReadsToTail = logSettings.CopyReadsToTail;
 
             if (logSettings.ReadCacheSettings != null)
@@ -244,7 +248,7 @@ namespace FASTER.core
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
         public bool TakeFullCheckpoint(out Guid token, long targetVersion = -1) 
-            => TakeFullCheckpoint(out token, this.FoldOverSnapshot ? CheckpointType.FoldOver : CheckpointType.Snapshot, targetVersion);
+            => TakeFullCheckpoint(out token, this.UseFoldOverCheckpoint ? CheckpointType.FoldOver : CheckpointType.Snapshot, targetVersion);
 
         /// <summary>
         /// Initiate full checkpoint
@@ -353,17 +357,7 @@ namespace FASTER.core
         /// </param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1)
-        {
-            ISynchronizationTask backend;
-            if (FoldOverSnapshot)
-                backend = new FoldOverCheckpointTask();
-            else
-                backend = new SnapshotCheckpointTask();
-
-            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
-            token = _hybridLogCheckpointToken;
-            return result;
-        }
+            => TakeHybridLogCheckpoint(out token, UseFoldOverCheckpoint ? CheckpointType.FoldOver : CheckpointType.Snapshot, tryIncremental: false, targetVersion);
 
         /// <summary>
         /// Initiate log-only checkpoint
@@ -631,7 +625,6 @@ namespace FASTER.core
             while (internalStatus == OperationStatus.RETRY_NOW);
 
             Status status;
-
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 status = (Status)internalStatus;

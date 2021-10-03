@@ -85,6 +85,10 @@ namespace FASTER.core
 
         public long NextAddress => enumerationPhase == 0 ? iter1.NextAddress : iter2.NextAddress;
 
+        public long BeginAddress => enumerationPhase == 0 ? iter1.BeginAddress : iter2.BeginAddress;
+
+        public long EndAddress => enumerationPhase == 0 ? iter1.EndAddress : iter2.EndAddress;
+
         public void Dispose()
         {
             iter1?.Dispose();

@@ -13,6 +13,8 @@ namespace FASTER.test.recovery.sumstore
         public long GetHashCode64(ref AdId key) => Utility.GetHashCode(key.adId);
 
         public bool Equals(ref AdId k1, ref AdId k2) => k1.adId == k2.adId;
+
+        public override string ToString() => adId.ToString();
     }
 
     public struct AdInput
@@ -40,14 +42,16 @@ namespace FASTER.test.recovery.sumstore
     public class Functions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
         // Read functions
-        public override void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
+        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
+            return true;
         }
 
-        public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
+        public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
         {
             dst.value = value;
+            return true;
         }
 
         // RMW functions

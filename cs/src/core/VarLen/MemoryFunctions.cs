@@ -50,19 +50,21 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override void SingleReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst)
+        public override bool SingleReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst)
         {
             dst.Item1 = memoryPool.Rent(value.Length);
             dst.Item2 = value.Length;
             value.CopyTo(dst.Item1.Memory);
+            return true;
         }
 
         /// <inheritdoc/>
-        public override void ConcurrentReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst)
+        public override bool ConcurrentReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst)
         {
             dst.Item1 = memoryPool.Rent(value.Length);
             dst.Item2 = value.Length;
             value.CopyTo(dst.Item1.Memory);
+            return true;
         }
 
         /// <inheritdoc/>

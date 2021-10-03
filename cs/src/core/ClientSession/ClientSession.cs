@@ -1019,29 +1019,29 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
-            {
-                if (!this.SupportsLocking)
-                    _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
-                else
-                    ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo);
-            }
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) 
+                => !this.SupportsLocking
+                    ? _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst)
+                    : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo);
 
-            public void ConcurrentReaderLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo)
+            public bool ConcurrentReaderLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo)
             {
+                bool success = false;
                 for (bool retry = true; retry; /* updated in loop */)
                 {
+                    success = false;
                     long context = 0;
                     this.Lock(ref recordInfo, ref key, ref value, LockType.Shared, ref context);
                     try
                     {
-                        _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
+                        success = _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
                     }
                     finally
                     {
                         retry = !this.Unlock(ref recordInfo, ref key, ref value, LockType.Shared, context);
                     }
                 }
+                return success;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1103,13 +1103,14 @@ namespace FASTER.core
                 }
             }
 
+            public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output)
+                => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output);
+
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
                 => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
-            {
-                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
-            }
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
@@ -1147,15 +1148,11 @@ namespace FASTER.core
                 return _clientSession.variableLengthStruct.GetInitialLength(ref input);
             }
 
-            public int GetLength(ref Value t, ref Input input)
-            {
-                return _clientSession.variableLengthStruct.GetLength(ref t, ref input);
-            }
+            public int GetLength(ref Value t, ref Input input) 
+                => _clientSession.variableLengthStruct.GetLength(ref t, ref input);
 
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
-            {
-                _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output);
-            }
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) 
+                => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
@@ -1184,40 +1181,24 @@ namespace FASTER.core
                 }
             }
 
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo)
-            {
-                _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
-            }
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo) 
+                => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
 
-            public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
-            {
-                _clientSession.functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
-            }
+            public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) 
+                => _clientSession.functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
 
-            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
-            {
-                _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst);
-            }
+            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address) 
+                => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst);
 
-            public void SingleWriter(ref Key key, ref Value src, ref Value dst)
-            {
-                _clientSession.functions.SingleWriter(ref key, ref src, ref dst);
-            }
+            public void SingleWriter(ref Key key, ref Value src, ref Value dst) 
+                => _clientSession.functions.SingleWriter(ref key, ref src, ref dst);
 
-            public void UnsafeResumeThread()
-            {
-                _clientSession.UnsafeResumeThread();
-            }
+            public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) 
+                => _clientSession.functions.UpsertCompletionCallback(ref key, ref value, ctx);
 
-            public void UnsafeSuspendThread()
-            {
-                _clientSession.UnsafeSuspendThread();
-            }
+            public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread();
 
-            public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx)
-            {
-                _clientSession.functions.UpsertCompletionCallback(ref key, ref value, ctx);
-            }
+            public void UnsafeSuspendThread() => _clientSession.UnsafeSuspendThread();
 
             public bool SupportsLocking => _clientSession.functions.SupportsLocking;
 
@@ -1229,7 +1210,6 @@ namespace FASTER.core
             {
                 if (_clientSession.inputVariableLengthStruct == default)
                     return new StandardHeapContainer<Input>(ref input);
-
                 return new VarLenHeapContainer<Input>(ref input, _clientSession.inputVariableLengthStruct, _clientSession.fht.hlog.bufferPool);
             }
 

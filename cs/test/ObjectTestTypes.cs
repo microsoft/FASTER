@@ -76,12 +76,12 @@ namespace FASTER.test
             newValue = new MyValue { value = oldValue.value + input.value };
         }
 
-        public override void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             if (dst == default)
                 dst = new MyOutput();
-
             dst.value = value;
+            return true;
         }
 
         public override bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
@@ -101,11 +101,12 @@ namespace FASTER.test
             Assert.AreEqual(Status.OK, status);
         }
 
-        public override void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             if (dst == default)
                 dst = new MyOutput();
             dst.value = value;
+            return true;
         }
 
         public override void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
@@ -134,12 +135,12 @@ namespace FASTER.test
             newValue = new MyValue { value = oldValue.value + input.value };
         }
 
-        public override void ConcurrentReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override bool ConcurrentReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             if (dst == default)
                 dst = new MyOutput();
-
             dst.value = value;
+            return true;
         }
 
         public override bool ConcurrentWriter(ref MyValue key, ref MyValue src, ref MyValue dst)
@@ -159,11 +160,12 @@ namespace FASTER.test
             Assert.AreEqual(Status.OK, status);
         }
 
-        public override void SingleReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override bool SingleReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             if (dst == default)
                 dst = new MyOutput();
             dst.value = value;
+            return true;
         }
 
         public override void SingleWriter(ref MyValue key, ref MyValue src, ref MyValue dst)
@@ -192,12 +194,12 @@ namespace FASTER.test
             newValue = new MyValue { value = oldValue.value + input.value };
         }
 
-        public override void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             if (dst == null)
                 dst = new MyOutput();
             dst.value = value;
-        }
+            return true;        }
 
         public override bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
         {
@@ -226,12 +228,12 @@ namespace FASTER.test
                 Assert.AreEqual(Status.NOTFOUND, status);
         }
 
-        public override void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             if (dst == null)
                 dst = new MyOutput();
-
             dst.value = value;
+            return true;
         }
 
         public override void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
@@ -260,10 +262,10 @@ namespace FASTER.test
             newValue = new MyValue { value = oldValue.value + input.value };
         }
 
-        public override void ConcurrentReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override bool ConcurrentReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             dst.value = value;
-        }
+            return true;        }
 
         public override bool ConcurrentWriter(ref int key, ref MyValue src, ref MyValue dst)
         {
@@ -271,9 +273,10 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
+        public override bool SingleReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             dst.value = value;
+            return true;
         }
 
         public override void SingleWriter(ref int key, ref MyValue src, ref MyValue dst)
@@ -288,7 +291,6 @@ namespace FASTER.test
 
         public MyLargeValue()
         {
-
         }
 
         public MyLargeValue(int size)
@@ -333,15 +335,16 @@ namespace FASTER.test
             }
         }
 
-        public override void SingleReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
         {
             dst.value = value;
+            return true;
         }
 
-        public override void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
+        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
         {
             dst.value = value;
-        }
+            return true;        }
 
         public override bool ConcurrentWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
         {

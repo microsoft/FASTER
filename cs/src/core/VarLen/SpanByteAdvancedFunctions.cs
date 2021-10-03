@@ -8,13 +8,13 @@ namespace FASTER.core
     /// <summary>
     /// Callback functions for SpanByte key, value
     /// </summary>
-    public class SpanByteFunctions<Key, Output, Context> : FunctionsBase<Key, SpanByte, SpanByte, Output, Context>
+    public class SpanByteAdvancedFunctions<Key, Output, Context> : AdvancedFunctionsBase<Key, SpanByte, SpanByte, Output, Context>
     {
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="locking"></param>
-        public SpanByteFunctions(bool locking = false) : base(locking) { }
+        public SpanByteAdvancedFunctions(bool locking = false) : base(locking) { }
 
         /// <inheritdoc />
         public override void SingleWriter(ref Key key, ref SpanByte src, ref SpanByte dst)
@@ -23,7 +23,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override bool ConcurrentWriter(ref Key key, ref SpanByte src, ref SpanByte dst)
+        public override bool ConcurrentWriter(ref Key key, ref SpanByte src, ref SpanByte dst, ref RecordInfo recordInfo, long address)
         {
             if (locking) dst.SpinLock();
 
@@ -52,26 +52,26 @@ namespace FASTER.core
         public override void InitialUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output)
         {
             input.CopyTo(ref value);
-        }
+        }        
 
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref Output output)
+        public override void CopyUpdater(ref Key key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref Output output, ref RecordInfo recordInfo, long address)
         {
             oldValue.CopyTo(ref newValue);
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output)
+        public override bool InPlaceUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             // The default implementation of IPU simply writes input to destination, if there is space
-            return ConcurrentWriter(ref key, ref input, ref value);
+            return ConcurrentWriter(ref key, ref input, ref value, ref recordInfo, address);
         }
     }
 
     /// <summary>
     /// Callback functions using SpanByteAndMemory output, for SpanByte key, value, input
     /// </summary>
-    public class SpanByteFunctions<Context> : SpanByteFunctions<SpanByte, SpanByteAndMemory, Context>
+    public class SpanByteAdvancedFunctions<Context> : SpanByteAdvancedFunctions<SpanByte, SpanByteAndMemory, Context>
     {
         readonly MemoryPool<byte> memoryPool;
 
@@ -80,20 +80,20 @@ namespace FASTER.core
         /// </summary>
         /// <param name="memoryPool"></param>
         /// <param name="locking"></param>
-        public SpanByteFunctions(MemoryPool<byte> memoryPool = default, bool locking = false) : base(locking)
+        public SpanByteAdvancedFunctions(MemoryPool<byte> memoryPool = default, bool locking = false) : base(locking)
         {
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
 
         /// <inheritdoc />
-        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, long address)
         {
             value.CopyTo(ref dst, memoryPool);
             return true;
         }
 
         /// <inheritdoc />
-        public unsafe override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, long address)
         {
             value.CopyTo(ref dst, memoryPool);
             return true;
@@ -119,23 +119,23 @@ namespace FASTER.core
     /// <summary>
     /// Callback functions for SpanByte with byte[] output, for SpanByte key, value, input
     /// </summary>
-    public class SpanByteFunctions_ByteArrayOutput<Context> : SpanByteFunctions<SpanByte, byte[], Context>
+    public class SpanByteAdvancedFunctions_ByteArrayOutput<Context> : SpanByteAdvancedFunctions<SpanByte, byte[], Context>
     {
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="locking"></param>
-        public SpanByteFunctions_ByteArrayOutput(bool locking = false) : base(locking) { }
+        public SpanByteAdvancedFunctions_ByteArrayOutput(bool locking = false) : base(locking) { }
 
         /// <inheritdoc />
-        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
+        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst, long address)
         {
             dst = value.ToByteArray();
             return true;
         }
 
         /// <inheritdoc />
-        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
+        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst, ref RecordInfo recordInfo, long address)
         {
             dst = value.ToByteArray();
             return true;

@@ -66,6 +66,18 @@ namespace FASTER.core
         void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output);
 
         /// <summary>
+        /// Whether we need to invoke initial-update for RMW
+        /// </summary>
+        /// <param name="key">The key for this record</param>
+        /// <param name="input">The user input to be used for computing the updated value</param>
+        /// <param name="output">The location where the result of the <paramref name="input"/> operation is to be copied</param>
+        bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output)
+#if NETSTANDARD2_1 || NET
+            => true
+#endif
+            ;
+
+        /// <summary>
         /// Whether we need to invoke copy-update for RMW
         /// </summary>
         /// <param name="key">The key for this record</param>
@@ -86,7 +98,9 @@ namespace FASTER.core
         /// <param name="oldValue">The previous value to be copied/updated</param>
         /// <param name="newValue">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
         /// <param name="output">The location where <paramref name="newValue"/> is to be copied</param>
-        void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output);
+        /// <param name="recordInfo">A reference to the header of the record; may be used by <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
+        /// <param name="address">The logical address of the record being updated; used as a RecordId by indexing</param>
+        void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address);
 
         /// <summary>
         /// Called after a copy-update for RMW is successfully installed
@@ -109,6 +123,7 @@ namespace FASTER.core
         /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="recordInfo">A reference to the header of the record; may be used by <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
         /// <param name="address">The logical address of the record being updated; used as a RecordId by indexing</param>
+        /// <returns>True if the value was successful updated, else false (e.g. the value was expired)</returns>
         bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address);
 
         /// <summary>
@@ -119,7 +134,8 @@ namespace FASTER.core
         /// <param name="value">The value for the record being read</param>
         /// <param name="dst">The location where <paramref name="value"/> is to be copied</param>
         /// <param name="address">The logical address of the record being read from, or zero if this was a readcache write; used as a RecordId by indexing if nonzero</param>
-        void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address);
+        /// <returns>True if the value was available, else false (e.g. the value was expired)</returns>
+        bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address);
 
         /// <summary>
         /// Conncurrent reader
@@ -130,7 +146,8 @@ namespace FASTER.core
         /// <param name="dst">The location where <paramref name="value"/> is to be copied</param>
         /// <param name="recordInfo">A reference to the header of the record; may be used by <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
         /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing</param>
-        void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address);
+        /// <returns>True if the value was available, else false (e.g. the value was expired)</returns>
+        bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address);
 
         /// <summary>
         /// Non-concurrent writer; called on an Upsert that does not find the key so does an insert or finds the key's record in the immutable region so does a read/copy/update (RCU),
@@ -149,6 +166,7 @@ namespace FASTER.core
         /// <param name="dst">The location where <paramref name="src"/> is to be copied; because this method is called only for in-place updates, there is a previous value there.</param>
         /// <param name="recordInfo">A reference to the header of the record; may be used by <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
         /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing"/></param>
+        /// <returns>True if the value was written, else false</returns>
         bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
 
         /// <summary>

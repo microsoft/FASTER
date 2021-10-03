@@ -18,11 +18,17 @@ namespace FASTER.test
 
         class Functions : FunctionsBase<SpanByte, long, long, long, Context>
         {
-            public override void ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst)
-                => dst = value;
+            public override bool ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst)
+            {
+                dst = value;
+                return true;
+            }
 
-            public override void SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst)
-                => dst = value;
+            public override bool SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst)
+            {
+                dst = value;
+                return true;
+            }
 
             public override void ReadCompletionCallback(ref SpanByte key, ref long input, ref long output, Context context, Status status)
             {

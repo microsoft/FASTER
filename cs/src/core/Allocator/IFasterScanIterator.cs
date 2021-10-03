@@ -70,5 +70,15 @@ namespace FASTER.core
         /// Next address
         /// </summary>
         long NextAddress { get; }
+
+        /// <summary>
+        /// The starting address of the scan
+        /// </summary>
+        long BeginAddress { get; }
+
+        /// <summary>
+        /// The ending address of the scan
+        /// </summary>
+        long EndAddress { get; }
     }
 }

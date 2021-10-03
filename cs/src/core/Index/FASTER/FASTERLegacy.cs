@@ -322,9 +322,9 @@ namespace FASTER.core
                 _fasterKV._functions.CheckpointCompletionCallback(guid, commitPoint);
             }
 
-            public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             {
-                _fasterKV._functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
+                return _fasterKV._functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
             }
 
             public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
@@ -334,10 +334,13 @@ namespace FASTER.core
 
             public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
 
+            public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output)
+                => _fasterKV._functions.NeedInitialUpdate(ref key, ref input, ref output);
+
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
                 => _fasterKV._functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 _fasterKV._functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
             }
@@ -382,9 +385,9 @@ namespace FASTER.core
                 _fasterKV._functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
             }
 
-            public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
+            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
             {
-                _fasterKV._functions.SingleReader(ref key, ref input, ref value, ref dst);
+                return _fasterKV._functions.SingleReader(ref key, ref input, ref value, ref dst);
             }
 
             public void SingleWriter(ref Key key, ref Value src, ref Value dst)

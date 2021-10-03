@@ -9,7 +9,7 @@ namespace FASTER.server
     /// <summary>
     /// Callback functions using SpanByteAndMemory output, for SpanByte key, value, input
     /// </summary>
-    public class SpanByteFunctionsForServer<Context> : SpanByteFunctions<SpanByte, SpanByteAndMemory, Context>
+    public class SpanByteFunctionsForServer<Context> : SpanByteAdvancedFunctions<SpanByte, SpanByteAndMemory, Context>
     {
         /// <summary>
         /// Memory pool
@@ -26,10 +26,10 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst) => ConcurrentReader(ref key, ref input, ref value, ref dst);
+        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, long address) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
 
         /// <inheritdoc />
-        public override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
+        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, long address) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
 
         /// <summary>
         /// Copy to given SpanByteAndMemory (header length and payload copied to actual span/memory)
@@ -37,7 +37,7 @@ namespace FASTER.server
         /// <param name="src"></param>
         /// <param name="dst"></param>
         /// <param name="memoryPool"></param>
-        private static unsafe void CopyWithHeaderTo(ref SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
+        private static unsafe bool CopyWithHeaderTo(ref SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
             if (dst.IsSpanByte)
             {
@@ -48,7 +48,7 @@ namespace FASTER.server
                     fixed (byte* ptr = span)
                         *(int*)ptr = src.Length;
                     src.AsReadOnlySpan().CopyTo(span.Slice(sizeof(int)));
-                    return;
+                    return true;
                 }
                 dst.ConvertToHeap();
             }
@@ -59,6 +59,7 @@ namespace FASTER.server
             fixed (byte* ptr = dst.Memory.Memory.Span)
                 *(int*)ptr = src.Length;
             src.AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
+            return true;
         }
     }
 }
