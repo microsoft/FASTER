@@ -85,6 +85,8 @@ namespace FASTER.benchmark
             newValue.value = input.value + oldValue.value;
         }
 
+        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => true;
+
         public bool SupportsLocking => locking;
 
         public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)

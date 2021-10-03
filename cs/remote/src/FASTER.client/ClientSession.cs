@@ -255,7 +255,6 @@ namespace FASTER.client
         /// SubscribeKV operation
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="input">Input</param>
         /// <param name="userContext">User context</param>
         /// <param name="serialNo">Serial number</param>
         /// <returns>Status of operation</returns>
@@ -266,7 +265,6 @@ namespace FASTER.client
         /// PSubscribe operation
         /// </summary>
         /// <param name="prefix">Key</param>
-        /// <param name="input">Input</param>
         /// <param name="userContext">User context</param>
         /// <param name="serialNo">Serial number</param>
         /// <returns>Status of operation</returns>

@@ -40,6 +40,9 @@ namespace FASTER.server
         public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
             => functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
 
+        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+            => functions.PostCopyUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+
         public void DeleteCompletionCallback(ref Key key, long ctx)
             => functions.DeleteCompletionCallback(ref key, ctx);
 

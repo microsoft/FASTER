@@ -1112,11 +1112,41 @@ namespace FASTER.core
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) 
                 => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+                => !this.SupportsLocking
+                    ? PostCopyUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address)
+                    : PostCopyUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, address);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private bool PostCopyUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
+            {
+                recordInfo.Version = _clientSession.ctx.version;
+                return _clientSession.functions.PostCopyUpdater(ref key, ref input, ref value, ref output);
+            }
+
+            private bool PostCopyUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
+            {
+                long context = 0;
+                this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref context);
+                try
+                {
+                    // KeyIndexes do not need notification of in-place updates because the key does not change.
+                    return !recordInfo.Tombstone && PostCopyUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address);
+                }
+                finally
+                {
+                    this.Unlock(ref recordInfo, ref key, ref value, LockType.Exclusive, context);
+                }
+            }
+
             public void DeleteCompletionCallback(ref Key key, Context ctx) 
                 => _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
 
-            public int GetInitialLength(ref Input input) 
-                => _clientSession.variableLengthStruct.GetInitialLength(ref input);
+            public int GetInitialLength(ref Input input)
+            {
+                return _clientSession.variableLengthStruct.GetInitialLength(ref input);
+            }
 
             public int GetLength(ref Value t, ref Input input) 
                 => _clientSession.variableLengthStruct.GetLength(ref t, ref input);

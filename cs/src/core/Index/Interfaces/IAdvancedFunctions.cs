@@ -103,6 +103,18 @@ namespace FASTER.core
         void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address);
 
         /// <summary>
+        /// Called after a copy-update for RMW is successfully installed
+        /// </summary>
+        /// <param name="key">The key for this record</param>
+        /// <param name="input">The user input to be used for computing the updated <paramref name="value"/></param>
+        /// <param name="value">The destination to be updated; because this is an in-place update, there is a previous value there.</param>
+        /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
+        /// <param name="recordInfo">A reference to the header of the record; may be used by <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
+        /// <param name="address">The logical address of the record being updated; used as a RecordId by indexing</param>
+        /// <returns>True if the value was successful updated, else false (e.g. the value was expired)</returns>
+        bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address);
+
+        /// <summary>
         /// In-place update for RMW
         /// </summary>
         /// <param name="key">The key for this record</param>
