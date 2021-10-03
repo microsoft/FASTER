@@ -119,6 +119,9 @@ namespace FasterFixedLenServer
             output.value = newValue;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
+
         public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) { }
 
         public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => true;
