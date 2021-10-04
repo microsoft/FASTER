@@ -124,7 +124,7 @@ end of iteration, or because we are waiting for a page read or commit to complet
        while (!iter.GetNext(out byte[] result, out int entryLength, out long currentAddress, out long nextAddress))
        {
           if (currentAddress >= 100_000_000) return;
-          await iter.WaitAsyc();
+          await iter.WaitAsync();
        }
        // Process record
     }
@@ -252,11 +252,9 @@ each chunk independently of pages, as one segment typically consists of many pag
 each file on disk to be 1GB (the default), we can set `SegmentSizeBits` S to 30, since 2<sup>30</sup> = 1GB.
 
 * `LogCommitManager`: Users can fine tune the commit of log metadata by extending or replacing the default log
-commit manager provided (`LocalLogCommitManager`). For instance, users may commit to a database instead of the
-local file system. They may also perform various pre-commit and post-commit operations if needed.
-
-* `LogCommitFile`: The file used to store log commit info, defaults to the log file name with a '.commit' suffix.
-This is just a shortcut to setting `LogCommitManager` to `new LocalLogCommitManager(LogCommitFile)`.
+commit manager provided (`DeviceLogCommitCheckpointManager`). For instance, users may commit to a database instead 
+of the local file system. They may also perform various pre-commit and post-commit operations if needed. You can 
+also use the older (legacy) commit manager as follows: `new LocalLogCommitManager(LogCommitFile)`.
 
 * `GetMemory`: This delegate, if provided, is used by FasterLog to allocate memory for copying results over from
 the log, for consumption by the application. GetMemory requests memory of a specified minimum size, and may

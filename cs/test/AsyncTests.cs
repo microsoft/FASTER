@@ -11,9 +11,8 @@ using FASTER.test.recovery.sumstore;
 
 namespace FASTER.test.async
 {
-
     [TestFixture]
-    public class RecoveryTests
+    public class AsyncRecoveryTests
     {
         private FasterKV<AdId, NumClicks> fht1;
         private FasterKV<AdId, NumClicks> fht2;
@@ -23,23 +22,27 @@ namespace FASTER.test.async
 
         [TestCase(CheckpointType.FoldOver)]
         [TestCase(CheckpointType.Snapshot)]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async Task AsyncRecoveryTest1(CheckpointType checkpointType)
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/SimpleRecoveryTest2.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/AsyncRecoveryTest1.log", deleteOnClose: true);
 
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "/checkpoints4");
+            string testPath = TestUtils.MethodTestDir + "/checkpoints4";
+            Directory.CreateDirectory(testPath);
 
             fht1 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints4", CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = testPath, CheckPointType = checkpointType }
                 );
 
             fht2 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints4", CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = testPath, CheckPointType = checkpointType }
                 );
 
             int numOps = 5000;
@@ -88,7 +91,7 @@ namespace FASTER.test.async
             var guid = s1.ID;
             using (var s3 = fht2.For(functions).ResumeSession<AdSimpleFunctions>(guid, out CommitPoint lsn))
             {
-                Assert.IsTrue(lsn.UntilSerialNo == numOps - 1);
+                Assert.AreEqual(numOps - 1, lsn.UntilSerialNo);
 
                 for (int key = 0; key < numOps; key++)
                 {
@@ -98,14 +101,14 @@ namespace FASTER.test.async
                         s3.CompletePending(true,true);
                     else
                     {
-                        Assert.IsTrue(output.value.numClicks == key);
+                        Assert.AreEqual(key, output.value.numClicks);
                     }
                 }
             }
 
             fht2.Dispose();
             log.Dispose();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "/checkpoints4").Delete(true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
     }
 
@@ -113,8 +116,8 @@ namespace FASTER.test.async
     {
         public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.numClicks == key.adId);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(key.adId, output.value.numClicks);
         }
 
         // Read functions
@@ -123,17 +126,17 @@ namespace FASTER.test.async
         public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value) => value = input.numClicks;
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output) => value = input.numClicks;
 
-        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output) => true;
 
-        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }

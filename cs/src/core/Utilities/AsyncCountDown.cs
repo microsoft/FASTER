@@ -64,7 +64,7 @@ namespace FASTER.core
                 return;
 
             using var reg = cancellationToken.Register(() => tcsOut.TrySetCanceled());
-            await tcsOut.Task;
+            await tcsOut.Task.WithCancellationAsync(cancellationToken).ConfigureAwait(false);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

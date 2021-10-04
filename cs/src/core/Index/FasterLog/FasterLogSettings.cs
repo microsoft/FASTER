@@ -3,6 +3,8 @@
 
 #pragma warning disable 0162
 
+using System;
+
 namespace FASTER.core
 {
     /// <summary>
@@ -56,16 +58,16 @@ namespace FASTER.core
         public int SegmentSizeBits = 30;
 
         /// <summary>
-        /// Log commit manager
+        /// Log commit manager - if you want to override the default implementation of commit.
         /// </summary>
         public ILogCommitManager LogCommitManager = null;
 
         /// <summary>
-        /// Use specified directory for storing and retrieving checkpoints
-        /// This is a shortcut to providing the following:
-        ///   FasterLogSettings.LogCommitManager = new LocalLogCommitManager(LogCommitFile)
+        /// Use specified directory (path) as base for storing and retrieving log commits. By default,
+        /// commits will be stored in a folder named log-commits under this directory. If not provided, 
+        /// we use the base path of the log device by default.
         /// </summary>
-        public string LogCommitFile = null;
+        public string LogCommitDir = null;
 
         /// <summary>
         /// User callback to allocate memory for read entries

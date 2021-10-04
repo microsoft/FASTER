@@ -95,30 +95,28 @@ namespace FASTER.core
         /// </summary>
         public readonly byte[] ToByteArray()
         {
-            using (var ms = new MemoryStream())
+            using MemoryStream ms = new();
+            using (BinaryWriter writer = new(ms))
             {
-                using (var writer = new BinaryWriter(ms))
+                writer.Write(0); // version
+                writer.Write(BeginAddress ^ FlushedUntilAddress); // checksum
+                writer.Write(BeginAddress);
+                writer.Write(FlushedUntilAddress);
+                if (Iterators?.Count > 0)
                 {
-                    writer.Write(0); // version
-                    writer.Write(BeginAddress ^ FlushedUntilAddress); // checksum
-                    writer.Write(BeginAddress);
-                    writer.Write(FlushedUntilAddress);
-                    if (Iterators?.Count > 0)
+                    writer.Write(Iterators.Count);
+                    foreach (var kvp in Iterators)
                     {
-                        writer.Write(Iterators.Count);
-                        foreach (var kvp in Iterators)
-                        {
-                            writer.Write(kvp.Key);
-                            writer.Write(kvp.Value);
-                        }
-                    }
-                    else
-                    {
-                        writer.Write(0);
+                        writer.Write(kvp.Key);
+                        writer.Write(kvp.Value);
                     }
                 }
-                return ms.ToArray();
+                else
+                {
+                    writer.Write(0);
+                }
             }
+            return ms.ToArray();
         }
 
         /// <summary>

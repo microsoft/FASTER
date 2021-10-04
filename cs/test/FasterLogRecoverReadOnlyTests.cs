@@ -22,22 +22,29 @@ namespace FASTER.test.recovery
         string path;
         string deviceName;
         CancellationTokenSource cts;
+        SemaphoreSlim done;
 
         [SetUp]
         public void Setup()
         {
-            path = Path.GetTempPath() + "RecoverReadOnlyTest/";
+            path = TestUtils.MethodTestDir + "/";
             deviceName = path + "testlog";
-            if (Directory.Exists(path))
-                TestUtils.DeleteDirectory(path);
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait:true);
+
             cts = new CancellationTokenSource();
+            done = new SemaphoreSlim(0);
         }
 
         [TearDown]
         public void TearDown()
         {
+            cts?.Dispose();
+            cts = default;
+            done?.Dispose();
+            done = default;
             TestUtils.DeleteDirectory(path);
-            cts.Dispose();
         }
 
         [Test]
@@ -61,7 +68,8 @@ namespace FASTER.test.recovery
                 log.RefreshUncommitted();
                 await Task.Delay(TimeSpan.FromMilliseconds(ProducerPauseMs));
             }
-            await Task.Delay(TimeSpan.FromMilliseconds(CommitPeriodMs * 4));
+            // Ensure the reader had time to see all data
+            await done.WaitAsync();
             cts.Cancel();
         }
 
@@ -99,6 +107,8 @@ namespace FASTER.test.recovery
                     Assert.AreEqual(prevValue + 1, value);
                     prevValue = value;
                     iter.CompleteUntil(nextAddress);
+                    if (prevValue == NumElements - 1)
+                        done.Release();
                 }
             } catch (OperationCanceledException) { }
             Assert.AreEqual(NumElements - 1, prevValue);

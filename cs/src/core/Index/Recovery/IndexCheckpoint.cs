@@ -54,8 +54,8 @@ namespace FASTER.core
             // Get tasks first to ensure we have captured the semaphore instances synchronously
             var t1 = IsMainIndexCheckpointCompletedAsync(token);
             var t2 = overflowBucketsAllocator.IsCheckpointCompletedAsync(token);
-            await t1;
-            await t2;
+            await t1.ConfigureAwait(false);
+            await t2.ConfigureAwait(false);
         }
 
 
@@ -126,7 +126,7 @@ namespace FASTER.core
         private async ValueTask IsMainIndexCheckpointCompletedAsync(CancellationToken token = default)
         {
             var s = mainIndexCheckpointSemaphore;
-            await s.WaitAsync(token);
+            await s.WaitAsync(token).ConfigureAwait(false);
             s.Release();
         }
 

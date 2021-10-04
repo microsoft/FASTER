@@ -43,11 +43,12 @@ namespace FASTER.core
         /// <param name="parallelism">Number of IO processing threads</param>
         /// <param name="latencyMs">Induced callback latency in ms (for testing purposes)</param>
         /// <param name="sector_size">Sector size for device (default 64)</param>
-        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyMs = 0, uint sector_size = 64)
-            : base("/userspace/ram/storage", sector_size, capacity)
+        /// <param name="fileName">Virtual path for the device</param>
+        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyMs = 0, uint sector_size = 64, string fileName = "/userspace/ram/storage")
+            : base(fileName, sector_size, capacity)
         {
             if (capacity == Devices.CAPACITY_UNSPECIFIED) throw new Exception("Local memory device must have a capacity!");
-            Console.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
+            Debug.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
             num_segments = (int)(capacity / sz_segment);
             this.sz_segment = sz_segment;
             this.latencyTicks = latencyMs * TimeSpan.TicksPerMillisecond;
@@ -74,7 +75,7 @@ namespace FASTER.core
                 ioProcessors[i].Start();
             }
 
-            Console.WriteLine("LocalMemoryDevice: " + ram_segments.Length + " pinned in-memory segments created, each with " + sz_segment + " bytes");
+            Debug.WriteLine("LocalMemoryDevice: " + ram_segments.Length + " pinned in-memory segments created, each with " + sz_segment + " bytes");
         }
 
         private void ProcessIOQueue(ConcurrentQueue<IORequestLocalMemory> q)
@@ -149,7 +150,7 @@ namespace FASTER.core
             var req = new IORequestLocalMemory
             {
                 srcAddress = (void*)sourceAddress,
-                dstAddress = ram_segments[segmentId] + destinationAddress,
+                dstAddress = ram_segments[segmentId % parallelism] + destinationAddress,
                 bytes = numBytesToWrite,
                 callback = callback,
                 context = context

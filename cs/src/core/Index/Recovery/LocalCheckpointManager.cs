@@ -21,7 +21,7 @@ namespace FASTER.core
         /// <param name="CheckpointDir"></param>
         public LocalCheckpointManager(string CheckpointDir)
         {
-            directoryConfiguration = new DirectoryConfiguration(CheckpointDir);
+            directoryConfiguration = new(CheckpointDir);
         }
 
         /// <summary>
@@ -30,6 +30,14 @@ namespace FASTER.core
         public void PurgeAll()
         {
             try { new DirectoryInfo(directoryConfiguration.checkpointDir).Delete(true); } catch { }
+        }
+        
+        /// <inheritdoc />
+        public void Purge(Guid token)
+        {
+            // Try both because we don't know which one
+            try { new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder(token)).Delete(true); } catch { }
+            try { new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder(token)).Delete(true); } catch { }
         }
 
         /// <summary>
@@ -58,7 +66,7 @@ namespace FASTER.core
         public void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
             string filename = directoryConfiguration.GetIndexCheckpointMetaFileName(indexToken);
-            using (var writer = new BinaryWriter(new FileStream(filename, FileMode.Create)))
+            using (BinaryWriter writer = new(new FileStream(filename, FileMode.Create)))
             {
                 writer.Write(commitMetadata.Length);
                 writer.Write(commitMetadata);
@@ -67,10 +75,8 @@ namespace FASTER.core
 
             string completed_filename = directoryConfiguration.GetIndexCheckpointFolder(indexToken);
             completed_filename += Path.DirectorySeparatorChar + "completed.dat";
-            using (var file = new FileStream(completed_filename, FileMode.Create))
-            {
-                file.Flush();
-            }
+            using FileStream file = new(completed_filename, FileMode.Create);
+            file.Flush();
         }
 
         /// <summary>
@@ -81,7 +87,7 @@ namespace FASTER.core
         public void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
             string filename = directoryConfiguration.GetHybridLogCheckpointMetaFileName(logToken);
-            using (var writer = new BinaryWriter(new FileStream(filename, FileMode.Create)))
+            using (BinaryWriter writer = new(new FileStream(filename, FileMode.Create)))
             {
                 writer.Write(commitMetadata.Length);
                 writer.Write(commitMetadata);
@@ -90,10 +96,8 @@ namespace FASTER.core
 
             string completed_filename = directoryConfiguration.GetHybridLogCheckpointFolder(logToken);
             completed_filename += Path.DirectorySeparatorChar + "completed.dat";
-            using (var file = new FileStream(completed_filename, FileMode.Create))
-            {
-                file.Flush();
-            }
+            using FileStream file = new(completed_filename, FileMode.Create);
+            file.Flush();
         }
 
         /// <summary>
@@ -103,16 +107,14 @@ namespace FASTER.core
         /// <returns>Metadata, or null if invalid</returns>
         public byte[] GetIndexCheckpointMetadata(Guid indexToken)
         {
-            var dir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder(indexToken));
+            DirectoryInfo dir = new(directoryConfiguration.GetIndexCheckpointFolder(indexToken));
             if (!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat"))
                 return null;
 
             string filename = directoryConfiguration.GetIndexCheckpointMetaFileName(indexToken);
-            using (var reader = new BinaryReader(new FileStream(filename, FileMode.Open)))
-            {
-                var len = reader.ReadInt32();
-                return reader.ReadBytes(len);
-            }
+            using BinaryReader reader = new(new FileStream(filename, FileMode.Open));
+            var len = reader.ReadInt32();
+            return reader.ReadBytes(len);
         }
 
         /// <summary>
@@ -120,40 +122,57 @@ namespace FASTER.core
         /// </summary>
         /// <param name="logToken">Token</param>
         /// <param name="deltaLog">Delta log</param>
+        /// <param name="scanDelta"> whether or not to scan through the delta log to acquire latest entry</param>
+        /// <param name="recoverTo"> version upper bound to scan for in the delta log. Function will return the largest version metadata no greater than the given version.</param>
         /// <returns>Metadata, or null if invalid</returns>
-        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog)
+        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
             byte[] metadata = null;
-            if (deltaLog != null)
+            if (scanDelta && deltaLog != null)
             {
                 // Get latest valid metadata from delta-log
                 deltaLog.Reset();
-                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out int type))
+                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out DeltaLogEntryType type))
                 {
-                    if (type != 1) continue; // consider only metadata records
-                    long endAddress = physicalAddress + entryLength;
-                    metadata = new byte[entryLength];
-                    unsafe
+                    switch (type)
                     {
-                        fixed (byte* m = metadata)
-                        {
-                            Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
-                        }
+                        case DeltaLogEntryType.DELTA:
+                            // consider only metadata records
+                            continue;
+                        case DeltaLogEntryType.CHECKPOINT_METADATA:
+                            metadata = new byte[entryLength];
+                            unsafe
+                            {
+                                fixed (byte* m = metadata)
+                                {
+                                    Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                                }
+                            }
+                            HybridLogRecoveryInfo recoveryInfo = new();
+                            using (StreamReader s = new(new MemoryStream(metadata))) {
+                                recoveryInfo.Initialize(s);
+                                // Finish recovery if only specific versions are requested
+                                if (recoveryInfo.version == recoverTo || recoveryInfo.version < recoverTo && recoveryInfo.nextVersion > recoverTo) goto LoopEnd;
+                            }
+                            continue;
+                        default:
+                            throw new FasterException("Unexpected entry type");
                     }
+                    LoopEnd:
+                        break;
+                   
                 }
                 if (metadata != null) return metadata;
             }
 
-            var dir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder(logToken));
+            DirectoryInfo dir = new(directoryConfiguration.GetHybridLogCheckpointFolder(logToken));
             if (!File.Exists(dir.FullName + Path.DirectorySeparatorChar + "completed.dat"))
                 return null;
 
             string checkpointInfoFile = directoryConfiguration.GetHybridLogCheckpointMetaFileName(logToken);
-            using (var reader = new BinaryReader(new FileStream(checkpointInfoFile, FileMode.Open)))
-            {
-                var len = reader.ReadInt32();
-                return reader.ReadBytes(len);
-            }
+            using BinaryReader reader = new(new FileStream(checkpointInfoFile, FileMode.Open));
+            var len = reader.ReadInt32();
+            return reader.ReadBytes(len);
         }
 
         /// <summary>
@@ -199,7 +218,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public IEnumerable<Guid> GetIndexCheckpointTokens()
         {
-            var indexCheckpointDir = new DirectoryInfo(directoryConfiguration.GetIndexCheckpointFolder());
+            DirectoryInfo indexCheckpointDir = new(directoryConfiguration.GetIndexCheckpointFolder());
             var dirs = indexCheckpointDir.GetDirectories();
             foreach (var dir in dirs)
             {
@@ -227,7 +246,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public IEnumerable<Guid> GetLogCheckpointTokens()
         {
-            var hlogCheckpointDir = new DirectoryInfo(directoryConfiguration.GetHybridLogCheckpointFolder());
+            DirectoryInfo hlogCheckpointDir = new(directoryConfiguration.GetHybridLogCheckpointFolder());
             var dirs = hlogCheckpointDir.GetDirectories();
             foreach (var dir in dirs)
             {
@@ -263,7 +282,7 @@ namespace FASTER.core
             deltaLog.Allocate(out int length, out long physicalAddress);
             if (length < commitMetadata.Length)
             {
-                deltaLog.Seal(0, type: 1);
+                deltaLog.Seal(0, DeltaLogEntryType.CHECKPOINT_METADATA);
                 deltaLog.Allocate(out length, out physicalAddress);
                 if (length < commitMetadata.Length)
                 {
@@ -275,7 +294,7 @@ namespace FASTER.core
             {
                 Buffer.MemoryCopy(ptr, (void*)physicalAddress, commitMetadata.Length, commitMetadata.Length);
             }
-            deltaLog.Seal(commitMetadata.Length, type: 1);
+            deltaLog.Seal(commitMetadata.Length, DeltaLogEntryType.CHECKPOINT_METADATA);
             deltaLog.FlushAsync().Wait();
         }
 

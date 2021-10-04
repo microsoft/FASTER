@@ -4,6 +4,7 @@
 #pragma warning disable 0162
 
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -79,7 +80,7 @@ namespace FASTER.core
         /// <summary>
         /// Task notifying log flush completions
         /// </summary>
-        internal Task<long> FlushTask => allocator.FlushTask;
+        internal CompletionEvent FlushEvent => allocator.FlushEvent;
 
         /// <summary>
         /// Task notifying refresh uncommitted
@@ -128,26 +129,19 @@ namespace FASTER.core
         public static async ValueTask<FasterLog> CreateAsync(FasterLogSettings logSettings, CancellationToken cancellationToken = default)
         {
             var fasterLog = new FasterLog(logSettings, false);
-            fasterLog.RecoveredIterators = await fasterLog.RestoreAsync(cancellationToken);
+            fasterLog.RecoveredIterators = await fasterLog.RestoreAsync(cancellationToken).ConfigureAwait(false);
             return fasterLog;
         }
 
         private FasterLog(FasterLogSettings logSettings, bool oldCommitManager)
         {
-            if (oldCommitManager)
-            {
-                logCommitManager = logSettings.LogCommitManager ??
-                    new LocalLogCommitManager(logSettings.LogCommitFile ??
-                    logSettings.LogDevice.FileName + ".commit");
-            }
-            else
-            {
-                logCommitManager = logSettings.LogCommitManager ??
-                    new DeviceLogCommitCheckpointManager
-                    (new LocalStorageNamedDeviceFactory(),
-                        new DefaultCheckpointNamingScheme(
-                          new FileInfo(logSettings.LogDevice.FileName).Directory.FullName));
-            }
+            Debug.Assert(oldCommitManager == false);
+            logCommitManager = logSettings.LogCommitManager ??
+                new DeviceLogCommitCheckpointManager
+                (new LocalStorageNamedDeviceFactory(),
+                    new DefaultCheckpointNamingScheme(
+                        logSettings.LogCommitDir ??
+                        new FileInfo(logSettings.LogDevice.FileName).Directory.FullName));
 
             if (logSettings.LogCommitManager == null)
                 disposeLogCommitManager = true;
@@ -332,13 +326,13 @@ namespace FASTER.core
             long logicalAddress;
             while (true)
             {
-                var task = @this.FlushTask;
+                var flushEvent = @this.FlushEvent;
                 if (@this.TryEnqueue(entry, out logicalAddress))
                     break;
                 // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
                 try
                 {
-                    await task.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
@@ -367,13 +361,13 @@ namespace FASTER.core
             long logicalAddress;
             while (true)
             {
-                var task = @this.FlushTask;
+                var flushEvent = @this.FlushEvent;
                 if (@this.TryEnqueue(entry.Span, out logicalAddress))
                     break;
                 // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
                 try
                 {
-                    await task.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
@@ -402,13 +396,13 @@ namespace FASTER.core
             long logicalAddress;
             while (true)
             {
-                var task = @this.FlushTask;
+                var flushEvent = @this.FlushEvent;
                 if (@this.TryEnqueue(readOnlySpanBatch, out logicalAddress))
                     break;
                 // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
                 try
                 {
-                    await task.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
@@ -451,7 +445,7 @@ namespace FASTER.core
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
-                var linkedCommitInfo = await task.WithCancellationAsync(token);
+                var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
                 if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     task = linkedCommitInfo.NextTask;
                 else
@@ -486,7 +480,7 @@ namespace FASTER.core
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
-                var linkedCommitInfo = await task.WithCancellationAsync(token);
+                var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
                 if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     task = linkedCommitInfo.NextTask;
                 else
@@ -508,7 +502,7 @@ namespace FASTER.core
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
-                var linkedCommitInfo = await prevCommitTask.WithCancellationAsync(token);
+                var linkedCommitInfo = await prevCommitTask.WithCancellationAsync(token).ConfigureAwait(false);
                 if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
                     prevCommitTask = linkedCommitInfo.NextTask;
                 else
@@ -541,7 +535,7 @@ namespace FASTER.core
 
             while (SafeTailAddress < tailAddress)
             {
-                await task.WithCancellationAsync(token);
+                await task.WithCancellationAsync(token).ConfigureAwait(false);
                 task = RefreshUncommittedTask;
             }
         }
@@ -610,19 +604,19 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
-            Task<long> flushTask;
+            CompletionEvent flushEvent;
             Task<LinkedCommitInfo> commitTask;
 
             // Phase 1: wait for commit to memory
             while (true)
             {
-                flushTask = FlushTask;
+                flushEvent = FlushEvent;
                 commitTask = CommitTask;
                 if (TryEnqueue(entry, out logicalAddress))
                     break;
                 try
                 {
-                    await flushTask.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
@@ -634,7 +628,7 @@ namespace FASTER.core
                 LinkedCommitInfo linkedCommitInfo;
                 try
                 {
-                    linkedCommitInfo = await commitTask.WithCancellationAsync(token);
+                    linkedCommitInfo = await commitTask.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (CommitFailureException e)
                 {
@@ -662,19 +656,19 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
-            Task<long> flushTask;
+            CompletionEvent flushEvent;
             Task<LinkedCommitInfo> commitTask;
 
             // Phase 1: wait for commit to memory
             while (true)
             {
-                flushTask = FlushTask;
+                flushEvent = FlushEvent;
                 commitTask = CommitTask;
                 if (TryEnqueue(entry.Span, out logicalAddress))
                     break;
                 try
                 {
-                    await flushTask.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
@@ -686,7 +680,7 @@ namespace FASTER.core
                 LinkedCommitInfo linkedCommitInfo;
                 try
                 {
-                    linkedCommitInfo = await commitTask.WithCancellationAsync(token);
+                    linkedCommitInfo = await commitTask.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (CommitFailureException e)
                 {
@@ -714,19 +708,19 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
-            Task<long> flushTask;
+            CompletionEvent flushEvent;
             Task<LinkedCommitInfo> commitTask;
 
             // Phase 1: wait for commit to memory
             while (true)
             {
-                flushTask = FlushTask;
+                flushEvent = FlushEvent;
                 commitTask = CommitTask;
                 if (TryEnqueue(readOnlySpanBatch, out logicalAddress))
                     break;
                 try
                 {
-                    await flushTask.WithCancellationAsync(token);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
             }
@@ -738,7 +732,7 @@ namespace FASTER.core
                 LinkedCommitInfo linkedCommitInfo;
                 try
                 {
-                    linkedCommitInfo = await commitTask.WithCancellationAsync(token);
+                    linkedCommitInfo = await commitTask.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (CommitFailureException e)
                 {
@@ -846,8 +840,69 @@ namespace FASTER.core
                 allocator.AsyncReadRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
-            await ctx.completedRead.WaitAsync(token);
+            await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
             return GetRecordAndFree(ctx.record);
+        }
+
+        /// <summary>
+        /// Random read record from log as IMemoryOwner&lt;byte&gt;, at given address
+        /// </summary>
+        /// <param name="address">Logical address to read from</param>
+        /// <param name="memoryPool">MemoryPool to rent the destination buffer from</param>
+        /// <param name="estimatedLength">Estimated length of entry, if known</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns></returns>
+        public async ValueTask<(IMemoryOwner<byte>, int)> ReadAsync(long address, MemoryPool<byte> memoryPool, int estimatedLength = 0, CancellationToken token = default)
+        {
+            token.ThrowIfCancellationRequested();
+            epoch.Resume();
+            if (address >= CommittedUntilAddress || address < BeginAddress)
+            {
+                epoch.Suspend();
+                return default;
+            }
+            var ctx = new SimpleReadContext
+            {
+                logicalAddress = address,
+                completedRead = new SemaphoreSlim(0)
+            };
+            unsafe
+            {
+                allocator.AsyncReadRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
+            }
+            epoch.Suspend();
+            await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
+            return GetRecordAsMemoryOwnerAndFree(ctx.record, memoryPool);
+        }
+
+        /// <summary>
+        /// Random read record from log, at given address
+        /// </summary>
+        /// <param name="address">Logical address to read from</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns></returns>
+        public async ValueTask<int> ReadRecordLengthAsync(long address, CancellationToken token = default)
+        {
+            token.ThrowIfCancellationRequested();
+            epoch.Resume();
+            if (address >= CommittedUntilAddress || address < BeginAddress)
+            {
+                epoch.Suspend();
+                return default;
+            }
+            var ctx = new SimpleReadContext
+            {
+                logicalAddress = address,
+                completedRead = new SemaphoreSlim(0)
+            };
+            unsafe
+            {
+                allocator.AsyncReadRecordToMemory(address, headerSize, AsyncGetHeaderOnlyFromDiskCallback, ref ctx);
+            }
+            epoch.Suspend();
+            await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
+            
+            return GetRecordLengthAndFree(ctx.record);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -979,7 +1034,7 @@ namespace FASTER.core
             if (!readOnlyMode)
                 throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            await this.RestoreAsync(cancellationToken);
+            await this.RestoreAsync(cancellationToken).ConfigureAwait(false);
             SignalWaitingROIterators();
         }
 
@@ -1039,7 +1094,7 @@ namespace FASTER.core
                         return default;
 
                     if (headAddress > 0)
-                        await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress, cancellationToken: cancellationToken);
+                        await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
 
                     return CompleteRestoreFromCommit(info);
                 }
@@ -1060,7 +1115,7 @@ namespace FASTER.core
             }
 
             info = new FasterLogRecoveryInfo();
-            using (var r = new BinaryReader(new MemoryStream(commitInfo)))
+            using (BinaryReader r = new(new MemoryStream(commitInfo)))
             {
                 info.Initialize(r);
             }
@@ -1179,6 +1234,29 @@ namespace FASTER.core
             }
         }
 
+        private void AsyncGetHeaderOnlyFromDiskCallback(uint errorCode, uint numBytes, object context)
+        {
+            var ctx = (SimpleReadContext)context;
+
+            if (errorCode != 0)
+            {
+                Trace.TraceError("AsyncGetFromDiskCallback error: {0}", errorCode);
+                ctx.record.Return();
+                ctx.record = null;
+                ctx.completedRead.Release();
+            }
+            else
+            {
+                if (ctx.record.available_bytes < headerSize)
+                {
+                    Debug.WriteLine("No record header present at address: " + ctx.logicalAddress);
+                    ctx.record.Return();
+                    ctx.record = null;
+                }
+                ctx.completedRead.Release();
+            }
+        }
+
         private (byte[], int) GetRecordAndFree(SectorAlignedMemory record)
         {
             if (record == null)
@@ -1202,6 +1280,54 @@ namespace FASTER.core
             }
             record.Return();
             return (result, length);
+        }
+
+        private (IMemoryOwner<byte>, int) GetRecordAsMemoryOwnerAndFree(SectorAlignedMemory record, MemoryPool<byte> memoryPool)
+        {
+            if (record == null)
+                return (null, 0);
+
+            IMemoryOwner<byte> result;
+            int length;
+            unsafe
+            {
+                var ptr = record.GetValidPointer();
+                length = GetLength(ptr);
+                if (!VerifyChecksum(ptr, length))
+                {
+                    throw new FasterException("Checksum failed for read");
+                }
+                result = memoryPool.Rent(length);
+
+                fixed (byte* bp = result.Memory.Span)
+                {
+                    Buffer.MemoryCopy(ptr + headerSize, bp, length, length);
+                }
+            }
+            
+            record.Return();
+            return (result, length);
+        }
+
+        private int GetRecordLengthAndFree(SectorAlignedMemory record)
+        {
+            if (record == null)
+                return 0;
+
+            int length;
+            unsafe
+            {
+                var ptr = record.GetValidPointer();
+                length = GetLength(ptr);
+
+                if (!VerifyChecksum(ptr, length))
+                {
+                    throw new FasterException("Checksum failed for read");
+                }
+            }
+
+            record.Return();
+            return length;
         }
 
         private long CommitInternal(bool spinWait = false)

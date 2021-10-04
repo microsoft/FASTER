@@ -21,7 +21,6 @@ namespace FASTER.core
         public Value value;
     }
 
-
     public unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
     {
         // Circular buffer definition
@@ -29,8 +28,8 @@ namespace FASTER.core
 
         // Object log related variables
         private readonly IDevice objectLogDevice;
-        // Size of object chunks beign written to storage
-        private const int ObjectBlockSize = 100 * (1 << 20);
+        // Size of object chunks being written to storage
+        private readonly int ObjectBlockSize = 100 * (1 << 20);
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
         // Record sizes
@@ -39,9 +38,13 @@ namespace FASTER.core
         private readonly bool keyBlittable = Utility.IsBlittable<Key>();
         private readonly bool valueBlittable = Utility.IsBlittable<Value>();
 
+        private readonly OverflowPool<Record<Key, Value>[]> overflowPagePool;
+
         public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
             : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
+            overflowPagePool = new OverflowPool<Record<Key, Value>[]>(4);
+
             if (settings.ObjectLogDevice == null)
             {
                 throw new FasterException("LogSettings.ObjectLogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
@@ -74,6 +77,8 @@ namespace FASTER.core
                     throw new FasterException("Object log device should not have fixed segment size. Set preallocateFile to false when calling CreateLogDevice for object log");
             }
         }
+
+        internal override int OverflowPageCount => overflowPagePool.Count;
 
         public override void Initialize()
         {
@@ -188,6 +193,7 @@ namespace FASTER.core
                 }
                 values = null;
             }
+            overflowPagePool.Dispose();
             base.Dispose();
         }
 
@@ -224,6 +230,11 @@ namespace FASTER.core
 
         internal Record<Key, Value>[] AllocatePage()
         {
+            Interlocked.Increment(ref AllocatedPageCount);
+
+            if (overflowPagePool.TryGet(out var item))
+                return item;
+
             Record<Key, Value>[] tmp;
             if (PageSize % recordSize == 0)
                 tmp = new Record<Key, Value>[PageSize / recordSize];
@@ -262,6 +273,9 @@ namespace FASTER.core
             (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
+            base.VerifyCompatibleSectorSize(device);
+            base.VerifyCompatibleSectorSize(objectLogDevice);
+            
             bool epochTaken = false;
             if (!epoch.ThisInstanceProtected())
             {
@@ -291,8 +305,6 @@ namespace FASTER.core
             }
         }
 
-
-
         internal override void ClearPage(long page, int offset)
         {
             Array.Clear(values[page % BufferSize], offset / recordSize, values[page % BufferSize].Length - offset / recordSize);
@@ -305,6 +317,17 @@ namespace FASTER.core
             {
                 // We are clearing the last page in current segment
                 segmentOffsets[thisCloseSegment % SegmentBufferSize] = 0;
+            }
+        }
+
+        internal override void FreePage(long page)
+        {
+            ClearPage(page, 0);
+            if (EmptyPageCount > 0)
+            {
+                overflowPagePool.TryAdd(values[page % BufferSize]);
+                values[page % BufferSize] = default;
+                Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
 
@@ -372,7 +395,7 @@ namespace FASTER.core
             List<long> addr = new List<long>();
             asyncResult.freeBuffer1 = buffer;
 
-            MemoryStream ms = new MemoryStream();
+            MemoryStream ms = new();
             IObjectSerializer<Key> keySerializer = null;
             IObjectSerializer<Value> valueSerializer = null;
 
@@ -570,7 +593,7 @@ namespace FASTER.core
             // Deserialize all objects until untilptr
             if (result.resumePtr < result.untilPtr)
             {
-                MemoryStream ms = new MemoryStream(result.freeBuffer2.buffer);
+                MemoryStream ms = new(result.freeBuffer2.buffer);
                 ms.Seek(result.freeBuffer2.offset, SeekOrigin.Begin);
                 Deserialize(result.freeBuffer1.GetValidPointer(), result.resumePtr, result.untilPtr, src, ms);
                 ms.Dispose();
@@ -718,7 +741,7 @@ namespace FASTER.core
         }
 
 
-        #region Page handlers for objects
+#region Page handlers for objects
         /// <summary>
         /// Deseialize part of page from stream
         /// </summary>
@@ -958,7 +981,7 @@ namespace FASTER.core
         {
             return SerializerSettings.valueSerializer != null;
         }
-        #endregion
+#endregion
 
         public override IHeapContainer<Key> GetKeyContainer(ref Key key) => new StandardHeapContainer<Key>(ref key);
         public override IHeapContainer<Value> GetValueContainer(ref Value value) => new StandardHeapContainer<Value>(ref value);

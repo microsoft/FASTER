@@ -24,12 +24,19 @@
 .PARAMETER RunSeconds
     The directory containing the results of the new run, with the changes to be tested for impact; the result comparison is "NewDir throughput minus OldDir throughput".
 
+.PARAMETER NoLock
+    Do not include results with locking
+
 .EXAMPLE
     ./compare_runs.ps1 './baseline' './refactor_FASTERImpl'
+
+.EXAMPLE
+    ./compare_runs.ps1 './baseline' './refactor_FASTERImpl' -NoLock
 #>
 param (
   [Parameter(Mandatory)] [String]$OldDir,
-  [Parameter(Mandatory)] [String]$NewDir
+  [Parameter(Mandatory)] [String]$NewDir,
+  [Parameter(Mandatory=$false)] [switch]$NoLock
 )
 
 class Result : System.IComparable, System.IEquatable[Object] {
@@ -54,6 +61,10 @@ class Result : System.IComparable, System.IEquatable[Object] {
     [bool]$SmallData
     [bool]$SmallMemory
     [bool]$SyntheticData
+    [bool]$NoAff
+    [int]$ChkptMs
+    [string]$ChkptType
+    [bool]$ChkptIncr
 
     Result([string]$line) {
         $fields = $line.Split(';')
@@ -74,6 +85,10 @@ class Result : System.IComparable, System.IEquatable[Object] {
                 "sd" { $this.SmallData = $value -eq "y" }
                 "sm" { $this.SmallMemory = $value -eq "y"  }
                 "sy" { $this.SyntheticData = $value -eq "y"  }
+                "noaff" { $this.NoAff = $value -eq "y"  }
+                "chkptms" { $this.ChkptMs = $value }
+                "chkpttype" { $this.ChkptType = $value }
+                "chkptincr" { $this.ChkptIncr = $value -eq "y"  }
             }
         }
     }
@@ -88,6 +103,10 @@ class Result : System.IComparable, System.IEquatable[Object] {
         $this.SmallData = $other.SmallData
         $this.SmallMemory = $other.SmallMemory
         $this.SyntheticData = $other.SyntheticData
+        $this.NoAff = $other.NoAff
+        $this.ChkptMs = $other.ChkptMs
+        $this.ChkptType = $other.ChkptType
+        $this.ChkptIncr = $other.ChkptIncr
     }
 
     [Result] CalculateDifference([Result]$newResult) {
@@ -151,11 +170,16 @@ class Result : System.IComparable, System.IEquatable[Object] {
          -and $this.SmallData -eq $other.SmallData
          -and $this.SmallMemory -eq $other.SmallMemory
          -and $this.SyntheticData -eq $other.SyntheticData
+         -and $this.NoAff -eq $other.NoAff
+         -and $this.ChkptMs -eq $other.ChkptMs
+         -and $this.ChkptType -eq $other.ChkptType
+         -and $this.ChkptIncr -eq $other.ChkptIncr
     }
 
     [int] GetHashCode() {
         return ($this.Numa, $this.Distribution, $this.ReadPercent, $this.ThreadCount, $this.LockMode,
-                $this.Iterations, $this.SmallData, $this.SmallMemory, $this.SyntheticData).GetHashCode();
+                $this.Iterations, $this.SmallData, $this.SmallMemory, $this.SyntheticData,
+                $this.NoAff, $this.ChkptMs, $this.ChkptType, $this.ChkptIncr).GetHashCode();
     }
 }
 
@@ -232,12 +256,18 @@ $LoadResults.Sort()
 $RunResults.Sort()
 
 function RenameProperties([System.Object[]]$results) {
+    if ($NoLock) {
+        $results = $results | Where-Object {$_.LockMode -eq 0}
+    }
+    
     # Use this to rename "Percent" suffix to "%"
     $results | Select-Object `
                 BaselineMean,
                 BaselineStdDev,
+                @{N='BStDev %';E={[System.Math]::Round(($_.BaselineStdDev / $_.BaselineMean) * 100, 1)}},
                 CurrentMean,
                 CurrentStdDev,
+                @{N='CStDev %';E={[System.Math]::Round(($_.CurrentStdDev / $_.CurrentMean) * 100, 1)}},
                 MeanDiff,
                 @{N='MeanDiff %';E={$_.MeanDiffPercent}},
                 StdDevDiff,
@@ -253,7 +283,11 @@ function RenameProperties([System.Object[]]$results) {
                 Iterations,
                 SmallData,
                 SmallMemory,
-                SyntheticData
+                SyntheticData,
+                NoAff,
+                ChkptMs,
+                ChkptType,
+                ChkptIncr
 }
 
 RenameProperties $LoadResults | Out-GridView -Title "Loading Comparison (Inserts Per Second): $OldDir -vs- $NewDir"

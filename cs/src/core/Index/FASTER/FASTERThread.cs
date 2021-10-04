@@ -23,7 +23,7 @@ namespace FASTER.core
                     // We have recovered the corresponding session. 
                     // Now obtain the session by first locking the rest phase
                     var currentState = SystemState.Copy(ref systemState);
-                    if (currentState.phase == Phase.REST)
+                    if (currentState.Phase == Phase.REST)
                     {
                         var intermediateState = SystemState.MakeIntermediate(currentState);
                         if (MakeTransition(currentState, intermediateState))
@@ -70,7 +70,7 @@ namespace FASTER.core
 
             // We check if we are in normal mode
             var newPhaseInfo = SystemState.Copy(ref systemState);
-            if (ctx.phase == Phase.REST && newPhaseInfo.phase == Phase.REST && ctx.version == newPhaseInfo.version)
+            if (ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && ctx.version == newPhaseInfo.Version)
             {
                 return;
             }
@@ -177,7 +177,7 @@ namespace FASTER.core
             }
         }
 
-        internal bool InRestPhase() => systemState.phase == Phase.REST;
+        internal bool InRestPhase() => systemState.Phase == Phase.REST;
 
         #region Complete Retry Requests
         internal void InternalCompleteRetryRequests<Input, Output, Context, FasterSession>(
@@ -213,7 +213,7 @@ namespace FASTER.core
                 switch (pendingContext.type)
                 {
                     case OperationType.RMW:
-                        internalStatus = InternalRMW(ref key, ref pendingContext.input.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                        internalStatus = InternalRMW(ref key, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.UPSERT:
                         internalStatus = InternalUpsert(ref key, ref pendingContext.value.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
@@ -248,6 +248,7 @@ namespace FASTER.core
                     case OperationType.RMW:
                         fasterSession.RMWCompletionCallback(ref key,
                                                 ref pendingContext.input.Get(),
+                                                ref pendingContext.output,
                                                 pendingContext.userContext, status);
                         break;
                     case OperationType.UPSERT:
@@ -308,7 +309,7 @@ namespace FASTER.core
                 }
                 else
                 {
-                    request = await opCtx.readyResponses.DequeueAsync(token);
+                    request = await opCtx.readyResponses.DequeueAsync(token).ConfigureAwait(false);
 
                     fasterSession.UnsafeResumeThread();
                     InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request, completedOutputs);
@@ -329,7 +330,7 @@ namespace FASTER.core
                 // Remove from pending dictionary
                 opCtx.ioPendingRequests.Remove(request.id);
                 var status = InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
-                if (completedOutputs is { } && (status == Status.OK || status == Status.NOTFOUND))
+                if (completedOutputs is not null && (status == Status.OK || status == Status.NOTFOUND))
                     completedOutputs.Add(ref pendingContext, status);
                 else
                     pendingContext.Dispose();
@@ -374,6 +375,10 @@ namespace FASTER.core
             {
                 status = (Status)internalStatus;
             }
+            else if (internalStatus == OperationStatus.ALLOCATE_FAILED)
+            {
+                return Status.PENDING;  // This plus newRequest.IsDefault() means allocate failed
+            }
             else
             {
                 status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, asyncOp, out newRequest);
@@ -398,6 +403,7 @@ namespace FASTER.core
                 {
                     fasterSession.RMWCompletionCallback(ref key,
                                                     ref pendingContext.input.Get(),
+                                                    ref pendingContext.output,
                                                     pendingContext.userContext,
                                                     status);
                 }

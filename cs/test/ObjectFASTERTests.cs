@@ -1,19 +1,12 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class ObjectFASTERTests
     {
@@ -23,8 +16,9 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/ObjectFASTERTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/ObjectFASTERTests.obj.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/ObjectFASTERTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/ObjectFASTERTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<MyKey, MyValue>
                 (128,
@@ -37,13 +31,18 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ObjectInMemWriteRead()
         {
             using var session = fht.NewSession(new MyFunctions());
@@ -56,7 +55,7 @@ namespace FASTER.test
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
             session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-            Assert.IsTrue(output.value.value == value.value);
+            Assert.AreEqual(value.value, output.value.value);
         }
 
         [Test]
@@ -77,16 +76,17 @@ namespace FASTER.test
 
             session.Read(ref key1, ref input1, ref output, Empty.Default, 0);
 
-            Assert.IsTrue(output.value.value == input1.value);
+            Assert.AreEqual(input1.value, output.value.value);
 
             session.Read(ref key2, ref input2, ref output, Empty.Default, 0);
-            Assert.IsTrue(output.value.value == input2.value);
+            Assert.AreEqual(input2.value, output.value.value);
 
         }
 
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ObjectDiskWriteRead()
         {
             using var session = fht.NewSession(new MyFunctions());
@@ -110,10 +110,10 @@ namespace FASTER.test
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
+                Assert.AreEqual(Status.OK, status);
             }
 
-            Assert.IsTrue(g1.value.value == 23);
+            Assert.AreEqual(23, g1.value.value);
 
             key2 = new MyKey { key = 99999 };
             status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
@@ -124,7 +124,7 @@ namespace FASTER.test
             }
             else
             {
-                Assert.IsTrue(status == Status.NOTFOUND);
+                Assert.AreEqual(Status.NOTFOUND, status);
             }
 
             // Update first 100 using RMW from storage
@@ -151,13 +151,13 @@ namespace FASTER.test
                 {
                     if (i < 100)
                     {
-                        Assert.IsTrue(output.value.value == value.value + 1);
-                        Assert.IsTrue(output.value.value == value.value + 1);
+                        Assert.AreEqual(value.value + 1, output.value.value);
+                        Assert.AreEqual(value.value + 1, output.value.value);
                     }
                     else
                     {
-                        Assert.IsTrue(output.value.value == value.value);
-                        Assert.IsTrue(output.value.value == value.value);
+                        Assert.AreEqual(value.value, output.value.value);
+                        Assert.AreEqual(value.value, output.value.value);
                     }
                 }
             }
@@ -184,21 +184,21 @@ namespace FASTER.test
             var input = new MyInput();
             var readResult = await session.ReadAsync(ref key1, ref input, Empty.Default);
             var result = readResult.Complete();
-            Assert.IsTrue(result.Item1 == Status.OK);
-            Assert.IsTrue(result.Item2.value.value == 1989);
+            Assert.AreEqual(Status.OK, result.status);
+            Assert.AreEqual(1989, result.output.value.value);
 
             var key2 = new MyKey { key = 23 };
             readResult = await session.ReadAsync(ref key2, ref input, Empty.Default);
             result = readResult.Complete();
 
-            Assert.IsTrue(result.Item1 == Status.OK);
-            Assert.IsTrue(result.Item2.value.value == 23);
+            Assert.AreEqual(Status.OK, result.status);
+            Assert.AreEqual(23, result.output.value.value);
 
             var key3 = new MyKey { key = 9999 };
             readResult = await session.ReadAsync(ref key3, ref input, Empty.Default);
             result = readResult.Complete();
 
-            Assert.IsTrue(result.Item1 == Status.NOTFOUND);
+            Assert.AreEqual(Status.NOTFOUND, result.status);
 
             // Update last 100 using RMW in memory
             for (int i = 1900; i < 2000; i++)
@@ -228,11 +228,11 @@ namespace FASTER.test
 
                 readResult = await session.ReadAsync(ref key, ref input, Empty.Default);
                 result = readResult.Complete();
-                Assert.IsTrue(result.Item1 == Status.OK);
+                Assert.AreEqual(Status.OK, result.status);
                 if (i < 100 || i >= 1900)
-                    Assert.IsTrue(result.Item2.value.value == value.value + 1);
+                    Assert.AreEqual(value.value + 1, result.output.value.value);
                 else
-                    Assert.IsTrue(result.Item2.value.value == value.value);
+                    Assert.AreEqual(value.value, result.output.value.value);
             }
         }
     }

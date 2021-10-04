@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using FASTER.common;
 using System;
 using System.Buffers;
 
@@ -21,9 +20,15 @@ namespace FASTER.client
         public virtual void ReadCompletionCallback(ref ReadOnlyMemory<T> key, ref ReadOnlyMemory<T> input, ref (IMemoryOwner<T>, int) output, byte ctx, Status status) { }
 
         /// <inheritdoc />
-        public virtual void RMWCompletionCallback(ref ReadOnlyMemory<T> key, ref ReadOnlyMemory<T> input, byte ctx, Status status) { }
+        public virtual void RMWCompletionCallback(ref ReadOnlyMemory<T> key, ref ReadOnlyMemory<T> input, ref (IMemoryOwner<T>, int) output, byte ctx, Status status) { }
 
         /// <inheritdoc />
         public virtual void UpsertCompletionCallback(ref ReadOnlyMemory<T> key, ref ReadOnlyMemory<T> value, byte ctx) { }
+        /// <inheritdoc />
+        public virtual void SubscribeKVCallback(ref ReadOnlyMemory<T> key, ref ReadOnlyMemory<T> input, ref (IMemoryOwner<T>, int) output, byte ctx, Status status) { }
+        /// <inheritdoc/>
+        public virtual void PublishCompletionCallback(ref ReadOnlyMemory<T> key, ref ReadOnlyMemory<T> value, byte ctx) { }
+        /// <inheritdoc/>
+        public virtual void SubscribeCallback(ref ReadOnlyMemory<T> key, ref ReadOnlyMemory<T> value, byte ctx) { }
     }
 }

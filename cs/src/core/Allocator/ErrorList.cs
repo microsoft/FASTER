@@ -8,14 +8,14 @@ namespace FASTER.core
 {
     class ErrorList
     {
-        private readonly List<long> errorList;
+        private readonly List<(long address, uint errorCode)> errorList;
 
-        public ErrorList() => errorList = new List<long>();
+        public ErrorList() => errorList = new();
 
-        public void Add(long address)
+        public void Add(long address, uint errorCode)
         {
             lock (errorList)
-                errorList.Add(address);
+                errorList.Add((address, errorCode));
         }
 
         public uint CheckAndWait(long oldFlushedUntilAddress, long currentFlushedUntilAddress)
@@ -29,11 +29,11 @@ namespace FASTER.core
                 {
                     for (int i = 0; i < errorList.Count; i++)
                     {
-                        if (errorList[i] >= oldFlushedUntilAddress && errorList[i] < currentFlushedUntilAddress)
+                        if (errorList[i].address >= oldFlushedUntilAddress && errorList[i].address < currentFlushedUntilAddress)
                         {
-                            errorCode = 1;
+                            errorCode = errorList[i].errorCode;
                         }
-                        else if (errorList[i] < oldFlushedUntilAddress)
+                        else if (errorList[i].address < oldFlushedUntilAddress)
                         {
                             done = false; // spin barrier for other threads during exception
                             Thread.Yield();
@@ -50,7 +50,7 @@ namespace FASTER.core
             {
                 for (int i = 0; i < errorList.Count; i++)
                 {
-                    if (errorList[i] < currentFlushedUntilAddress)
+                    if (errorList[i].address < currentFlushedUntilAddress)
                     {
                         errorList.RemoveAt(i);
                     }

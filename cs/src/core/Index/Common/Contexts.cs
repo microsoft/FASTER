@@ -87,11 +87,15 @@ namespace FASTER.core
 
             internal byte operationFlags;
             internal RecordInfo recordInfo;
+            internal long minAddress;
 
+            // Note: Must be kept in sync with corresponding ReadFlags enum values
             internal const byte kSkipReadCache = 0x01;
-            internal const byte kNoKey = 0x02;
-            internal const byte kSkipCopyReadsToTail = 0x04;
-            internal const byte kIsAsync = 0x08;
+            internal const byte kMinAddress = 0x02;
+
+            internal const byte kNoKey = 0x10;
+            internal const byte kSkipCopyReadsToTail = 0x20;
+            internal const byte kIsAsync = 0x40;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal IHeapContainer<Key> DetachKey()
@@ -113,12 +117,25 @@ namespace FASTER.core
             internal static byte GetOperationFlags(ReadFlags readFlags, bool noKey = false)
             {
                 Debug.Assert((byte)ReadFlags.SkipReadCache == kSkipReadCache);
-                byte flags = (byte)(readFlags & ReadFlags.SkipReadCache);
+                Debug.Assert((byte)ReadFlags.MinAddress == kMinAddress);
+                byte flags = (byte)(readFlags & (ReadFlags.SkipReadCache | ReadFlags.MinAddress));
                 if (noKey) flags |= kNoKey;
 
                 // This is always set true for the Read overloads (Reads by address) that call this method.
                 flags |= kSkipCopyReadsToTail;
                 return flags;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void SetOperationFlags(ReadFlags readFlags, long address, bool noKey = false) 
+                => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), address);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void SetOperationFlags(byte flags, long address)
+            {
+                this.operationFlags = flags;
+                if (this.HasMinAddress)
+                    this.minAddress = address;
             }
 
             internal bool NoKey
@@ -131,6 +148,12 @@ namespace FASTER.core
             {
                 get => (operationFlags & kSkipReadCache) != 0;
                 set => operationFlags = value ? (byte)(operationFlags | kSkipReadCache) : (byte)(operationFlags & ~kSkipReadCache);
+            }
+
+            internal bool HasMinAddress
+            {
+                get => (operationFlags & kMinAddress) != 0;
+                set => operationFlags = value ? (byte)(operationFlags | kMinAddress) : (byte)(operationFlags & ~kMinAddress);
             }
 
             internal bool SkipCopyReadsToTail
@@ -196,7 +219,7 @@ namespace FASTER.core
             public async ValueTask WaitPendingAsync(CancellationToken token = default)
             {
                 if (SyncIoPendingCount > 0)
-                    await readyResponses.WaitForEntryAsync(token);
+                    await readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
             }
 
             public FasterExecutionContext<Input, Output, Context> prevCtx;
@@ -405,15 +428,42 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <param name="checkpointManager"></param>
         /// <param name="deltaLog"></param>
-        /// <returns></returns>
-        internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null)
+        /// <param name = "scanDelta">
+        /// whether to scan the delta log to obtain the latest info contained in an incremental snapshot checkpoint.
+        /// If false, this will recover the base snapshot info but avoid potentially expensive scans.
+        /// </param>
+        /// <param name="recoverTo"> specific version to recover to, if using delta log</param>
+        internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
-            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog);
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
             if (metadata == null)
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
+            using StreamReader s = new(new MemoryStream(metadata));
+            Initialize(s);
+        }
+        
+        /// <summary>
+        ///  Recover info from token
+        /// </summary>
+        /// <param name="token"></param>
+        /// <param name="checkpointManager"></param>
+        /// <param name="deltaLog"></param>
+        /// <param name="commitCookie"> Any user-specified commit cookie written as part of the checkpoint </param>
+        /// <param name = "scanDelta">
+        /// whether to scan the delta log to obtain the latest info contained in an incremental snapshot checkpoint.
+        /// If false, this will recover the base snapshot info but avoid potentially expensive scans.
+        /// </param>
+        /// <param name="recoverTo"> specific version to recover to, if using delta log</param>
 
-            using (StreamReader s = new StreamReader(new MemoryStream(metadata)))
-                Initialize(s);
+        internal void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
+        {
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
+            if (metadata == null)
+                throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
+            using StreamReader s = new(new MemoryStream(metadata));
+            Initialize(s);
+            var cookie = s.ReadToEnd();
+            commitCookie =  cookie.Length == 0 ? null : Convert.FromBase64String(cookie);
         }
 
         /// <summary>
@@ -421,9 +471,9 @@ namespace FASTER.core
         /// </summary>
         public byte[] ToByteArray()
         {
-            using (MemoryStream ms = new MemoryStream())
+            using (MemoryStream ms = new())
             {
-                using (StreamWriter writer = new StreamWriter(ms))
+                using (StreamWriter writer = new(ms))
                 {
                     writer.WriteLine(CheckpointVersion); // checkpoint version
                     writer.WriteLine(Checksum(checkpointTokens.Count)); // checksum
@@ -501,7 +551,7 @@ namespace FASTER.core
         }
     }
 
-    internal struct HybridLogCheckpointInfo
+    internal struct HybridLogCheckpointInfo : IDisposable
     {
         public HybridLogRecoveryInfo info;
         public IDevice snapshotFileDevice;
@@ -517,7 +567,28 @@ namespace FASTER.core
             checkpointManager.InitializeLogCheckpoint(token);
         }
 
-        public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits)
+        public void Dispose()
+        {
+            snapshotFileDevice?.Dispose();
+            snapshotFileObjectLogDevice?.Dispose();
+            deltaLog?.Dispose();
+            deltaFileDevice?.Dispose();
+            this = default;
+        }
+
+        public HybridLogCheckpointInfo Transfer()
+        {
+            // Ownership transfer of handles across struct copies
+            var dest = this;
+            dest.snapshotFileDevice = default;
+            dest.snapshotFileObjectLogDevice = default;
+            this.deltaLog = default;
+            this.deltaFileDevice = default;
+            return dest;
+        }
+
+        public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
+            bool scanDelta, long recoverTo)
         {
             deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
             deltaFileDevice.Initialize(-1);
@@ -525,7 +596,7 @@ namespace FASTER.core
             {
                 deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
                 deltaLog.InitializeForReads();
-                info.Recover(token, checkpointManager, deltaLog);
+                info.Recover(token, checkpointManager, deltaLog, scanDelta, recoverTo);
             }
             else
             {
@@ -533,12 +604,21 @@ namespace FASTER.core
             }
         }
 
-        public void Reset()
+        public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
+            out byte[] commitCookie, bool scanDelta = false, long recoverTo = -1)
         {
-            flushedSemaphore = null;
-            info = default;
-            snapshotFileDevice?.Dispose();
-            snapshotFileObjectLogDevice?.Dispose();
+            deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
+            deltaFileDevice.Initialize(-1);
+            if (deltaFileDevice.GetFileSize(0) > 0)
+            {
+                deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
+                deltaLog.InitializeForReads();
+                info.Recover(token, checkpointManager, out commitCookie, deltaLog, scanDelta, recoverTo);
+            }
+            else
+            {
+                info.Recover(token, checkpointManager, out commitCookie);
+            }
         }
 
         public bool IsDefault()
@@ -607,18 +687,19 @@ namespace FASTER.core
 
         public void Recover(Guid guid, ICheckpointManager checkpointManager)
         {
+            this.token = guid;
             var metadata = checkpointManager.GetIndexCheckpointMetadata(guid);
             if (metadata == null)
                 throw new FasterException("Invalid index commit metadata for ID " + guid.ToString());
-            using (StreamReader s = new StreamReader(new MemoryStream(metadata)))
+            using (StreamReader s = new(new MemoryStream(metadata)))
                 Initialize(s);
         }
 
         public readonly byte[] ToByteArray()
         {
-            using (MemoryStream ms = new MemoryStream())
+            using (MemoryStream ms = new())
             {
-                using (var writer = new StreamWriter(ms))
+                using (StreamWriter writer = new(ms))
                 {
                     writer.WriteLine(CheckpointVersion); // checkpoint version
                     writer.WriteLine(Checksum()); // checksum
@@ -687,7 +768,8 @@ namespace FASTER.core
         public void Reset()
         {
             info = default;
-            main_ht_device.Dispose();
+            main_ht_device?.Dispose();
+            main_ht_device = null;
         }
 
         public bool IsDefault()

@@ -95,15 +95,15 @@ For session operations, the user provides an instance of a type that implements 
 
 Apart from Key and Value, the IFunctions interface is defined on three additional types:
 1. `Input`: This is the type of input provided to FASTER when calling Read or RMW. It may be regarded as a parameter for the Read or RMW operation. For example, with RMW, it may be the delta being accumulated into the value.
-2. `Output`: This is the type of the output of a Read operation. The reader copies the relevant parts of the Value to Output.
+2. `Output`: This is the type of the output of a Read or RMW operation. The reader or updater copies the relevant parts of the Value to Output.
 3. `Context`: User-defined context for the operation. Use `Empty` if there is no context necesssary.
 
 `IFunctions<>` encapsulates all callbacks made by FASTER back to the caller, which are described next:
 
 1. SingleReader and ConcurrentReader: These are used to read from the store values and copy them to Output. Single reader can assume that there are no concurrent operations on the record.
-2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value. Concurrent writer can assume that there are no concurrent operations on the record.
+2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value. Single writer can assume that there are no concurrent operations on the record.
 3. Completion callbacks: Called by FASTER when various operations complete after they have gone "pending" due to requiring IO.
-4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation.
+4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation and return the Output to the caller. There is also a NeedCopyUpdate() method that is called before appending a copied-and-updated record to the tail of the log; if it returns false, the record is not copied.
 5. Locking: There is one property and two methods; if the SupportsLocking property returns true, then FASTER will call Lock and Unlock within a try/finally in the four concurrent callback methods: ConcurrentReader, ConcurrentWriter, ConcurrentDeleter (new in IAdvancedFunctions), and InPlaceUpdater. FunctionsBase illustrates the default implementation of Lock and Unlock as an exclusive lock using a bit in RecordInfo.
 
 FASTER also support an advanced callback functions API with more hooks. See 
@@ -123,7 +123,7 @@ An equivalent, but more optimized API requires you to specify the Functions type
 var session = store.For(new Functions()).NewSession<Functions>();
 ```
 
-You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports synchronous versions of all operations, as well as async versions. While all methods exist in an async form, only read and RMW are generally expected to go async; upserts and deletes will only go async when it is necessary to wait on flush operations when appending records to the log. The basic forms of these operations are described below; additional overloads are available.
+You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports both synchronous and async versions of all operations. While all methods exist in an async form, only read and RMW are generally expected to go async; upserts and deletes will only go async when it is necessary to wait on flush operations when appending records to the log. The basic forms of these operations are described below; additional overloads are available.
 
 #### Read
 
@@ -157,15 +157,17 @@ while (r.Status == Status.PENDING)
 ```cs
 // Sync
 var status = session.RMW(ref key, ref input);
+var status = session.RMW(ref key, ref input, ref output);
 var status = session.RMW(ref key, ref input, context, serialNo);
 
 // Async with sync operation completion (completion may rarely go async)
 var status = (await session.RMWAsync(ref key, ref input)).Complete();
 
-// Fully async (completion may rarely go async)
+// Fully async (completion may rarely go async and require multiple iterations)
 var r = await session.RMWAsync(ref key, ref input);
 while (r.Status == Status.PENDING)
    r = await r.CompleteAsync();
+Console.WriteLine(r.Output);
 ```
 
 #### Delete
@@ -227,6 +229,39 @@ When all sessions are done operating on FASTER, you finally dispose the FasterKV
 store.Dispose();
 ```
 
+## Larger-Than-Memory Data Support
+
+FasterKV consists of an in-memory hash table that points to records in a hybrid log that spans storage and main memory. When you 
+instantiate a new FasterKV instance, no log is created on disk. Records stay in main memory part of the hybrid log, whose size is
+configured via `LogSettings` when calling the constructor. Specifically, the memory portion of the log takes up a size of
+2<sup>MemorySizeBits</sup> bytes of space. As long as all records fit in this space, nothing will be spilled to storage. Note that
+for C# class types, the log only holds references (pointers) to heap data 
+(discussed [here](/FASTER/docs/fasterkv-tuning#managing-log-size-with-c-objects)).
+
+Once the mutable portion of main memory is full, pages become immutable and start getting flushed to storage and you will see the
+log size grow on disk. Reads of flushed records will be served by going to disk, returning a status of `Status.PENDING`, as discussed
+above.
+
+If you need recoverability, you need to take a checkpoint of FASTER. This will cause all data in the memory portion of the log to
+be proactively written to disk, along with checkpoint metadata that allows you to subsequently recover. Briefy, you can checkpoint 
+FASTER in two ways:
+
+1. Flush the hybrid log to disk, i.e., make everything read-only:
+   ```cs
+   await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
+   ```
+2. Take a "snapshot" of all in-memory data into a _separate_ file, and continue in-place updates in the mutable log:
+   ```cs
+   await store.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
+   ```
+
+Recovery is simple; after instantiating a new store, you call:
+```cs
+store.Recover();
+```
+
+You can also checkpoint the hash index for faster recovery. Learn more about checkpoint-recovery on a dedicated page [here](/FASTER/docs/fasterkv-recovery/).
+
 
 ## Quick End-To-End Sample
 
@@ -238,14 +273,13 @@ public static void Test()
 {
   using var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
   using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
-  using var s = store.NewSession(new SimpleFunctions<long, long>());
+  using var s = store.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
   long key = 1, value = 1, input = 10, output = 0;
   s.Upsert(ref key, ref value);
   s.Read(ref key, ref output);
   Debug.Assert(output == value);
   s.RMW(ref key, ref input);
-  s.RMW(ref key, ref input);
-  s.Read(ref key, ref output);
+  s.RMW(ref key, ref input, ref output);
   Debug.Assert(output == value + 20);
 }
 ```

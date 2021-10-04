@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -14,20 +13,29 @@ namespace FASTER.test
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
+        private string path;
+
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
+            path = TestUtils.MethodTestDir + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait:true);
+
+            log = Devices.CreateLogDevice(path + "/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>(128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(path, wait: true);
         }
 
         const int numRecords = 1000;
@@ -38,20 +46,21 @@ namespace FASTER.test
         static InputStruct NewInputStruct(int key) => new InputStruct { ifield1 = key + numRecords * 30, ifield2 = key + numRecords * 40 };
         static ContextStruct NewContextStruct(int key) => new ContextStruct { cfield1 = key + numRecords * 50, cfield2 = key + numRecords * 60 };
 
-        static void VerifyStructs(int key, ref KeyStruct keyStruct, ref InputStruct inputStruct, ref OutputStruct outputStruct, ref ContextStruct contextStruct)
+        static void VerifyStructs(int key, ref KeyStruct keyStruct, ref InputStruct inputStruct, ref OutputStruct outputStruct, ref ContextStruct contextStruct, bool useRMW)
         {
             Assert.AreEqual(key, keyStruct.kfield1);
             Assert.AreEqual(key + numRecords * 10, keyStruct.kfield2);
             Assert.AreEqual(key + numRecords * 30, inputStruct.ifield1);
             Assert.AreEqual(key + numRecords * 40, inputStruct.ifield2);
 
-            Assert.AreEqual(key, outputStruct.value.vfield1);
-            Assert.AreEqual(key + numRecords * 10, outputStruct.value.vfield2);
+            // RMW causes the InPlaceUpdater to be called, which adds input fields to the value.
+            Assert.AreEqual(key + (useRMW ? inputStruct.ifield1 : 0), outputStruct.value.vfield1);
+            Assert.AreEqual(key + numRecords * 10 + (useRMW ? inputStruct.ifield2 : 0), outputStruct.value.vfield2);
             Assert.AreEqual(key + numRecords * 50, contextStruct.cfield1);
             Assert.AreEqual(key + numRecords * 60, contextStruct.cfield2);
         }
 
-        // This class reduces code duplication due to ClientSession vs. AdvancedClietnSession
+        // This class reduces code duplication due to ClientSession vs. AdvancedClientSession
         class ProcessPending
         {
             // Get the first chunk of outputs as a group, testing realloc.
@@ -77,7 +86,7 @@ namespace FASTER.test
                 return false;
             }
 
-            internal void Process(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs)
+            internal void Process(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, bool useRMW)
             {
                 Assert.AreEqual(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc *
                                 CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kReallocMultuple, completedOutputs.vector.Length);
@@ -88,7 +97,7 @@ namespace FASTER.test
                 for (; completedOutputs.Next(); ++count)
                 {
                     ref var result = ref completedOutputs.Current;
-                    VerifyStructs((int)result.Key.kfield1, ref result.Key, ref result.Input, ref result.Output, ref result.Context);
+                    VerifyStructs((int)result.Key.kfield1, ref result.Key, ref result.Input, ref result.Output, ref result.Context, useRMW);
                     Assert.AreEqual(keyAddressDict[(int)result.Key.kfield1], result.Address);
                 }
                 completedOutputs.Dispose();
@@ -112,13 +121,13 @@ namespace FASTER.test
                 Assert.AreEqual(Status.NOTFOUND, completedOutputs.Current.Status);
                 Assert.AreEqual(keyStruct, completedOutputs.Current.Key);
                 Assert.IsFalse(completedOutputs.Next());
+                completedOutputs.Dispose();
             }
-
         }
 
         [Test]
         [Category("FasterKV")]
-        public async ValueTask ReadAndCompleteWithPendingOutput([Values]bool isAsync)
+        public async ValueTask ReadAndCompleteWithPendingOutput([Values]bool useRMW, [Values]bool isAsync)
         {
             using var session = fht.For(new FunctionsWithContext<ContextStruct>()).NewSession<FunctionsWithContext<ContextStruct>>();
             Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
@@ -158,8 +167,10 @@ namespace FASTER.test
                     }
                 }
 
-                // We don't use input or context, but we test that they were carried through correctly.
-                var status = session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
+                // We don't use context (though we verify it), and Read does not use input.
+                var status = useRMW
+                    ? session.RMW(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct)
+                    : session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
                 if (status == Status.PENDING)
                 {
                     if (processPending.IsFirst())
@@ -175,18 +186,18 @@ namespace FASTER.test
                             completedOutputs = await session.CompletePendingWithOutputsAsync();
                         else
                             session.CompletePendingWithOutputs(out completedOutputs, wait: true);
-                        processPending.Process(completedOutputs);
+                        processPending.Process(completedOutputs, useRMW);
                     }
                     continue;
                 }
-                Assert.IsTrue(status == Status.OK);
+                Assert.AreEqual(Status.OK, status);
             }
             processPending.VerifyNoDeferredPending();
         }
 
         [Test]
         [Category("FasterKV")]
-        public async ValueTask AdvReadAndCompleteWithPendingOutput([Values]bool isAsync)
+        public async ValueTask AdvReadAndCompleteWithPendingOutput([Values] bool useRMW, [Values]bool isAsync)
         {
             using var session = fht.For(new AdvancedFunctionsWithContext<ContextStruct>()).NewSession<AdvancedFunctionsWithContext<ContextStruct>>();
             Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
@@ -226,8 +237,10 @@ namespace FASTER.test
                     }
                 }
 
-                // We don't use input or context, but we test that they were carried through correctly.
-                var status = session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
+                // We don't use context (though we verify it), and Read does not use input.
+                var status = useRMW
+                    ? session.RMW(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct)
+                    : session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
                 if (status == Status.PENDING)
                 {
                     if (processPending.IsFirst())
@@ -243,11 +256,11 @@ namespace FASTER.test
                             completedOutputs = await session.CompletePendingWithOutputsAsync();
                         else
                             session.CompletePendingWithOutputs(out completedOutputs, wait: true);
-                        processPending.Process(completedOutputs);
+                        processPending.Process(completedOutputs, useRMW);
                     }
                     continue;
                 }
-                Assert.IsTrue(status == Status.OK);
+                Assert.AreEqual(Status.OK, status);
             }
             processPending.VerifyNoDeferredPending();
         }

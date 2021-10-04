@@ -15,7 +15,7 @@ namespace FASTER.benchmark
 
         public Functions(bool locking) => this.locking = locking;
 
-        public void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
         {
         }
 
@@ -65,20 +65,20 @@ namespace FASTER.benchmark
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitialUpdater(ref Key key, ref Input input, ref Value value)
+        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
         {
             value.value = input.value;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
         {
             value.value += input.value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
+        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
         {
             newValue.value = input.value + oldValue.value;
         }

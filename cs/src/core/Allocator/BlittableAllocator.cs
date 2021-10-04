@@ -25,9 +25,13 @@ namespace FASTER.core
         private static readonly int keySize = Utility.GetSize(default(Key));
         private static readonly int valueSize = Utility.GetSize(default(Value));
 
+        private readonly OverflowPool<PageUnit> overflowPagePool;
+        
         public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
             : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
+            overflowPagePool = new OverflowPool<PageUnit>(4, p => p.handle.Free());
+
             values = new byte[BufferSize][];
             handles = new GCHandle[BufferSize];
             pointers = new long[BufferSize];
@@ -107,6 +111,7 @@ namespace FASTER.core
             handles = null;
             pointers = null;
             values = null;
+            overflowPagePool.Dispose();
         }
 
         public override AddressInfo* GetKeyAddressInfo(long physicalAddress)
@@ -125,8 +130,18 @@ namespace FASTER.core
         /// <param name="index"></param>
         internal override void AllocatePage(int index)
         {
+            Interlocked.Increment(ref AllocatedPageCount);
+
+            if (overflowPagePool.TryGet(out var item))
+            {
+                handles[index] = item.handle;
+                pointers[index] = item.pointer;
+                values[index] = item.value;
+                return;
+            }
+
             var adjustedSize = PageSize + 2 * sectorSize;
-            byte[] tmp = new byte[adjustedSize];
+            var tmp = new byte[adjustedSize];
             Array.Clear(tmp, 0, adjustedSize);
 
             handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
@@ -134,6 +149,8 @@ namespace FASTER.core
             pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
             values[index] = tmp;
         }
+
+        internal override int OverflowPageCount => overflowPagePool.Count;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override long GetPhysicalAddress(long logicalAddress)
@@ -164,6 +181,7 @@ namespace FASTER.core
             (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
+            base.VerifyCompatibleSectorSize(device);
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
 
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],
@@ -205,6 +223,23 @@ namespace FASTER.core
                 // Adjust array offset for cache alignment
                 offset += (int)(pointers[page % BufferSize] - (long)handles[page % BufferSize].AddrOfPinnedObject());
                 Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
+            }
+        }
+
+        internal override void FreePage(long page)
+        {
+            ClearPage(page, 0);
+            if (EmptyPageCount > 0)
+            {
+                int index = (int)(page % BufferSize);
+                overflowPagePool.TryAdd(new PageUnit { 
+                    handle = handles[index], 
+                    pointer = pointers[index], 
+                    value = values[index] });
+                values[index] = null;
+                pointers[index] = 0;
+                handles[index] = default;
+                Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
 

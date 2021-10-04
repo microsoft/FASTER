@@ -20,16 +20,16 @@ namespace FASTER.core
     {
         private readonly ConcurrentDictionary<TKey, TValue> dictionary;
 
-        private readonly ConcurrentDictionary<TKey, object> keyLocks = new ConcurrentDictionary<TKey, object>();
+        private readonly ConcurrentDictionary<TKey, object> keyLocks = new();
 
         public SafeConcurrentDictionary()
         {
-            this.dictionary = new ConcurrentDictionary<TKey, TValue>();
+            this.dictionary = new();
         }
 
         public SafeConcurrentDictionary(IEnumerable<KeyValuePair<TKey, TValue>> initialCollection)
         {
-            this.dictionary = new ConcurrentDictionary<TKey, TValue>(initialCollection);
+            this.dictionary = new(initialCollection);
         }
 
         /// <summary>

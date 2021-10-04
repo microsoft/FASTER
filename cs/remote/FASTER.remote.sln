@@ -35,6 +35,36 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{8CF11B91-A
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.remote.test", "test\FASTER.remote.test\FASTER.remote.test.csproj", "{2238A430-8D61-40A3-A23B-B1163A4CCBC6}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{48000B9F-171C-44ED-950D-ED575F83ED7A}"
+	ProjectSection(SolutionItems) = preProject
+		..\..\docs\_docs\01-quick-start-guide.md = ..\..\docs\_docs\01-quick-start-guide.md
+		..\..\docs\_docs\02-faqs.md = ..\..\docs\_docs\02-faqs.md
+		..\..\docs\_docs\20-fasterkv-basics.md = ..\..\docs\_docs\20-fasterkv-basics.md
+		..\..\docs\_docs\23-fasterkv-tuning.md = ..\..\docs\_docs\23-fasterkv-tuning.md
+		..\..\docs\_docs\25-fasterkv-recovery.md = ..\..\docs\_docs\25-fasterkv-recovery.md
+		..\..\docs\_docs\26-fasterkv-samples.md = ..\..\docs\_docs\26-fasterkv-samples.md
+		..\..\docs\_docs\29-fasterkv-cpp.md = ..\..\docs\_docs\29-fasterkv-cpp.md
+		..\..\docs\_docs\40-fasterlog-basics.md = ..\..\docs\_docs\40-fasterlog-basics.md
+		..\..\docs\_docs\43-fasterlog-tuning.md = ..\..\docs\_docs\43-fasterlog-tuning.md
+		..\..\docs\_docs\46-fasterlog-samples.md = ..\..\docs\_docs\46-fasterlog-samples.md
+		..\..\docs\_docs\50-remote-basics.md = ..\..\docs\_docs\50-remote-basics.md
+		..\..\docs\_docs\80-build-and-test.md = ..\..\docs\_docs\80-build-and-test.md
+		..\..\docs\_docs\82-code-structure.md = ..\..\docs\_docs\82-code-structure.md
+		..\..\docs\_docs\84-roadmap.md = ..\..\docs\_docs\84-roadmap.md
+		..\..\docs\_docs\90-td-introduction.md = ..\..\docs\_docs\90-td-introduction.md
+		..\..\docs\_docs\95-research-papers.md = ..\..\docs\_docs\95-research-papers.md
+		..\..\docs\_docs\96-slides-videos.md = ..\..\docs\_docs\96-slides-videos.md
+		..\..\docs\_config.yml = ..\..\docs\_config.yml
+		..\..\docs\_pages\home.md = ..\..\docs\_pages\home.md
+		..\..\docs\_data\navigation.yml = ..\..\docs\_data\navigation.yml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "WebClient", "WebClient", "{8D1F793C-DA1E-4C75-B824-E510BB54534E}"
+	ProjectSection(SolutionItems) = preProject
+		samples\WebClient\FASTERFunctions.js = samples\WebClient\FASTERFunctions.js
+		samples\WebClient\WebClient.html = samples\WebClient\WebClient.html
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -138,6 +168,7 @@ Global
 		{4053EC35-77A5-4728-B16F-F4FDD1104CAF} = {1065AE7E-DEA5-4E21-AE39-95B93C074B17}
 		{6A49ADD2-DC25-47E1-9D29-5DC6380E880A} = {6B8D1038-C9D5-4111-B5CE-BF64E7D12AE1}
 		{2238A430-8D61-40A3-A23B-B1163A4CCBC6} = {8CF11B91-A6B6-4B81-AD43-2B07CF60F8FF}
+		{8D1F793C-DA1E-4C75-B824-E510BB54534E} = {1065AE7E-DEA5-4E21-AE39-95B93C074B17}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {FB603D60-F72D-4DAD-9349-442A45E20276}

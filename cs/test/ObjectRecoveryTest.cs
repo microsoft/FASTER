@@ -29,14 +29,13 @@ namespace FASTER.test.recovery.objectstore
         private IDevice log, objlog;
 
         [SetUp]
-        public void Setup()
+        public void Setup() => Setup(deleteDir: true);
+
+        public void Setup(bool deleteDir)
         {
-            if (test_path == null)
-            {
-                test_path = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
-                if (!Directory.Exists(test_path))
-                    Directory.CreateDirectory(test_path);
-            }
+            test_path = TestUtils.MethodTestDir;
+            if (deleteDir)
+                TestUtils.RecreateDirectory(test_path);
 
             log = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.log", false);
             objlog = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.obj.log", false);
@@ -51,25 +50,33 @@ namespace FASTER.test.recovery.objectstore
         }
 
         [TearDown]
-        public void TearDown()
+        public void TearDown() => TearDown(deleteDir: true);
+
+        public void TearDown(bool deleteDir)
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
-            objlog.Dispose();
-            TestUtils.DeleteDirectory(test_path);
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
+
+            if (deleteDir)
+                TestUtils.DeleteDirectory(test_path);
+        }
+
+        private void PrepareToRecover()
+        {
+            TearDown(deleteDir: false);
+            Setup(deleteDir: false);
         }
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask ObjectRecoveryTest1([Values]bool isAsync)
         {
             Populate();
-            fht.Dispose();
-            fht = null;
-            log.Dispose();
-            objlog.Dispose();
-            Setup();
+            PrepareToRecover();
 
             if (isAsync)
                 await fht.RecoverAsync(token, token);
@@ -195,12 +202,7 @@ namespace FASTER.test.recovery.objectstore
             // Assert if expected is same as found
             for (long i = 0; i < numUniqueKeys; i++)
             {
-                Assert.IsTrue(
-                    expected[i] == outputArray[i].value.numClicks,
-                    "Debug error for AdId {0}: Expected ({1}), Found({2})", 
-                    inputArray[i].Item1.adId,
-                    expected[i], 
-                    outputArray[i].value.numClicks);
+                Assert.AreEqual(expected[i], outputArray[i].value.numClicks, $"AdId {inputArray[i].Item1.adId}");
             }
         }
     }

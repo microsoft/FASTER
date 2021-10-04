@@ -63,7 +63,7 @@ namespace FASTER.core
         public int FixedRecordSize => allocator.GetFixedRecordSize();
 
         /// <summary>
-        /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
+        /// Number of pages left empty or unallocated in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
         public int EmptyPageCount
         {
@@ -72,14 +72,34 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Circular buffer size (in number of pages)
+        /// Set empty page count in allocator
         /// </summary>
-        public int BufferSizePages => allocator.BufferSize;
+        /// <param name="pageCount">New empty page count</param>
+        /// <param name="wait">Whether to wait for shift addresses to complete</param>
+        public void SetEmptyPageCount(int pageCount, bool wait = false)
+        {
+            allocator.EmptyPageCount = pageCount;
+            if (wait)
+            {
+                long newHeadAddress = (allocator.GetTailAddress() & ~allocator.PageSizeMask) - allocator.HeadOffsetLagAddress;
+                ShiftHeadAddress(newHeadAddress, wait);
+            }
+        }
+        
+        /// <summary>
+        /// Total in-memory circular buffer capacity (in number of pages)
+        /// </summary>
+        public int BufferSize => allocator.BufferSize;
 
         /// <summary>
-        /// Memory used by log (not including reference heap object sizes)
+        /// Actual memory used by log (not including heap objects)
         /// </summary>
-        public long MemorySizeBytes => ((long)allocator.BufferSize) << allocator.LogPageSizeBits;
+        public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+
+        /// <summary>
+        /// Memory allocatable on the log (not including heap objects)
+        /// </summary>
+        public long AllocatableMemorySizeBytes => ((long)(allocator.BufferSize - allocator.EmptyPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
 
         /// <summary>
         /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.
@@ -282,17 +302,24 @@ namespace FASTER.core
             if (untilAddress > fht.Log.SafeReadOnlyAddress)
                 throw new FasterException("Can compact only until Log.SafeReadOnlyAddress");
             var originalUntilAddress = untilAddress;
+            var expectedAddress = untilAddress;
 
             var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
             using var fhtSession = fht.For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>();
 
             VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null;
+            VariableLengthStructSettings<Key, long> variableLengthStructSettingsKaddr = null;
             if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
                 variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
                 {
                     keyLength = varLen.KeyLength,
                     valueLength = varLen.ValueLength,
+                };
+                variableLengthStructSettingsKaddr = new VariableLengthStructSettings<Key, long>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = null,
                 };
             }
 
@@ -307,12 +334,23 @@ namespace FASTER.core
                         ref var value = ref iter1.GetValue();
 
                         if (recordInfo.Tombstone || cf.IsDeleted(key, value))
+                        {
                             tempKvSession.Delete(ref key, default, 0);
+                        }
                         else
+                        {
                             tempKvSession.Upsert(ref key, ref value, default, 0);
+                            // below is to get and preserve information in RecordInfo, if we need.
+                            /*tempKvSession.ContainsKeyInMemory(ref key, out long logicalAddress);
+                            long physicalAddress = tempKv.hlog.GetPhysicalAddress(logicalAddress);
+                            ref var tempRecordInfo = ref tempKv.hlog.GetInfo(physicalAddress);
+                            RecordInfo.WriteInfo(ref tempRecordInfo,
+                                tempRecordInfo.Version, false, false, tempRecordInfo.PreviousAddress);*/
+                        }
                     }
                     // Ensure address is at record boundary
                     untilAddress = originalUntilAddress = iter1.NextAddress;
+                    expectedAddress = untilAddress;
                 }
 
                 // Scan until SafeReadOnlyAddress
@@ -354,8 +392,10 @@ namespace FASTER.core
                             // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
                             continue;
                         }
-                        
-                        fhtSession.Upsert(ref iter3.GetKey(), ref iter3.GetValue(), default, 0);
+                        // Note: we use untilAddress as expectedAddress here.
+                        // As long as there's no record of the same key whose address is greater than untilAddress,
+                        // i.e., the last address that this compact covers, we are safe to copy the old record to the tail.
+                        fhtSession.CopyToTail(ref iter3.GetKey(), ref iter3.GetValue(), ref recordInfo, expectedAddress);
                     }
                 }
             }

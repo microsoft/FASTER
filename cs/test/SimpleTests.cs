@@ -17,38 +17,38 @@ namespace FASTER.test
             AddressInfo info;
 
             AddressInfo.WriteInfo(&info, 44, 55);
-            Assert.IsTrue(info.Address == 44);
-            Assert.IsTrue(info.Size == 512);
+            Assert.AreEqual(44, info.Address);
+            Assert.AreEqual(512, info.Size);
 
             AddressInfo.WriteInfo(&info, 44, 512);
-            Assert.IsTrue(info.Address == 44);
-            Assert.IsTrue(info.Size == 512);
+            Assert.AreEqual(44, info.Address);
+            Assert.AreEqual(512, info.Size);
 
             AddressInfo.WriteInfo(&info, 44, 513);
-            Assert.IsTrue(info.Address == 44);
-            Assert.IsTrue(info.Size == 1024);
+            Assert.AreEqual(44, info.Address);
+            Assert.AreEqual(1024, info.Size);
 
             if (sizeof(IntPtr) > 4)
             {
                 AddressInfo.WriteInfo(&info, 44, 1L << 20);
-                Assert.IsTrue(info.Address == 44);
-                Assert.IsTrue(info.Size == 1L << 20);
+                Assert.AreEqual(44, info.Address);
+                Assert.AreEqual(1L << 20, info.Size);
 
                 AddressInfo.WriteInfo(&info, 44, 511 * (1L << 20));
-                Assert.IsTrue(info.Address == 44);
-                Assert.IsTrue(info.Size == 511 * (1L << 20));
+                Assert.AreEqual(44, info.Address);
+                Assert.AreEqual(511 * (1L << 20), info.Size);
 
                 AddressInfo.WriteInfo(&info, 44, 512 * (1L << 20));
-                Assert.IsTrue(info.Address == 44);
-                Assert.IsTrue(info.Size == 512 * (1L << 20));
+                Assert.AreEqual(44, info.Address);
+                Assert.AreEqual(512 * (1L << 20), info.Size);
 
                 AddressInfo.WriteInfo(&info, 44, 555555555L);
-                Assert.IsTrue(info.Address == 44);
-                Assert.IsTrue(info.Size == (1 + (555555555L / 512)) * 512);
+                Assert.AreEqual(44, info.Address);
+                Assert.AreEqual((1 + (555555555L / 512)) * 512, info.Size);
 
                 AddressInfo.WriteInfo(&info, 44, 2 * 555555555L);
-                Assert.IsTrue(info.Address == 44);
-                Assert.IsTrue(info.Size == (1 + (2 * 555555555L / 1048576)) * 1048576);
+                Assert.AreEqual(44, info.Address);
+                Assert.AreEqual((1 + (2 * 555555555L / 1048576)) * 1048576, info.Size);
             }
         }
     }

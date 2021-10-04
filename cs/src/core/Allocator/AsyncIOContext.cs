@@ -38,6 +38,11 @@ namespace FASTER.core
         public long logicalAddress;
 
         /// <summary>
+        /// Minimum Logical address to resolve Key in
+        /// </summary>
+        public long minAddress;
+
+        /// <summary>
         /// Record buffer
         /// </summary>
         public SectorAlignedMemory record;
@@ -57,6 +62,11 @@ namespace FASTER.core
         /// Async Operation ValueTask backer
         /// </summary>
         public TaskCompletionSource<AsyncIOContext<Key, Value>> asyncOperation;
+
+        /// <summary>
+        /// Indicates whether this is a default instance with no pending operation
+        /// </summary>
+        public bool IsDefault() => this.callbackQueue is null && this.asyncOperation is null;
 
         /// <summary>
         /// Dispose

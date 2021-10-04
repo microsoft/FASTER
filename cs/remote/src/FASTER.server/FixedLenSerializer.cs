@@ -55,6 +55,24 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
+        public bool Write(ref Key k, ref byte* dst, int length)
+        {
+            if (length < Unsafe.SizeOf<Key>()) return false;
+            Unsafe.AsRef<Key>(dst) = k;
+            dst += Unsafe.SizeOf<Key>();
+            return true;
+        }
+
+        /// <inheritdoc />
+        public bool Write(ref Value v, ref byte* dst, int length)
+        {
+            if (length < Unsafe.SizeOf<Value>()) return false;
+            Unsafe.AsRef<Value>(dst) = v;
+            dst += Unsafe.SizeOf<Value>();
+            return true;
+        }
+
+        /// <inheritdoc />
         public bool Write(ref Output o, ref byte* dst, int length)
         {
             if (length < Unsafe.SizeOf<Output>()) return false;
@@ -99,6 +117,15 @@ namespace FASTER.server
                 return false;
             }
             return true;
+        }
+
+        /// <inheritdoc />
+        public bool Match(ref Key k, ref Key pattern)
+        {
+            if (k.Equals(pattern))
+                return true;
+
+            return false;
         }
     }
 }
