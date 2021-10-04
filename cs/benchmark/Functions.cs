@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 1591
-
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using FASTER.core;
@@ -19,7 +17,7 @@ namespace FASTER.benchmark
         {
         }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordInfo recordInfo)
         {
         }
 
@@ -38,18 +36,20 @@ namespace FASTER.benchmark
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
         {
             dst.value = value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
         }
+
+        public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -59,7 +59,7 @@ namespace FASTER.benchmark
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
             return true;
@@ -73,19 +73,19 @@ namespace FASTER.benchmark
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             value.value += input.value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
+        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
         {
             newValue.value = input.value + oldValue.value;
         }
 
-        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => true;
+        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
         public bool SupportsLocking => locking;
 

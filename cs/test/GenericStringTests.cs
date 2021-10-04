@@ -86,7 +86,7 @@ namespace FASTER.test
 
         class MyFuncs : SimpleFunctions<string, string>
         {
-            public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status)
+            public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status, RecordInfo recordInfo)
             {
                 Assert.AreEqual(key, output);
             }

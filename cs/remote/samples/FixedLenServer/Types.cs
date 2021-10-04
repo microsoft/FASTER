@@ -53,7 +53,7 @@ namespace FasterFixedLenServer
     }
 
 
-    public struct Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
+    public struct Functions : IFunctions<Key, Value, Input, Output, long>
     {
         // No locking needed for atomic types such as Value
         public bool SupportsLocking => false;

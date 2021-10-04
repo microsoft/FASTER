@@ -134,7 +134,7 @@ namespace FASTER.test
             Assert.AreEqual(Status.OK, status);
         }
 
-        public override void ReadCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status)
+        public override void ReadCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status, RecordInfo recordInfo)
         {
             try
             {

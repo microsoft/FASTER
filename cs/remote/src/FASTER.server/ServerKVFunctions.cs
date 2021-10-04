@@ -5,8 +5,8 @@ using FASTER.core;
 
 namespace FASTER.server
 {
-    internal struct ServerKVFunctions<Key, Value, Input, Output, Functions> : IAdvancedFunctions<Key, Value, Input, Output, long>
-        where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
+    internal struct ServerKVFunctions<Key, Value, Input, Output, Functions> : IFunctions<Key, Value, Input, Output, long>
+        where Functions : IFunctions<Key, Value, Input, Output, long>
     {
         private readonly Functions functions;
         private readonly FasterKVServerSessionBase<Output> serverNetworkSession;

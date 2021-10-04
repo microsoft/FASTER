@@ -43,7 +43,7 @@ namespace MemOnlyCache
     /// <summary>
     /// Callback for FASTER operations
     /// </summary>
-    public sealed class CacheFunctions : AdvancedSimpleFunctions<CacheKey, CacheValue>
+    public sealed class CacheFunctions : SimpleFunctions<CacheKey, CacheValue>
     {
         readonly CacheSizeTracker sizeTracker;
 

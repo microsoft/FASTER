@@ -45,7 +45,7 @@ namespace FASTER.test.recovery
 
         public class MyFunctions : SimpleFunctions<long, long>
         {
-            public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status)
+            public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordInfo recordInfo)
             {
                 Assert.AreEqual(Status.OK, status, $"status = {status}");
                 Assert.AreEqual(key, output, $"output = {output}");
@@ -54,7 +54,7 @@ namespace FASTER.test.recovery
 
         public class MyFunctions2 : SimpleFunctions<long, long>
         {
-            public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status)
+            public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordInfo recordInfo)
             {
                 Verify(status, key, output);
             }

@@ -324,12 +324,12 @@ namespace FASTER.core
 
             public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             {
-                return _fasterKV._functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
+                return _fasterKV._functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
             }
 
             public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
             {
-                return _fasterKV._functions.ConcurrentWriter(ref key, ref src, ref dst);
+                return _fasterKV._functions.ConcurrentWriter(ref key, ref src, ref dst, ref recordInfo, address);
             }
 
             public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
@@ -342,7 +342,7 @@ namespace FASTER.core
 
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                _fasterKV._functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
+                _fasterKV._functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
             }
 
             public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
@@ -372,12 +372,12 @@ namespace FASTER.core
 
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                return _fasterKV._functions.InPlaceUpdater(ref key, ref input, ref value, ref output);
+                return _fasterKV._functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo)
             {
-                _fasterKV._functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+                _fasterKV._functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordInfo);
             }
 
             public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
@@ -387,7 +387,7 @@ namespace FASTER.core
 
             public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
             {
-                return _fasterKV._functions.SingleReader(ref key, ref input, ref value, ref dst);
+                return _fasterKV._functions.SingleReader(ref key, ref input, ref value, ref dst, address);
             }
 
             public void SingleWriter(ref Key key, ref Value src, ref Value dst)

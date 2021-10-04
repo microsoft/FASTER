@@ -20,9 +20,6 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
     public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IDisposable
-#if DEBUG
-        , IClientSession<Key, Value, Input, Output, Context>
-#endif
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         private readonly FasterKV<Key, Value> fht;
@@ -259,7 +256,6 @@ namespace FASTER.core
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
         /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
-        /// <remarks>This method on non-Advanced ClientSessions is not suitable for read loops, because ReadCompletionCallback does not have RecordInfo.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0)
         {
@@ -412,7 +408,6 @@ namespace FASTER.core
         ///     </list>
         ///     to complete the read operation and obtain the result status, the output that is populated by the 
         ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record
-        ///     <para>This method on non-Advanced ClientSessions is not suitable for read loops, because ReadCompletionCallback does not have RecordInfo.</para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, long startAddress, ReadFlags readFlags = ReadFlags.None,
@@ -806,7 +801,7 @@ namespace FASTER.core
                 {
                     if (wait != true)
                     {
-                        throw new FasterException("Can spin-wait for commit only if wait is true");
+                        throw new FasterException("Can spin-wait for commit (checkpoint completion) only if wait is true");
                     }
                     do
                     {
@@ -1021,10 +1016,10 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) 
                 => !this.SupportsLocking
-                    ? _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst)
-                    : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo);
+                    ? _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address)
+                    : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
-            public bool ConcurrentReaderLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo)
+            public bool ConcurrentReaderLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             {
                 bool success = false;
                 for (bool retry = true; retry; /* updated in loop */)
@@ -1034,7 +1029,7 @@ namespace FASTER.core
                     this.Lock(ref recordInfo, ref key, ref value, LockType.Shared, ref context);
                     try
                     {
-                        success = _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst);
+                        success = _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
                     }
                     finally
                     {
@@ -1054,7 +1049,8 @@ namespace FASTER.core
             private bool ConcurrentWriterNoLock(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
             {
                 recordInfo.Version = _clientSession.ctx.version;
-                return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst);
+                // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
+                return _clientSession.functions.ConcurrentWriter(ref key, ref src, ref dst, ref recordInfo, address);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1084,9 +1080,9 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             {
-                // Non-Advanced IFunctions has no ConcurrentDeleter
                 recordInfo.Version = _clientSession.ctx.version;
                 recordInfo.Tombstone = true;
+                _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
             }
 
             private void ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
@@ -1110,7 +1106,7 @@ namespace FASTER.core
                 => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
+                => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
@@ -1122,7 +1118,7 @@ namespace FASTER.core
             private bool PostCopyUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 recordInfo.Version = _clientSession.ctx.version;
-                return _clientSession.functions.PostCopyUpdater(ref key, ref input, ref value, ref output);
+                return _clientSession.functions.PostCopyUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
 
             private bool PostCopyUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
@@ -1143,10 +1139,8 @@ namespace FASTER.core
             public void DeleteCompletionCallback(ref Key key, Context ctx) 
                 => _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
 
-            public int GetInitialLength(ref Input input)
-            {
-                return _clientSession.variableLengthStruct.GetInitialLength(ref input);
-            }
+            public int GetInitialLength(ref Input input) 
+                => _clientSession.variableLengthStruct.GetInitialLength(ref input);
 
             public int GetLength(ref Value t, ref Input input) 
                 => _clientSession.variableLengthStruct.GetLength(ref t, ref input);
@@ -1164,7 +1158,8 @@ namespace FASTER.core
             private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 recordInfo.Version = _clientSession.ctx.version;
-                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output);
+                // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
+                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
 
             private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
@@ -1182,13 +1177,13 @@ namespace FASTER.core
             }
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo) 
-                => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
+                => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordInfo);
 
             public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) 
                 => _clientSession.functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
 
             public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address) 
-                => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst);
+                => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, address);
 
             public void SingleWriter(ref Key key, ref Value src, ref Value dst) 
                 => _clientSession.functions.SingleWriter(ref key, ref src, ref dst);

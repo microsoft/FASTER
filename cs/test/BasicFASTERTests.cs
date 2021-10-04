@@ -616,7 +616,7 @@ namespace FASTER.test
 
         // Test the ReadAtAddress where ReadFlags = ReadFlags.SkipReadCache
 
-        class SkipReadCacheFunctions : AdvancedFunctions    // Must use AdvancedFunctions for the address parameters to the callbacks
+        class SkipReadCacheFunctions : Functions
         {
             internal long expectedReadAddress;
 

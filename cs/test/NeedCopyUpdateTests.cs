@@ -113,7 +113,7 @@ namespace FASTER.test
             base.InitialUpdater(ref key, ref input, ref value, ref output);
         }
 
-        public override void CopyUpdater(ref int key, ref RMWValue input, ref RMWValue oldValue, ref RMWValue newValue, ref RMWValue output)
+        public override void CopyUpdater(ref int key, ref RMWValue input, ref RMWValue oldValue, ref RMWValue newValue, ref RMWValue output, ref RecordInfo recordInfo, long address)
         {
             Assert.Fail("CopyUpdater");
         }
@@ -126,7 +126,7 @@ namespace FASTER.test
                 Assert.IsTrue(input.flag); // InitialUpdater is called.
         }
 
-        public override void ReadCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status)
+        public override void ReadCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status, RecordInfo recordInfo)
         {
             Assert.AreEqual(output.value, input.value);
         }

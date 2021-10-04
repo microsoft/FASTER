@@ -559,7 +559,7 @@ namespace FASTER.test.statemachine
             }
         }
 
-        public override void ReadCompletionCallback(ref AdId key, ref NumClicks input, ref NumClicks output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref AdId key, ref NumClicks input, ref NumClicks output, Empty ctx, Status status, RecordInfo recordInfo)
         {
             Assert.AreEqual(Status.OK, status);
             Assert.AreEqual(key.adId, output.numClicks);

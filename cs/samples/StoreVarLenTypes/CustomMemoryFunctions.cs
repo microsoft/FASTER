@@ -19,7 +19,7 @@ namespace StoreVarLenTypes
             : base(memoryPool, locking) { }
 
         /// <inheritdoc/>
-        public override void ReadCompletionCallback(ref ReadOnlyMemory<T> key, ref Memory<T> input, ref (IMemoryOwner<T>, int) output, T ctx, Status status)
+        public override void ReadCompletionCallback(ref ReadOnlyMemory<T> key, ref Memory<T> input, ref (IMemoryOwner<T>, int) output, T ctx, Status status, RecordInfo recordInfo)
         {
             if (status != Status.OK)
             {

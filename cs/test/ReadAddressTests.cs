@@ -3,12 +3,8 @@
 
 using System;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 using System.Threading.Tasks;
-using System.Threading;
-using System.Collections.Generic;
-using System.Diagnostics;
 
 namespace FASTER.test.readaddress
 {
@@ -65,38 +61,44 @@ namespace FASTER.test.readaddress
 
         private static long SetReadOutput(long key, long value) => (key << 32) | value;
 
-        internal class Functions : AdvancedSimpleFunctions<Key, Value, Context>
+        internal class Functions : SimpleFunctions<Key, Value, Context>
         {
             internal long lastWriteAddress = Constants.kInvalidAddress;
 
-            public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref RecordInfo recordInfo, long address) 
-                => dst.value = SetReadOutput(key.key, value.value);
+            public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref RecordInfo recordInfo, long address)
+            {
+                dst.value = SetReadOutput(key.key, value.value);
+                return true;
+            }
 
-            public override void SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address) 
-                => dst.value = SetReadOutput(key.key, value.value);
+            public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address)
+            {
+                dst.value = SetReadOutput(key.key, value.value);
+                return true;
+            }
 
             // Return false to force a chain of values.
             public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => false;
 
-            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref RecordInfo recordInfo, long address) => false;
+            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) => false;
 
             // Record addresses
-            public override void SingleWriter(ref Key key, ref Value src, ref Value dst, long address)
+            public override void SingleWriter(ref Key key, ref Value src, ref Value dst)
             {
                 this.lastWriteAddress = address;
-                base.SingleWriter(ref key, ref src, ref dst, address);
+                base.SingleWriter(ref key, ref src, ref dst);
             }
 
-            public override void InitialUpdater(ref Key key, ref Value input, ref Value value)
+            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output)
             {
                 this.lastWriteAddress = address;
-                base.InitialUpdater(ref key, ref input, ref value);
+                base.InitialUpdater(ref key, ref input, ref value, ref output);
             }
 
-            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue)
+            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, long address)
             {
-                this.lastWriteAddress = newAddress;
-                base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
+                this.lastWriteAddress = address;
+                base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
             }
 
             // Track the recordInfo for its PreviousAddress.
@@ -191,7 +193,7 @@ namespace FASTER.test.readaddress
 
                     var status = useRMW
                         ? useAsync
-                            ? (await session.RMWAsync(ref key, ref value, context, serialNo: lap)).Complete()
+                            ? (await session.RMWAsync(ref key, ref value, context, serialNo: lap)).Complete().status
                             : session.RMW(ref key, ref value, serialNo: lap)
                         : session.Upsert(ref key, ref value, serialNo: lap);
 
@@ -225,7 +227,7 @@ namespace FASTER.test.readaddress
                 return recordInfo.PreviousAddress >= this.fkv.Log.BeginAddress;
             }
 
-            internal void ProcessNoKeyRecord(Status status, ref Value actualOutput, int keyOrdinal)
+            internal static void ProcessNoKeyRecord(Status status, ref Value actualOutput, int keyOrdinal)
             {
                 if (status != Status.NOTFOUND)
                 {
@@ -425,7 +427,6 @@ namespace FASTER.test.readaddress
         [Category("FasterKV")]
         public async Task ReadAtAddressAsyncReadFlagsNoneTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
-            CancellationToken cancellationToken;
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
@@ -452,7 +453,7 @@ namespace FASTER.test.readaddress
                         var saveOutput = output;
                         var saveRecordInfo = recordInfo;
 
-                        readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, ReadFlags.None, default, serialNo: maxLap + 1, cancellationToken);
+                        readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, ReadFlags.None, default, serialNo: maxLap + 1);
                         (status, output) = readAsyncResult.Complete(out recordInfo);
 
                         Assert.AreEqual(saveOutput, output);
@@ -469,7 +470,6 @@ namespace FASTER.test.readaddress
         [Category("FasterKV")]
         public async Task ReadAtAddressAsyncReadFlagsSkipCacheTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
         {
-            CancellationToken cancellationToken;
             using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
@@ -496,7 +496,7 @@ namespace FASTER.test.readaddress
                         var saveOutput = output;
                         var saveRecordInfo = recordInfo;
 
-                        readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, ReadFlags.SkipReadCache, default, maxLap + 1, cancellationToken);
+                        readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, ReadFlags.SkipReadCache, default, maxLap + 1);
                         (status, output) = readAsyncResult.Complete(out recordInfo);
 
                         Assert.AreEqual(saveOutput, output);
@@ -538,10 +538,10 @@ namespace FASTER.test.readaddress
                         context.Reset();
                     }
 
-                    testStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
+                    TestStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
                 }
 
-                testStore.Flush().GetAwaiter().GetResult();
+                testStore.Flush().AsTask().GetAwaiter().GetResult();
             }
         }
 
@@ -568,7 +568,7 @@ namespace FASTER.test.readaddress
                     var keyOrdinal = rng.Next(numKeys);
                     var readAsyncResult = await session.ReadAtAddressAsync(testStore.InsertAddresses[keyOrdinal], ref input, default, serialNo: maxLap + 1);
                     var (status, output) = readAsyncResult.Complete(out recordInfo);
-                    testStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
+                    TestStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
                 }
             }
 
@@ -576,6 +576,7 @@ namespace FASTER.test.readaddress
         }
     }
 #endif
+
     [TestFixture]
     public class ReadMinAddressTests
     {

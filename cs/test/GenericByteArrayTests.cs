@@ -86,7 +86,7 @@ namespace FASTER.test
 
         class MyByteArrayFuncs : SimpleFunctions<byte[], byte[]>
         {
-            public override void ReadCompletionCallback(ref byte[] key, ref byte[] input, ref byte[] output, Empty ctx, Status status)
+            public override void ReadCompletionCallback(ref byte[] key, ref byte[] input, ref byte[] output, Empty ctx, Status status, RecordInfo recordInfo)
             {
                 Assert.IsTrue(output.SequenceEqual(key));
             }

@@ -17,7 +17,7 @@ namespace FASTER.server
     /// <typeparam name="Functions"></typeparam>
     /// <typeparam name="ParameterSerializer"></typeparam>
     public sealed class FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer> : ISessionProvider
-            where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
+            where Functions : IFunctions<Key, Value, Input, Output, long>
             where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly FasterKV<Key, Value> store;

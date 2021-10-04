@@ -65,65 +65,6 @@ namespace FASTER.test
             Assert.AreEqual(key.kfield2 + input.ifield2, output.value.vfield2);
         }
 
-        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status)
-        {
-            Assert.AreEqual(Status.OK, status);
-            Assert.AreEqual(key.kfield1, output.value.vfield1);
-            Assert.AreEqual(key.kfield2, output.value.vfield2);
-        }
-
-        // Read functions
-        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
-        {
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
-        {
-            dst.value = value;
-            return true;
-        }
-
-        // RMW functions
-        public override void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output)
-        {
-            value.vfield1 = input.ifield1;
-            value.vfield2 = input.ifield2;
-            output.value = value;
-        }
-
-        public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output)
-        {
-            value.vfield1 += input.ifield1;
-            value.vfield2 += input.ifield2;
-            output.value = value;
-            return true;
-        }
-
-        public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output) => true;
-
-        public override void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output)
-        {
-            newValue.vfield1 = oldValue.vfield1 + input.ifield1;
-            newValue.vfield2 = oldValue.vfield2 + input.ifield2;
-            output.value = newValue;
-        }
-    }
-
-    public class AdvancedFunctions : AdvancedFunctionsWithContext<Empty>
-    {
-    }
-
-    public class AdvancedFunctionsWithContext<TContext> : AdvancedFunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, TContext>
-    {
-        public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status)
-        {
-            Assert.AreEqual(Status.OK, status);
-            Assert.AreEqual(key.kfield1 + input.ifield1, output.value.vfield1);
-            Assert.AreEqual(key.kfield2 + input.ifield2, output.value.vfield2);
-        }
-
         public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordInfo recordInfo)
         {
             Assert.AreEqual(Status.OK, status);
@@ -177,7 +118,7 @@ namespace FASTER.test
             Assert.AreEqual(Status.OK, status);
         }
 
-        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status)
+        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordInfo recordInfo)
         {
             if (ctx == 0)
             {
@@ -192,13 +133,13 @@ namespace FASTER.test
         }
 
         // Read functions
-        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, long address)
         {
             dst.value = value;
             return true;
         }
 
-        public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -211,7 +152,7 @@ namespace FASTER.test
             value.vfield2 = input.ifield2;
         }
 
-        public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output)
+        public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, long address)
         {
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
@@ -220,7 +161,7 @@ namespace FASTER.test
 
         public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output) => true;
 
-        public override void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output)
+        public override void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, long address)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
@@ -240,7 +181,7 @@ namespace FASTER.test
             Assert.AreEqual(Status.OK, status);
         }
 
-        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordInfo recordInfo)
         {
             Assert.AreEqual(Status.OK, status);
             Assert.AreEqual(key.kfield1, output.value.vfield1);
@@ -248,13 +189,13 @@ namespace FASTER.test
         }
 
         // Read functions
-        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, long address)
         {
             dst.value = value;
             return true;
         }
 
-        public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst)
+        public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -263,7 +204,7 @@ namespace FASTER.test
         // Upsert functions
         public override void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst) => dst = src;
 
-        public override bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst)
+        public override bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst, ref RecordInfo recordInfo, long address)
         {
             Interlocked.Increment(ref _concurrentWriterCallCount);
             return false;
@@ -276,7 +217,7 @@ namespace FASTER.test
             value.vfield2 = input.ifield2;
         }
 
-        public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output)
+        public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, long address)
         {
             Interlocked.Increment(ref _inPlaceUpdaterCallCount);
             return false;
@@ -284,7 +225,7 @@ namespace FASTER.test
 
         public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output) => true;
 
-        public override void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output)
+        public override void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, long address)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
@@ -294,32 +235,6 @@ namespace FASTER.test
     class RMWSimpleFunctions<Key, Value> : SimpleFunctions<Key, Value>
     {
         public RMWSimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
-
-        public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output)
-        {
-            base.InitialUpdater(ref key, ref input, ref value, ref output);
-            output = input;
-        }
-
-        /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output)
-        {
-            base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
-            output = newValue;
-        }
-
-        /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output)
-        {
-            base.InPlaceUpdater(ref key, ref input, ref value, ref output);
-            output = value; 
-            return true;
-        }
-    }
-
-    class AdvancedRMWSimpleFunctions<Key, Value> : AdvancedSimpleFunctions<Key, Value>
-    {
-        public AdvancedRMWSimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
 
         public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output)
         {
@@ -338,7 +253,7 @@ namespace FASTER.test
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address)
         {
             base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
-            output = value;
+            output = value; 
             return true;
         }
     }

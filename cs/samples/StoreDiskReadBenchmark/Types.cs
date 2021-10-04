@@ -55,10 +55,10 @@ namespace StoreDiskReadBenchmark
     public sealed class MyFuncs : FunctionsBase<Key, Value, Input, Output, Empty>
     {
         // Read functions
-        public override bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        public override bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
         { if (dst == null) dst = new Output(); dst.value = value; return true; }
 
-        public override bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        public override bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
         { if (dst == null) dst = new Output(); dst.value = value; return true; }
 
         // RMW functions
@@ -66,18 +66,18 @@ namespace StoreDiskReadBenchmark
         {
             value.vfield1 = input.ifield1;
         }
-        public override void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
+        public override void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
         }
-        public override bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
+        public override bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             value.vfield1 += input.ifield1;
             return true;
         }
 
         // Completion callbacks
-        public override void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordInfo recordInfo)
         {
             if (status != Status.OK || output.value.vfield1 != key.key)
             {

@@ -123,7 +123,7 @@ namespace FASTER.test.Expiration
                                                 //          Verify tombstone is revivified on later simple RMW (IU called within FASTER-acquired RecordInfo.SpinLock)
         };
 
-        public class ExpirationFunctions : AdvancedFunctionsBase<int, VLValue, ExpirationInput, ExpirationOutput, Empty>
+        public class ExpirationFunctions : FunctionsBase<int, VLValue, ExpirationInput, ExpirationOutput, Empty>
         {
             private static unsafe void VerifyValue(int key, ref VLValue value)
             {
@@ -220,7 +220,7 @@ namespace FASTER.test.Expiration
                         output.retrievedValue = newValue.field1;
                         return;
                     case TestOp.SetIfKeyExists:
-                        newValue.field1 = (int)input.value;
+                        newValue.field1 = input.value;
                         output.result = ExpirationResult.Updated;
                         output.retrievedValue = newValue.field1;
                         return;
@@ -429,7 +429,7 @@ namespace FASTER.test.Expiration
         IDevice log;
         ExpirationFunctions functions;
         FasterKV<int, VLValue> fht;
-        AdvancedClientSession<int, VLValue, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions> session;
+        ClientSession<int, VLValue, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions> session;
 
         [SetUp]
         public void Setup()

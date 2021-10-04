@@ -9,7 +9,7 @@ namespace FASTER.server
     /// <summary>
     /// Callback functions using SpanByteAndMemory output, for SpanByte key, value, input
     /// </summary>
-    public class SpanByteFunctionsForServer<Context> : SpanByteAdvancedFunctions<SpanByte, SpanByteAndMemory, Context>
+    public class SpanByteFunctionsForServer<Context> : SpanByteFunctions<SpanByte, SpanByteAndMemory, Context>
     {
         /// <summary>
         /// Memory pool

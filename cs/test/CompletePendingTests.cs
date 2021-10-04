@@ -60,7 +60,6 @@ namespace FASTER.test
             Assert.AreEqual(key + numRecords * 60, contextStruct.cfield2);
         }
 
-        // This class reduces code duplication due to ClientSession vs. AdvancedClientSession
         class ProcessPending
         {
             // Get the first chunk of outputs as a group, testing realloc.
@@ -131,76 +130,6 @@ namespace FASTER.test
         public async ValueTask ReadAndCompleteWithPendingOutput([Values]bool useRMW, [Values]bool isAsync)
         {
             using var session = fht.For(new FunctionsWithContext<ContextStruct>()).NewSession<FunctionsWithContext<ContextStruct>>();
-            Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
-
-            ProcessPending processPending = new ProcessPending();
-
-            for (var key = 0; key < numRecords; ++key)
-            {
-                var keyStruct = NewKeyStruct(key);
-                var valueStruct = NewValueStruct(key);
-                processPending.keyAddressDict[key] = fht.Log.TailAddress;
-                session.Upsert(ref keyStruct, ref valueStruct);
-            }
-
-            // Flush to make reads go pending.
-            fht.Log.FlushAndEvict(wait: true);
-
-            for (var key = 0; key < numRecords; ++key)
-            {
-                var keyStruct = NewKeyStruct(key);
-                var inputStruct = NewInputStruct(key);
-                var contextStruct = NewContextStruct(key);
-                OutputStruct outputStruct = default;
-
-                CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
-                if ((key % (numRecords / 10)) == 0)
-                {
-                    var ksUnfound = keyStruct;
-                    ksUnfound.kfield1 += numRecords * 10;
-                    if (session.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct) == Status.PENDING)
-                    {
-                        if (isAsync)
-                            completedOutputs = await session.CompletePendingWithOutputsAsync();
-                        else
-                            session.CompletePendingWithOutputs(out completedOutputs, wait: true);
-                        processPending.VerifyOneNotFound(completedOutputs, ref ksUnfound);
-                    }
-                }
-
-                // We don't use context (though we verify it), and Read does not use input.
-                var status = useRMW
-                    ? session.RMW(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct)
-                    : session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
-                if (status == Status.PENDING)
-                {
-                    if (processPending.IsFirst())
-                    {
-                        session.CompletePending(wait: true);        // Test that this does not instantiate CompletedOutputIterator
-                        Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
-                        continue;
-                    }
-
-                    if (!processPending.DeferPending())
-                    {
-                        if (isAsync)
-                            completedOutputs = await session.CompletePendingWithOutputsAsync();
-                        else
-                            session.CompletePendingWithOutputs(out completedOutputs, wait: true);
-                        processPending.Process(completedOutputs, useRMW);
-                    }
-                    continue;
-                }
-                Assert.AreEqual(Status.OK, status);
-            }
-            processPending.VerifyNoDeferredPending();
-        }
-
-        [Test]
-        [Category("FasterKV")]
-        public async ValueTask AdvReadAndCompleteWithPendingOutput([Values] bool useRMW, [Values]bool isAsync)
-        {
-            using var session = fht.For(new AdvancedFunctionsWithContext<ContextStruct>()).NewSession<AdvancedFunctionsWithContext<ContextStruct>>();
             Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
 
             ProcessPending processPending = new ProcessPending();

@@ -13,9 +13,9 @@ namespace FASTER.test
     [TestFixture]
     internal class LockTests
     {
-        internal class Functions : AdvancedSimpleFunctions<int, int>
+        internal class Functions : SimpleFunctions<int, int>
         {
-            bool Increment(ref int dst)
+            static bool Increment(ref int dst)
             {
                 ++dst;
                 return true;
@@ -35,7 +35,7 @@ namespace FASTER.test
         }
 
         private FasterKV<int, int> fkv;
-        private AdvancedClientSession<int, int, int, int, Empty, Functions> session;
+        private ClientSession<int, int, int, int, Empty, Functions> session;
         private IDevice log;
 
         [SetUp]
@@ -107,7 +107,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void AdvancedFunctionsLockTest()
+        public void FunctionsLockTest()
         {
             // Populate
             const int numRecords = 100;

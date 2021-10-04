@@ -19,35 +19,41 @@ namespace FASTER.core
         /// <summary>
         /// No reads during compaction
         /// </summary>
-        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst) => true;
+        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
+
+        /// <summary>
+        /// No ConcurrentDeleter needed for compaction
+        /// </summary>
+        public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
 
         /// <summary>
         /// For compaction, we never perform concurrent writes as rolled over data defers to
         /// newly inserted data for the same key.
         /// </summary>
-        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst) => true;
+        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => true;
 
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output) { }
-        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => true;
+        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) { }
+        
+        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
         public void DeleteCompletionCallback(ref Key key, Context ctx) { }
 
         public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) { }
 
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => true;
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
         public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output) => true;
 
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo) { }
 
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
 
         /// <summary>
         /// No reads during compaction
         /// </summary>
-        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst) => true;
+        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address) => true;
 
         /// <summary>
         /// Write compacted live value to store
