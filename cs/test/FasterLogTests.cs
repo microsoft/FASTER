@@ -164,9 +164,9 @@ namespace FASTER.test
             // Enter in some entries then wait on this separate thread
             await log.EnqueueAsync(entry);
             await log.EnqueueAsync(entry);
-            var commitTask = await log.CommitAsync(null, token);
+            var commitTask = await log.CommitAsync(null, token: token);
             await log.EnqueueAsync(entry);
-            await log.CommitAsync(commitTask, token);
+            await log.CommitAsync(commitTask, token: token);
         }
     }
 
@@ -280,7 +280,7 @@ namespace FASTER.test
                     }
                     Assert.IsFalse(waitingReader.IsCompleted);
 
-                    await log.CommitAsync(token);
+                    await log.CommitAsync(token: token);
                     while (!waitingReader.IsCompleted) ;
                     Assert.IsTrue(waitingReader.IsCompleted);
 

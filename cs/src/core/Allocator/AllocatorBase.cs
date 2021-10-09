@@ -1124,7 +1124,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="tailAddress"></param>
         /// <param name="notifyDone"></param>
-        public bool ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone)
+        public bool ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone, long version = -1)
         {
             notifyDone = null;
             tailAddress = GetTailAddress();
@@ -1416,9 +1416,11 @@ namespace FASTER.core
                     FlushCallback?.Invoke(
                         new CommitInfo
                         {
+                            Version = -1,
                             FromAddress = oldFlushedUntilAddress,
                             UntilAddress = currentFlushedUntilAddress,
-                            ErrorCode = errorCode
+                            ErrorCode = errorCode,
+                            Cookie = null
                         });
 
                     this.FlushEvent.Set();

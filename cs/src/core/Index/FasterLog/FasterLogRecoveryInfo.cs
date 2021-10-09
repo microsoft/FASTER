@@ -32,12 +32,19 @@ namespace FASTER.core
         public Dictionary<string, long> Iterators;
 
         /// <summary>
+        /// User-specified commit cookie
+        /// </summary>
+        public byte[] Cookie;
+
+        /// <summary>
         /// Initialize
         /// </summary>
         public void Initialize()
         {
             BeginAddress = 0;
             FlushedUntilAddress = 0;
+            Iterators = null;
+            Cookie = null;
         }
 
         /// <summary>
@@ -80,6 +87,15 @@ namespace FASTER.core
                     Iterators.Add(reader.ReadString(), reader.ReadInt64());
                 }
             }
+            
+            try
+            {
+                count = reader.ReadInt32();
+            }
+            catch { }
+
+            if (count > 0)
+                Cookie = reader.ReadBytes(count);
         }
 
         /// <summary>
@@ -110,6 +126,16 @@ namespace FASTER.core
                         writer.Write(kvp.Key);
                         writer.Write(kvp.Value);
                     }
+                }
+                else
+                {
+                    writer.Write(0);
+                }
+
+                if (Cookie != null)
+                {
+                    writer.Write(Cookie.Length);
+                    writer.Write(Cookie);
                 }
                 else
                 {

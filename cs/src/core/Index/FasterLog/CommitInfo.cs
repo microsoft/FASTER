@@ -13,6 +13,11 @@ namespace FASTER.core
     public struct CommitInfo
     {
         /// <summary>
+        /// Version of the commit
+        /// </summary>
+        public long Version;
+        
+        /// <summary>
         /// From address of commit range
         /// </summary>
         public long FromAddress;
@@ -26,6 +31,11 @@ namespace FASTER.core
         /// Error code (0 = success)
         /// </summary>
         public uint ErrorCode;
+
+        /// <summary>
+        /// User specified commit cookie
+        /// </summary>
+        public byte[] Cookie;
     }
 
     /// <summary>

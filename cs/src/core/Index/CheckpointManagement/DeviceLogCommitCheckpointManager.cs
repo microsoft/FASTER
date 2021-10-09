@@ -99,9 +99,10 @@ namespace FASTER.core
         #region ILogCommitManager
 
         /// <inheritdoc />
-        public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata)
+        public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long proposedCommitNum = -1)
         {
-            var device = NextCommitDevice();
+            Debug.Assert(!overwriteLogCommits || overwriteLogCommits && proposedCommitNum == -1);
+            var device = NextCommitDevice(proposedCommitNum);
 
             if (device == null) return;
 
@@ -176,14 +177,15 @@ namespace FASTER.core
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
         }
 
-        private IDevice NextCommitDevice()
+        private IDevice NextCommitDevice(long proposedCommitNum)
         {
+            var actualNum = proposedCommitNum == -1 ? commitNum + 1 : proposedCommitNum;
             if (overwriteLogCommits)
             {
                 if (_disposed) return null;
                 if (singleLogCommitDevice == null)
                 {
-                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(proposedCommitNum));
                     if (_disposed)
                     {
                         singleLogCommitDevice?.Dispose();
@@ -194,11 +196,12 @@ namespace FASTER.core
                 return singleLogCommitDevice;
             }
 
-            return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum++));
+            var result =  deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(actualNum));
+            commitNum = actualNum;
+            return result;
         }
         #endregion
-
-
+        
         #region ICheckpointManager
         /// <inheritdoc />
         public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)

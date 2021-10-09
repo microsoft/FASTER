@@ -28,7 +28,9 @@ namespace FASTER.core
         /// <param name="beginAddress">Committed begin address (for information only, not necessary to persist)</param>
         /// <param name="untilAddress">Address committed until (for information only, not necessary to persist)</param>
         /// <param name="commitMetadata">Commit metadata</param>
-        public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata)
+        /// <param name="commitNum"> Ignored param </param>
+
+        public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long proposedCommitNum = -1)
         {
             // Two phase to ensure we write metadata in single Write operation
             using MemoryStream ms = new();

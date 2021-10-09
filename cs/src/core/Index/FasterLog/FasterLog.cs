@@ -472,11 +472,11 @@ namespace FASTER.core
         /// ongoing commit fails.
         /// </summary>
         /// <returns></returns>
-        public async ValueTask CommitAsync(CancellationToken token = default)
+        public async ValueTask CommitAsync(long version = -1, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
             var task = CommitTask;
-            var tailAddress = CommitInternal();
+            var tailAddress = CommitInternal(version);
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
@@ -494,11 +494,11 @@ namespace FASTER.core
         /// from prevCommitTask to current fails.
         /// </summary>
         /// <returns></returns>
-        public async ValueTask<Task<LinkedCommitInfo>> CommitAsync(Task<LinkedCommitInfo> prevCommitTask, CancellationToken token = default)
+        public async ValueTask<Task<LinkedCommitInfo>> CommitAsync(Task<LinkedCommitInfo> prevCommitTask, long version = -1, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
             if (prevCommitTask == null) prevCommitTask = CommitTask;
-            var tailAddress = CommitInternal();
+            var tailAddress = CommitInternal(version);
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
@@ -941,13 +941,14 @@ namespace FASTER.core
                 FasterLogRecoveryInfo info = new FasterLogRecoveryInfo
                 {
                     BeginAddress = BeginAddress,
-                    FlushedUntilAddress = commitInfo.UntilAddress
+                    FlushedUntilAddress = commitInfo.UntilAddress,
+                    Cookie = commitInfo.Cookie
                 };
 
                 // Take snapshot of persisted iterators
                 info.SnapshotIterators(PersistedIterators);
 
-                logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
+                logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray(), commitInfo.Version);
 
                 LastPersistedIterators = info.Iterators;
                 CommittedBeginAddress = info.BeginAddress;
@@ -1052,7 +1053,7 @@ namespace FASTER.core
             // Update commit to release pending iterators.
             var lci = new LinkedCommitInfo
             {
-                CommitInfo = new CommitInfo { FromAddress = BeginAddress, UntilAddress = FlushedUntilAddress },
+                CommitInfo = new CommitInfo { Version = -1, FromAddress = BeginAddress, UntilAddress = FlushedUntilAddress },
                 NextTask = commitTcs.Task
             };
             _commitTcs?.TrySetResult(lci);
@@ -1358,6 +1359,7 @@ namespace FASTER.core
                     Interlocked.Increment(ref commitMetadataVersion);
                     CommitCallback(new CommitInfo
                     {
+                        Version = version,
                         FromAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
                         UntilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
                         ErrorCode = 0
