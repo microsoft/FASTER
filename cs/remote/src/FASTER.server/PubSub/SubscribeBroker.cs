@@ -28,6 +28,7 @@ namespace FASTER.server
         private AsyncQueue<(byte[], byte[])> publishQueue;
         readonly IKeySerializer<Key> keySerializer;
         readonly FasterLog log;
+        readonly IDevice device;
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(true);
         bool disposed = false;
@@ -41,7 +42,7 @@ namespace FASTER.server
         public SubscribeBroker(IKeySerializer<Key> keySerializer, string logDir, bool startFresh = true)
         {
             this.keySerializer = keySerializer;
-            var device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
+            device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
             if (startFresh)
@@ -139,8 +140,8 @@ namespace FASTER.server
                     if (disposed)
                         break;
 
-                    var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
-                    await iter.WaitAsync(cts.Token);
+                    using var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                    await iter.WaitAsync(cancellationToken);
                     while (iter.GetNext(out byte[] subscriptionKey, out _, out _, out _))
                     {
                         if (!iter.GetNext(out byte[] subscriptionValue, out _, out long currentAddress, out long nextAddress))
@@ -376,6 +377,7 @@ namespace FASTER.server
             subscriptions?.Clear();
             prefixSubscriptions?.Clear();
             log.Dispose();
+            device.Dispose();
         }
     }
 }
