@@ -32,7 +32,7 @@ namespace FASTER.server
         byte* recvBufferPtr;
         int readHead;
 
-        int seqNo, pendingSeqNo, msgnum, start;
+        int pendingSeqNo, msgnum, start;
         byte* dcurr;
 
         readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker;
