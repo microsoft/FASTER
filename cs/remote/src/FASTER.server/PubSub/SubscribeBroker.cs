@@ -140,19 +140,32 @@ namespace FASTER.server
                         break;
 
                     var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
-                    await iter.WaitAsync(cts.Token);
-                    while (iter.GetNext(out byte[] subscriptionKey, out _, out _, out _))
+                    await iter.WaitAsync(cancellationToken);
+                    while (iter.GetNext(out byte[] subscriptionKeyValueAscii, out _, out long currentAddress, out long nextAddress))
                     {
-                        if (!iter.GetNext(out byte[] subscriptionValue, out _, out long currentAddress, out long nextAddress))
-                        {
-                            if (currentAddress >= long.MaxValue) return;
-                        }
-                        if (!iter.GetNext(out byte[] ascii, out _, out currentAddress, out nextAddress))
-                        {
-                            if (currentAddress >= long.MaxValue) return;
-                        }
+                        if (currentAddress >= long.MaxValue) return;
                         truncateUntilAddress = nextAddress;
-                        uniqueKeys.Add(subscriptionKey, (subscriptionValue, ascii));
+
+                        unsafe
+                        {
+                            fixed (byte* subscriptionKeyValueAsciiPtr = &subscriptionKeyValueAscii[0])
+                            {
+                                int subscriptionKeyLength = *(int*)subscriptionKeyValueAsciiPtr + sizeof(int);
+                                int subscriptionValueLength = subscriptionKeyValueAscii.Length - (subscriptionKeyLength + sizeof(bool));
+                                byte[] subscriptionKey = new byte[subscriptionKeyLength];
+                                byte[] subscriptionValue = new byte[subscriptionValueLength];
+                                byte[] ascii = new byte[sizeof(bool)];
+
+                                fixed (byte* subscriptionKeyPtr = &subscriptionKey[0], subscriptionValuePtr = &subscriptionValue[0], asciiPtr = &ascii[0])
+                                {
+                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr, subscriptionKeyPtr, subscriptionKeyLength, subscriptionKeyLength);
+                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr + subscriptionKeyLength, subscriptionValuePtr, subscriptionValueLength, subscriptionValueLength);
+                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr + subscriptionKeyLength + subscriptionValueLength, asciiPtr, sizeof(bool), sizeof(bool));
+                                    if (!uniqueKeys.ContainsKey(subscriptionKey))
+                                        uniqueKeys.Add(subscriptionKey, (subscriptionValue, ascii));
+                                }
+                            }
+                        }
                     }
 
                     if (truncateUntilAddress > log.BeginAddress)
@@ -361,9 +374,19 @@ namespace FASTER.server
             var start = key;
             ref Key k = ref keySerializer.ReadKeyByRef(ref key);
             // TODO: this needs to be a single atomic enqueue
-            log.Enqueue(new Span<byte>(start, (int)(key - start)));
-            log.Enqueue(new Span<byte>(value, valueLength));
-            log.Enqueue(new Span<byte>(Unsafe.AsPointer(ref ascii), sizeof(bool)));
+            byte[] logEntryBytes = new byte[(key - start) + valueLength + sizeof(bool)];
+            fixed (byte* logEntryBytePtr = &logEntryBytes[0])
+            {
+                byte* dst = logEntryBytePtr;
+                Buffer.MemoryCopy(start, dst, (key - start), (key - start));
+                dst += (key - start);
+                Buffer.MemoryCopy(value, dst, valueLength, valueLength);
+                dst += valueLength;
+                byte* asciiPtr = (byte*)&ascii;
+                Buffer.MemoryCopy(asciiPtr, dst, sizeof(bool), sizeof(bool));
+            }
+
+            log.Enqueue(logEntryBytes);
             log.RefreshUncommitted();
         }
 
