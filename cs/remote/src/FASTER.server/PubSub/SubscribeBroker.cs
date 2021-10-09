@@ -141,7 +141,7 @@ namespace FASTER.server
                         break;
 
                     using var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
-                    await iter.WaitAsync(cts.Token);
+                    await iter.WaitAsync(cancellationToken);
                     while (iter.GetNext(out byte[] subscriptionKey, out _, out _, out _))
                     {
                         if (!iter.GetNext(out byte[] subscriptionValue, out _, out long currentAddress, out long nextAddress))
