@@ -7,7 +7,7 @@ namespace FASTER.remote.test
     [TestFixture]
     public class FixedLenBinaryPubSubTests
     {
-        FixedLenServer<long, long, long, long, SimpleFunctions<long, long, long>> server;
+        FixedLenServer<long, long, long, long, AdvancedSimpleFunctions<long, long, long>> server;
         FixedLenClient<long, long> client;
 
         [SetUp]
@@ -26,6 +26,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
+        [Repeat(10)]
         public void SubscribeKVTest()
         {
             var f = new FixedLenClientFunctions();
@@ -41,6 +42,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
+        [Repeat(10)]
         public void PrefixSubscribeKVTest()
         {
             var f = new FixedLenClientFunctions();
@@ -56,6 +58,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
+        [Repeat(10)]
         public void SubscribeTest()
         {
             var f = new FixedLenClientFunctions();
@@ -71,6 +74,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
+        [Repeat(10)]
         public void PrefixSubscribeTest()
         {
             var f = new FixedLenClientFunctions();
