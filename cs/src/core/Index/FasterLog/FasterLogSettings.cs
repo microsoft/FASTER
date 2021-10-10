@@ -89,6 +89,12 @@ namespace FASTER.core
         /// </summary>
         public bool ReadOnlyMode = false;
 
+        /// <summary>
+        /// When set to true --- automatically create a commit for every disk flush (which may happen in the background).
+        /// Otherwise, a commit will only be created and recoverable where Commit() is invoked manually 
+        /// </summary>
+        public bool AutoCommitOnFlush = true;
+
         internal LogSettings GetLogSettings()
         {
             return new LogSettings

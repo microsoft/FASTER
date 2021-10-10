@@ -1416,11 +1416,9 @@ namespace FASTER.core
                     FlushCallback?.Invoke(
                         new CommitInfo
                         {
-                            Version = -1,
                             FromAddress = oldFlushedUntilAddress,
                             UntilAddress = currentFlushedUntilAddress,
-                            ErrorCode = errorCode,
-                            Cookie = null
+                            ErrorCode = errorCode
                         });
 
                     this.FlushEvent.Set();

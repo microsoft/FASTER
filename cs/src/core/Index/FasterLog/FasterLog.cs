@@ -16,6 +16,19 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    internal class ManualCheckpointRequest
+    {
+        internal byte[] cookie;
+        internal long address, version;
+        internal TaskCompletionSource completed;
+        public ManualCheckpointRequest(byte[] cookie, long version)
+        {
+            this.cookie = cookie;
+            address = -1;
+            this.version = version;
+        }
+    }
+    
     /// <summary>
     /// FASTER log
     /// </summary>
@@ -36,6 +49,9 @@ namespace FASTER.core
             = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
         private TaskCompletionSource<Empty> refreshUncommittedTcs
             = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private readonly bool autoCommitOnFlush;
+        private ManualCheckpointRequest currentCheckpointRequest;
 
         /// <summary>
         /// Beginning address of log
@@ -167,6 +183,7 @@ namespace FASTER.core
                 allocator.HeadAddress = long.MaxValue;
             }
 
+            autoCommitOnFlush = false;
         }
 
         /// <summary>
@@ -467,16 +484,60 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Manually trigger a checkpoint at version v and persist with it the supplied cookie, when autoCommitOnFlush is
+        /// turned off. This is an advanced functionality, and user is expected to be responsible for supplying unique
+        /// and monotonically increasing version numbers.
+        /// </summary>
+        /// <param name="version"> version of the checkpoint </param>
+        /// <param name="cookie"> user-specified cookie </param>
+        /// <returns>whether the commit call failed and should be retried later</returns>
+        public bool ManualCommitWithCookie(long version, byte[] cookie)
+        {
+            if (autoCommitOnFlush)
+                throw new FasterException(
+                    "Checkpointing with cookie and custom versioning is only supported when auto commit is turned off");
+            
+            var newRequest = new ManualCheckpointRequest(cookie, version);
+            // Fail when a concurrent checkpoint is underway
+            if (Interlocked.CompareExchange(ref currentCheckpointRequest, newRequest, null) != null)
+                return false;
+            
+            if (allocator.ShiftReadOnlyToTail(out long tailAddress, out _))
+            {
+                newRequest.address = tailAddress;
+                epoch.Suspend();
+            }
+            else
+            {
+                // May need to commit begin address and/or iterators
+                epoch.Suspend();
+                var beginAddress = allocator.BeginAddress;
+                newRequest.address = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress;
+                if (beginAddress > CommittedBeginAddress || IteratorsChanged())
+                {
+                    Interlocked.Increment(ref commitMetadataVersion);
+                    CommitCallback(new CommitInfo
+                    {
+                        FromAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
+                        UntilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
+                        ErrorCode = 0,
+                    });
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Async commit log (until tail), completes only when we 
         /// complete the commit. Throws exception if this or any 
         /// ongoing commit fails.
         /// </summary>
         /// <returns></returns>
-        public async ValueTask CommitAsync(long version = -1, CancellationToken token = default)
+        public async ValueTask CommitAsync(CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
             var task = CommitTask;
-            var tailAddress = CommitInternal(version);
+            var tailAddress = CommitInternal();
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
@@ -494,11 +555,11 @@ namespace FASTER.core
         /// from prevCommitTask to current fails.
         /// </summary>
         /// <returns></returns>
-        public async ValueTask<Task<LinkedCommitInfo>> CommitAsync(Task<LinkedCommitInfo> prevCommitTask, long version = -1, CancellationToken token = default)
+        public async ValueTask<Task<LinkedCommitInfo>> CommitAsync(Task<LinkedCommitInfo> prevCommitTask, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
             if (prevCommitTask == null) prevCommitTask = CommitTask;
-            var tailAddress = CommitInternal(version);
+            var tailAddress = CommitInternal();
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
@@ -916,17 +977,39 @@ namespace FASTER.core
         /// </summary>
         private void CommitCallback(CommitInfo commitInfo)
         {
+            // Ignore any potential auto flushes when there's no active checkpoint task
+            if (!autoCommitOnFlush && currentCheckpointRequest == null) return;
+
             commitQueue.EnqueueAndTryWork(commitInfo, asTask: true);
         }
 
         private void SerialCommitCallbackWorker(CommitInfo commitInfo)
         {
-            // Check if commit is already covered
-            if (CommittedBeginAddress >= BeginAddress &&
-                CommittedUntilAddress >= commitInfo.UntilAddress &&
-                persistedCommitMetadataVersion >= commitMetadataVersion &&
-                commitInfo.ErrorCode == 0)
-                return;
+            long version = -1;
+            byte[] cookie = null;
+            if (!autoCommitOnFlush)
+            {
+                Debug.Assert(currentCheckpointRequest != null);
+                // Wait for checkpoint request address to become known to avoid missing the address
+                while (currentCheckpointRequest.address == -1)
+                    Thread.Yield();
+                // Return if this is a flush that corresponds to the manual commit
+                if (commitInfo.UntilAddress != currentCheckpointRequest.address) return;
+                // Fetch the associated cookie and version information, and unblock any potential concurrent checkpoint
+                // requests
+                version = currentCheckpointRequest.version;
+                cookie = currentCheckpointRequest.cookie;
+                currentCheckpointRequest = null;
+            }
+            else
+            {
+                // Check if commit is already covered
+                if (CommittedBeginAddress >= BeginAddress &&
+                    CommittedUntilAddress >= commitInfo.UntilAddress &&
+                    persistedCommitMetadataVersion >= commitMetadataVersion &&
+                    commitInfo.ErrorCode == 0)
+                    return;
+            }
 
             if (commitInfo.ErrorCode == 0)
             {
@@ -937,18 +1020,18 @@ namespace FASTER.core
                     commitInfo.FromAddress = CommittedUntilAddress;
                 if (CommittedUntilAddress > commitInfo.UntilAddress)
                     commitInfo.UntilAddress = CommittedUntilAddress;
-
+                
                 FasterLogRecoveryInfo info = new FasterLogRecoveryInfo
                 {
                     BeginAddress = BeginAddress,
                     FlushedUntilAddress = commitInfo.UntilAddress,
-                    Cookie = commitInfo.Cookie
+                    Cookie = cookie
                 };
 
                 // Take snapshot of persisted iterators
                 info.SnapshotIterators(PersistedIterators);
 
-                logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray(), commitInfo.Version);
+                logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray(), version);
 
                 LastPersistedIterators = info.Iterators;
                 CommittedBeginAddress = info.BeginAddress;
@@ -1053,7 +1136,7 @@ namespace FASTER.core
             // Update commit to release pending iterators.
             var lci = new LinkedCommitInfo
             {
-                CommitInfo = new CommitInfo { Version = -1, FromAddress = BeginAddress, UntilAddress = FlushedUntilAddress },
+                CommitInfo = new CommitInfo { FromAddress = BeginAddress, UntilAddress = FlushedUntilAddress },
                 NextTask = commitTcs.Task
             };
             _commitTcs?.TrySetResult(lci);
@@ -1335,7 +1418,7 @@ namespace FASTER.core
         {
             if (readOnlyMode)
                 throw new FasterException("Cannot commit in read-only mode");
-
+            
             epoch.Resume();
             if (allocator.ShiftReadOnlyToTail(out long tailAddress, out _))
             {
@@ -1359,10 +1442,9 @@ namespace FASTER.core
                     Interlocked.Increment(ref commitMetadataVersion);
                     CommitCallback(new CommitInfo
                     {
-                        Version = version,
                         FromAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
                         UntilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
-                        ErrorCode = 0
+                        ErrorCode = 0,
                     });
                 }
             }
