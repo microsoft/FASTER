@@ -10,7 +10,7 @@ namespace FASTER.server
     /// </summary>
     public sealed class SpanByteFasterKVProvider : ISessionProvider
     {
-        readonly StoreWrapper<SpanByte, SpanByte> storeWrapper;
+        readonly FasterKV<SpanByte, SpanByte> store;
         readonly SpanByteServerSerializer serializer;
         readonly SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
         readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
@@ -22,11 +22,20 @@ namespace FASTER.server
         /// <param name="store"></param>
         /// <param name="kvBroker"></param>
         /// <param name="broker"></param>
-        /// <param name="tryRecover"></param>
+        /// <param name="serverOptions"></param>
         /// <param name="maxSizeSettings"></param>
-        public SpanByteFasterKVProvider(FasterKV<SpanByte, SpanByte> store, SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker = null, SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null, bool tryRecover = true, MaxSizeSettings maxSizeSettings = default)
+        public SpanByteFasterKVProvider(FasterKV<SpanByte, SpanByte> store, SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker = null, SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null, ServerOptions serverOptions = null, MaxSizeSettings maxSizeSettings = default)
         {
-            this.storeWrapper = new StoreWrapper<SpanByte, SpanByte>(store, tryRecover);
+            this.store = store;
+            if ((serverOptions ?? new ServerOptions()).Recover)
+            {
+                try
+                {
+                    store.Recover();
+                }
+                catch
+                { }
+            }
             this.kvBroker = kvBroker;
             this.broker = broker;
             this.serializer = new SpanByteServerSerializer();
@@ -40,10 +49,10 @@ namespace FASTER.server
             {
                 case WireFormat.WebSocket:
                     return new WebsocketServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
-                        (socket, storeWrapper.store, new SpanByteFunctionsForServer<long>(), serializer, maxSizeSettings, kvBroker, broker);
+                        (socket, store, new SpanByteFunctionsForServer<long>(), serializer, maxSizeSettings, kvBroker, broker);
                 default:
                     return new BinaryServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
-                        (socket, storeWrapper.store, new SpanByteFunctionsForServer<long>(), serializer, maxSizeSettings, kvBroker, broker);
+                        (socket, store, new SpanByteFunctionsForServer<long>(), serializer, maxSizeSettings, kvBroker, broker);
             }
         }
     }

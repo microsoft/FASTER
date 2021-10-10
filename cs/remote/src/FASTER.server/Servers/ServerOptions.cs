@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using FASTER.core;
 
 namespace FASTER.server
@@ -62,42 +63,48 @@ namespace FASTER.server
         /// </summary>
         public bool EnablePubSub = true;
 
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        public ServerOptions()
+        {
+        }
+
         internal int MemorySizeBits()
         {
             long size = ParseSize(MemorySize);
-            int bits = (int)Math.Floor(Math.Log(size, 2));
-            if (size != Math.Pow(2, bits))
+            long adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
                 Trace.WriteLine($"Warning: using lower log memory size than specified (power of 2)");
-            return bits;
+            return (int)Math.Log(adjustedSize, 2);
         }
 
         internal int PageSizeBits()
         {
             long size = ParseSize(PageSize);
-            int bits = (int)Math.Ceiling(Math.Log(size, 2));
-            if (size != Math.Pow(2, bits))
+            long adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
                 Trace.WriteLine($"Warning: using lower page size than specified (power of 2)");
-            return bits;
+            return (int)Math.Log(adjustedSize, 2);
         }
 
         internal int SegmentSizeBits()
         {
             long size = ParseSize(SegmentSize);
-            int bits = (int)Math.Ceiling(Math.Log(size, 2));
-            if (size != Math.Pow(2, bits))
+            long adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
                 Trace.WriteLine($"Warning: using lower disk segment size than specified (power of 2)");
-            return bits;
+            return (int)Math.Log(adjustedSize, 2);
         }
 
         internal int IndexSizeCachelines()
         {
             long size = ParseSize(IndexSize);
-            int bits = (int)Math.Ceiling(Math.Log(size, 2));
-            long adjustedSize = 1L << bits;
-            if (adjustedSize < 64) throw new Exception("Invalid index size");
+            long adjustedSize = PreviousPowerOf2(size);
+            if (adjustedSize < 64 || adjustedSize > (1L << 37)) throw new Exception("Invalid index size");
             if (size != adjustedSize)
                 Trace.WriteLine($"Warning: using lower hash index size than specified (power of 2)");
-            return 1 << (bits - 6);
+            return (int)(adjustedSize / 64);
         }
 
         internal void GetSettings(out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
@@ -118,12 +125,50 @@ namespace FASTER.server
             indexSize = IndexSizeCachelines();
             Trace.WriteLine($"[Store] Using hash index size of {PrettySize(indexSize * 64L)} ({PrettySize(indexSize)} cache lines)");
 
-            var device = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "Store/hlog", preallocateFile: false);
+            if (LogDir == null)
+                LogDir = Directory.GetCurrentDirectory();
+
+            var device = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "/Store/hlog");
             logSettings.LogDevice = device;
 
-            checkpointSettings = new CheckpointSettings {
-                CheckPointType = CheckpointType.Snapshot, 
-                CheckpointDir = CheckpointDir ?? (LogDir + "Store/checkpoints"),
+            checkpointSettings = new CheckpointSettings
+            {
+                CheckPointType = CheckpointType.Snapshot,
+                CheckpointDir = CheckpointDir ?? (LogDir + "/Store/checkpoints"),
+                RemoveOutdated = true,
+            };
+        }
+
+        internal void GetObjectStoreSettings(out LogSettings objLogSettings, out CheckpointSettings objCheckpointSettings, out int objIndexSize)
+        {
+            objLogSettings = new LogSettings { PreallocateLog = false };
+
+            objLogSettings.PageSizeBits = PageSizeBits();
+            Trace.WriteLine($"[Object Store] Using page size of {PrettySize((long)Math.Pow(2, objLogSettings.PageSizeBits))}");
+
+            objLogSettings.MemorySizeBits = MemorySizeBits();
+            Trace.WriteLine($"[Object Store] Using log memory size of {PrettySize((long)Math.Pow(2, objLogSettings.MemorySizeBits))}");
+
+            Trace.WriteLine($"[Object Store] There are {PrettySize(1 << (objLogSettings.MemorySizeBits - objLogSettings.PageSizeBits))} log pages in memory");
+
+            objLogSettings.SegmentSizeBits = SegmentSizeBits();
+            Trace.WriteLine($"[Object Store] Using disk segment size of {PrettySize((long)Math.Pow(2, objLogSettings.SegmentSizeBits))}");
+
+            objIndexSize = IndexSizeCachelines() / 64;
+            Trace.WriteLine($"[Object Store] Using hash index size of {PrettySize(objIndexSize * 64L)} ({PrettySize(objIndexSize)} cache lines)");
+
+            if (LogDir == null)
+                LogDir = Directory.GetCurrentDirectory();
+
+            var device = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "/ObjectStore/hlog");
+            objLogSettings.LogDevice = device;
+            var objdevice = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "/ObjectStore/hlog.obj");
+            objLogSettings.ObjectLogDevice = objdevice;
+
+            objCheckpointSettings = new CheckpointSettings
+            {
+                CheckPointType = CheckpointType.Snapshot,
+                CheckpointDir = CheckpointDir ?? (LogDir + "/ObjectStore/checkpoints"),
                 RemoveOutdated = true,
             };
         }
@@ -180,6 +225,17 @@ namespace FASTER.server
             else if (exp < 0)
                 return v.ToString() + suffix[-exp / 3 - 1];
             return v.ToString();
+        }
+
+        private long PreviousPowerOf2(long v)
+        {
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            return v - (v >> 1);
         }
     }
 }
