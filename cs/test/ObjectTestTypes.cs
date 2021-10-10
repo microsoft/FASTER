@@ -199,7 +199,8 @@ namespace FASTER.test
             if (dst == null)
                 dst = new MyOutput();
             dst.value = value;
-            return true;        }
+            return true;
+        }
 
         public override bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
         {
@@ -265,7 +266,8 @@ namespace FASTER.test
         public override bool ConcurrentReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst)
         {
             dst.value = value;
-            return true;        }
+            return true;
+        }
 
         public override bool ConcurrentWriter(ref int key, ref MyValue src, ref MyValue dst)
         {
@@ -344,7 +346,8 @@ namespace FASTER.test
         public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst)
         {
             dst.value = value;
-            return true;        }
+            return true;
+        }
 
         public override bool ConcurrentWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
         {

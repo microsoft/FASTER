@@ -39,17 +39,17 @@ namespace FASTER.common
         }
 
         /// <summary>
-        /// Write serial number to memory
+        /// Write seqNum to memory
         /// </summary>
-        /// <param name="seqNum">Message type</param>
-        /// <param name="dst">Destination memory</param>
-        /// <param name="length">Length of destination</param>
-        /// <returns>Whether write succeeded</returns>
+        /// <param name="seqNum"></param>
+        /// <param name="dst"></param>
+        /// <param name="length"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool Write(long seqNum, ref byte* dst, int length)
         {
             if (length < sizeof(long)) return false;
-            *(long*) dst = seqNum;
+            *(long*)dst = seqNum;
             dst += sizeof(long);
             return true;
         }
@@ -69,11 +69,11 @@ namespace FASTER.common
         /// Read serial number
         /// </summary>
         /// <param name="dst">Source memory</param>
-        /// <returns>Message type</returns>
+        /// <returns>Serial number</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe long ReadSerialNum(ref byte* dst)
         {
-            var result = *(long*) dst;
+            var result = *(long*)dst;
             dst += sizeof(long);
             return result;
         }
