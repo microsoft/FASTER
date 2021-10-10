@@ -20,7 +20,6 @@ namespace FASTER.core
     {
         internal byte[] cookie;
         internal long address, version;
-        internal TaskCompletionSource completed;
         public ManualCheckpointRequest(byte[] cookie, long version)
         {
             this.cookie = cookie;
