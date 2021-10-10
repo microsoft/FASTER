@@ -1575,7 +1575,7 @@ namespace FASTER.core
                 }
                 else
                 {
-                    // CAS failed. Fall through to call InternalRMW again to restart the sequence and return that status.
+                    // CAS failed. Retry in loop.
                     hlog.GetInfo(newPhysicalAddress).Invalid = true;
                 }
                 #endregion

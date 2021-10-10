@@ -34,6 +34,15 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Constructor using SpanByte at given (fixed) pointer, of given length
+        /// </summary>
+        public SpanByteAndMemory(void* pointer, int length)
+        {
+            SpanByte = new SpanByte(length, (IntPtr)pointer);
+            Memory = default;
+        }
+
+        /// <summary>
         /// Get length
         /// </summary>
         public int Length
