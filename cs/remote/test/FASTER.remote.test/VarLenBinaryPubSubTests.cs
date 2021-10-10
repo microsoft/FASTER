@@ -26,6 +26,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
+        [Repeat(10)]
         public void SubscribeKVTest()
         {
             Random r = new Random(23);
@@ -48,6 +49,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
+        [Repeat(10)]
         public void PSubscribeKVTest()
         {
             Random r = new Random(23);
@@ -74,6 +76,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
+        [Repeat(10)]
         public void SubscribeTest()
         {
             Random r = new Random(23);
@@ -95,6 +98,7 @@ namespace FASTER.remote.test
         }
 
         [Test]
+        [Repeat(10)]
         public void PSubscribeTest()
         {
             Random r = new Random(23);
