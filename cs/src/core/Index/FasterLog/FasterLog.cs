@@ -88,6 +88,11 @@ namespace FASTER.core
         public long CommittedBeginAddress;
 
         /// <summary>
+        /// Recovered Commit Cookie
+        /// </summary>
+        public byte[] RecoveredCookie;
+
+        /// <summary>
         /// Task notifying commit completions
         /// </summary>
         internal Task<LinkedCommitInfo> CommitTask => commitTcs.Task;
@@ -130,10 +135,11 @@ namespace FASTER.core
         /// Create new log instance
         /// </summary>
         /// <param name="logSettings"></param>
-        public FasterLog(FasterLogSettings logSettings)
+        public FasterLog(FasterLogSettings logSettings, long requestedVersion = -1)
             : this(logSettings, false)
         {
-            this.RecoveredIterators = Restore();
+            Restore(out var it, out RecoveredCookie, requestedVersion);
+            RecoveredIterators = it;
         }
 
         /// <summary>
@@ -994,8 +1000,8 @@ namespace FASTER.core
                     Thread.Yield();
                 // Return if this is a flush that corresponds to the manual commit
                 if (commitInfo.UntilAddress != currentCheckpointRequest.address) return;
-                // Fetch the associated cookie and version information, and unblock any potential concurrent checkpoint
-                // requests
+                // Fetch the associated cookie and version information, and unblock any potential concurrent
+                // checkpoint requests
                 version = currentCheckpointRequest.version;
                 cookie = currentCheckpointRequest.cookie;
                 currentCheckpointRequest = null;
@@ -1105,7 +1111,7 @@ namespace FASTER.core
             if (!readOnlyMode)
                 throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            this.Restore();
+            this.Restore(out _, out _);
             SignalWaitingROIterators();
         }
 
@@ -1144,24 +1150,41 @@ namespace FASTER.core
         /// <summary>
         /// Restore log synchronously
         /// </summary>
-        private Dictionary<string, long> Restore()
+        private bool Restore(out Dictionary<string, long> iterators, out byte[] cookie, long requestedVersion = -1)
         {
+            iterators = null;
+            cookie = null;
+            if (requestedVersion != -1)
+                return RestoreFromCommitNum(requestedVersion, out iterators, out cookie);
+            
             foreach (var commitNum in logCommitManager.ListCommits())
             {
                 try
                 {
-                    if (!PrepareToRestoreFromCommit(commitNum, out FasterLogRecoveryInfo info, out long headAddress))
-                        return default;
-
-                    if (headAddress > 0)
-                        allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress);
-
-                    return CompleteRestoreFromCommit(info);
+                    return RestoreFromCommitNum(requestedVersion, out iterators, out cookie);
                 }
                 catch { }
             }
             Debug.WriteLine("Unable to recover using any available commit");
-            return null;
+            return false;
+        }
+
+        private bool RestoreFromCommitNum(long commitNum, out Dictionary<string, long> iterators, out byte[] cookie)
+        {
+            iterators = null;
+            cookie = null;
+            if (!PrepareToRestoreFromCommit(commitNum, out var info, out var headAddress))
+            {
+                Debug.WriteLine("Unable to recover using any specified commit num: " + commitNum);
+                return false;
+            }
+
+            if (headAddress > 0)
+                allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress);
+
+            iterators = CompleteRestoreFromCommit(info);
+            cookie = info.Cookie;
+            return true;
         }
 
         /// <summary>
