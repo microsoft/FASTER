@@ -888,7 +888,15 @@ namespace FASTER.client
 
             connState.AddBytesRead(e.BytesTransferred);
             var newHead = connState.TryConsumeMessages(e.Buffer);
-            e.SetBuffer(newHead, e.Buffer.Length - newHead);
+            if (newHead == e.Buffer.Length)
+            {
+                // Need to grow input buffer
+                var newBuffer = new byte[e.Buffer.Length * 2];
+                Array.Copy(e.Buffer, newBuffer, e.Buffer.Length);
+                e.SetBuffer(newBuffer, newHead, newBuffer.Length - newHead);
+            }
+            else
+                e.SetBuffer(newHead, e.Buffer.Length - newHead);
             return true;
         }
 
