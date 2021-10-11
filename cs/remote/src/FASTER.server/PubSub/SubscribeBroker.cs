@@ -92,7 +92,8 @@ namespace FASTER.server
                         {
                             byte* keyBytePtr = ptr;
                             byte* nullBytePtr = null;
-                            sub.Value.Publish(ref keyBytePtr, key.Length, ref valPtr, valLength, ref nullBytePtr, sub.Key);
+                            byte* valBytePtr = valPtr;
+                            sub.Value.Publish(ref keyBytePtr, key.Length, ref valBytePtr, valLength, ref nullBytePtr, sub.Key);
                             numSubscribers++;
                         }
                     }
