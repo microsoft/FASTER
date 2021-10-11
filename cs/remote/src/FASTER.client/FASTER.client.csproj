@@ -34,7 +34,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FASTER.common\FASTER.common.csproj" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All"/>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>
