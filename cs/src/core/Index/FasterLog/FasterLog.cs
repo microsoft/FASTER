@@ -19,12 +19,14 @@ namespace FASTER.core
     internal class ManualCheckpointRequest
     {
         internal byte[] cookie;
-        internal long address, version;
-        public ManualCheckpointRequest(byte[] cookie, long version)
+        internal long commitNum;
+        internal TaskCompletionSource<bool> checkpointTcs;
+        
+        public ManualCheckpointRequest(byte[] cookie, long commitNum)
         {
             this.cookie = cookie;
-            address = -1;
-            this.version = version;
+            this.commitNum = commitNum;
+            checkpointTcs = new TaskCompletionSource<bool>();
         }
     }
     
@@ -50,7 +52,7 @@ namespace FASTER.core
             = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         private readonly bool autoCommitOnFlush;
-        private ManualCheckpointRequest currentCheckpointRequest;
+        private ConcurrentDictionary<long, ManualCheckpointRequest> manualCheckpointRequests;
 
         /// <summary>
         /// Beginning address of log
@@ -189,6 +191,7 @@ namespace FASTER.core
             }
 
             autoCommitOnFlush = false;
+            manualCheckpointRequests = new ConcurrentDictionary<long, ManualCheckpointRequest>();
         }
 
         /// <summary>
@@ -478,6 +481,12 @@ namespace FASTER.core
 
         #region Commit and CommitAsync
 
+        public Task<bool> CommitWithCookie(byte[] cookie, long commitNum = -1, long cookieLowerAddr = -1)
+        {
+            CommitInternal(out var task, commitNum, cookie, cookieLowerAddr);
+            return task;
+        }
+
         /// <summary>
         /// Issue commit request for log (until tail)
         /// </summary>
@@ -485,51 +494,12 @@ namespace FASTER.core
         /// <returns></returns>
         public void Commit(bool spinWait = false)
         {
-            CommitInternal(spinWait);
-        }
-
-        /// <summary>
-        /// Manually trigger a checkpoint at version v and persist with it the supplied cookie, when autoCommitOnFlush is
-        /// turned off. This is an advanced functionality, and user is expected to be responsible for supplying unique
-        /// and monotonically increasing version numbers.
-        /// </summary>
-        /// <param name="version"> version of the checkpoint </param>
-        /// <param name="cookie"> user-specified cookie </param>
-        /// <returns>whether the commit call failed and should be retried later</returns>
-        public bool ManualCommitWithCookie(long version, byte[] cookie)
-        {
-            if (autoCommitOnFlush)
-                throw new FasterException(
-                    "Checkpointing with cookie and custom versioning is only supported when auto commit is turned off");
-            
-            var newRequest = new ManualCheckpointRequest(cookie, version);
-            // Fail when a concurrent checkpoint is underway
-            if (Interlocked.CompareExchange(ref currentCheckpointRequest, newRequest, null) != null)
-                return false;
-            
-            if (allocator.ShiftReadOnlyToTail(out long tailAddress, out _))
+            CommitInternal(out var task);
+            if (spinWait)
             {
-                newRequest.address = tailAddress;
-                epoch.Suspend();
+                while (!task.IsCompleted)
+                    Thread.Sleep(1);
             }
-            else
-            {
-                // May need to commit begin address and/or iterators
-                epoch.Suspend();
-                var beginAddress = allocator.BeginAddress;
-                newRequest.address = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress;
-                if (beginAddress > CommittedBeginAddress || IteratorsChanged())
-                {
-                    Interlocked.Increment(ref commitMetadataVersion);
-                    CommitCallback(new CommitInfo
-                    {
-                        FromAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
-                        UntilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
-                        ErrorCode = 0,
-                    });
-                }
-            }
-            return true;
         }
 
         /// <summary>
@@ -542,7 +512,7 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             var task = CommitTask;
-            var tailAddress = CommitInternal();
+            var tailAddress = CommitInternal(out _);
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
@@ -564,7 +534,7 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             if (prevCommitTask == null) prevCommitTask = CommitTask;
-            var tailAddress = CommitInternal();
+            var tailAddress = CommitInternal(out _);
 
             while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
             {
@@ -982,44 +952,42 @@ namespace FASTER.core
         /// </summary>
         private void CommitCallback(CommitInfo commitInfo)
         {
-            // Ignore any potential auto flushes when there's no active checkpoint task
-            if (!autoCommitOnFlush && currentCheckpointRequest == null) return;
-
             commitQueue.EnqueueAndTryWork(commitInfo, asTask: true);
         }
 
         private void SerialCommitCallbackWorker(CommitInfo commitInfo)
         {
-            long version = -1;
-            byte[] cookie = null;
-            if (!autoCommitOnFlush)
+            var coveredRequests = new List<(long, ManualCheckpointRequest)>();
+            foreach (var entry in manualCheckpointRequests)
             {
-                Debug.Assert(currentCheckpointRequest != null);
-                // Wait for checkpoint request address to become known to avoid missing the address
-                while (currentCheckpointRequest.address == -1)
-                    Thread.Yield();
-                // Return if this is a flush that corresponds to the manual commit
-                if (commitInfo.UntilAddress != currentCheckpointRequest.address) return;
-                // Fetch the associated cookie and version information, and unblock any potential concurrent
-                // checkpoint requests
-                version = currentCheckpointRequest.version;
-                cookie = currentCheckpointRequest.cookie;
-                currentCheckpointRequest = null;
+                if (entry.Key > commitInfo.UntilAddress) break;
+                coveredRequests.Add(ValueTuple.Create(entry.Key, entry.Value));
             }
-            else
+
+            foreach (var (offset, _) in coveredRequests)
+                manualCheckpointRequests.TryRemove(offset, out _);
+            
+            // AutoCommit is off and there is no outstanding request --- safe to skip
+            if (coveredRequests.Count == 0 && !autoCommitOnFlush) return;
+            
+            // Check if commit is already covered
+            if (CommittedBeginAddress >= BeginAddress &&
+                CommittedUntilAddress >= commitInfo.UntilAddress &&
+                persistedCommitMetadataVersion >= commitMetadataVersion &&
+                commitInfo.ErrorCode == 0)
             {
-                // Check if commit is already covered
-                if (CommittedBeginAddress >= BeginAddress &&
-                    CommittedUntilAddress >= commitInfo.UntilAddress &&
-                    persistedCommitMetadataVersion >= commitMetadataVersion &&
-                    commitInfo.ErrorCode == 0)
-                    return;
+                // In this case --- need to mark commit cookies failed because there now exists a commit on disk
+                // with offset larger than specified but no cookie
+                foreach(var (_, request) in coveredRequests)
+                    request.checkpointTcs.SetResult(false);
+                return;
             }
 
             if (commitInfo.ErrorCode == 0)
             {
                 // Capture CMV first, so metadata prior to CMV update is visible to commit
                 long _localCMV = commitMetadataVersion;
+                var latestRequest = coveredRequests.Count == 0 ? null : coveredRequests[coveredRequests.Count - 1].Item2;
 
                 if (CommittedUntilAddress > commitInfo.FromAddress)
                     commitInfo.FromAddress = CommittedUntilAddress;
@@ -1030,13 +998,13 @@ namespace FASTER.core
                 {
                     BeginAddress = BeginAddress,
                     FlushedUntilAddress = commitInfo.UntilAddress,
-                    Cookie = cookie
+                    Cookie = latestRequest?.cookie
                 };
 
                 // Take snapshot of persisted iterators
                 info.SnapshotIterators(PersistedIterators);
 
-                logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray(), version);
+                logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray(), latestRequest?.commitNum ?? -1);
 
                 LastPersistedIterators = info.Iterators;
                 CommittedBeginAddress = info.BeginAddress;
@@ -1046,6 +1014,15 @@ namespace FASTER.core
 
                 // Update completed address for persisted iterators
                 info.CommitIterators(PersistedIterators);
+                // Mark all commit requests completedc
+                foreach(var (_, request) in coveredRequests)
+                    request.checkpointTcs.SetResult(true);
+            }
+            else
+            {
+                // Mark commits failed
+                foreach(var (_, request) in coveredRequests)
+                    request.checkpointTcs.SetResult(false);
             }
 
             var _commitTcs = commitTcs;
@@ -1161,7 +1138,7 @@ namespace FASTER.core
             {
                 try
                 {
-                    return RestoreFromCommitNum(requestedVersion, out iterators, out cookie);
+                    return RestoreFromCommitNum(commitNum, out iterators, out cookie);
                 }
                 catch { }
             }
@@ -1436,22 +1413,24 @@ namespace FASTER.core
             return length;
         }
 
-        private long CommitInternal(bool spinWait = false)
+        private long CommitInternal(out Task<bool> completionTask, long commitNum = -1, byte[] cookie = null, long cookieLowerAddr = -1)
         {
+            completionTask = default;
             if (readOnlyMode)
                 throw new FasterException("Cannot commit in read-only mode");
             
             epoch.Resume();
+            if (cookieLowerAddr == -1) cookieLowerAddr = allocator.GetTailAddress();
+            
+            // No point in computing a commit when cookie is already out-of-date
+            if (cookieLowerAddr < CommittedUntilAddress) return -1;
+            var request = new ManualCheckpointRequest(cookie, commitNum);
+            // Not expecting to have a lot of concurrency
+            manualCheckpointRequests.TryAdd(cookieLowerAddr, request);
+            completionTask = request.checkpointTcs.Task;
+            
             if (allocator.ShiftReadOnlyToTail(out long tailAddress, out _))
             {
-                if (spinWait)
-                {
-                    while (CommittedUntilAddress < tailAddress)
-                    {
-                        epoch.ProtectAndDrain();
-                        Thread.Yield();
-                    }
-                }
                 epoch.Suspend();
             }
             else
@@ -1459,7 +1438,7 @@ namespace FASTER.core
                 // May need to commit begin address and/or iterators
                 epoch.Suspend();
                 var beginAddress = allocator.BeginAddress;
-                if (beginAddress > CommittedBeginAddress || IteratorsChanged())
+                if (beginAddress > CommittedBeginAddress || IteratorsChanged() || cookie != null)
                 {
                     Interlocked.Increment(ref commitMetadataVersion);
                     CommitCallback(new CommitInfo
@@ -1468,6 +1447,11 @@ namespace FASTER.core
                         UntilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
                         ErrorCode = 0,
                     });
+                }
+                else
+                {
+                    manualCheckpointRequests.TryRemove(cookieLowerAddr, out _);
+                    request.checkpointTcs.SetResult(true);
                 }
             }
 
