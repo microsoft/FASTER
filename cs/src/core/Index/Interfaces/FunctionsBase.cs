@@ -18,21 +18,33 @@ namespace FASTER.core
     public abstract class FunctionsBase<Key, Value, Input, Output, Context> : IFunctions<Key, Value, Input, Output, Context>
     {
         protected readonly bool locking;
+        protected readonly bool postOps;
 
-        protected FunctionsBase(bool locking = false) => this.locking = locking;
+        protected FunctionsBase(bool locking = false, bool postOps = false)
+        {
+            this.locking = locking;
+            this.postOps = postOps;
+        }
+
+        /// <inheritdoc/>
+        public virtual bool SupportsPostOperations => this.postOps;
 
         /// <inheritdoc/>
         public virtual bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
         /// <inheritdoc/>
-        public virtual bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address) => true;
+        public virtual bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
 
         /// <inheritdoc/>
-        public virtual bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { dst = src; return true; }
+        public virtual bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { dst = src; return true; }
         /// <inheritdoc/>
-        public virtual void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
+        public virtual void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => dst = src;
+        /// <inheritdoc/>
+        public virtual void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { }
 
         /// <inheritdoc/>
-        public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) { }
+        public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
+        /// <inheritdoc/>
+        public virtual void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
         /// <inheritdoc/>
         public virtual bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output) => true;
         /// <inheritdoc/>
@@ -40,19 +52,20 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) { }
         /// <inheritdoc/>
-        public virtual bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
+        public virtual bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) => true;
         /// <inheritdoc/>
         public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
         /// <inheritdoc/>
-        public virtual void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
+        public virtual void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
+        public virtual bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) => true;
 
         /// <inheritdoc/>
-        public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo) { }
+        public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>
         public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
         /// <inheritdoc/>
-        public virtual void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
+        public virtual void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx) { }
         /// <inheritdoc/>
         public virtual void DeleteCompletionCallback(ref Key key, Context ctx) { }
         /// <inheritdoc/>
@@ -83,7 +96,7 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public class SimpleFunctions<Key, Value, Context> : FunctionsBase<Key, Value, Value, Value, Context>
     {
-        public SimpleFunctions(bool locking = false) : base(locking) { }
+        public SimpleFunctions(bool locking = false, bool postOps = false) : base(locking, postOps) { }
 
         private readonly Func<Value, Value, Value> merger;
         public SimpleFunctions() => merger = (l, r) => l;
@@ -97,19 +110,19 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address)
+        public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref RecordInfo recordInfo, long address)
         {
             dst = value;
             return true;
         }
 
         /// <inheritdoc/>
-        public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { dst = src; return true; }
+        public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { dst = src; return true; }
         /// <inheritdoc/>
-        public override void SingleWriter(ref Key key, ref Value src, ref Value dst) => dst = src;
+        public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => dst = src;
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output) => value = input;
+        public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) => value = input;
         /// <inheritdoc/>
         public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, long address) => newValue = merger(input, oldValue);
 
@@ -117,11 +130,11 @@ namespace FASTER.core
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) { value = merger(input, value); return true; }
 
         /// <inheritdoc/>
-        public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo) { }
+        public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>
         public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status) { }
         /// <inheritdoc/>
-        public override void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
+        public override void UpsertCompletionCallback(ref Key key, ref Value input, ref Value value, Context ctx) { }
         /// <inheritdoc/>
         public override void DeleteCompletionCallback(ref Key key, Context ctx) { }
         /// <inheritdoc/>
@@ -131,6 +144,7 @@ namespace FASTER.core
     public class SimpleFunctions<Key, Value> : SimpleFunctions<Key, Value, Empty>
     {
         public SimpleFunctions() : base() { }
+        public SimpleFunctions(bool locking = false, bool postOps = false) : base(locking, postOps) { }
         public SimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
     }
 }

@@ -114,14 +114,14 @@ namespace FASTER.test.async
 
     public class AdSimpleFunctions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
-        public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
             Assert.AreEqual(key.adId, output.value.numClicks);
         }
 
         // Read functions
-        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, long address)
+        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -134,7 +134,7 @@ namespace FASTER.test.async
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output) => value = input.numClicks;
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address) => value = input.numClicks;
 
         public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address)
         {

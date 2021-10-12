@@ -240,7 +240,7 @@ namespace AsyncStress
 
     public class SpanByteFunctions : SpanByteFunctions<SpanByte, SpanByteAndMemory, Empty>
     {
-        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, long address)
+        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, long address)
         {
             value.CopyTo(ref dst, MemoryPool<byte>.Shared);
             return true;

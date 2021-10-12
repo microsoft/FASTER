@@ -17,7 +17,7 @@ namespace StoreVarLenTypes
         public AsciiSumSpanByteFunctions(MemoryPool<byte> memoryPool = null, bool locking = false) : base(memoryPool, locking) { }
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output)
+        public override void InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, long address)
         {
             input.CopyTo(ref value);
         }

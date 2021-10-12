@@ -14,6 +14,8 @@ namespace FASTER.core
             _functions = functions;
         }
 
+        public bool SupportsPostOperations => false;
+
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
 
         /// <summary>
@@ -21,24 +23,27 @@ namespace FASTER.core
         /// </summary>
         public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
 
+        public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
+
         /// <summary>
         /// No ConcurrentDeleter needed for compaction
         /// </summary>
-        public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
+        public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) => true;
 
         /// <summary>
         /// For compaction, we never perform concurrent writes as rolled over data defers to
         /// newly inserted data for the same key.
         /// </summary>
-        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => true;
+        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => true;
 
         public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) { }
         
-        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
+        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
         public void DeleteCompletionCallback(ref Key key, Context ctx) { }
 
-        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) { }
+        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
+        public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
 
         public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
@@ -46,21 +51,22 @@ namespace FASTER.core
 
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordInfo recordInfo) { }
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
 
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
 
         /// <summary>
         /// No reads during compaction
         /// </summary>
-        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address) => true;
+        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
 
         /// <summary>
         /// Write compacted live value to store
         /// </summary>
-        public void SingleWriter(ref Key key, ref Value src, ref Value dst) => _functions.SingleWriter(ref key, ref src, ref dst);
+        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => _functions.SingleWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { }
 
-        public void UpsertCompletionCallback(ref Key key, ref Value value, Context ctx) { }
+        public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx) { }
 
         public bool SupportsLocking => false;
         public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) { }

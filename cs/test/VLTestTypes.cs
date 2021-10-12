@@ -98,7 +98,7 @@ namespace FASTER.test
             Assert.AreEqual(Status.OK, status);
         }
 
-        public override void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
             for (int i = 0; i < output.Length; i++)
@@ -108,7 +108,7 @@ namespace FASTER.test
         }
 
         // Read functions
-        public override bool SingleReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst, long address)
+        public override bool SingleReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst, ref RecordInfo recordInfo, long address)
         {
             value.ToIntArray(ref dst);
             return true;
@@ -121,12 +121,12 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(ref Key key, ref VLValue src, ref VLValue dst)
+        public override void SingleWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
         {
             src.CopyTo(ref dst);
         }
 
-        public override bool ConcurrentWriter(ref Key key, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
         {
             if (src.length != dst.length)
                 return false;
@@ -143,7 +143,7 @@ namespace FASTER.test
             Assert.AreEqual(Status.OK, status);
         }
 
-        public override void ReadCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
             for (int i = 0; i < output.Length; i++)
@@ -153,7 +153,7 @@ namespace FASTER.test
         }
 
         // Read functions
-        public override bool SingleReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst, long address)
+        public override bool SingleReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst, ref RecordInfo recordInfo, long address)
         {
             value.ToIntArray(ref dst);
             return true;
@@ -166,12 +166,12 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(ref VLValue key, ref VLValue src, ref VLValue dst)
+        public override void SingleWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
         {
             src.CopyTo(ref dst);
         }
 
-        public override bool ConcurrentWriter(ref VLValue key, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
         {
             if (src.length != dst.length)
                 return false;

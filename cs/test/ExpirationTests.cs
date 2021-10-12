@@ -285,7 +285,7 @@ namespace FASTER.test.Expiration
                 }
             }
 
-            public override void InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output)
+            public override void InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, long address)
             {
                 output.AddFunc(Funcs.InitialUpdater);
                 value.field1 = input.value;
@@ -383,18 +383,18 @@ namespace FASTER.test.Expiration
                 output.AddFunc(Funcs.RMWCompletionCallback);
             }
 
-            public override void ReadCompletionCallback(ref int key, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status, RecordInfo recordInfo)
+            public override void ReadCompletionCallback(ref int key, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 output.AddFunc(Funcs.ReadCompletionCallback);
             }
 
-            public override void UpsertCompletionCallback(ref int key, ref VLValue value, Empty ctx)
+            public override void UpsertCompletionCallback(ref int key, ref ExpirationInput input, ref VLValue value, Empty ctx)
             {
                 throw new NotImplementedException("TODO - UpsertCompletionCallback");
             }
 
             // Read functions
-            public override bool SingleReader(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, long address)
+            public override bool SingleReader(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, long address)
             {
                 output.AddFunc(Funcs.SingleReader);
                 if (IsExpired(key, value.field1))
@@ -413,12 +413,12 @@ namespace FASTER.test.Expiration
             }
 
             // Upsert functions
-            public override void SingleWriter(ref int key, ref VLValue src, ref VLValue dst)
+            public override void SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
             {
                 src.CopyTo(ref dst);
             }
 
-            public override bool ConcurrentWriter(ref int key, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
+            public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
             {
                 src.CopyTo(ref dst);
                 return true;

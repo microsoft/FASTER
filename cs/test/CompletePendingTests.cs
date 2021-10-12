@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
@@ -85,8 +86,9 @@ namespace FASTER.test
                 return false;
             }
 
-            internal void Process(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, bool useRMW)
+            internal void Process(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, List<(KeyStruct, long)> rmwCopyUpdatedAddresses)
             {
+                var useRMW = rmwCopyUpdatedAddresses is not null;
                 Assert.AreEqual(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc *
                                 CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kReallocMultuple, completedOutputs.vector.Length);
                 Assert.AreEqual(deferredPending, completedOutputs.maxIndex);
@@ -98,7 +100,9 @@ namespace FASTER.test
                     ref var result = ref completedOutputs.Current;
                     VerifyStructs((int)result.Key.kfield1, ref result.Key, ref result.Input, ref result.Output, ref result.Context, useRMW);
                     if (!useRMW)
-                        Assert.AreEqual(keyAddressDict[(int)result.Key.kfield1], result.Address);
+                        Assert.AreEqual(keyAddressDict[(int)result.Key.kfield1], result.RecordMetadata.Address);
+                    else if (keyAddressDict[(int)result.Key.kfield1] != result.RecordMetadata.Address)
+                        rmwCopyUpdatedAddresses.Add((result.Key, result.RecordMetadata.Address));
                 }
                 completedOutputs.Dispose();
                 Assert.AreEqual(deferredPending + 1, count);
@@ -142,8 +146,10 @@ namespace FASTER.test
                 session.Upsert(ref keyStruct, ref valueStruct);
             }
 
-            // Flush to make reads go pending.
+            // Flush to make reads or RMWs go pending.
             fht.Log.FlushAndEvict(wait: true);
+
+            List<(KeyStruct key, long address)> rmwCopyUpdatedAddresses = new();
 
             for (var key = 0; key < numRecords; ++key)
             {
@@ -186,13 +192,31 @@ namespace FASTER.test
                             completedOutputs = await session.CompletePendingWithOutputsAsync();
                         else
                             session.CompletePendingWithOutputs(out completedOutputs, wait: true);
-                        processPending.Process(completedOutputs, useRMW);
+                        processPending.Process(completedOutputs, useRMW ? rmwCopyUpdatedAddresses : null);
                     }
                     continue;
                 }
                 Assert.AreEqual(Status.OK, status);
             }
             processPending.VerifyNoDeferredPending();
+
+            // If we are using RMW, then all records were pending and updated their addresses, and we skipped the first one in the loop above.
+            if (useRMW)
+                Assert.AreEqual(numRecords - 1, rmwCopyUpdatedAddresses.Count);
+
+            foreach (var keyAndAddress in rmwCopyUpdatedAddresses)
+            {
+                // ConcurrentReader does not verify the input struct.
+                InputStruct inputStruct = default;
+                OutputStruct outputStruct = default;
+                RecordMetadata recordMetadata = default;
+
+                // This should not be pending since we've not flushed.
+                var localKey = keyAndAddress.key;
+                var status = session.Read(ref localKey, ref inputStruct, ref outputStruct, ref recordMetadata);
+                Assert.AreNotEqual(Status.PENDING, status);
+                Assert.AreEqual(keyAndAddress.address, recordMetadata.Address);
+            }
         }
     }
 }

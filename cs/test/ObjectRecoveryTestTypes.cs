@@ -68,7 +68,7 @@ namespace FASTER.test.recovery.objectstore
     public class Functions : FunctionsBase<AdId, NumClicks, Input, Output, Empty>
     {
         // Read functions
-        public override bool SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, long address)
+        public override bool SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -81,7 +81,7 @@ namespace FASTER.test.recovery.objectstore
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output) => value = input.numClicks;
+        public override void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address) => value = input.numClicks;
 
         public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address)
         {

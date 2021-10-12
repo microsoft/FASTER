@@ -58,7 +58,7 @@ namespace FASTER.test
 
     public class MyFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, Empty>
     {
-        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output)
+        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             value = new MyValue { value = input.value };
         }
@@ -84,13 +84,13 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = src.value;
             return true;
         }
 
-        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
             Assert.AreEqual(output.value.value, key.key);
@@ -101,7 +101,7 @@ namespace FASTER.test
             Assert.AreEqual(Status.OK, status);
         }
 
-        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, long address)
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
         {
             if (dst == default)
                 dst = new MyOutput();
@@ -109,7 +109,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }
@@ -117,7 +117,7 @@ namespace FASTER.test
 
     public class MyFunctions2 : FunctionsBase<MyValue, MyValue, MyInput, MyOutput, Empty>
     {
-        public override void InitialUpdater(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput output)
+        public override void InitialUpdater(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             value = new MyValue { value = input.value };
         }
@@ -143,13 +143,13 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool ConcurrentWriter(ref MyValue key, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref MyValue key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = src.value;
             return true;
         }
 
-        public override void ReadCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
             Assert.AreEqual(key.value, output.value.value);
@@ -160,7 +160,7 @@ namespace FASTER.test
             Assert.AreEqual(Status.OK, status);
         }
 
-        public override bool SingleReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst, long address)
+        public override bool SingleReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
         {
             if (dst == default)
                 dst = new MyOutput();
@@ -168,7 +168,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref MyValue key, ref MyValue src, ref MyValue dst)
+        public override void SingleWriter(ref MyValue key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }
@@ -176,7 +176,7 @@ namespace FASTER.test
 
     public class MyFunctionsDelete : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, int>
     {
-        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output)
+        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             value = new MyValue { value = input.value };
         }
@@ -202,13 +202,13 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
             return true;
         }
 
-        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx == 0)
             {
@@ -229,7 +229,7 @@ namespace FASTER.test
                 Assert.AreEqual(Status.NOTFOUND, status);
         }
 
-        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, long address)
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
         {
             if (dst == null)
                 dst = new MyOutput();
@@ -237,7 +237,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }
@@ -245,7 +245,7 @@ namespace FASTER.test
 
     public class MixedFunctions : FunctionsBase<int, MyValue, MyInput, MyOutput, Empty>
     {
-        public override void InitialUpdater(ref int key, ref MyInput input, ref MyValue value, ref MyOutput output)
+        public override void InitialUpdater(ref int key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             value = new MyValue { value = input.value };
         }
@@ -269,19 +269,19 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool ConcurrentWriter(ref int key, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref int key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = src.value;
             return true;
         }
 
-        public override bool SingleReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst, long address)
+        public override bool SingleReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
         }
 
-        public override void SingleWriter(ref int key, ref MyValue src, ref MyValue dst)
+        public override void SingleWriter(ref int key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }
@@ -328,7 +328,7 @@ namespace FASTER.test
 
     public class MyLargeFunctions : FunctionsBase<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty>
     {
-        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
             for (int i = 0; i < output.value.value.Length; i++)
@@ -337,7 +337,7 @@ namespace FASTER.test
             }
         }
 
-        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst, long address)
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -349,13 +349,13 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool ConcurrentWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyLargeValue src, ref MyLargeValue dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
             return true;
         }
 
-        public override void SingleWriter(ref MyKey key, ref MyLargeValue src, ref MyLargeValue dst)
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyLargeValue src, ref MyLargeValue dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }

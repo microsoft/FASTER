@@ -151,20 +151,25 @@ namespace ReadAddress
             var output = default(Value);
             var input = default(Value);
             var key = new Key(keyValue);
-            RecordInfo recordInfo = default;
-            var context = new Context();
+            RecordMetadata recordMetadata = default;
             int version = int.MaxValue;
             for (int lap = 9; /* tested in loop */; --lap)
             {
-                var status = session.Read(ref key, ref input, ref output, ref recordInfo, userContext: context, serialNo: maxLap + 1);
+                var status = session.Read(ref key, ref input, ref output, ref recordMetadata, serialNo: maxLap + 1);
+
+                // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                 if (status == Status.PENDING)
                 {
-                    // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                    session.CompletePending(wait: true);
-                    recordInfo = context.recordInfo;
-                    status = context.status;
+                    session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    using (completedOutputs)
+                    {
+                        completedOutputs.Next();
+                        recordMetadata = completedOutputs.Current.RecordMetadata;
+                        status = completedOutputs.Current.Status;
+                    }
                 }
-                if (!ProcessRecord(store, status, recordInfo, lap, ref output, ref version))
+
+                if (!ProcessRecord(store, status, recordMetadata.RecordInfo, lap, ref output, ref version))
                     break;
             }
         }
@@ -178,14 +183,14 @@ namespace ReadAddress
 
             var input = default(Value);
             var key = new Key(keyValue);
-            RecordInfo recordInfo = default;
+            RecordMetadata recordMetadata = default;
             int version = int.MaxValue;
             for (int lap = 9; /* tested in loop */; --lap)
             {
-                var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1, cancellationToken: cancellationToken);
+                var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, default, serialNo: maxLap + 1, cancellationToken: cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
-                var (status, output) = readAsyncResult.Complete(out recordInfo);
-                if (!ProcessRecord(store, status, recordInfo, lap, ref output, ref version))
+                var (status, output) = readAsyncResult.Complete(out recordMetadata);
+                if (!ProcessRecord(store, status, recordMetadata.RecordInfo, lap, ref output, ref version))
                     break;
             }
         }

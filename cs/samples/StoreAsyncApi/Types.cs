@@ -98,7 +98,7 @@ namespace StoreAsyncApi
             // Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
         }
 
-        public override void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx.type == 0)
             {
@@ -119,7 +119,7 @@ namespace StoreAsyncApi
             }
         }
 
-        public override bool SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, long address)
+        public override bool SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;

@@ -10,18 +10,25 @@ namespace FASTER.benchmark
     public struct Functions : IFunctions<Key, Value, Input, Output, Empty>
     {
         readonly bool locking;
+        readonly bool postOps;
 
-        public Functions(bool locking) => this.locking = locking;
+        public Functions(bool locking, bool postOps = false)
+        {
+            this.locking = locking;
+            this.postOps = postOps;
+        }
+
+        public bool SupportsPostOperations => this.postOps;
 
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
         {
         }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordInfo recordInfo)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
         }
 
-        public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx)
+        public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Empty ctx)
         {
         }
 
@@ -36,7 +43,7 @@ namespace FASTER.benchmark
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
+        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -49,17 +56,17 @@ namespace FASTER.benchmark
             return true;
         }
 
-        public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
+        public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) => true;
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleWriter(ref Key key, ref Value src, ref Value dst)
+        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
             return true;
@@ -67,7 +74,7 @@ namespace FASTER.benchmark
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
+        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             value.value = input.value;
         }
@@ -85,7 +92,7 @@ namespace FASTER.benchmark
             newValue.value = input.value + oldValue.value;
         }
 
-        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
+        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
         public bool SupportsLocking => locking;
 

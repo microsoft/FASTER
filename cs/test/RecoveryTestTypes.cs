@@ -42,7 +42,7 @@ namespace FASTER.test.recovery.sumstore
     public class Functions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
         // Read functions
-        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, long address)
+        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -55,7 +55,7 @@ namespace FASTER.test.recovery.sumstore
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             value = input.numClicks;
         }

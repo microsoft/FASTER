@@ -55,14 +55,14 @@ namespace StoreDiskReadBenchmark
     public sealed class MyFuncs : FunctionsBase<Key, Value, Input, Output, Empty>
     {
         // Read functions
-        public override bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
+        public override bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
         { if (dst == null) dst = new Output(); dst.value = value; return true; }
 
         public override bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
         { if (dst == null) dst = new Output(); dst.value = value; return true; }
 
         // RMW functions
-        public override void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
+        public override void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             value.vfield1 = input.ifield1;
         }
@@ -77,7 +77,7 @@ namespace StoreDiskReadBenchmark
         }
 
         // Completion callbacks
-        public override void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             if (status != Status.OK || output.value.vfield1 != key.key)
             {

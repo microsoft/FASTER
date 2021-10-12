@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 
 namespace FASTER.test.readaddress
 {
-#if false // TODO temporarily deactivated due to removal of addresses from single-writer callbacks (also add UpsertAsync where we do RMWAsync/Upsert); update to new test format
     [TestFixture]
     public class ReadAddressTests
     {
@@ -45,23 +44,9 @@ namespace FASTER.test.readaddress
             public override string ToString() => value.ToString();
         }
 
-        public class Context
-        {
-            public Value output;
-            public RecordInfo recordInfo;
-            public Status status;
-
-            public void Reset()
-            {
-                this.output = default;
-                this.recordInfo = default;
-                this.status = Status.OK;
-            }
-        }
-
         private static long SetReadOutput(long key, long value) => (key << 32) | value;
 
-        internal class Functions : SimpleFunctions<Key, Value, Context>
+        internal class Functions : SimpleFunctions<Key, Value>
         {
             internal long lastWriteAddress = Constants.kInvalidAddress;
 
@@ -71,28 +56,28 @@ namespace FASTER.test.readaddress
                 return true;
             }
 
-            public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address)
+            public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref RecordInfo recordInfo, long address)
             {
                 dst.value = SetReadOutput(key.key, value.value);
                 return true;
             }
 
             // Return false to force a chain of values.
-            public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => false;
+            public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => false;
 
             public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) => false;
 
             // Record addresses
-            public override void SingleWriter(ref Key key, ref Value src, ref Value dst)
+            public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
             {
                 this.lastWriteAddress = address;
-                base.SingleWriter(ref key, ref src, ref dst);
+                base.SingleWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
             }
 
-            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output)
+            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address)
             {
                 this.lastWriteAddress = address;
-                base.InitialUpdater(ref key, ref input, ref value, ref output);
+                base.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
 
             public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, long address)
@@ -102,24 +87,11 @@ namespace FASTER.test.readaddress
             }
 
             // Track the recordInfo for its PreviousAddress.
-            public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo)
-            {
-                if (ctx is not null)
-                {
-                    ctx.output = output;
-                    ctx.recordInfo = recordInfo;
-                    ctx.status = status;
-                }
-            }
+            public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
 
-            public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status)
+            public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Empty ctx, Status status)
             {
-                if (ctx is not null)
-                {
-                    ctx.output = input;
-                    ctx.recordInfo = default;
-                    ctx.status = status;
-                }
+                output = input;
                 base.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
             }
         }
@@ -174,7 +146,6 @@ namespace FASTER.test.readaddress
             {
                 var functions = new Functions();
                 using var session = this.fkv.For(functions).NewSession<Functions>();
-                var context = new Context();
 
                 var prevLap = 0;
                 for (int ii = 0; ii < numKeys; ii++)
@@ -193,7 +164,7 @@ namespace FASTER.test.readaddress
 
                     var status = useRMW
                         ? useAsync
-                            ? (await session.RMWAsync(ref key, ref value, context, serialNo: lap)).Complete().status
+                            ? (await session.RMWAsync(ref key, ref value, serialNo: lap)).Complete().status
                             : session.RMW(ref key, ref value, serialNo: lap)
                         : session.Upsert(ref key, ref value, serialNo: lap);
 
@@ -211,8 +182,9 @@ namespace FASTER.test.readaddress
                 await Flush();
             }
 
-            internal bool ProcessChainRecord(Status status, RecordInfo recordInfo, int lap, ref Value actualOutput, ref int previousVersion)
+            internal bool ProcessChainRecord(Status status, RecordMetadata recordMetadata, int lap, ref Value actualOutput, ref int previousVersion)
             {
+                var recordInfo = recordMetadata.RecordInfo;
                 Assert.GreaterOrEqual(lap, 0);
                 long expectedValue = SetReadOutput(defaultKeyToScan, LapOffset(lap) + defaultKeyToScan);
 
@@ -265,23 +237,19 @@ namespace FASTER.test.readaddress
                 var output = default(Value);
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                var context = new Context();
-                RecordInfo recordInfo = default;
+                RecordMetadata recordMetadata = default;
                 int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var status = session.Read(ref key, ref input, ref output, ref recordInfo, userContext: context, serialNo: maxLap + 1);
+                    var status = session.Read(ref key, ref input, ref output, ref recordMetadata, serialNo: maxLap + 1);
                     if (status == Status.PENDING)
                     {
-                        // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(wait: true);
-                        output = context.output;
-                        recordInfo = context.recordInfo;
-                        status = context.status;
-                        context.Reset();
+                        // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
+                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
                         break;
                 }
             }
@@ -303,14 +271,14 @@ namespace FASTER.test.readaddress
             {
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                RecordInfo recordInfo = default;
+                RecordMetadata recordMetadata = default;
                 int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1);
-                    var (status, output) = readAsyncResult.Complete(out recordInfo);
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, default, serialNo: maxLap + 1);
+                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
                         break;
                 }
             }
@@ -333,45 +301,38 @@ namespace FASTER.test.readaddress
                 var output = default(Value);
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                var context = new Context();
-                RecordInfo recordInfo = default;
+                RecordMetadata recordMetadata = default;
                 int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var readAtAddress = recordInfo.PreviousAddress;
+                    var readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
 
-                    var status = session.Read(ref key, ref input, ref output, ref recordInfo, userContext: context, serialNo: maxLap + 1);
+                    var status = session.Read(ref key, ref input, ref output, ref recordMetadata, serialNo: maxLap + 1);
                     if (status == Status.PENDING)
                     {
-                        // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(wait: true);
-                        output = context.output;
-                        recordInfo = context.recordInfo;
-                        status = context.status;
-                        context.Reset();
+                        // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
+                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
                         break;
 
                     if (readAtAddress >= testStore.fkv.Log.BeginAddress)
                     {
                         var saveOutput = output;
-                        var saveRecordInfo = recordInfo;
+                        var saveRecordMetadata = recordMetadata;
 
-                        status = session.ReadAtAddress(readAtAddress, ref input, ref output, userContext: context, serialNo: maxLap + 1);
+                        status = session.ReadAtAddress(readAtAddress, ref input, ref output, serialNo: maxLap + 1);
                         if (status == Status.PENDING)
                         {
-                            // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                            session.CompletePending(wait: true);
-                            output = context.output;
-                            recordInfo = context.recordInfo;
-                            status = context.status;
-                            context.Reset();
+                            // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
+                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
                         }
 
                         Assert.AreEqual(saveOutput, output);
-                        Assert.AreEqual(saveRecordInfo, recordInfo);
+                        Assert.AreEqual(saveRecordMetadata.RecordInfo, recordMetadata.RecordInfo);
                     }
                 }
             }
@@ -393,28 +354,28 @@ namespace FASTER.test.readaddress
             {
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                RecordInfo recordInfo = default;
+                RecordMetadata recordMetadata = default;
                 int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var readAtAddress = recordInfo.PreviousAddress;
+                    var readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
 
-                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1);
-                    var (status, output) = readAsyncResult.Complete(out recordInfo);
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, default, serialNo: maxLap + 1);
+                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
                         break;
 
                     if (readAtAddress >= testStore.fkv.Log.BeginAddress)
                     {
                         var saveOutput = output;
-                        var saveRecordInfo = recordInfo;
+                        var saveRecordMetadata = recordMetadata;
 
                         readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, default, serialNo: maxLap + 1);
-                        (status, output) = readAsyncResult.Complete(out recordInfo);
+                        (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                         Assert.AreEqual(saveOutput, output);
-                        Assert.AreEqual(saveRecordInfo, recordInfo);
+                        Assert.AreEqual(saveRecordMetadata.RecordInfo, recordMetadata.RecordInfo);
                     }
                 }
             }
@@ -436,28 +397,28 @@ namespace FASTER.test.readaddress
             {
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                RecordInfo recordInfo = default;
+                RecordMetadata recordMetadata = default;
                 int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var readAtAddress = recordInfo.PreviousAddress;
+                    var readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
 
-                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1);
-                    var (status, output) = readAsyncResult.Complete(out recordInfo);
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, default, serialNo: maxLap + 1);
+                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
                         break;
 
                     if (readAtAddress >= testStore.fkv.Log.BeginAddress)
                     {
                         var saveOutput = output;
-                        var saveRecordInfo = recordInfo;
+                        var saveRecordMetadata = recordMetadata;
 
                         readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, ReadFlags.None, default, serialNo: maxLap + 1);
-                        (status, output) = readAsyncResult.Complete(out recordInfo);
+                        (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                         Assert.AreEqual(saveOutput, output);
-                        Assert.AreEqual(saveRecordInfo, recordInfo);
+                        Assert.AreEqual(saveRecordMetadata.RecordInfo, recordMetadata.RecordInfo);
                     }
                 }
             }
@@ -479,28 +440,28 @@ namespace FASTER.test.readaddress
             {
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                RecordInfo recordInfo = default;
+                RecordMetadata recordMetadata = default;
                 int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var readAtAddress = recordInfo.PreviousAddress;
+                    var readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
 
-                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1);
-                    var (status, output) = readAsyncResult.Complete(out recordInfo);
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, default, serialNo: maxLap + 1);
+                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
                         break;
 
                     if (readAtAddress >= testStore.fkv.Log.BeginAddress)
                     {
                         var saveOutput = output;
-                        var saveRecordInfo = recordInfo;
+                        var saveRecordMetadata = recordMetadata;
 
                         readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, ReadFlags.SkipReadCache, default, maxLap + 1);
-                        (status, output) = readAsyncResult.Complete(out recordInfo);
+                        (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                         Assert.AreEqual(saveOutput, output);
-                        Assert.AreEqual(saveRecordInfo, recordInfo);
+                        Assert.AreEqual(saveRecordMetadata.RecordInfo, recordMetadata.RecordInfo);
                     }
                 }
             }
@@ -523,19 +484,16 @@ namespace FASTER.test.readaddress
                 var rng = new Random(101);
                 var output = default(Value);
                 var input = default(Value);
-                var context = new Context();
 
                 for (int ii = 0; ii < numKeys; ++ii)
                 {
                     var keyOrdinal = rng.Next(numKeys);
-                    var status = session.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, userContext: context, serialNo: maxLap + 1);
+                    var status = session.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, serialNo: maxLap + 1);
                     if (status == Status.PENDING)
                     {
-                        // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(wait: true);
-                        output = context.output;
-                        status = context.status;
-                        context.Reset();
+                        // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
+                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
                     }
 
                     TestStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
@@ -561,13 +519,13 @@ namespace FASTER.test.readaddress
             {
                 var rng = new Random(101);
                 var input = default(Value);
-                RecordInfo recordInfo = default;
+                RecordMetadata recordMetadata = default;
 
                 for (int ii = 0; ii < numKeys; ++ii)
                 {
                     var keyOrdinal = rng.Next(numKeys);
                     var readAsyncResult = await session.ReadAtAddressAsync(testStore.InsertAddresses[keyOrdinal], ref input, default, serialNo: maxLap + 1);
-                    var (status, output) = readAsyncResult.Complete(out recordInfo);
+                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
                     TestStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
                 }
             }
@@ -575,7 +533,6 @@ namespace FASTER.test.readaddress
             await testStore.Flush();
         }
     }
-#endif
 
     [TestFixture]
     public class ReadMinAddressTests
@@ -640,8 +597,8 @@ namespace FASTER.test.readaddress
                     (status, output) = (await session.ReadAsync(ref key, ref input, minAddress, ReadFlags.MinAddress)).Complete();
                 else
                 {
-                    RecordInfo recordInfo = new() { PreviousAddress = minAddress };
-                    status = session.Read(ref key, ref input, ref output, ref recordInfo, ReadFlags.MinAddress);
+                    RecordMetadata recordMetadata = new(new RecordInfo { PreviousAddress = minAddress });
+                    status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.MinAddress);
                     if (status == Status.PENDING)
                     {
                         Assert.IsTrue(session.CompletePendingWithOutputs(out var completedOutputs, wait: true));

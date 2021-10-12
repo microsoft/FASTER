@@ -24,13 +24,13 @@ namespace FASTER.test
                 return true;
             }
 
-            public override bool SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst, long address)
+            public override bool SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref RecordInfo recordInfo, long address)
             {
                 dst = value;
                 return true;
             }
 
-            public override void ReadCompletionCallback(ref SpanByte key, ref long input, ref long output, Context context, Status status, RecordInfo recordInfo)
+            public override void ReadCompletionCallback(ref SpanByte key, ref long input, ref long output, Context context, Status status, RecordMetadata recordMetadata)
             {
                 Assert.AreEqual(status, Status.OK);
                 Assert.AreEqual(input, output);

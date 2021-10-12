@@ -123,7 +123,7 @@ namespace ClassRecoveryDurablity
 
         public sealed class StoreFunctions : FunctionsBase<StoreKey, StoreValue, StoreInput, StoreOutput, StoreContext>
         {
-            public override bool SingleReader(ref StoreKey key, ref StoreInput input, ref StoreValue value, ref StoreOutput dst, long address)
+            public override bool SingleReader(ref StoreKey key, ref StoreInput input, ref StoreValue value, ref StoreOutput dst, ref RecordInfo recordInfo, long address)
             {
                 dst.value = value;
                 return true;
@@ -135,7 +135,7 @@ namespace ClassRecoveryDurablity
                 return true;
             }
 
-            public override void ReadCompletionCallback(ref StoreKey key, ref StoreInput input, ref StoreOutput output, StoreContext ctx, Status status, RecordInfo recordInfo)
+            public override void ReadCompletionCallback(ref StoreKey key, ref StoreInput input, ref StoreOutput output, StoreContext ctx, Status status, RecordMetadata recordMetadata)
             {
                 ctx.Populate(ref status, ref output);
             }

@@ -20,7 +20,7 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output)
+        public override void InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, long address)
         {
             Interlocked.Increment(ref InitialCount);
 
@@ -52,7 +52,7 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output)
+        public override void InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, long address)
         {
             Interlocked.Increment(ref InitialCount);
 
@@ -83,7 +83,7 @@ namespace FASTER.test
 
     public class RefCountedReader : FunctionsBase<int, RefCountedValue, Empty, RefCountedValue, Empty>
     {
-        public override bool SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, long address)
+        public override bool SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref RecordInfo recordInfo, long address)
         {
             dst = value;
             return true;

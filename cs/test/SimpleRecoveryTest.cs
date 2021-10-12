@@ -121,7 +121,7 @@ namespace FASTER.test.recovery.sumstore.simple
             if (testCommitCookie)
                 fht1.CommitCookie = commitCookie;
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
             if (isAsync)
@@ -183,7 +183,7 @@ namespace FASTER.test.recovery.sumstore.simple
                 session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
             if (isAsync)
@@ -239,7 +239,7 @@ namespace FASTER.test.recovery.sumstore.simple
             fht1.Log.ShiftBeginAddress(address);
 
             fht1.TakeFullCheckpoint(out Guid token);
-            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
             if (isAsync)
@@ -253,14 +253,14 @@ namespace FASTER.test.recovery.sumstore.simple
 
     public class AdSimpleFunctions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
-        public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
             Assert.AreEqual(key.adId, output.value.numClicks);
         }
 
         // Read functions
-        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, long address)
+        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -273,7 +273,7 @@ namespace FASTER.test.recovery.sumstore.simple
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             value = input.numClicks;
         }

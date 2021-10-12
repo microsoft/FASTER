@@ -65,7 +65,7 @@ namespace FASTER.test
             Assert.AreEqual(key.kfield2 + input.ifield2, output.value.vfield2);
         }
 
-        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
             Assert.AreEqual(key.kfield1, output.value.vfield1);
@@ -73,7 +73,7 @@ namespace FASTER.test
         }
 
         // Read functions
-        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, long address)
+        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -86,7 +86,7 @@ namespace FASTER.test
         }
 
         // RMW functions
-        public override void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output)
+        public override void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, long address)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
@@ -118,7 +118,7 @@ namespace FASTER.test
             Assert.AreEqual(Status.OK, status);
         }
 
-        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx == 0)
             {
@@ -133,7 +133,7 @@ namespace FASTER.test
         }
 
         // Read functions
-        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, long address)
+        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -146,7 +146,7 @@ namespace FASTER.test
         }
 
         // RMW functions
-        public override void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output)
+        public override void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, long address)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
@@ -181,7 +181,7 @@ namespace FASTER.test
             Assert.AreEqual(Status.OK, status);
         }
 
-        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
             Assert.AreEqual(key.kfield1, output.value.vfield1);
@@ -189,7 +189,7 @@ namespace FASTER.test
         }
 
         // Read functions
-        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, long address)
+        public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
             return true;
@@ -202,16 +202,16 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst) => dst = src;
+        public override void SingleWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref RecordInfo recordInfo, long address) => dst = src;
 
-        public override bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct src, ref ValueStruct dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref RecordInfo recordInfo, long address)
         {
             Interlocked.Increment(ref _concurrentWriterCallCount);
             return false;
         }
 
         // RMW functions
-        public override void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output)
+        public override void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, long address)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
@@ -236,9 +236,9 @@ namespace FASTER.test
     {
         public RMWSimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
 
-        public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output)
+        public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address)
         {
-            base.InitialUpdater(ref key, ref input, ref value, ref output);
+            base.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             output = input;
         }
 

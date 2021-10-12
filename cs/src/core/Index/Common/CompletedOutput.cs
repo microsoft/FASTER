@@ -103,14 +103,9 @@ namespace FASTER.core
         public TContext Context;
 
         /// <summary>
-        /// The header of the record for this operation
+        /// The record metadata for this operation
         /// </summary>
-        public RecordInfo RecordInfo;
-
-        /// <summary>
-        /// The logical address of the record for this operation
-        /// </summary>
-        public long Address;
+        public RecordMetadata RecordMetadata;
 
         /// <summary>
         /// The status of the operation: OK or NOTFOUND
@@ -123,8 +118,7 @@ namespace FASTER.core
             this.inputContainer = pendingContext.input;
             this.Output = pendingContext.output;
             this.Context = pendingContext.userContext;
-            this.RecordInfo = pendingContext.recordInfo;
-            this.Address = pendingContext.logicalAddress;
+            this.RecordMetadata = new(pendingContext.recordInfo, pendingContext.logicalAddress);
             this.Status = status;
         }
 

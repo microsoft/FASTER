@@ -16,7 +16,7 @@ namespace StoreVarLenTypes
         public CustomSpanByteFunctions(bool locking = false) : base(locking) { }
 
         // Read completion callback
-        public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref byte[] output, byte ctx, Status status, RecordInfo recordInfo)
+        public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref byte[] output, byte ctx, Status status, RecordMetadata recordMetadata)
         {
             if (status != Status.OK)
             {
