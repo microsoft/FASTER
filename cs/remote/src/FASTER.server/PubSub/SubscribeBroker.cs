@@ -155,7 +155,9 @@ namespace FASTER.server
                         {
                             fixed (byte* subscriptionKeyValueAsciiPtr = &subscriptionKeyValueAscii[0])
                             {
-                                int subscriptionKeyLength = *(int*)subscriptionKeyValueAsciiPtr + sizeof(int);
+                                var keyPtr = subscriptionKeyValueAsciiPtr;
+                                keySerializer.ReadKeyByRef(ref keyPtr);
+                                int subscriptionKeyLength = (int)(keyPtr - subscriptionKeyValueAsciiPtr);
                                 int subscriptionValueLength = subscriptionKeyValueAscii.Length - (subscriptionKeyLength + sizeof(bool));
                                 subscriptionKey = new byte[subscriptionKeyLength];
                                 subscriptionValue = new byte[subscriptionValueLength];
