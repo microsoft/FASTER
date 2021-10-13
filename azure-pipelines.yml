@@ -94,24 +94,30 @@ jobs:
 
 - job: 'cppLinux'
   pool:
-    vmImage: ubuntu-18.04
+    vmImage: ubuntu-20.04
   displayName: 'C++ (Linux)'
 
   steps:
   - script: |
-      sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
       sudo apt update
-      sudo apt install -y g++-7 libaio-dev uuid-dev libtbb-dev
+      sudo apt install -y g++ libaio-dev uuid-dev libtbb-dev
     displayName: 'Install depdendencies'
   - script: |
-      export CXX='g++-7'
+      git clone https://git.kernel.dk/liburing
+      cd liburing
+      git checkout liburing-0.7
+      ./configure
+      sudo make install
+    displayName: Install Liburing
+
+  - script: |
       cd cc
       mkdir -p build/Debug build/Release
       cd build/Debug
-      cmake -DCMAKE_BUILD_TYPE=Debug ../..
+      cmake -DCMAKE_BUILD_TYPE=Debug -DUSE_URING=ON ../..
       make -j
       cd ../../build/Release
-      cmake -DCMAKE_BUILD_TYPE=Release ../..
+      cmake -DCMAKE_BUILD_TYPE=Release -DUSE_URING=ON ../..
       make -j
     displayName: 'Compile'
   - script: |

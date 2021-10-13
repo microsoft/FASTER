@@ -40,6 +40,7 @@ namespace FASTER.test
             public override bool PostCopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, long address) { this.pcuAddress = address; return true; }
 
             public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, long address) { this.psdAddress = address; }
+            public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, long address) => false;
         }
 
         private FasterKV<int, int> fht;
@@ -158,9 +159,14 @@ namespace FASTER.test
         [Category("Smoke")]
         public void PostSingleDeleterTest()
         {
+            // Execute the not-in-memory test (InternalDelete); ConcurrentDeleter returns false to force a new record to be added.
+            this.session.Delete(targetKey);
+            Assert.AreEqual(this.expectedAddress, session.functions.psdAddress);
+
             // Execute the not-in-memory test (InternalDelete).
             this.fht.Log.FlushAndEvict(wait: true);
-            this.session.Delete(targetKey);
+            this.expectedAddress = this.fht.Log.TailAddress;
+            this.session.Delete(targetKey + 1);
             Assert.AreEqual(this.expectedAddress, session.functions.psdAddress);
         }
     }

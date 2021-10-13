@@ -1238,7 +1238,7 @@ namespace FASTER.core
             public void DeleteCompletionCallback(ref Key key, Context ctx) 
                 => _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
 
-            public int GetInitialLength(ref Input input) 
+            public int GetInitialLength(ref Input input)
                 => _clientSession.variableLengthStruct.GetInitialLength(ref input);
 
             public int GetLength(ref Value t, ref Input input) 

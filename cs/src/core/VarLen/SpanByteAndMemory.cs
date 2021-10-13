@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
@@ -30,6 +29,15 @@ namespace FASTER.core
         {
             if (spanByte.Serialized) throw new Exception("Cannot create new SpanByteAndMemory using serialized SpanByte");
             SpanByte = spanByte;
+            Memory = default;
+        }
+
+        /// <summary>
+        /// Constructor using SpanByte at given (fixed) pointer, of given length
+        /// </summary>
+        public SpanByteAndMemory(void* pointer, int length)
+        {
+            SpanByte = new SpanByte(length, (IntPtr)pointer);
             Memory = default;
         }
 
