@@ -141,12 +141,15 @@ namespace FASTER.server
                     if (disposed)
                         break;
 
-                    var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                    using var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
                     await iter.WaitAsync(cancellationToken);
                     while (iter.GetNext(out byte[] subscriptionKeyValueAscii, out _, out long currentAddress, out long nextAddress))
                     {
                         if (currentAddress >= long.MaxValue) return;
-                        truncateUntilAddress = nextAddress;
+
+                        byte[] subscriptionKey;
+                        byte[] subscriptionValue;
+                        byte[] ascii;
 
                         unsafe
                         {
@@ -154,20 +157,21 @@ namespace FASTER.server
                             {
                                 int subscriptionKeyLength = *(int*)subscriptionKeyValueAsciiPtr + sizeof(int);
                                 int subscriptionValueLength = subscriptionKeyValueAscii.Length - (subscriptionKeyLength + sizeof(bool));
-                                byte[] subscriptionKey = new byte[subscriptionKeyLength];
-                                byte[] subscriptionValue = new byte[subscriptionValueLength];
-                                byte[] ascii = new byte[sizeof(bool)];
+                                subscriptionKey = new byte[subscriptionKeyLength];
+                                subscriptionValue = new byte[subscriptionValueLength];
+                                ascii = new byte[sizeof(bool)];
 
                                 fixed (byte* subscriptionKeyPtr = &subscriptionKey[0], subscriptionValuePtr = &subscriptionValue[0], asciiPtr = &ascii[0])
                                 {
                                     Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr, subscriptionKeyPtr, subscriptionKeyLength, subscriptionKeyLength);
                                     Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr + subscriptionKeyLength, subscriptionValuePtr, subscriptionValueLength, subscriptionValueLength);
                                     Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr + subscriptionKeyLength + subscriptionValueLength, asciiPtr, sizeof(bool), sizeof(bool));
-                                    if (!uniqueKeys.ContainsKey(subscriptionKey))
-                                        uniqueKeys.Add(subscriptionKey, (subscriptionValue, ascii));
                                 }
                             }
                         }
+                        truncateUntilAddress = nextAddress;
+                        if (!uniqueKeys.ContainsKey(subscriptionKey))
+                            uniqueKeys.Add(subscriptionKey, (subscriptionValue, ascii));
                     }
 
                     if (truncateUntilAddress > log.BeginAddress)
