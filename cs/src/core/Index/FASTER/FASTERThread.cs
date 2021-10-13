@@ -249,7 +249,8 @@ namespace FASTER.core
                         fasterSession.RMWCompletionCallback(ref key,
                                                 ref pendingContext.input.Get(),
                                                 ref pendingContext.output,
-                                                pendingContext.userContext, status);
+                                                pendingContext.userContext, status,
+                                                new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
                         break;
                     case OperationType.UPSERT:
                         fasterSession.UpsertCompletionCallback(ref key,
@@ -406,10 +407,11 @@ namespace FASTER.core
                 else
                 {
                     fasterSession.RMWCompletionCallback(ref key,
-                                                    ref pendingContext.input.Get(),
-                                                    ref pendingContext.output,
-                                                    pendingContext.userContext,
-                                                    status);
+                                                     ref pendingContext.input.Get(),
+                                                     ref pendingContext.output,
+                                                     pendingContext.userContext,
+                                                     status,
+                                                     new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
                 }
             }
             return status;

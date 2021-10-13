@@ -23,5 +23,8 @@ namespace FASTER.core
             this.RecordInfo = recordInfo;
             this.Address = address;
         }
+
+        /// <inheritdoc/>
+        public override string ToString() => $"ri {RecordInfo}, addr {Address}";
     }
 }

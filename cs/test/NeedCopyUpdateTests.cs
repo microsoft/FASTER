@@ -118,7 +118,7 @@ namespace FASTER.test
             Assert.Fail("CopyUpdater");
         }
 
-        public override void RMWCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status)
+        public override void RMWCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(ctx, status);
 

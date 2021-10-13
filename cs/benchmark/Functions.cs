@@ -20,7 +20,7 @@ namespace FASTER.benchmark
 
         public bool SupportsPostOperations => this.postOps;
 
-        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
         }
 

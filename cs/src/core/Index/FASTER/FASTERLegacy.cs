@@ -384,9 +384,9 @@ namespace FASTER.core
                 _fasterKV._functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
             }
 
-            public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
+            public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
             {
-                _fasterKV._functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
+                _fasterKV._functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
             }
 
             public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)

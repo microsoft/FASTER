@@ -378,7 +378,7 @@ namespace FASTER.test.Expiration
                 }
             }
 
-            public override void RMWCompletionCallback(ref int key, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status)
+            public override void RMWCompletionCallback(ref int key, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 output.AddFunc(Funcs.RMWCompletionCallback);
             }

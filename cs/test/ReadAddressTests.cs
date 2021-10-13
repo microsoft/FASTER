@@ -44,55 +44,70 @@ namespace FASTER.test.readaddress
             public override string ToString() => value.ToString();
         }
 
+        public struct Output
+        {
+            public long value;
+            public long address;
+
+            public override string ToString() => $"val {value}; addr {address}";
+        }
+
         private static long SetReadOutput(long key, long value) => (key << 32) | value;
 
-        internal class Functions : SimpleFunctions<Key, Value>
+        internal class Functions : FunctionsBase<Key, Value, Value, Output, Empty>
         {
             internal long lastWriteAddress = Constants.kInvalidAddress;
 
-            public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref RecordInfo recordInfo, long address)
+            public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                dst.value = SetReadOutput(key.key, value.value);
+                output.value = SetReadOutput(key.key, value.value);
+                output.address = address;
                 return true;
             }
 
-            public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref RecordInfo recordInfo, long address)
+            public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                dst.value = SetReadOutput(key.key, value.value);
+                output.value = SetReadOutput(key.key, value.value);
+                output.address = address;
                 return true;
             }
 
             // Return false to force a chain of values.
             public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => false;
 
-            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) => false;
+            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => false;
 
             // Record addresses
             public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
             {
+                dst = src;
                 this.lastWriteAddress = address;
-                base.SingleWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
             }
 
-            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address)
+            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 this.lastWriteAddress = address;
-                base.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+                output.address = address;
+                output.value = value.value = input.value;
             }
 
-            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, long address)
+            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 this.lastWriteAddress = address;
-                base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
+                output.address = address;
+                output.value = newValue.value = input.value;
             }
 
-            // Track the recordInfo for its PreviousAddress.
-            public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
-
-            public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Empty ctx, Status status)
+            public override void ReadCompletionCallback(ref Key key, ref Value input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                output = input;
-                base.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
+                if (status == Status.OK)
+                    Assert.AreEqual(output.address, recordMetadata.Address);
+            }
+
+            public override void RMWCompletionCallback(ref Key key, ref Value input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            {
+                if (status == Status.OK)
+                    Assert.AreEqual(output.address, recordMetadata.Address);
             }
         }
 
@@ -182,7 +197,7 @@ namespace FASTER.test.readaddress
                 await Flush();
             }
 
-            internal bool ProcessChainRecord(Status status, RecordMetadata recordMetadata, int lap, ref Value actualOutput, ref int previousVersion)
+            internal bool ProcessChainRecord(Status status, RecordMetadata recordMetadata, int lap, ref Output actualOutput, ref int previousVersion)
             {
                 var recordInfo = recordMetadata.RecordInfo;
                 Assert.GreaterOrEqual(lap, 0);
@@ -199,7 +214,7 @@ namespace FASTER.test.readaddress
                 return recordInfo.PreviousAddress >= this.fkv.Log.BeginAddress;
             }
 
-            internal static void ProcessNoKeyRecord(Status status, ref Value actualOutput, int keyOrdinal)
+            internal static void ProcessNoKeyRecord(Status status, ref Output actualOutput, int keyOrdinal)
             {
                 if (status != Status.NOTFOUND)
                 {
@@ -234,7 +249,7 @@ namespace FASTER.test.readaddress
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
             {
-                var output = default(Value);
+                var output = default(Output);
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
                 RecordMetadata recordMetadata = default;
@@ -298,7 +313,7 @@ namespace FASTER.test.readaddress
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
             {
-                var output = default(Value);
+                var output = default(Output);
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
                 RecordMetadata recordMetadata = default;
@@ -482,7 +497,7 @@ namespace FASTER.test.readaddress
             for (int iteration = 0; iteration < 2; ++iteration)
             {
                 var rng = new Random(101);
-                var output = default(Value);
+                var output = default(Output);
                 var input = default(Value);
 
                 for (int ii = 0; ii < numKeys; ++ii)

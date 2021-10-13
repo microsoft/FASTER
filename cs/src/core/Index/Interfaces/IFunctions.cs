@@ -235,7 +235,8 @@ namespace FASTER.core
         /// <param name="output">The result of the RMW operation; if this is a struct, then it will be a temporary and should be copied to <paramref name="ctx"/></param>
         /// <param name="ctx">The application context passed through the pending operation</param>
         /// <param name="status">The result of the pending operation</param>
-        void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status);
+        /// <param name="recordMetadata">The metadata of the modified or inserted record</param>
+        void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata);
         #endregion RMWs
 
         #region Deletes

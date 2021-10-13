@@ -96,7 +96,7 @@ namespace FASTER.test
             Assert.AreEqual(output.value.value, key.key);
         }
 
-        public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
+        public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
         }
@@ -155,7 +155,7 @@ namespace FASTER.test
             Assert.AreEqual(key.value, output.value.value);
         }
 
-        public override void RMWCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status)
+        public override void RMWCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
         }
@@ -221,7 +221,7 @@ namespace FASTER.test
             }
         }
 
-        public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status)
+        public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx == 0)
                 Assert.AreEqual(Status.OK, status);

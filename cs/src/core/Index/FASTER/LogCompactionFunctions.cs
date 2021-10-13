@@ -53,7 +53,7 @@ namespace FASTER.core
 
         public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
 
-        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
+        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
 
         /// <summary>
         /// No reads during compaction

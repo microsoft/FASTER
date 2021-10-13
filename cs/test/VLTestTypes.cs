@@ -93,7 +93,7 @@ namespace FASTER.test
 
     public class VLFunctions : FunctionsBase<Key, VLValue, Input, int[], Empty>
     {
-        public override void RMWCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status)
+        public override void RMWCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
         }
@@ -138,7 +138,7 @@ namespace FASTER.test
 
     public class VLFunctions2 : FunctionsBase<VLValue, VLValue, Input, int[], Empty>
     {
-        public override void RMWCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status)
+        public override void RMWCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.AreEqual(Status.OK, status);
         }

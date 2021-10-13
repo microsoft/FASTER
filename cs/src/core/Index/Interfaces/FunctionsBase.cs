@@ -63,7 +63,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>
-        public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status) { }
+        public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>
         public virtual void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx) { }
         /// <inheritdoc/>
@@ -132,7 +132,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>
-        public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status) { }
+        public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>
         public override void UpsertCompletionCallback(ref Key key, ref Value input, ref Value value, Context ctx) { }
         /// <inheritdoc/>
