@@ -14,6 +14,10 @@ namespace FASTER.test
 {
     internal static class TestUtils
     {
+        // Various categories used to group tests
+        internal const string SmokeTestCategory = "Smoke";
+        internal const string FasterKVTestCategory = "FasterKV";
+
         /// <summary>
         /// Delete a directory recursively
         /// </summary>
