@@ -30,7 +30,8 @@ enum class OperationType : uint8_t {
   Upsert,
   Insert,
   Delete,
-  Exists
+  Exists,
+  ConditionalInsert
 };
 
 enum class OperationStatus : uint8_t {
@@ -557,16 +558,113 @@ class PendingExistsContext : public AsyncPendingExistsContext<typename MC::key_t
   }
 };
 
+// FASTER's internal ConditionalInsert2
 
-/// FASTER's internal ConditionalCopyToTail() base context.
+/// An internal ConditionalInsert() context that has gone async and lost its type information.
+template <class K>
+class AsyncPendingConditionalInsertContext : public PendingContext<K> {
+ public:
+  typedef K key_t;
+ protected:
+  AsyncPendingConditionalInsertContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_,
+                                        HashBucketEntry start_search_entry_, Address min_search_offset_, void* dest_store_)
+    : PendingContext<key_t>(OperationType::ConditionalInsert, caller_context_, caller_callback_)
+    , start_search_entry{ start_search_entry_ }
+    , min_search_offset{ min_search_offset_ }
+    , dest_store{ dest_store_ } {
+  }
+  /// The deep copy constructor.
+  AsyncPendingConditionalInsertContext(AsyncPendingConditionalInsertContext& other, IAsyncContext* caller_context)
+    : PendingContext<key_t>(other, caller_context)
+    , start_search_entry{ other.start_search_entry }
+    , min_search_offset{ other.min_search_offset }
+    , dest_store{ other.dest_store } {
+  }
+ public:
+  virtual uint32_t value_size() const = 0;
+  virtual bool is_tombstone() const = 0;
+
+  virtual bool Insert(void* dest, uint32_t alloc_size) const = 0;
+ public:
+  HashBucketEntry start_search_entry;
+  Address min_search_offset;
+  void* dest_store;
+};
+
+
+/// A synchronous ConditionalInsert() context preserves its type information.
+template<class CIC>
+class PendingConditionalInsertContext : public AsyncPendingConditionalInsertContext<typename CIC::key_t> {
+ public:
+  typedef CIC conditional_insert_context_t;
+  typedef typename conditional_insert_context_t::key_t key_t;
+  typedef typename conditional_insert_context_t::value_t value_t;
+  using key_or_shallow_key_t = std::remove_const_t<std::remove_reference_t<std::result_of_t<decltype(&CIC::key)(CIC)>>>;
+  typedef Record<key_t, value_t> record_t;
+  constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
+
+  PendingConditionalInsertContext(conditional_insert_context_t& caller_context_, AsyncCallback caller_callback_,
+                                  HashBucketEntry start_search_entry_, Address min_search_offset_, void* dest_store_)
+    : AsyncPendingConditionalInsertContext<key_t>(caller_context_, caller_callback_,
+                                                start_search_entry_, min_search_offset_, dest_store_) {
+  }
+  /// The deep copy constructor.
+  PendingConditionalInsertContext(PendingConditionalInsertContext& other, IAsyncContext* caller_context_)
+    : AsyncPendingConditionalInsertContext<key_t>(other, caller_context_) {
+  }
+ protected:
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+    return IAsyncContext::DeepCopy_Internal(*this, PendingContext<key_t>::caller_context,
+                                            context_copy);
+  }
+ private:
+  const conditional_insert_context_t& conditional_insert_context() const {
+    return *static_cast<const conditional_insert_context_t*>(PendingContext<key_t>::caller_context);
+  }
+  conditional_insert_context_t& conditional_insert_context() {
+    return *static_cast<conditional_insert_context_t*>(PendingContext<key_t>::caller_context);
+  }
+ public:
+  /// Accessors.
+  inline const key_or_shallow_key_t& get_key_or_shallow_key() const {
+    return conditional_insert_context().key();
+  }
+  inline uint32_t key_size() const final {
+    return conditional_insert_context().key().size();
+  }
+  inline void write_deep_key_at(key_t* dst) const final {
+    // this should never be called
+    assert(false);
+  }
+  inline KeyHash get_key_hash() const final {
+    return conditional_insert_context().key().GetHash();
+  }
+  inline bool is_key_equal(const key_t& other) const final {
+    return conditional_insert_context().key() == other;
+  }
+  inline uint32_t value_size() const final {
+    return conditional_insert_context().value_size();
+  }
+
+  // Conditional insert contexts contains these two additional methods
+  inline bool is_tombstone() const final {
+    return conditional_insert_context().is_tombstone();
+  }
+  inline bool Insert(void* dest, uint32_t alloc_size) const final {
+    return conditional_insert_context().Insert(dest, alloc_size);
+  }
+};
+
+
+/// FASTER's internal ConditionalInsert() base context.
 /// Used in Compaction and HC's Rmw operation
 template<class K>
-class CopyToTailContextBase {
+class ConditionalInsertContextBase {
  public:
   typedef K key_t;
 
  protected:
-  CopyToTailContextBase(HashBucketEntry expected_entry_, void* dest_store_)
+  ConditionalInsertContextBase(HashBucketEntry expected_entry_, void* dest_store_)
     : expected_entry{ expected_entry_ }
     , dest_store{ dest_store_ }
     , search_min_offset{ Address::kInvalidAddress }

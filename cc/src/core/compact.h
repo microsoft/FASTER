@@ -120,7 +120,7 @@ class CompactionExists : public IAsyncContext {
 
 /// Copy to tail context used by compaction algorithm.
 template <class K, class V>
-class CompactionCopyToTailContext : public CopyToTailContextBase<K> {
+class CompactionCopyToTailContext : public ConditionalInsertContextBase<K> {
  public:
   typedef K key_t;
   typedef V value_t;
@@ -128,7 +128,7 @@ class CompactionCopyToTailContext : public CopyToTailContextBase<K> {
 
   /// Constructs and returns a context given a pointer to a record.
   CompactionCopyToTailContext(record_t* record, const HashBucketEntry& expected_entry, void* dest_store)
-   : CopyToTailContextBase<K>(expected_entry, dest_store)
+   : ConditionalInsertContextBase<K>(expected_entry, dest_store)
    , record_{ record }
   {}
   /// Copy constructor deleted; copy to tail request doesn't go async
@@ -164,6 +164,109 @@ class CompactionCopyToTailContext : public CopyToTailContextBase<K> {
  private:
   record_t* record_;
 };
+
+/// ConditionalInsert context used by compaction algorithm.
+template <class K, class V>
+class CompactionConditionalInsertContext : public IAsyncContext {
+ public:
+  typedef K key_t;
+  typedef V value_t;
+  typedef Record<key_t, value_t> record_t;
+
+  /// Constructs and returns a context given a pointer to a record.
+  CompactionConditionalInsertContext(record_t* record, Address record_address, void* records_info, void* records_queue)
+   : record_{ record }
+   , address_{ record_address }
+   , records_info_{ records_info }
+   , records_queue_{ records_queue }
+  {}
+
+  /// Copy constructor -- required for when the Exists operation goes async
+  CompactionConditionalInsertContext(const CompactionConditionalInsertContext& from)
+   : record_{ from.record_ }
+   , address_{ from.address_ }
+   , records_info_{ from.records_info_ }
+   , records_queue_{ from.records_queue_}
+  {}
+
+  /// Invoked from within FASTER.
+  inline const key_t& key() const {
+    return record_->key();
+  }
+  inline uint32_t value_size() const {
+    return record_->value().size();
+  }
+  inline bool is_tombstone() const {
+    return record_->header.tombstone;
+  }
+  inline bool Insert(void* dest, uint32_t alloc_size) const {
+    if (alloc_size != record_->size()) {
+      return false;
+    }
+    memcpy(dest, record_, alloc_size);
+    return true;
+  }
+
+  /// Invoked from within callback
+
+  // Retrieve the correct entry in records_info data strcture
+  inline Address record_address() const {
+    return address_;
+  }
+  // Keep track of active/pending requests
+  inline void* records_info() const {
+    return records_info_;
+  }
+  inline void* records_queue() const {
+    return records_queue_;
+  }
+
+ protected:
+  /// Copies this context into a passed-in pointer if the operation goes
+  /// asynchronous inside FASTER.
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+  }
+
+ private:
+  /// Pointer to the record
+  record_t* record_;
+  /// The address of the record that was read
+  Address address_;
+  /// Pointer to the records info map (stored in Compact method)
+  void* records_info_;
+
+  void* records_queue_;
+};
+
+/*  /// Accessor for the key
+  inline const key_t& key() const final {
+    return record_->key();
+  }
+  inline uint32_t key_size() const final {
+    return record_->key().size();
+  }
+  inline KeyHash get_key_hash() const final {
+    return record_->key().GetHash();
+  }
+  inline bool is_key_equal(const key_t& other) const final {
+    return record_->key() == other;
+  }
+  inline uint32_t value_size() const final {
+    return record_->value().size();
+  }
+  inline bool is_tombstone() const final {
+    return record_->header.tombstone;
+  }
+  inline bool copy_at(void* dest, uint32_t alloc_size) const final {
+    if (alloc_size != record_->size()) {
+      return false;
+    }
+    memcpy(dest, record_, alloc_size);
+    return true;
+  }
+};*/
+
 
 
 ///////////////////////////////////////////////////////////
