@@ -1063,7 +1063,7 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthValue) {
 /// Inserts a bunch of records into a FASTER instance and invokes the
 /// compaction algorithm. Since all records are still live, checks if
 /// they remain so after the algorithm completes/returns.
-TEST_P(CompactLookupParameterizedTestFixture, AllLive) {
+TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLive) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
@@ -1122,7 +1122,7 @@ TEST_P(CompactLookupParameterizedTestFixture, AllLive) {
 /// Inserts a bunch of records into a FASTER instance, deletes half of them
 /// and invokes the compaction algorithm. Checks that the ones that should
 /// be alive are alive and the ones that should be dead stay dead.
-TEST_P(CompactLookupParameterizedTestFixture, HalfLive) {
+TEST_P(CompactLookupParameterizedTestFixture, OnDiskHalfLive) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
@@ -1195,7 +1195,7 @@ TEST_P(CompactLookupParameterizedTestFixture, HalfLive) {
   std::experimental::filesystem::remove_all("tmp_store");
 }
 
-TEST_P(CompactLookupParameterizedTestFixture, Rmw) {
+TEST_P(CompactLookupParameterizedTestFixture, OnDiskRmw) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = LargeValue;
 
@@ -1324,7 +1324,7 @@ TEST_P(CompactLookupParameterizedTestFixture, Rmw) {
 /// Inserts a bunch of records into a FASTER instance, deletes half of them,
 /// re-inserts them with new values, and invokes the compaction algorithm.
 /// Checks that the updated ones have the new value, and the rest remain unchanged.
-TEST_P(CompactLookupParameterizedTestFixture, AllLiveDeleteAndReInsert) {
+TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLiveDeleteAndReInsert) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
@@ -1410,7 +1410,7 @@ TEST_P(CompactLookupParameterizedTestFixture, AllLiveDeleteAndReInsert) {
 /// compaction algorithm. Concurrent to the compaction, upserts and deletes
 /// are performed in 1/3 of the keys, respectively. After compaction, it
 /// checks that updated keys have the new value, while deleted keys do not exist.
-TEST_P(CompactLookupParameterizedTestFixture, ConcurrentOps) {
+TEST_P(CompactLookupParameterizedTestFixture, OnDiskConcurrentOps) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
@@ -1525,7 +1525,7 @@ TEST_P(CompactLookupParameterizedTestFixture, ConcurrentOps) {
   std::experimental::filesystem::remove_all("tmp_store");
 }
 
-TEST_P(CompactLookupParameterizedTestFixture, VariableLengthKey) {
+TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthKey) {
   using Key = VariableSizeKey;
   using ShallowKey = VariableSizeShallowKey;
   using Value = MediumValue;
@@ -1798,7 +1798,7 @@ TEST_P(CompactLookupParameterizedTestFixture, VariableLengthKey) {
 }
 
 
-TEST_P(CompactLookupParameterizedTestFixture, VariableLengthValue) {
+TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthValue) {
   using Key = FixedSizeKey<uint32_t>;
 
   class UpsertContextVLV;
