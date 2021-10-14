@@ -179,13 +179,12 @@ namespace FASTER.core
 
         private IDevice NextCommitDevice(long proposedCommitNum)
         {
-            var actualNum = proposedCommitNum == -1 ? commitNum + 1 : proposedCommitNum;
             if (overwriteLogCommits)
             {
                 if (_disposed) return null;
                 if (singleLogCommitDevice == null)
                 {
-                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(proposedCommitNum));
+                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
                     if (_disposed)
                     {
                         singleLogCommitDevice?.Dispose();
@@ -196,6 +195,7 @@ namespace FASTER.core
                 return singleLogCommitDevice;
             }
 
+            var actualNum = proposedCommitNum == -1 ? commitNum + 1 : proposedCommitNum;
             var result =  deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(actualNum));
             commitNum = actualNum;
             return result;
