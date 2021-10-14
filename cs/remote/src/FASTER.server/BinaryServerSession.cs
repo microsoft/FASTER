@@ -11,7 +11,7 @@ namespace FASTER.server
 {
     internal unsafe sealed class BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
         : FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>
-        where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
+        where Functions : IFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly HeaderReaderWriter hrw;

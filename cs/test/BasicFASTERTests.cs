@@ -616,11 +616,11 @@ namespace FASTER.test
 
         // Test the ReadAtAddress where ReadFlags = ReadFlags.SkipReadCache
 
-        class SkipReadCacheFunctions : AdvancedFunctions    // Must use AdvancedFunctions for the address parameters to the callbacks
+        class SkipReadCacheFunctions : Functions
         {
             internal long expectedReadAddress;
 
-            public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, long address)
+            public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address)
             {
                 Assign(ref value, ref dst, address);
                 return true;
@@ -638,7 +638,7 @@ namespace FASTER.test
                 Assert.AreEqual(expectedReadAddress, address);
                 expectedReadAddress = -1;   // show that the test executed
             }
-            public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordInfo recordInfo)
+            public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 // Do no data verifications here; they're done in the test
             }
@@ -705,16 +705,16 @@ namespace FASTER.test
 
             // Do not put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            RecordInfo recordInfo = new() { PreviousAddress = readAtAddress };
-            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref recordInfo, ReadFlags.SkipReadCache);
+            RecordMetadata recordMetadata = new(new RecordInfo() { PreviousAddress = readAtAddress });
+            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref recordMetadata, ReadFlags.SkipReadCache);
             VerifyResult();
 
             Assert.AreEqual(fht.ReadCache.BeginAddress, fht.ReadCache.TailAddress);
 
             // Put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            recordInfo.PreviousAddress = readAtAddress; // Read*() sets this to the record's PreviousAddress (so caller can follow the chain), so reinitialize it.
-            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref recordInfo);
+            recordMetadata.RecordInfo.PreviousAddress = readAtAddress; // Read*() sets this to the record's PreviousAddress (so caller can follow the chain), so reinitialize it.
+            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref recordMetadata);
             VerifyResult();
 
             Assert.Less(fht.ReadCache.BeginAddress, fht.ReadCache.TailAddress);

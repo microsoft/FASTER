@@ -10,7 +10,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 using FASTER.common;
 using FASTER.core;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 namespace FASTER.server
@@ -24,7 +23,7 @@ namespace FASTER.server
 
     internal unsafe sealed class WebsocketServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
         : FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>
-        where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
+        where Functions : IFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly HeaderReaderWriter hrw;

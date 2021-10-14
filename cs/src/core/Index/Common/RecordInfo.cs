@@ -247,5 +247,7 @@ namespace FASTER.core
         
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetShortVersion(long version) => (int) (version & kVersionMaskInInteger);
+
+        public override string ToString() => word.ToString();
     }
 }

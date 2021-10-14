@@ -14,6 +14,10 @@ namespace FASTER.test
 {
     internal static class TestUtils
     {
+        // Various categories used to group tests
+        internal const string SmokeTestCategory = "Smoke";
+        internal const string FasterKVTestCategory = "FasterKV";
+
         /// <summary>
         /// Delete a directory recursively
         /// </summary>
@@ -160,9 +164,13 @@ namespace FASTER.test
         }
 
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
+            => GetSinglePendingResult(completedOutputs, out _);
+
+        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, out RecordMetadata recordMetadata)
         {
             Assert.IsTrue(completedOutputs.Next());
             var result = (completedOutputs.Current.Status, completedOutputs.Current.Output);
+            recordMetadata = completedOutputs.Current.RecordMetadata;
             Assert.IsFalse(completedOutputs.Next());
             completedOutputs.Dispose();
             return result;

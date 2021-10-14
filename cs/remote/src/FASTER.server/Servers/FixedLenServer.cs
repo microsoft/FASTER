@@ -15,7 +15,7 @@ namespace FASTER.server
         where Value : unmanaged
         where Input : unmanaged
         where Output : unmanaged
-        where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
+        where Functions : IFunctions<Key, Value, Input, Output, long>
     {
         /// <summary>
         /// Create server instance; use Start to start the server.

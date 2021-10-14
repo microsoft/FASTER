@@ -31,30 +31,14 @@ namespace ReadAddress
         public override string ToString() => value.ToString();
     }
 
-    public class Context
-    {
-        public RecordInfo recordInfo;
-        public Status status;
-    }
-
     /// <summary>
     /// Callback for FASTER operations
     /// </summary>
-    public class Functions : AdvancedSimpleFunctions<Key, Value, Context>
+    public class Functions : SimpleFunctions<Key, Value>
     {
         // Return false to force a chain of values.
-        public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => false;
+        public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => false;
 
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) => false;
-
-        // Track the recordInfo for its PreviousAddress.
-        public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo)
-        {
-            if (!(ctx is null))
-            {
-                ctx.recordInfo = recordInfo;
-                ctx.status = status;
-            }
-        }
     }
 }

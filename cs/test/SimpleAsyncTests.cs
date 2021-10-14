@@ -261,7 +261,7 @@ namespace FASTER.test.async
             var addresses = new long[numOps];
             long recordSize = fht1.Log.FixedRecordSize;
 
-            using var s1 = fht1.NewSession(new AdvancedRMWSimpleFunctions<long, long>((a, b) => a + b));
+            using var s1 = fht1.NewSession(new RMWSimpleFunctions<long, long>((a, b) => a + b));
             for (key = 0; key < numOps; key++)
             {
                 // We can predict the address as TailAddress because we're single-threaded, *unless* a page was allocated;

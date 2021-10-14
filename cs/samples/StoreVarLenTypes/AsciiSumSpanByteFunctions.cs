@@ -17,13 +17,13 @@ namespace StoreVarLenTypes
         public AsciiSumSpanByteFunctions(MemoryPool<byte> memoryPool = null, bool locking = false) : base(memoryPool, locking) { }
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output)
+        public override void InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, long address)
         {
             input.CopyTo(ref value);
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output)
+        public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, long address)
         {
             long curr = Utils.BytesToLong(value.AsSpan());
             long next = curr + Utils.BytesToLong(input.AsSpan());
@@ -33,7 +33,7 @@ namespace StoreVarLenTypes
         }
 
         /// <inheritdoc/>
-        public override void CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output)
+        public override void CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RecordInfo recordInfo, long address)
         {
             long curr = Utils.BytesToLong(oldValue.AsSpan());
             long next = curr + Utils.BytesToLong(input.AsSpan());

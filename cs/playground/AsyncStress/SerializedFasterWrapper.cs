@@ -14,8 +14,8 @@ namespace AsyncStress
     {
         readonly FasterKV<SpanByte, SpanByte> _store;
         readonly AsyncPool<ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions>> _sessionPool;
-        readonly UpsertUpdater upsertUpdater = new UpsertUpdater();
-        readonly RmwUpdater rmwUpdater = new RmwUpdater();
+        readonly UpsertUpdater upsertUpdater = new();
+        readonly RmwUpdater rmwUpdater = new();
         readonly bool useOsReadBuffering;
         int pendingCount = 0;
 
@@ -101,7 +101,7 @@ namespace AsyncStress
             where TUpdater : IUpdater<TAsyncResult>
         {
             if (!_sessionPool.TryGet(out var session))
-                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
+                session = _sessionPool.GetAsync().AsTask().GetAwaiter().GetResult();
 
             byte[] keyBytes = MessagePackSerializer.Serialize(key);
             byte[] valueBytes = MessagePackSerializer.Serialize(value);
@@ -128,7 +128,7 @@ namespace AsyncStress
             where TUpdater : IUpdater<TAsyncResult>
         {
             if (!_sessionPool.TryGet(out var session))
-                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
+                session = _sessionPool.GetAsync().AsTask().GetAwaiter().GetResult();
 
             for (var i = 0; i < count; ++i)
             {
@@ -156,7 +156,7 @@ namespace AsyncStress
         public async ValueTask<(Status, Value)> ReadAsync(Key key)
         {
             if (!_sessionPool.TryGet(out var session))
-                session = await _sessionPool.GetAsync().ConfigureAwait(false);
+                session = await _sessionPool.GetAsync().AsTask().ConfigureAwait(false);
 
             byte[] keyBytes = MessagePackSerializer.Serialize(key);
             ValueTask<FasterKV<SpanByte, SpanByte>.ReadAsyncResult<SpanByte, SpanByteAndMemory, Empty>> task;
@@ -181,7 +181,7 @@ namespace AsyncStress
         public ValueTask<(Status, Value)> Read(Key key)
         {
             if (!_sessionPool.TryGet(out var session))
-                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
+                session = _sessionPool.GetAsync().AsTask().GetAwaiter().GetResult();
 
             byte[] keyBytes = MessagePackSerializer.Serialize(key);
             (Status, SpanByteAndMemory) result;
@@ -220,7 +220,7 @@ namespace AsyncStress
         public async ValueTask<(Status, Value)[]> ReadChunkAsync(Key[] chunk, int offset, int count)
         {
             if (!_sessionPool.TryGet(out var session))
-                session = _sessionPool.GetAsync().GetAwaiter().GetResult();
+                session = _sessionPool.GetAsync().AsTask().GetAwaiter().GetResult();
 
             // Reads in chunk are performed serially
             (Status, Value)[] result = new (Status, Value)[count];
@@ -240,13 +240,13 @@ namespace AsyncStress
 
     public class SpanByteFunctions : SpanByteFunctions<SpanByte, SpanByteAndMemory, Empty>
     {
-        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, long address)
         {
             value.CopyTo(ref dst, MemoryPool<byte>.Shared);
             return true;
         }
 
-        public unsafe override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, long address)
         {
             value.CopyTo(ref dst, MemoryPool<byte>.Shared);
             return true;

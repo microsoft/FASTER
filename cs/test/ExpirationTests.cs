@@ -123,7 +123,7 @@ namespace FASTER.test.Expiration
                                                 //          Verify tombstone is revivified on later simple RMW (IU called within FASTER-acquired RecordInfo.SpinLock)
         };
 
-        public class ExpirationFunctions : AdvancedFunctionsBase<int, VLValue, ExpirationInput, ExpirationOutput, Empty>
+        public class ExpirationFunctions : FunctionsBase<int, VLValue, ExpirationInput, ExpirationOutput, Empty>
         {
             private static unsafe void VerifyValue(int key, ref VLValue value)
             {
@@ -220,7 +220,7 @@ namespace FASTER.test.Expiration
                         output.retrievedValue = newValue.field1;
                         return;
                     case TestOp.SetIfKeyExists:
-                        newValue.field1 = (int)input.value;
+                        newValue.field1 = input.value;
                         output.result = ExpirationResult.Updated;
                         output.retrievedValue = newValue.field1;
                         return;
@@ -285,7 +285,7 @@ namespace FASTER.test.Expiration
                 }
             }
 
-            public override void InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output)
+            public override void InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, long address)
             {
                 output.AddFunc(Funcs.InitialUpdater);
                 value.field1 = input.value;
@@ -378,23 +378,23 @@ namespace FASTER.test.Expiration
                 }
             }
 
-            public override void RMWCompletionCallback(ref int key, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status)
+            public override void RMWCompletionCallback(ref int key, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 output.AddFunc(Funcs.RMWCompletionCallback);
             }
 
-            public override void ReadCompletionCallback(ref int key, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status, RecordInfo recordInfo)
+            public override void ReadCompletionCallback(ref int key, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 output.AddFunc(Funcs.ReadCompletionCallback);
             }
 
-            public override void UpsertCompletionCallback(ref int key, ref VLValue value, Empty ctx)
+            public override void UpsertCompletionCallback(ref int key, ref ExpirationInput input, ref VLValue value, Empty ctx)
             {
                 throw new NotImplementedException("TODO - UpsertCompletionCallback");
             }
 
             // Read functions
-            public override bool SingleReader(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, long address)
+            public override bool SingleReader(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, long address)
             {
                 output.AddFunc(Funcs.SingleReader);
                 if (IsExpired(key, value.field1))
@@ -413,12 +413,12 @@ namespace FASTER.test.Expiration
             }
 
             // Upsert functions
-            public override void SingleWriter(ref int key, ref VLValue src, ref VLValue dst)
+            public override void SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
             {
                 src.CopyTo(ref dst);
             }
 
-            public override bool ConcurrentWriter(ref int key, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
+            public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
             {
                 src.CopyTo(ref dst);
                 return true;
@@ -429,7 +429,7 @@ namespace FASTER.test.Expiration
         IDevice log;
         ExpirationFunctions functions;
         FasterKV<int, VLValue> fht;
-        AdvancedClientSession<int, VLValue, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions> session;
+        ClientSession<int, VLValue, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions> session;
 
         [SetUp]
         public void Setup()
