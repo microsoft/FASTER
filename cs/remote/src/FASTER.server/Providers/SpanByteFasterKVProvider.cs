@@ -8,13 +8,32 @@ namespace FASTER.server
     /// Session provider for FasterKV store based on
     /// [K, V, I, O, C] = [SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long]
     /// </summary>
-    public sealed class SpanByteFasterKVProvider : ISessionProvider
+    public class SpanByteFasterKVProvider : ISessionProvider
     {
-        readonly FasterKV<SpanByte, SpanByte> store;
-        readonly SpanByteServerSerializer serializer;
-        readonly SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
-        readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
-        readonly MaxSizeSettings maxSizeSettings;
+        /// <summary>
+        /// Store
+        /// </summary>
+        protected readonly FasterKV<SpanByte, SpanByte> store;
+
+        /// <summary>
+        /// Serializer
+        /// </summary>
+        protected readonly SpanByteServerSerializer serializer;
+
+        /// <summary>
+        /// KV broker
+        /// </summary>
+        protected readonly SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
+
+        /// <summary>
+        /// Broker
+        /// </summary>
+        protected readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
+
+        /// <summary>
+        /// Size settings
+        /// </summary>
+        protected readonly MaxSizeSettings maxSizeSettings;
 
         /// <summary>
         /// Create SpanByte FasterKV backend
@@ -22,12 +41,12 @@ namespace FASTER.server
         /// <param name="store"></param>
         /// <param name="kvBroker"></param>
         /// <param name="broker"></param>
-        /// <param name="serverOptions"></param>
+        /// <param name="recoverStore"></param>
         /// <param name="maxSizeSettings"></param>
-        public SpanByteFasterKVProvider(FasterKV<SpanByte, SpanByte> store, SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker = null, SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null, ServerOptions serverOptions = null, MaxSizeSettings maxSizeSettings = default)
+        public SpanByteFasterKVProvider(FasterKV<SpanByte, SpanByte> store, SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker = null, SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null, bool recoverStore = false, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
-            if ((serverOptions ?? new ServerOptions()).Recover)
+            if (recoverStore)
             {
                 try
                 {
@@ -43,7 +62,7 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public IServerSession GetSession(WireFormat wireFormat, Socket socket)
+        public virtual IServerSession GetSession(WireFormat wireFormat, Socket socket)
         {
             switch (wireFormat)
             {
