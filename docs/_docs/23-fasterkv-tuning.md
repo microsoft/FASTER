@@ -35,21 +35,22 @@ the device via `IDisposable`.
 * `PageSizeBits`: This field (P) is used to indicate the size of each page. It is provided in terms of the number
 of bits. You get the actual size of the page by a simple computation of two raised to the power of the number
 specified (2<sup>P</sup>). For example, when `PageSizeBits` P is set to 12, it represents pages of size 4KB 
-(since 2<sup>P</sup> = 2<sup>10</sup> = 4096 = 4KB). Generally you should not need to adjust page size from its
-default value of 25 (= 32MB). You cannot use a page size smaller than the device sector size (512 bytes by 
-default), which translates to a `PageSizeBits` value of at least 9.
+(since 2<sup>P</sup> = 2<sup>12</sup> = 4096 = 4KB). Generally you should not need to adjust `PageSizeBits` from its
+default value of 25 (2<sup>25</sup> = 32MB page size). You cannot use a page size smaller than the device sector 
+size (512 bytes by default), which translates to a `PageSizeBits` value of at least 9.
 
-* `MemorySizeBits`: This field (M) indicates the total size of memory used by the log. As before, for a setting
+* `MemorySizeBits`: This field (M) is used to indicate the total size of memory used by the log. As before, for a setting
 of M, 2<sup>M</sup> is the number of bytes used totally by the log. Since each page is of size 2<sup>P</sup>, the 
-number of pages in memory is simply 2<sup>M-P</sup>. FASTER requires at least 2 pages in memory, so M should be 
-set to at least P+1.
+number of pages in memory is simply 2<sup>M-P</sup>. FASTER requires at least 1 page in memory, so `MemorySizeBits` should be 
+set to at least P.
 
 * `MutableFraction`: This field (F) indicates the fraction of the memory that will be treated as _mutable_, i.e.,
 updates are performed in-place instead of creating a new version on the tail of the log. A value of 0.9 (the
 default) indicates that 90% of memory will be mutable.
 
-* `SegmentSize`: On disk, the data is written to files in coarse-grained chunks called _segments_. We can size 
-each chunk independently of pages, as one segment typically consists of many pages. For instance, if we want
+* `SegmentSizeBits`: On disk, the data is written to files in coarse-grained chunks called _segments_. We can size 
+each chunk independently of pages, as one segment typically consists of many pages. `SegmentSizeBits` is used to 
+indicate the size of each segment. As before, it is specified in bits. For instance, if we want
 each file on disk to be 1GB (the default), we can set `SegmentSizeBits` S to 30, since 2<sup>30</sup> = 1GB.
 
 * `CopyReadsToTail`: This enum setting indicates whether reads should be copied to the tail of the log. This

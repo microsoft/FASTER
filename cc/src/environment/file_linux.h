@@ -11,6 +11,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#ifdef FASTER_URING
+#include <liburing.h>
+#endif
+
 #include "../core/async.h"
 #include "../core/status.h"
 #include "file_common.h"
@@ -249,6 +253,155 @@ class QueueFile : public File {
 
   io_context_t io_object_;
 };
+
+#ifdef FASTER_URING
+
+class alignas(64) SpinLock {
+public:
+    SpinLock(): locked_(false) {}
+
+    void Acquire() noexcept {
+        for (;;) {
+            if (!locked_.exchange(true, std::memory_order_acquire)) {
+                return;
+            }
+
+            while (locked_.load(std::memory_order_relaxed)) {
+                __builtin_ia32_pause();
+            }
+        }
+    }
+
+    void Release() noexcept {
+        locked_.store(false, std::memory_order_release);
+    }
+private:
+    std::atomic_bool locked_;
+};
+
+class UringFile;
+
+/// The QueueIoHandler class encapsulates completions for async file I/O, where the completions
+/// are put on the AIO completion queue.
+class UringIoHandler {
+ public:
+  typedef UringFile async_file_t;
+
+ private:
+  constexpr static int kMaxEvents = 128;
+
+ public:
+  UringIoHandler() {
+    ring_ = new struct io_uring();
+    int ret = io_uring_queue_init(kMaxEvents, ring_, 0);
+    assert(ret == 0);
+  }
+
+  UringIoHandler(size_t max_threads) {
+    ring_ = new struct io_uring();
+    int ret = io_uring_queue_init(kMaxEvents, ring_, 0);
+    assert(ret == 0);
+  }
+
+  /// Move constructor
+  UringIoHandler(UringIoHandler&& other) {
+    ring_ = other.ring_;
+    other.ring_ = 0;
+  }
+
+  ~UringIoHandler() {
+    if (ring_ != 0) {
+      io_uring_queue_exit(ring_);
+      delete ring_;
+    }
+  }
+
+  /*
+  /// Invoked whenever a Linux AIO completes.
+  static void IoCompletionCallback(io_context_t ctx, struct iocb* iocb, long res, long res2);
+  */
+  struct IoCallbackContext {
+    IoCallbackContext(bool is_read, int fd, uint8_t* buffer, size_t length, size_t offset, core::IAsyncContext* context_, core::AsyncIOCallback callback_)
+      : is_read_(is_read)
+      , fd_(fd)
+      , vec_{buffer, length}
+      , offset_(offset)
+      , caller_context{ context_ }
+      , callback{ callback_ } {}
+
+    bool is_read_;
+
+    int fd_;
+    struct iovec vec_;
+    size_t offset_;
+
+    /// Caller callback context.
+    core::IAsyncContext* caller_context;
+
+    /// The caller's asynchronous callback function
+    core::AsyncIOCallback callback;
+  };
+
+  inline struct io_uring* io_uring() const {
+    return ring_;
+  }
+
+  inline SpinLock* sq_lock() {
+    return &sq_lock_;
+  }
+
+  /// Try to execute the next IO completion on the queue, if any.
+  bool TryComplete();
+
+ private:
+  /// The io_uring for all the I/Os
+  struct io_uring* ring_;
+  SpinLock sq_lock_, cq_lock_;
+};
+
+/// The UringFile class encapsulates asynchronous reads and writes, using the specified
+/// io_uring
+class UringFile : public File {
+ public:
+  UringFile()
+    : File()
+    , ring_{ nullptr } {
+  }
+  UringFile(const std::string& filename)
+    : File(filename)
+    , ring_{ nullptr } {
+  }
+  /// Move constructor
+  UringFile(UringFile&& other)
+    : File(std::move(other))
+    , ring_{ other.ring_ }
+    , sq_lock_{ other.sq_lock_ } {
+  }
+  /// Move assignment operator.
+  UringFile& operator=(UringFile&& other) {
+    File::operator=(std::move(other));
+    ring_ = other.ring_;
+    sq_lock_ = other.sq_lock_;
+    return *this;
+  }
+
+  core::Status Open(FileCreateDisposition create_disposition, const FileOptions& options,
+              UringIoHandler* handler, bool* exists = nullptr);
+
+  core::Status Read(size_t offset, uint32_t length, uint8_t* buffer,
+              core::IAsyncContext& context, core::AsyncIOCallback callback) const;
+  core::Status Write(size_t offset, uint32_t length, const uint8_t* buffer,
+               core::IAsyncContext& context, core::AsyncIOCallback callback);
+
+ private:
+  core::Status ScheduleOperation(FileOperationType operationType, uint8_t* buffer, size_t offset,
+                                 uint32_t length, core::IAsyncContext& context, core::AsyncIOCallback callback);
+
+  struct io_uring* ring_;
+  SpinLock* sq_lock_;
+};
+
+#endif
 
 }
 } // namespace FASTER::environment

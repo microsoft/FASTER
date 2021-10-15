@@ -43,7 +43,7 @@ namespace FASTER.server
             if (networkBufferSize == default)
                 this.networkBufferSize = BufferSizeUtils.ClientBufferSize(new MaxSizeSettings());
 
-            var ip = IPAddress.Parse(address);
+            var ip = address == null ? IPAddress.Any : IPAddress.Parse(address);
             var endPoint = new IPEndPoint(ip, port);
             servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             servSocket.Bind(endPoint);
@@ -98,7 +98,7 @@ namespace FASTER.server
                 return false;
             }
 
-            // Ok to create new event args on accept because we assume a connection to be long-running
+            // Ok to create new event args on accept because we assume a connection to be long-running            
             var receiveEventArgs = new SocketAsyncEventArgs();
             var buffer = new byte[networkBufferSize];
             receiveEventArgs.SetBuffer(buffer, 0, networkBufferSize);
@@ -247,7 +247,15 @@ namespace FASTER.server
 
             connArgs.session.AddBytesRead(connArgs.bytesRead);
             var _newHead = connArgs.session.TryConsumeMessages(e.Buffer);
-            e.SetBuffer(_newHead, e.Buffer.Length - _newHead);
+            if (_newHead == e.Buffer.Length)
+            {
+                // Need to grow input buffer
+                var newBuffer = new byte[e.Buffer.Length * 2];
+                Array.Copy(e.Buffer, newBuffer, e.Buffer.Length);
+                e.SetBuffer(newBuffer, _newHead, newBuffer.Length - _newHead);
+            }
+            else
+                e.SetBuffer(_newHead, e.Buffer.Length - _newHead);
             return true;
         }
 
