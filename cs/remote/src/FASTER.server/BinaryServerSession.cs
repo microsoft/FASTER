@@ -57,8 +57,8 @@ namespace FASTER.server
 
         public override void CompleteRead(ref Output output, long ctx, Status status)
         {
-            byte* d = responseObject.obj.bufferPtr;
-            var dend = d + responseObject.obj.buffer.Length;
+            byte* d = responseObject.bufferPtr;
+            var dend = d + responseObject.buffer.Length;
 
             if ((int)(dend - dcurr) < 7 + maxSizeSettings.MaxOutputSize)
                 SendAndReset(ref d, ref dend);
@@ -74,8 +74,8 @@ namespace FASTER.server
 
         public override void CompleteRMW(ref Output output, long ctx, Status status)
         {
-            byte* d = responseObject.obj.bufferPtr;
-            var dend = d + responseObject.obj.buffer.Length;
+            byte* d = responseObject.bufferPtr;
+            var dend = d + responseObject.buffer.Length;
 
             if ((int)(dend - dcurr) < 7 + maxSizeSettings.MaxOutputSize)
                 SendAndReset(ref d, ref dend);
@@ -115,8 +115,8 @@ namespace FASTER.server
 
             fixed (byte* b = &buf[offset])
             {
-                byte* d = responseObject.obj.bufferPtr;
-                var dend = d + responseObject.obj.buffer.Length;
+                byte* d = responseObject.bufferPtr;
+                var dend = d + responseObject.buffer.Length;
                 dcurr = d + sizeof(int); // reserve space for size
                 int origPendingSeqNo = pendingSeqNo;
 
@@ -216,7 +216,10 @@ namespace FASTER.server
                 if (msgnum - start > 0)
                     Send(d);
                 else
-                    responseObject.Dispose();
+                {
+                    messageManager.Return(responseObject);
+                    responseObject = null;
+                }
             }
         }
 
@@ -249,8 +252,8 @@ namespace FASTER.server
 
             ref Key key = ref serializer.ReadKeyByRef(ref keyPtr);
 
-            byte* d = respObj.obj.bufferPtr;
-            var dend = d + respObj.obj.buffer.Length;
+            byte* d = respObj.bufferPtr;
+            var dend = d + respObj.buffer.Length;
             var dcurr = d + sizeof(int); // reserve space for size
             byte* outputDcurr;
 
@@ -294,14 +297,14 @@ namespace FASTER.server
             Unsafe.AsRef<BatchHeader>(dstart).SeqNo = 0;
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header
-            *(int*)respObj.obj.bufferPtr = -(payloadSize - sizeof(int));
+            *(int*)respObj.bufferPtr = -(payloadSize - sizeof(int));
             try
             {
                 messageManager.Send(socket, respObj, 0, payloadSize);
             }
             catch
             {
-                respObj.Dispose();
+                messageManager.Return(respObj);
             }
         }
 
@@ -327,8 +330,8 @@ namespace FASTER.server
         {
             Send(d);
             GetResponseObject();
-            d = responseObject.obj.bufferPtr;
-            dend = d + responseObject.obj.buffer.Length;
+            d = responseObject.bufferPtr;
+            dend = d + responseObject.buffer.Length;
             dcurr = d + sizeof(int);
             start = msgnum;
         }
@@ -341,9 +344,8 @@ namespace FASTER.server
             Unsafe.AsRef<BatchHeader>(dstart).SeqNo = seqNo++;
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header
-            *(int*)responseObject.obj.bufferPtr = -(payloadSize - sizeof(int));
+            *(int*)responseObject.bufferPtr = -(payloadSize - sizeof(int));
             SendResponse(payloadSize);
-            responseObject.obj = null;
         }
 
         private bool HandlePubSub(MessageType message, ref byte* src, ref byte* d, ref byte* dend)
