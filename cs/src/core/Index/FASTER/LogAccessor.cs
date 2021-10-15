@@ -358,7 +358,8 @@ namespace FASTER.core
                 if (untilAddress < scanUntil)
                     LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
 
-                Input input = default;                
+                Input input = default;
+                Output output = default;
                 using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
                 while (iter3.GetNext(out var recordInfo))
                 {
@@ -396,7 +397,7 @@ namespace FASTER.core
                         // Note: we use untilAddress as expectedAddress here.
                         // As long as there's no record of the same key whose address is greater than untilAddress,
                         // i.e., the last address that this compact covers, we are safe to copy the old record to the tail.
-                        fhtSession.CopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), expectedAddress);
+                        fhtSession.CopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, expectedAddress);
                     }
                 }
             }

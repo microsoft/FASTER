@@ -157,7 +157,8 @@ namespace FASTER.core
         public Status Upsert(ref Key key, ref Value value, Context context, long serialNo)
         {
             Input input = default;
-            return _fasterKV.ContextUpsert(ref key, ref input, ref value, context, FasterSession, serialNo, _threadCtx.Value);
+            Output output = default;
+            return _fasterKV.ContextUpsert(ref key, ref input, ref value, ref output, out _, context, FasterSession, serialNo, _threadCtx.Value);
         }
 
         /// <summary>
@@ -330,9 +331,9 @@ namespace FASTER.core
                 return _fasterKV._functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
             }
 
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                return _fasterKV._functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+                return _fasterKV._functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
             }
 
             public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
@@ -394,12 +395,12 @@ namespace FASTER.core
                 return _fasterKV._functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
             }
 
-            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                _fasterKV._functions.SingleWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+                _fasterKV._functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
             }
 
-            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { }
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
 
             public void UnsafeResumeThread()
             {
