@@ -85,9 +85,10 @@ namespace FASTER.core
         /// <param name="input">The user input to be used for computing <paramref name="dst"/></param>
         /// <param name="src">The previous value to be copied/updated</param>
         /// <param name="dst">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
+        /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="recordInfo">A reference to the header of the record; may be used by <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
         /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing</param>
-        void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
+        void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
 
         /// <summary>
         /// Called after a record containing an upsert of a new key has been successfully inserted at the tail of the log.
@@ -96,9 +97,10 @@ namespace FASTER.core
         /// <param name="input">The user input that was used to compute <paramref name="dst"/></param>
         /// <param name="src">The previous value to be copied/updated</param>
         /// <param name="dst">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
+        /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="recordInfo">A reference to the header of the record; may be used by <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
         /// <param name="address">The logical address of the record being written; used as a RecordId by indexing</param>
-        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
 #if NETSTANDARD2_1 || NET
         { }
 #else
@@ -112,10 +114,11 @@ namespace FASTER.core
         /// <param name="input">The user input to be used for computing <paramref name="dst"/></param>
         /// <param name="src">The value to be copied to <paramref name="dst"/></param>
         /// <param name="dst">The location where <paramref name="src"/> is to be copied; because this method is called only for in-place updates, there is a previous value there.</param>
+        /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="recordInfo">A reference to the header of the record; may be used by <see cref="Lock(ref RecordInfo, ref Key, ref Value, LockType, ref long)"/></param>
         /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing"/></param>
         /// <returns>True if the value was written, else false</returns>
-        bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
+        bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
 
         /// <summary>
         /// Upsert completion
