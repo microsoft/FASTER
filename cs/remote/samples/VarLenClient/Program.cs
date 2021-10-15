@@ -13,6 +13,7 @@ namespace VarLenClient
     {
         static void Main(string[] args)
         {
+            Environment.SetEnvironmentVariable("DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS", "1");
             string ip = "127.0.0.1";
             int port = 3278;
 
