@@ -479,10 +479,8 @@ namespace FASTER.core
         /// <param name="serialNo"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, Context userContext = default, long serialNo = 0)
-        {
-            return Upsert(ref key, ref input, ref desiredValue, ref output, out _, userContext, serialNo);
-        }
+        public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, Context userContext = default, long serialNo = 0) 
+            => Upsert(ref key, ref input, ref desiredValue, ref output, out _, userContext, serialNo);
 
         /// <summary>
         /// Upsert operation

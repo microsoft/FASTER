@@ -110,7 +110,6 @@ namespace FASTER.test.InputOutputParameterTests
             int input = MultValue;
             Status status;
             int output = -1;
-            RecordMetadata recordMetadata = default;
             bool loading = true;
 
             async Task doWrites()
@@ -118,6 +117,7 @@ namespace FASTER.test.InputOutputParameterTests
                 for (int key = 0; key < NumRecs; ++key)
                 {
                     var tailAddress = this.fht.Log.TailAddress;
+                    RecordMetadata recordMetadata;
                     if (isAsync)
                     {
                         if (useRMW)
