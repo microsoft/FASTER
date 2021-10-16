@@ -311,14 +311,14 @@ namespace FASTER.core
         bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext);
         #endregion Locking
 
-        #region Other
+        #region Checkpointing
         /// <summary>
         /// Checkpoint completion callback (called per client session)
         /// </summary>
         /// <param name="sessionId">Session ID reporting persistence</param>
         /// <param name="commitPoint">Commit point descriptor</param>
         void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint);
-        #endregion Other
+        #endregion Checkpointing
     }
 
     /// <summary>
