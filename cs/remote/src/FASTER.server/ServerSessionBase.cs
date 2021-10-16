@@ -25,7 +25,7 @@ namespace FASTER.server
         /// <summary>
         /// Response object
         /// </summary>
-        protected ReusableObject<SeaaBuffer> responseObject;
+        protected SeaaBuffer responseObject;
 
         /// <summary>
         /// Bytes read
@@ -63,7 +63,7 @@ namespace FASTER.server
         /// <summary>
         /// Get response object
         /// </summary>
-        protected void GetResponseObject() { if (responseObject.obj == null) responseObject = messageManager.GetReusableSeaaBuffer(); }
+        protected void GetResponseObject() { if (responseObject == null) responseObject = messageManager.GetReusableSeaaBuffer(); }
 
         /// <summary>
         /// Send response
@@ -71,13 +71,15 @@ namespace FASTER.server
         /// <param name="size"></param>
         protected void SendResponse(int size)
         {
+            var _r = responseObject;
+            responseObject = null;
             try
             {
-                messageManager.Send(socket, responseObject, 0, size);
+                messageManager.Send(socket, _r, 0, size);
             }
             catch
             {
-                responseObject.Dispose();
+                messageManager.Return(_r);
             }
         }
 
@@ -88,13 +90,15 @@ namespace FASTER.server
         /// <param name="size"></param>
         protected void SendResponse(int offset, int size)
         {
+            var _r = responseObject;
+            responseObject = null;
             try
             {
-                messageManager.Send(socket, responseObject, offset, size);
+                messageManager.Send(socket, _r, offset, size);
             }
             catch
             {
-                responseObject.Dispose();
+                messageManager.Return(_r);
             }
         }
 
@@ -128,8 +132,9 @@ namespace FASTER.server
         public virtual void Dispose()
         {
             socket.Dispose();
-            if (responseObject.obj != null)
-                responseObject.Dispose();
+            var _r = responseObject;
+            if (_r != null)
+                messageManager.Return(_r);
             messageManager.Dispose();
         }
 
@@ -138,8 +143,9 @@ namespace FASTER.server
         /// </summary>
         public virtual void CompleteSends()
         {
-            if (responseObject.obj != null)
-                responseObject.Dispose();
+            var _r = responseObject;
+            if (_r != null)
+                messageManager.Return(_r);
             messageManager.Dispose();
         }
     }
