@@ -13,6 +13,7 @@
 #include <cstring>
 #include <type_traits>
 #include <algorithm>
+#include <unordered_set>
 
 #include "device/file_system_disk.h"
 
@@ -102,7 +103,6 @@ class FasterKv {
   typedef AsyncPendingUpsertContext<key_t> async_pending_upsert_context_t;
   typedef AsyncPendingRmwContext<key_t> async_pending_rmw_context_t;
   typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
-  //typedef AsyncPendingExistsContext<key_t> async_pending_exists_context_t;
   typedef AsyncPendingConditionalInsertContext<key_t> async_pending_conditional_insert_context_t;
 
   FasterKv(uint64_t table_size, uint64_t log_size, const std::string& filename,
@@ -204,9 +204,6 @@ class FasterKv {
   template<class C>
   inline OperationStatus InternalDelete(C& pending_context, bool force_tombstone);
 
-  template<class CC>
-  inline OperationStatus ConditionalInsert(CC& context);
-
  private:
   OperationStatus InternalContinuePendingRead(ExecutionContext& ctx,
       AsyncIOContext& io_context);
@@ -262,14 +259,13 @@ class FasterKv {
   void CompleteIoPendingRequests(ExecutionContext& context);
   void CompleteRetryRequests(ExecutionContext& context);
 
-  //template <class EC>
-  //inline Status RecordExists(EC& context, AsyncCallback callback, Address begin_address);
-
   template<class CIC>
-  inline Status ConditionalInsertA(CIC& context, AsyncCallback callback, Address min_offset, void* dest_store);
+  inline Status ConditionalInsert(CIC& context, AsyncCallback callback,
+                                  HashBucketEntry start_search_entry,
+                                  Address min_start_offset, void* dest_store);
 
   template<class C>
-  inline OperationStatus InternalConditionalInsert(C& pending_context, bool retrying);
+  inline OperationStatus InternalConditionalInsert(C& pending_context);
 
   /// Checkpoint/recovery methods.
   void InitializeCheckpointLocks();
@@ -1456,7 +1452,7 @@ inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
     case OperationType::ConditionalInsert: {
       async_pending_conditional_insert_context_t& conditional_insert_context =
         *static_cast<async_pending_conditional_insert_context_t*>(&pending_context);
-      internal_status = InternalConditionalInsert(conditional_insert_context, false);
+      internal_status = InternalConditionalInsert(conditional_insert_context);
     }
     }
 
@@ -1681,6 +1677,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingConditionalInsert(Exec
 
   async_pending_conditional_insert_context_t* pending_context = (
     static_cast<async_pending_conditional_insert_context_t*>(io_context.caller_context));
+  assert(pending_context->min_search_offset <= pending_context->start_search_entry.address());
 
   Address begin_address = hlog.begin_address.load();
   Address head_address = hlog.head_address.load();
@@ -1688,15 +1685,13 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingConditionalInsert(Exec
   if (pending_context->min_search_offset < begin_address) {
     // we cannot scan the entire region because log was truncated
     // request should be re-tried at a higher level!
-    fprintf(stderr, "aaa\n");
     return OperationStatus::ABORTED;
   }
-  if (io_context.address >= pending_context->min_search_offset) {
+  if (io_context.address > pending_context->min_search_offset) {
     // found newer version for this record -- abort insert!
     return OperationStatus::ABORTED;
   }
   // Searched entire region, but did not find newer version for record
-  assert(io_context.address < pending_context->min_search_offset);
 
   // Find a hash bucket entry to store the updated value in.
   KeyHash hash = pending_context->get_key_hash();
@@ -1706,94 +1701,12 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingConditionalInsert(Exec
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
 
-  if (address == Address::kInvalidAddress) {
-    // no other record exists for the same key in this log
-    goto create_record;
-  }
-
   // Update search range to [prev start search addr, current latest hash entry addr]
   pending_context->min_search_offset = pending_context->start_search_entry.address();
-  pending_context->start_search_entry = expected_entry;
-
-  if (address >= head_address && address != pending_context->min_search_offset) {
-    // Search range lies inside the in-memory part
-    record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
-    if(!pending_context->is_key_equal(record->key())) {
-      address = TraceBackForKeyMatchCtxt(*pending_context, record->header.previous_address(), head_address);
-    }
-  }
-  //assert (address >= pending_context->min_search_offset); // part of the same hash chain
-
-  if (address == pending_context->min_search_offset) {
-    // searched log and found no newer record
-    goto create_record;
-  }
-  else if (address >= head_address) {
-    // found a newer record inside the in-memory region -- abort insert!
-    return OperationStatus::ABORTED;
-  }
-  else {
-    // need to issue more disk I/O to read from disk
-    pending_context->continue_async(address, expected_entry);
-    return OperationStatus::RECORD_ON_DISK;
+  if (address != Address::kInvalidAddress) {
+    pending_context->start_search_entry = expected_entry;
   }
 
-create_record:
-  faster_t* dest_store = static_cast<faster_t*>(pending_context->dest_store);
-
-  // Append entry to the log
-  uint32_t record_size = record_t::size(pending_context->key_size(), pending_context->value_size());
-  Address new_address = dest_store->BlockAllocate(record_size, this);
-  record_t* record = reinterpret_cast<record_t*>(dest_store->hlog.Get(new_address));
-  // Copy record
-  assert(pending_context->Insert(record, record_size));
-
-  if (dest_store == this) {
-    // Case: Single log compaction, or RMW conditional copy from cold to hot
-    assert(!pending_context->is_tombstone());
-
-    // Replace record header
-    new(record) record_t{
-      RecordInfo{
-        static_cast<uint16_t>(thread_ctx().version),
-        true, false, false, expected_entry.address() }
-    };
-    // Try to update hash bucket address
-    HashBucketEntry updated_entry{ new_address, hash.tag(), false };
-    if(atomic_entry->compare_exchange_strong(expected_entry, updated_entry)) {
-      // Installed the new record in the hash table.
-      return OperationStatus::SUCCESS;
-    }
-    // Hash-chain changed since last time
-  }
-  else {
-    // Case: hot-cold compaction
-    HashBucketEntry dest_entry;
-    AtomicHashBucketEntry* dest_atomic_entry = dest_store->FindOrCreateEntry(hash, dest_entry);
-    assert(dest_atomic_entry != nullptr);
-    // NOTE: dest_entry can be kInvalidAddress for hot-cold, if key does not exists in cold store
-    HashBucketEntry dest_updated_entry{ new_address, hash.tag(), false };
-    // NOTE: we don't have to check if new records for the same key have been inserted in the meantime.
-    //       this can only happen if we are concurrently doing cold-cold log compaction. Even in this case,
-    //       records found in hot log have priority over those in cold one. This means that the thread
-    //       performing the cold-cold compaction will properly check for updated chain (and possibly abort).
-    // Replace record header
-    new(record) record_t{
-      RecordInfo{
-        static_cast<uint16_t>(dest_store->thread_ctx().version),
-        true, pending_context->is_tombstone(), false, dest_entry.address() }
-    };
-    // Try to update hash bucket address -- retry until succeed
-    if(dest_atomic_entry->compare_exchange_strong(dest_entry, dest_updated_entry)) {
-      // Installed the new record in the hash table.
-      return OperationStatus::SUCCESS;
-    }
-    dest_store->Refresh();
-  }
-  // retry request
-  record->header.invalid = true;
-
-  pending_context->continue_async(address, expected_entry);
   return OperationStatus::RETRY_NOW;
 }
 
@@ -3251,66 +3164,34 @@ template<class K, class V, class D>
 template<class F>
 inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_ctx,
                                                 faster_t* dest_store, int thread_idx) {
-  constexpr int io_check_freq = 20;
-
-  typedef CompactionCopyToTailContext<K, V> copy_to_tail_context_t;
-  typedef CompactionPendingRecordEntry<K, V> pending_record_entry_t;
-  typedef std::unordered_map<uint64_t, pending_record_entry_t> pending_records_info_t;
-  typedef std::deque<pending_record_entry_t> pending_records_queue_t;
-  //typedef std::deque<pending_record_entry_t*> retry_records_queue_t;
-
-  pending_records_info_t pending_records_info;
-  pending_records_queue_t pending_records_queue;
-  //retry_records_queue_t retry_records_queue;
-  size_t num_iter = 0;
+  constexpr int io_check_freq = 16;
   bool dest_store_differs = (dest_store != this);
 
-  // used locally when iterating log
-  Address record_address;
-  KeyHash hash;
+  typedef CompactionConditionalInsertContext<K, V> ci_context_t;
+  typedef std::unordered_set<uint64_t> pending_records_t;
 
-  // Callback for record exists operations
-  /*
-  auto callback = [](IAsyncContext* ctxt, Status result) {
-    CallbackContext<CompactionExists<K, V>> context(ctxt);
-    assert(result == Status::Ok || result == Status::NotFound);
-
-    uint64_t address = context->record_address().control();
-    auto records_info = static_cast<pending_records_info_t*>(context->records_info());
-    auto records_queue = static_cast<pending_records_queue_t*>(context->records_queue());
-
-    if (result == Status::NotFound) {
-      // retrieve record info
-      auto record_info = records_info->find(address);
-      assert(record_info != records_info->end());
-      // push record info to pending records queue
-      records_queue->push_back(record_info->second);
-    }
-    // remove info for this record, since it has been processed
-    records_info->erase(address);
-  };
-  */
-
+  // Callback for ConditionalInsert request
   auto ci_callback = [](IAsyncContext* ctxt, Status result) {
-    CallbackContext<CompactionConditionalInsertContext<K, V>> context(ctxt);
+    CallbackContext<ci_context_t> context(ctxt);
     assert(result == Status::Ok || result == Status::Aborted);
 
     // Remove info for this record, since it has been processed
     uint64_t address = context->record_address().control();
-    auto records_info = static_cast<pending_records_info_t*>(context->records_info());
+    auto records_info = static_cast<pending_records_t*>(context->records_info());
     records_info->erase(address);
   };
 
-  HashBucketEntry expected_entry;
-
-  record_t* record;
-  pending_record_entry_t* record_info;
-  uint8_t pending_record_entry [sizeof(pending_record_entry_t)];
+  pending_records_t pending_records;
   LogPageCollection<F> pages (
     LogPageCollection<F>::kDefaultNumPages,
     hlog.sector_size); // first GetNext() will return false
 
-  // Start session for each spawned thread
+  // used locally when iterating log
+  Address record_address;
+  record_t* record;
+  HashBucketEntry expected_entry;
+
+  // Start session for each thread that was spawned
   if (thread_idx >= 0) {
     StartSession();
     if (dest_store_differs) {
@@ -3318,91 +3199,58 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
     }
   }
 
+  size_t num_iter = 0;
   bool pages_available = true;
   while(true) {
-    /*if (!retry_records_queue.empty()) {
-      // pop next entry from retry queue
-      record_info = retry_records_queue.front();
-      retry_records_queue.pop_front();
-    }
-    */
     if (!pages_available) {
       goto complete_pending;
     }
 
     // get next record from hybrid log
     record = pages.GetNextRecord(record_address);
-    if (record == nullptr) {
-      // No more records in this page
-
-      // Shound not move to a new page, until all pending
-      // requests for this page have completed
-      if (!pending_records_info.empty()) {
-          //!pending_records_queue.empty() ||
-          //!retry_records_queue.empty()) {
+    if (record == nullptr) { // No more records in this page
+      if (!pending_records.empty()) {
+        // Shound not move to a new page, until all pending
+        // requests for this page have been completed
         goto complete_pending;
       }
-      // Try to get next page
       Refresh();
+
+      // Try to get next page
       if(!ct_ctx->iter->GetNextPage(pages)) {
         // No more pages
         pages_available = false;
       }
       continue;
     }
-
     if (record->header.tombstone && !dest_store_differs)  {
-      // no need to copy to tail
+      // do not compact tombstones
       goto complete_pending;
     }
-    // find and store the hash bucket of record
-    // NOTE: a hash bucket *must* exist, since the record exists in the hybrid log
-    hash = record->key().GetHash();
-    assert( FindEntry(hash, expected_entry) != nullptr );
-    // search entire hash chain (i.e. until record adress)
-    record_info = new (pending_record_entry) pending_record_entry_t(
-                          record, record_address, expected_entry, record_address + 1);
 
-    { // Issue record exists request
-      // store record info
-      assert(pending_records_info.find(
-                record_info->address.control()) == pending_records_info.end());
-      pending_records_info.insert({ record_info->address.control(), *record_info });
+    {
+      // find and store the hash bucket of record
+      // NOTE: a hash bucket *must* exist, since the record exists in the hybrid log
+      KeyHash hash = record->key().GetHash();
+      assert( FindEntry(hash, expected_entry) != nullptr );
+      assert( expected_entry != Address::kInvalidAddress );
 
+      // add to pending records
+      assert(pending_records.find(record_address.control()) == pending_records.end());
+      pending_records.insert(record_address.control());
 
       // Insert record if not exists already in (recordAddress, tailAddress] range
-      CompactionConditionalInsertContext<K, V> ci_context{
-        record_info->record, record_info->address, &pending_records_info, &pending_records_queue };
-
-      Status status = ConditionalInsertA(ci_context, ci_callback, record_info->search_min_offset,
-                                        static_cast<void*>(dest_store));
+      ci_context_t ci_context{ record, record_address, &pending_records };
+      Status status = ConditionalInsert(ci_context, ci_callback, expected_entry,
+                                        record_address, static_cast<void*>(dest_store));
       assert(status == Status::Ok || status == Status::Aborted || status == Status::Pending);
 
       if (status != Status::Pending) {
-        // clear record info, since it has been processed
-        pending_records_info.erase(record_info->address.control());
+        // clear record info, since request it has been processed
+        // (i.e. either inserted at the end, or didn't)
+        pending_records.erase(record_address.control());
       }
     }
-
-      /*
-      // Try to find a more recent record in the (recordAddress, tailAddress] range
-      CompactionExists<K, V> context(record_info->record, record_info->address,
-                                    &pending_records_info, &pending_records_queue);
-      Status status = RecordExists(context, callback, record_info->search_min_offset);
-      assert(status == Status::Ok || status == Status::NotFound || status == Status::Pending);
-
-      if (status != Status::Pending) {
-        // clear record info and, if should copy to tail, add to pending queue
-        pending_records_info.erase(record_info->address.control());
-        if (status == Status::NotFound) {
-          pending_records_queue.push_back({ *record_info });
-        }
-      }
-    }
-    if (static_cast<void*>(record_info) != static_cast<void*>(pending_record_entry)) {
-      delete record_info;
-    }
-    */
 
 complete_pending:
     if ((num_iter % io_check_freq == 0) || record == nullptr) {
@@ -3411,39 +3259,10 @@ complete_pending:
       if (record == nullptr) std::this_thread::yield();
     }
 
-    /*
-    // Handle pending requests
-    size_t size = pending_records_queue.size();
-    for (size_t idx = 0; idx < size; idx++) {
-      auto const& pending_record = pending_records_queue.front();
-      pending_records_queue.pop_front();
-
-      // Copy to tail if no other more recent entry with same key exists
-      copy_to_tail_context_t copy_context{ pending_record.record, pending_record.expected_entry,
-                                            static_cast<void*>(dest_store) };
-
-      OperationStatus status = ConditionalInsert(copy_context);
-      assert(status == OperationStatus::SUCCESS ||
-             status == OperationStatus::ABORTED ||
-             status == OperationStatus::RECORD_ON_DISK);
-
-      if (status == OperationStatus::RECORD_ON_DISK) {
-        // could not determine if record is live -- push record to retry queue
-        // NOTE: next time we try, we'll search only the newly introduced hash chain part
-        auto record_info = new pending_record_entry_t(pending_record.record, pending_record.address,
-                                                      copy_context.expected_entry,
-                                                      copy_context.search_min_offset);
-        retry_records_queue.push_back(record_info);
-      }
-    }
-    */
-
     ++num_iter;
-    if (!pages_available &&               // no more records to compact
-        pending_records_info.empty()) {   // no callbacks pending
-        //pending_records_queue.empty() &&  // no pending records to handle
-        //retry_records_queue.empty()) {    // no retry requests to handle
-          break;
+    if (!pages_available && pending_records.empty()) {
+      // no more records to compact && no callbacks pending
+      break;
     }
   }
 
@@ -3468,59 +3287,12 @@ complete_pending:
   }
 }
 
-/*template <class K, class V, class D>
-template <class EC>
-inline Status FasterKv<K, V, D>::RecordExists(EC& context, AsyncCallback callback, Address min_offset) {
-  typedef PendingExistsContext<EC> pending_exists_context_t;
-  pending_exists_context_t pending_context {context, callback, min_offset};
-
-  if(thread_ctx().phase != Phase::REST) {
-    const_cast<faster_t*>(this)->HeavyEnter();
-  }
-  // Retrieve hash index bucket for this entry
-  KeyHash hash = pending_context.get_key_hash();
-  HashBucketEntry entry;
-  const AtomicHashBucketEntry* atomic_entry = FindEntry(hash, entry);
-  if(!atomic_entry) {
-    // no record found
-    return Status::NotFound;
-  }
-
-  Address address = entry.address();
-  Address head_address = hlog.head_address.load();
-  Address begin_address = hlog.begin_address.load();
-  if(address >= head_address) {
-    // Look through the in-memory portion of the log, to find the first record (if any) whose key matches.
-    const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
-    if(!pending_context.is_key_equal(record->key())) {
-      address = TraceBackForKeyMatchCtxt(pending_context, record->header.previous_address(), head_address);
-    }
-  }
-
-  Status status;
-  if(address >= head_address) {
-    // Mutable, fuzzy or immutable region [in-memory]
-    status = (address >= min_offset) ? Status::Ok : Status::NotFound;
-  }
-  else if(address >= begin_address) {
-    // Record not available in-memory -- issue disk I/O request
-    pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, entry);
-    bool async;
-    status = HandleOperationStatus(thread_ctx(), pending_context, OperationStatus::RECORD_ON_DISK, async);
-    assert(status == Status::Pending);
-  }
-  else {
-    // No record found
-    status = Status::NotFound;
-  }
-  return status;
-}
-*/
 
 template <class K, class V, class D>
 template <class CIC>
-inline Status FasterKv<K, V, D>::ConditionalInsertA(CIC& context, AsyncCallback callback,
-                                                    Address min_offset, void* dest_store) {
+inline Status FasterKv<K, V, D>::ConditionalInsert(CIC& context, AsyncCallback callback,
+                                                  HashBucketEntry start_search_entry,
+                                                  Address min_search_offset, void* dest_store) {
   typedef CIC conditional_insert_context_t;
   typedef PendingConditionalInsertContext<CIC> pending_ci_context_t;
   static_assert(std::is_base_of<value_t, typename pending_ci_context_t::value_t>::value,
@@ -3528,8 +3300,9 @@ inline Status FasterKv<K, V, D>::ConditionalInsertA(CIC& context, AsyncCallback 
   static_assert(alignof(value_t) == alignof(typename pending_ci_context_t::value_t),
                 "alignof(value_t) != alignof(typename read_context_t::value_t)");
 
-  pending_ci_context_t pending_context{ context, callback, HashBucketEntry::kInvalidEntry, min_offset, dest_store };
-  OperationStatus internal_status = InternalConditionalInsert(pending_context, false);
+  pending_ci_context_t pending_context{ context, callback, start_search_entry,
+                                        min_search_offset, dest_store };
+  OperationStatus internal_status = InternalConditionalInsert(pending_context);
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
@@ -3548,11 +3321,11 @@ inline Status FasterKv<K, V, D>::ConditionalInsertA(CIC& context, AsyncCallback 
 
 template <class K, class V, class D>
 template <class C>
-inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_context, bool retrying) {
-  assert(!retrying);
-
+inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_context) {
+  // TODO: fix cases where start_search_entry can be Address::kInvalidAddress
   faster_t* dest_store = static_cast<faster_t*>(pending_context.dest_store);
   Address min_search_offset = pending_context.min_search_offset;
+  assert(min_search_offset <= pending_context.start_search_entry.address());
 
   if(thread_ctx().phase != Phase::REST) {
     const_cast<faster_t*>(this)->HeavyEnter();
@@ -3561,63 +3334,64 @@ inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_c
     dest_store->HeavyEnter();
   }
 
+  Address begin_address = hlog.begin_address.load();
+  Address head_address = hlog.head_address.load();
+
+  if (min_search_offset < begin_address) {
+    // result of log truncation -- only possible in CI from RMW
+    // request should be re-tried at a higher level!
+    // TODO: check if we need a different status code
+    return OperationStatus::ABORTED;
+  }
+
   // Retrieve or create hash index bucket for this entry
   KeyHash hash = pending_context.get_key_hash();
   HashBucketEntry expected_entry;
   AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
   assert(atomic_entry != nullptr);
-  if (dest_store == this) {
-    // Cold-cold compaction case: hash bucket entry should exist for this key
-    assert(atomic_entry->load().address() != Address::kInvalidAddress);
-  }
-
   Address address = expected_entry.address();
-  Address head_address = hlog.head_address.load();
-  Address begin_address = hlog.begin_address.load();
 
-  if (!retrying) {
-    // Set initial starting point for backwards search
-    pending_context.start_search_entry = expected_entry;
-  }
-  else {
-    // Make sure our initial search point is valid
-    assert(pending_context.start_search_entry.address() != Address::kInvalidAddress &&
-            pending_context.start_search_entry.address() > begin_address);
-  }
-
-  if (dest_store != this && atomic_entry->load().address() == Address::kInvalidAddress) {
-    // Either hot-cold compaction, or RMW copy from cold to hot
-    // Record with same key does not exist in log -- hash bucket entry was just created!
+  if (address == Address::kInvalidAddress) {
+    // no other record exists for the same key in this log
+    // only possible in the RMW copy from cold to hot case
     goto create_record;
   }
 
-  if(address >= head_address) {
-    // Look through the in-memory portion of the log, to find the first record (if any) whose key matches.
-    //Address min_search_offset = std::max(pending_context.min_search_offset, head_address); // TODO optimize
+  if(address >= head_address && min_search_offset != expected_entry.address()) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
+    Address search_until = std::max(min_search_offset + 1, head_address);
     if(!pending_context.is_key_equal(record->key())) {
-      address = TraceBackForKeyMatchCtxt(pending_context, record->header.previous_address(), head_address);
+      address = TraceBackForKeyMatchCtxt(pending_context, record->header.previous_address(), search_until);
     }
   }
+  assert(address >= min_search_offset); // part of the same hash chain
 
   if(address >= head_address) {
     // Mutable, fuzzy or immutable region [in-memory]
-    if (address >= min_search_offset) {
+    if (address > min_search_offset) {
       // Found newer record with same key
       return OperationStatus::ABORTED;
     }
-    goto create_record;
+    assert(address == min_search_offset);
   }
   else if(address >= begin_address) {
-    // Record not available in-memory -- issue disk I/O request
-    pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
-    return OperationStatus::RECORD_ON_DISK;
+    // Stable region [on-disk]
+    if (address > min_search_offset) {
+      // Record not available in-memory -- issue disk I/O request
+      pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
+      return OperationStatus::RECORD_ON_DISK;
+    }
+    assert(address == min_search_offset);
   }
   else {
     // Cannot reach min address because it has been truncated
     assert(min_search_offset < begin_address);
     return OperationStatus::ABORTED;
   }
+
+  // Update search range
+  pending_context.start_search_entry = expected_entry;
+  pending_context.min_search_offset = expected_entry.address();
 
 create_record:
   // Append entry to the log
@@ -3671,109 +3445,7 @@ create_record:
   }
   // retry request
   record->header.invalid = true;
-  return InternalConditionalInsert(pending_context, false);
-}
-
-template <class K, class V, class D>
-template <class CC>
-inline OperationStatus FasterKv<K, V, D>::ConditionalInsert(CC& copy_context) {
-  faster_t* dest_store = static_cast<faster_t*>(copy_context.dest_store);
-
-  if(thread_ctx().phase != Phase::REST) {
-    HeavyEnter();
-  }
-  if(dest_store != this && dest_store->thread_ctx().phase != Phase::REST) {
-    dest_store->HeavyEnter();
-  }
-
-  HashBucketEntry expected_entry { copy_context.expected_entry };
-
-  // Find hash index bucket for this key (must exist)
-  KeyHash hash = copy_context.get_key_hash();
-  HashBucketEntry entry;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, entry);
-  assert(atomic_entry != nullptr);
-  assert(atomic_entry->load().address() != Address::kInvalidAddress);
-
-  if (entry != expected_entry) {
-    // Hash-chain changed since last time!
-    if (expected_entry.address() < hlog.head_address.load()) {
-      // Part of the hash chain we need to check extends to disk -- need to re-check chain
-      copy_context.expected_entry = entry;
-      copy_context.search_min_offset = expected_entry.address() + 1;
-      return OperationStatus::RECORD_ON_DISK;
-    }
-
-    // Check if an entry with same key was inserted during this time
-    Address address = entry.address();
-    record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
-    if(!copy_context.is_key_equal(record->key())) {
-      address = TraceBackForKeyMatchCtxt(copy_context, record->header.previous_address(),
-                                          expected_entry.address() + 1);
-    }
-
-    if (address > expected_entry.address()) {
-      // Some other entry with *same* key was inserted -- abort copy
-      return OperationStatus::ABORTED;
-    }
-    assert(address == expected_entry.address());
-    // Update expected entry to reflect new hash chain
-    expected_entry = entry;
-  }
-
-  // Append entry to the log
-  uint32_t record_size = record_t::size(copy_context.key_size(), copy_context.value_size());
-  Address new_address = dest_store->BlockAllocate(record_size, this);
-  record_t* record = reinterpret_cast<record_t*>(dest_store->hlog.Get(new_address));
-  // Copy record
-  assert(copy_context.copy_at(record, record_size));
-
-  if (dest_store == this) {
-    // Case: Single log compaction, or RMW conditional copy from cold to hot
-    assert(!copy_context.is_tombstone());
-
-    // Replace record header
-    new(record) record_t{
-      RecordInfo{
-        static_cast<uint16_t>(thread_ctx().version),
-        true, false, false, expected_entry.address() }
-    };
-    // Try to update hash bucket address
-    HashBucketEntry updated_entry{ new_address, hash.tag(), false };
-    if(atomic_entry->compare_exchange_strong(entry, updated_entry)) {
-      // Installed the new record in the hash table.
-      return OperationStatus::SUCCESS;
-    }
-    // Hash-chain changed since last time
-  }
-  else {
-    // Case: hot-cold compaction
-    HashBucketEntry dest_entry;
-    AtomicHashBucketEntry* dest_atomic_entry = dest_store->FindOrCreateEntry(hash, dest_entry);
-    // NOTE: dest_entry can be kInvalidAddress for hot-cold, if key does not exists in cold store
-    HashBucketEntry dest_updated_entry{ new_address, hash.tag(), false };
-    // NOTE: we don't have to check if new records for the same key have been inserted in the meantime.
-    //       this can only happen if we are concurrently doing cold-cold log compaction. Even in this case,
-    //       records found in hot log have priority over those in cold one. This means that the thread
-    //       performing the cold-cold compaction will properly check for updated chain (and possibly abort).
-    // Replace record header
-    new(record) record_t{
-      RecordInfo{
-        static_cast<uint16_t>(dest_store->thread_ctx().version),
-        true, copy_context.is_tombstone(), false, dest_entry.address() }
-    };
-    // Try to update hash bucket address -- retry until succeed
-    if(dest_atomic_entry->compare_exchange_strong(dest_entry, dest_updated_entry)) {
-      // Installed the new record in the hash table.
-      return OperationStatus::SUCCESS;
-    }
-    dest_store->Refresh();
-  }
-  record->header.invalid = true;
-
-  // retry request
-  Refresh();
-  return ConditionalInsert(copy_context);
+  return InternalConditionalInsert(pending_context);
 }
 
 /// When invoked, compacts the hybrid-log between the begin address and a
