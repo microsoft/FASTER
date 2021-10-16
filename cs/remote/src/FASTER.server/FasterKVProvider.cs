@@ -50,8 +50,8 @@ namespace FASTER.server
             switch (wireFormat)
             {
                 case WireFormat.WebSocket:
-                    return new WebsocketServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker);
+                    return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
+                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker, true);
                 default:
                     return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
                         (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker);

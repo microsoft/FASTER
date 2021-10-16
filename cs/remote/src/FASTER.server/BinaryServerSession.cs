@@ -2,8 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.RegularExpressions;
 using FASTER.common;
 using FASTER.core;
 
@@ -16,15 +20,18 @@ namespace FASTER.server
     {
         readonly HeaderReaderWriter hrw;
         int readHead;
+        GCHandle recvHandle;
+        byte* recvBufferPtr;
 
         int seqNo, pendingSeqNo, msgnum, start;
         byte* dcurr;
 
         readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker;
         readonly SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker;
+        readonly bool isWebSocket;
 
 
-        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker, SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker)
+        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker, SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker, bool isWebSocket = false)
             : base(socket, store, functions, null, serializer, maxSizeSettings)
         {
             this.subscribeKVBroker = subscribeKVBroker;
@@ -35,12 +42,35 @@ namespace FASTER.server
             // Reserve minimum 4 bytes to send pending sequence number as output
             if (this.maxSizeSettings.MaxOutputSize < sizeof(int))
                 this.maxSizeSettings.MaxOutputSize = sizeof(int);
+
+            if (isWebSocket)
+                this.isWebSocket = true;
+            else
+                this.isWebSocket = false;
         }
 
         public override int TryConsumeMessages(byte[] buf)
         {
+            if (this.isWebSocket)
+            {
+                if (recvBufferPtr == null)
+                {
+                    recvHandle = GCHandle.Alloc(buf, GCHandleType.Pinned);
+                    recvBufferPtr = (byte*)recvHandle.AddrOfPinnedObject();
+                }
+            }
+
             while (TryReadMessages(buf, out var offset))
-                ProcessBatch(buf, offset);
+            {
+                if (this.isWebSocket)
+                {
+                    bool completeWSCommand = ProcessWebSocket(buf, offset);
+                    if (!completeWSCommand)
+                        return bytesRead;
+                }
+                else
+                    ProcessBinary(buf, offset);
+            }
 
             // The bytes left in the current buffer not consumed by previous operations
             var bytesLeft = bytesRead - readHead;
@@ -97,6 +127,12 @@ namespace FASTER.server
             // Need to at least have read off of size field on the message
             if (bytesAvailable < sizeof(int)) return false;
 
+            if (this.isWebSocket)
+            {
+                offset = readHead;
+                return true;
+            }
+
             // MSB is 1 to indicate binary protocol
             var size = -BitConverter.ToInt32(buf, readHead);
             // Not all of the message has arrived
@@ -108,118 +144,357 @@ namespace FASTER.server
             return true;
         }
 
+        private static unsafe void CreateWSSendPacketHeader(ref byte* d, int payloadLen)
+        {
+            if (payloadLen < 126)
+            {
+                d += 8;
+            }
+            else if (payloadLen < 65536)
+            {
+                d += 6;
+            }
+            byte* dcurr = d;
 
-        private unsafe void ProcessBatch(byte[] buf, int offset)
+            *dcurr = 0b10000010;
+            dcurr++;
+            if (payloadLen < 126)
+            {
+                *dcurr = (byte)(payloadLen & 0b01111111);
+                dcurr++;
+            }
+            else if (payloadLen < 65536)
+            {
+                *dcurr = (byte)(0b01111110);
+                dcurr++;
+                byte[] payloadLenBytes = BitConverter.GetBytes((UInt16)payloadLen);
+                if (BitConverter.IsLittleEndian)
+                    Array.Reverse(payloadLenBytes);
+
+                *dcurr++ = payloadLenBytes[0];
+                *dcurr++ = payloadLenBytes[1];
+            }
+            else
+            {
+                *dcurr = (byte)(0b01111111);
+                dcurr++;
+                byte[] payloadLenBytes = BitConverter.GetBytes((UInt64)payloadLen);
+                if (BitConverter.IsLittleEndian)
+                    Array.Reverse(payloadLenBytes);
+
+                *dcurr++ = (byte)(payloadLenBytes[0] & 0b01111111);
+                *dcurr++ = payloadLenBytes[1];
+                *dcurr++ = payloadLenBytes[2];
+                *dcurr++ = payloadLenBytes[3];
+                *dcurr++ = payloadLenBytes[4];
+                *dcurr++ = payloadLenBytes[5];
+                *dcurr++ = payloadLenBytes[6];
+                *dcurr++ = payloadLenBytes[7];
+            }
+        }
+
+        private unsafe void ProcessBatch(byte* b, byte* d, byte* dend)
+        {
+            int origPendingSeqNo = pendingSeqNo;
+
+            var src = b;
+            ref var header = ref Unsafe.AsRef<BatchHeader>(src);
+            int num = 0;
+
+            if (isWebSocket)
+                num = *(int*)(src + 4);
+            else
+                num = header.NumMessages;
+
+            src += BatchHeader.Size;
+            Status status = default;
+
+            dcurr += BatchHeader.Size;
+            start = 0;
+            msgnum = 0;
+
+            for (msgnum = 0; msgnum < num; msgnum++)
+            {
+                var message = (MessageType)(*src++);
+                long serialNum = 0;
+
+                if (!this.isWebSocket)
+                    serialNum = hrw.ReadSerialNum(ref src);
+    
+                switch (message)
+                {
+                    case MessageType.Upsert:
+                    case MessageType.UpsertAsync:
+                        if ((int)(dend - dcurr) < 2)
+                            SendAndReset(ref d, ref dend);
+
+                        var keyPtr = src;
+                        status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src), serialNo: serialNum);
+
+                        hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                        Write(ref status, ref dcurr, (int)(dend - dcurr));
+
+                        subscribeKVBroker?.Publish(keyPtr);
+                        break;
+
+                    case MessageType.Read:
+                    case MessageType.ReadAsync:
+                        if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                            SendAndReset(ref d, ref dend);
+
+                        long ctx = ((long)message << 32) | (long)pendingSeqNo;
+                        status = session.Read(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
+                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
+
+                        hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                        Write(ref status, ref dcurr, (int)(dend - dcurr));
+
+                        if (status == Status.PENDING)
+                            Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
+                        else if (status == Status.OK)
+                            serializer.SkipOutput(ref dcurr);
+                        break;
+
+                    case MessageType.RMW:
+                    case MessageType.RMWAsync:
+                        if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                            SendAndReset(ref d, ref dend);
+
+                        keyPtr = src;
+
+                        ctx = ((long)message << 32) | (long)pendingSeqNo;
+                        status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
+                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
+
+                        hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                        Write(ref status, ref dcurr, (int)(dend - dcurr));
+                        if (status == Status.PENDING)
+                            Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
+                        else if (status == Status.OK || status == Status.NOTFOUND)
+                            serializer.SkipOutput(ref dcurr);
+
+                        subscribeKVBroker?.Publish(keyPtr);
+                        break;
+
+                    case MessageType.Delete:
+                    case MessageType.DeleteAsync:
+                        if ((int)(dend - dcurr) < 2)
+                            SendAndReset(ref d, ref dend);
+
+                        keyPtr = src;
+                        status = session.Delete(ref serializer.ReadKeyByRef(ref src), serialNo: serialNum);
+
+                        hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                        Write(ref status, ref dcurr, (int)(dend - dcurr));
+
+                        subscribeKVBroker?.Publish(keyPtr);
+                        break;
+
+                    default:
+                        if (!HandlePubSub(message, ref src, ref d, ref dend)) throw new NotImplementedException();
+                        break;
+                }
+            }
+
+            if (origPendingSeqNo != pendingSeqNo)
+                session.CompletePending(true);
+
+            // Send replies
+            if (msgnum - start > 0)
+                Send(d);
+            else
+            {
+                messageManager.Return(responseObject);
+                responseObject = null;
+            }
+        }
+
+        private unsafe void ProcessBinary(byte[] buf, int offset)
         {
             GetResponseObject();
-
             fixed (byte* b = &buf[offset])
             {
                 byte* d = responseObject.bufferPtr;
                 var dend = d + responseObject.buffer.Length;
                 dcurr = d + sizeof(int); // reserve space for size
+                ProcessBatch(b, d, dend);
+            }
+        }
+        internal struct Decoder
+        {
+            public int msgLen;
+            public int maskStart;
+            public int dataStart;
+        };
+
+        private unsafe bool ProcessWebSocket(byte[] buf, int offset)
+        {
+            bool completeWSCommand = true;
+
+            GetResponseObject();
+            fixed (byte* b = &buf[offset])
+            {
+                byte* d = responseObject.bufferPtr;
+                var dend = d + responseObject.buffer.Length;
+                dcurr = d; // reserve space for size
+                var bytesAvailable = bytesRead - readHead;
+                var _origReadHead = readHead;
+                int msglen = 0;
+                byte[] decoded = Array.Empty<byte>();
+                var ptr = recvBufferPtr + readHead;
+                var totalMsgLen = 0;
+                List<Decoder> decoderInfoList = new();
+
+                if (buf[offset] == 71 && buf[offset + 1] == 69 && buf[offset + 2] == 84)
+                {
+                    // 1. Obtain the value of the "Sec-WebSocket-Key" request header without any leading or trailing whitespace
+                    // 2. Concatenate it with "258EAFA5-E914-47DA-95CA-C5AB0DC85B11" (a special GUID specified by RFC 6455)
+                    // 3. Compute SHA-1 and Base64 hash of the new value
+                    // 4. Write the hash back as the value of "Sec-WebSocket-Accept" response header in an HTTP response
+                    string s = Encoding.UTF8.GetString(buf, offset, buf.Length - offset);
+                    string swk = Regex.Match(s, "Sec-WebSocket-Key: (.*)").Groups[1].Value.Trim();
+                    string swka = swk + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+                    byte[] swkaSha1 = System.Security.Cryptography.SHA1.Create().ComputeHash(Encoding.UTF8.GetBytes(swka));
+                    string swkaSha1Base64 = Convert.ToBase64String(swkaSha1);
+
+                    // HTTP/1.1 defines the sequence CR LF as the end-of-line marker
+                    byte[] response = Encoding.UTF8.GetBytes(
+                        "HTTP/1.1 101 Switching Protocols\r\n" +
+                        "Connection: Upgrade\r\n" +
+                        "Upgrade: websocket\r\n" +
+                        "Sec-WebSocket-Accept: " + swkaSha1Base64 + "\r\n\r\n");
+
+                    fixed (byte* responsePtr = &response[0])
+                        Buffer.MemoryCopy(responsePtr, dcurr, response.Length, response.Length);
+
+                    dcurr += response.Length;
+
+                    SendResponse((int)(d - responseObject.bufferPtr), (int)(dcurr - d));
+                    readHead = bytesRead;
+                    return completeWSCommand;
+
+                }
+                else
+                {
+                    var decoderInfo = new Decoder();
+
+                    bool fin = (buf[offset] & 0b10000000) != 0,
+                        mask = (buf[offset + 1] & 0b10000000) != 0; // must be true, "All messages from the client to the server have this bit set"
+
+                    int opcode = buf[offset] & 0b00001111; // expecting 1 - text message
+                    offset++;
+
+                    msglen = buf[offset] - 128; // & 0111 1111
+
+                    if (msglen < 125)
+                    {
+                        offset++;
+                    }
+                    else if (msglen == 126)
+                    {
+                        msglen = BitConverter.ToUInt16(new byte[] { buf[offset + 2], buf[offset + 1] }, 0);
+                        offset += 3;
+                    }
+                    else if (msglen == 127)
+                    {
+                        msglen = (int)BitConverter.ToUInt64(new byte[] { buf[offset + 8], buf[offset + 7], buf[offset + 6], buf[offset + 5], buf[offset + 4], buf[offset + 3], buf[offset + 2], buf[offset + 1] }, 0);
+                        offset += 9;
+                    }
+
+                    if (msglen == 0)
+                        Console.WriteLine("msglen == 0");
+
+
+                    decoderInfo.maskStart = offset;
+                    decoderInfo.msgLen = msglen;
+                    decoderInfo.dataStart = offset + 4;
+                    decoderInfoList.Add(decoderInfo);
+                    totalMsgLen += msglen;
+                    offset += 4;
+
+                    if (fin == false)
+                    {
+                        byte[] decodedClientMsgLen = new byte[sizeof(Int32)];
+                        byte[] clientMsgLenMask = new byte[4] { buf[decoderInfo.maskStart], buf[decoderInfo.maskStart + 1], buf[decoderInfo.maskStart + 2], buf[decoderInfo.maskStart + 3] };
+                        for (int i = 0; i < sizeof(Int32); ++i)
+                            decodedClientMsgLen[i] = (byte)(buf[decoderInfo.dataStart + i] ^ clientMsgLenMask[i % 4]);
+                        var clientMsgLen = (int)BitConverter.ToInt32(decodedClientMsgLen, 0);
+                        if (clientMsgLen > bytesRead)
+                            return false;
+                    }
+
+                    var nextBufOffset = offset;
+
+                    while (fin == false)
+                    {
+                        nextBufOffset += msglen;
+
+                        fin = ((buf[nextBufOffset]) & 0b10000000) != 0;
+
+                        nextBufOffset++;
+                        var nextMsgLen = buf[nextBufOffset] - 128; // & 0111 1111
+
+                        offset++;
+                        nextBufOffset++;
+
+                        if (nextMsgLen < 125)
+                        {
+                            nextBufOffset++;
+                            offset++;
+                        }
+                        else if (nextMsgLen == 126)
+                        {
+                            offset += 3;
+                            nextMsgLen = BitConverter.ToUInt16(new byte[] { buf[nextBufOffset + 1], buf[nextBufOffset] }, 0);
+                            nextBufOffset += 2;
+                        }
+                        else if (nextMsgLen == 127)
+                        {
+                            offset += 9;
+                            nextMsgLen = (int)BitConverter.ToUInt64(new byte[] { buf[nextBufOffset + 7], buf[nextBufOffset + 6], buf[nextBufOffset + 5], buf[nextBufOffset + 4], buf[nextBufOffset + 3], buf[nextBufOffset + 2], buf[nextBufOffset + 1], buf[nextBufOffset] }, 0);
+                            nextBufOffset += 8;
+                        }
+
+                        var nextDecoderInfo = new Decoder();
+                        nextDecoderInfo.msgLen = nextMsgLen;
+                        nextDecoderInfo.maskStart = nextBufOffset;
+                        nextDecoderInfo.dataStart = nextBufOffset + 4;
+                        decoderInfoList.Add(nextDecoderInfo);
+                        totalMsgLen += nextMsgLen;
+                        offset += 4;
+                    }
+
+                    completeWSCommand = true;
+
+                    var decodedIndex = 0;
+                    decoded = new byte[totalMsgLen];
+                    for (int decoderListIdx = 0; decoderListIdx < decoderInfoList.Count; decoderListIdx++)
+                    {
+                        {
+                            var decoderInfoElem = decoderInfoList[decoderListIdx];
+                            byte[] masks = new byte[4] { buf[decoderInfoElem.maskStart], buf[decoderInfoElem.maskStart + 1], buf[decoderInfoElem.maskStart + 2], buf[decoderInfoElem.maskStart + 3] };
+
+                            for (int i = 0; i < decoderInfoElem.msgLen; ++i)
+                                decoded[decodedIndex++] = (byte)(buf[decoderInfoElem.dataStart + i] ^ masks[i % 4]);
+                        }
+                    }
+
+                    offset += totalMsgLen;
+                    readHead = offset;
+                }
+
+                dcurr = d;
+                dcurr += 10;
+                dcurr += sizeof(int); // reserve space for size
                 int origPendingSeqNo = pendingSeqNo;
 
-                var src = b;
-                ref var header = ref Unsafe.AsRef<BatchHeader>(src);
-                var num = header.NumMessages;
-                src += BatchHeader.Size;
-                Status status = default;
-
-                dcurr += BatchHeader.Size;
                 start = 0;
                 msgnum = 0;
 
-                for (msgnum = 0; msgnum < num; msgnum++)
-                {
-                    var message = (MessageType)(*src++);
-                    var serialNum = hrw.ReadSerialNum(ref src);
-                    switch (message)
-                    {
-                        case MessageType.Upsert:
-                        case MessageType.UpsertAsync:
-                            if ((int)(dend - dcurr) < 2)
-                                SendAndReset(ref d, ref dend);
+                fixed (byte* ptr1 = &decoded[4])
+                    ProcessBatch(ptr1, d, dend);
 
-                            var keyPtr = src;
-                            status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src), serialNo: serialNum);
-
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
-
-                            subscribeKVBroker?.Publish(keyPtr);
-                            break;
-
-                        case MessageType.Read:
-                        case MessageType.ReadAsync:
-                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
-                                SendAndReset(ref d, ref dend);
-
-                            long ctx = ((long)message << 32) | (long)pendingSeqNo;
-                            status = session.Read(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
-                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
-
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
-
-                            if (status == Status.PENDING)
-                                Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                            else if (status == Status.OK)
-                                serializer.SkipOutput(ref dcurr);
-                            break;
-
-                        case MessageType.RMW:
-                        case MessageType.RMWAsync:
-                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
-                                SendAndReset(ref d, ref dend);
-
-                            keyPtr = src;
-
-                            ctx = ((long)message << 32) | (long)pendingSeqNo;
-                            status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
-                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
-
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
-                            if (status == Status.PENDING)
-                                Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                            else if (status == Status.OK || status == Status.NOTFOUND)
-                                serializer.SkipOutput(ref dcurr);
-
-                            subscribeKVBroker?.Publish(keyPtr);
-                            break;
-
-                        case MessageType.Delete:
-                        case MessageType.DeleteAsync:
-                            if ((int)(dend - dcurr) < 2)
-                                SendAndReset(ref d, ref dend);
-
-                            keyPtr = src;
-                            status = session.Delete(ref serializer.ReadKeyByRef(ref src), serialNo: serialNum);
-
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
-
-                            subscribeKVBroker?.Publish(keyPtr);
-                            break;
-
-                        default:
-                            if (!HandlePubSub(message, ref src, ref d, ref dend)) throw new NotImplementedException();
-                            break;
-                    }
-                }
-
-                if (origPendingSeqNo != pendingSeqNo)
-                    session.CompletePending(true);
-
-                // Send replies
-                if (msgnum - start > 0)
-                    Send(d);
-                else
-                {
-                    messageManager.Return(responseObject);
-                    responseObject = null;
-                }
+                return completeWSCommand;
             }
         }
 
@@ -255,9 +530,14 @@ namespace FASTER.server
             byte* d = respObj.bufferPtr;
             var dend = d + respObj.buffer.Length;
             var dcurr = d + sizeof(int); // reserve space for size
-            byte* outputDcurr;
-
             dcurr += BatchHeader.Size;
+
+            if (this.isWebSocket)
+                dcurr += 10;
+
+            byte* outputDcurr;
+            start = 0;
+            msgnum = 0;
 
             long ctx = ((long)message << 32) | (long)sid;
 
@@ -269,6 +549,8 @@ namespace FASTER.server
             var status = Status.OK;
             if (valPtr == null)
                 status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
+
+            msgnum++;
 
             if (status != Status.PENDING)
             {
@@ -292,15 +574,37 @@ namespace FASTER.server
             }
 
             // Send replies
-            var dstart = d + sizeof(int);
-            Unsafe.AsRef<BatchHeader>(dstart).NumMessages = 1;
-            Unsafe.AsRef<BatchHeader>(dstart).SeqNo = 0;
-            int payloadSize = (int)(dcurr - d);
+
+            int payloadSize = 0;
+            int payloadOffset = 0;
+
+            if (this.isWebSocket)
+            {
+                int packetLen = (int)((dcurr - 10) - d);
+                var dtemp = d + 10;
+                var dstart = dtemp + sizeof(int);
+
+                CreateWSSendPacketHeader(ref d, packetLen);
+
+                *(int*)dtemp = (packetLen - sizeof(int));
+                *(int*)dstart = 0;
+                *(int*)(dstart + sizeof(int)) = 1;
+                payloadOffset = (int)(d - respObj.bufferPtr);
+                payloadSize = (int)(dcurr - d);
+            }
+            else
+            {
+                var dstart = d + sizeof(int);
+                Unsafe.AsRef<BatchHeader>(dstart).NumMessages = 1;
+                Unsafe.AsRef<BatchHeader>(dstart).SeqNo = 0;
+                payloadOffset = 0;
+                payloadSize = (int)(dcurr - d);
+                *(int*)respObj.bufferPtr = -(payloadSize - sizeof(int));
+            }
             // Set packet size in header
-            *(int*)respObj.bufferPtr = -(payloadSize - sizeof(int));
             try
             {
-                messageManager.Send(socket, respObj, 0, payloadSize);
+                messageManager.Send(socket, respObj, payloadOffset, payloadSize);
             }
             catch
             {
@@ -332,20 +636,49 @@ namespace FASTER.server
             GetResponseObject();
             d = responseObject.bufferPtr;
             dend = d + responseObject.buffer.Length;
-            dcurr = d + sizeof(int);
+            if (this.isWebSocket)
+            {
+                dcurr = d;
+                dcurr += 10;
+                dcurr += sizeof(int); // reserve space for size
+            }
+            else
+                dcurr = d + sizeof(int);
+
             start = msgnum;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Send(byte* d)
         {
-            var dstart = d + sizeof(int);
-            Unsafe.AsRef<BatchHeader>(dstart).NumMessages = msgnum - start;
-            Unsafe.AsRef<BatchHeader>(dstart).SeqNo = seqNo++;
-            int payloadSize = (int)(dcurr - d);
-            // Set packet size in header
-            *(int*)responseObject.bufferPtr = -(payloadSize - sizeof(int));
-            SendResponse(payloadSize);
+            byte* dstart;
+
+            if (this.isWebSocket)
+            {
+                if ((int)(dcurr - d) > 0)
+                {
+                    int packetLen = (int)((dcurr - 10) - d);
+                    var dtemp = d + 10;
+                    dstart = dtemp + sizeof(int);
+
+                    CreateWSSendPacketHeader(ref d, packetLen);
+
+                    *(int*)dtemp = (packetLen - sizeof(int));
+                    *(int*)dstart = 0;
+                    *(int*)(dstart + sizeof(int)) = (msgnum - start);
+                    SendResponse((int)(d - responseObject.bufferPtr), (int)(dcurr - d));
+                }
+            }
+            else
+            {
+                dstart = d + sizeof(int);
+                Unsafe.AsRef<BatchHeader>(dstart).NumMessages = msgnum - start;
+                Unsafe.AsRef<BatchHeader>(dstart).SeqNo = seqNo++;
+                int payloadSize = (int)(dcurr - d);
+                // Set packet size in header
+                *(int*)responseObject.bufferPtr = -(payloadSize - sizeof(int));
+                SendResponse(payloadSize);
+            }
         }
 
         private bool HandlePubSub(MessageType message, ref byte* src, ref byte* d, ref byte* dend)
@@ -359,16 +692,20 @@ namespace FASTER.server
                         SendAndReset(ref d, ref dend);
 
                     var keyStart = src;
-                    serializer.ReadKeyByRef(ref src);
+                    ref Key key = ref serializer.ReadKeyByRef(ref src);
 
                     var inputStart = src;
-                    serializer.ReadInputByRef(ref src);
+                    ref Input input = ref serializer.ReadInputByRef(ref src);
 
                     int sid = subscribeKVBroker.Subscribe(ref keyStart, ref inputStart, this);
                     var status = Status.PENDING;
                     hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                     Write(ref status, ref dcurr, (int)(dend - dcurr));
                     Write(sid, ref dcurr, (int)(dend - dcurr));
+
+                    if (this.isWebSocket)
+                        serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
+
                     break;
 
                 case MessageType.PSubscribeKV:
@@ -400,7 +737,7 @@ namespace FASTER.server
                         SendAndReset(ref d, ref dend);
 
                     var keyPtr = src;
-                    ref Key key = ref serializer.ReadKeyByRef(ref src);
+                    key = ref serializer.ReadKeyByRef(ref src);
                     byte* valPtr = src;
                     ref Value val = ref serializer.ReadValueByRef(ref src);
                     int valueLength = (int)(src - valPtr);
