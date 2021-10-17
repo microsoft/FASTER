@@ -428,6 +428,33 @@ namespace FASTER.core
 
             public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
                 => throw new NotImplementedException();
+
+            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
+            {
+                lockContext = 0;
+                SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+            }
+
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, long lockContext) 
+                => PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
+            {
+                lockContext = 0;
+                InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+            }
+
+            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, long lockContext) 
+                => PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
+            {
+                lockContext = 0;
+                CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
+            }
+
+            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, long lockContext)
+                => PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
         }
     }
 
