@@ -261,7 +261,6 @@ class FasterKv {
 
   template<class CIC>
   inline Status ConditionalInsert(CIC& context, AsyncCallback callback,
-                                  HashBucketEntry start_search_entry,
                                   Address min_start_offset, void* dest_store);
 
   template<class C>
@@ -1677,6 +1676,8 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingConditionalInsert(Exec
 
   async_pending_conditional_insert_context_t* pending_context = (
     static_cast<async_pending_conditional_insert_context_t*>(io_context.caller_context));
+  assert(pending_context->min_search_offset != Address::kInvalidAddress &&
+          pending_context->min_search_offset != Address::kInvalidAddress);
   assert(pending_context->min_search_offset <= pending_context->start_search_entry.address());
 
   Address begin_address = hlog.begin_address.load();
@@ -1685,7 +1686,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingConditionalInsert(Exec
   if (pending_context->min_search_offset < begin_address) {
     // we cannot scan the entire region because log was truncated
     // request should be re-tried at a higher level!
-    return OperationStatus::ABORTED;
+    return OperationStatus::NOT_FOUND;
   }
   if (io_context.address > pending_context->min_search_offset) {
     // found newer version for this record -- abort insert!
@@ -3218,30 +3219,22 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
 
       // Try to get next page
       if(!ct_ctx->iter->GetNextPage(pages)) {
-        // No more pages
-        pages_available = false;
+        pages_available = false; // No more pages
       }
       continue;
     }
     if (record->header.tombstone && !dest_store_differs)  {
-      // do not compact tombstones
-      goto complete_pending;
+      goto complete_pending; // do not compact tombstones
     }
 
     {
-      // find and store the hash bucket of record
-      // NOTE: a hash bucket *must* exist, since the record exists in the hybrid log
-      KeyHash hash = record->key().GetHash();
-      assert( FindEntry(hash, expected_entry) != nullptr );
-      assert( expected_entry != Address::kInvalidAddress );
-
       // add to pending records
       assert(pending_records.find(record_address.control()) == pending_records.end());
       pending_records.insert(record_address.control());
 
       // Insert record if not exists already in (recordAddress, tailAddress] range
       ci_context_t ci_context{ record, record_address, &pending_records };
-      Status status = ConditionalInsert(ci_context, ci_callback, expected_entry,
+      Status status = ConditionalInsert(ci_context, ci_callback, //expected_entry,
                                         record_address, static_cast<void*>(dest_store));
       assert(status == Status::Ok || status == Status::Aborted || status == Status::Pending);
 
@@ -3291,7 +3284,6 @@ complete_pending:
 template <class K, class V, class D>
 template <class CIC>
 inline Status FasterKv<K, V, D>::ConditionalInsert(CIC& context, AsyncCallback callback,
-                                                  HashBucketEntry start_search_entry,
                                                   Address min_search_offset, void* dest_store) {
   typedef CIC conditional_insert_context_t;
   typedef PendingConditionalInsertContext<CIC> pending_ci_context_t;
@@ -3300,14 +3292,26 @@ inline Status FasterKv<K, V, D>::ConditionalInsert(CIC& context, AsyncCallback c
   static_assert(alignof(value_t) == alignof(typename pending_ci_context_t::value_t),
                 "alignof(value_t) != alignof(typename read_context_t::value_t)");
 
-  pending_ci_context_t pending_context{ context, callback, start_search_entry,
+  pending_ci_context_t pending_context{ context, callback, HashBucketEntry::kInvalidEntry,
                                         min_search_offset, dest_store };
+
+  // Set initial start address to last entry of hash chain
+  HashBucketEntry start_search_entry;
+  KeyHash hash = pending_context.get_key_hash();
+  assert( FindOrCreateEntry(hash, start_search_entry) != nullptr );
+  pending_context.start_search_entry = start_search_entry;
+
   OperationStatus internal_status = InternalConditionalInsert(pending_context);
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
+    // insert performed successfully
     status = Status::Ok;
   } else if (internal_status == OperationStatus::ABORTED) {
+    // insert aborted due to the existence of newer record
     status = Status::Aborted;
+  } else if (internal_status == OperationStatus::NOT_FOUND) {
+    // was not able to properly search up to min_search_offset
+    status = Status::NotFound;
   } else {
     assert(internal_status == OperationStatus::RECORD_ON_DISK);
     bool async;
@@ -3325,7 +3329,6 @@ inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_c
   // TODO: fix cases where start_search_entry can be Address::kInvalidAddress
   faster_t* dest_store = static_cast<faster_t*>(pending_context.dest_store);
   Address min_search_offset = pending_context.min_search_offset;
-  assert(min_search_offset <= pending_context.start_search_entry.address());
 
   if(thread_ctx().phase != Phase::REST) {
     const_cast<faster_t*>(this)->HeavyEnter();
@@ -3336,13 +3339,6 @@ inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_c
 
   Address begin_address = hlog.begin_address.load();
   Address head_address = hlog.head_address.load();
-
-  if (min_search_offset < begin_address) {
-    // result of log truncation -- only possible in CI from RMW
-    // request should be re-tried at a higher level!
-    // TODO: check if we need a different status code
-    return OperationStatus::ABORTED;
-  }
 
   // Retrieve or create hash index bucket for this entry
   KeyHash hash = pending_context.get_key_hash();
@@ -3355,6 +3351,19 @@ inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_c
     // no other record exists for the same key in this log
     // only possible in the RMW copy from cold to hot case
     goto create_record;
+  }
+  else if (min_search_offset == Address::kInvalidAddress) {
+    // cannot determine where the min_search_offset should be
+    // request needs to be retried at a higher level!
+    return OperationStatus::NOT_FOUND;
+  }
+  assert(address != Address::kInvalidAddress && min_search_offset != Address::kInvalidAddress &&
+          min_search_offset <= pending_context.start_search_entry.address());
+
+  if (min_search_offset < begin_address) {
+    // result of log truncation -- only possible in CI from RMW
+    // request should be re-tried at a higher level!
+    return OperationStatus::NOT_FOUND;
   }
 
   if(address >= head_address && min_search_offset != expected_entry.address()) {
@@ -3385,8 +3394,9 @@ inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_c
   }
   else {
     // Cannot reach min address because it has been truncated
+    // Request needs to be retried at a higher level!
     assert(min_search_offset < begin_address);
-    return OperationStatus::ABORTED;
+    return OperationStatus::NOT_FOUND;
   }
 
   // Update search range

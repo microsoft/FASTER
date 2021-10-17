@@ -18,8 +18,8 @@ enum class ReadOperationStage {
 enum class RmwOperationStage {
   HOT_LOG_RMW = 1,
   COLD_LOG_READ = 2,
-  HOT_LOG_RMW_RETRY_IF_NOT_FOUND = 3,
-  HOT_LOG_RMW_CALL_USER_CALLBACK = 4,
+  HOT_LOG_CONDITIONAL_INSERT = 3,
+  WAIT_FOR_RETRY = 4,
 };
 
 template <class K>
@@ -93,6 +93,7 @@ class HotColdReadContext : public AsyncHotColdReadContext <typename RC::key_t, t
     : AsyncHotColdReadContext<key_t, value_t>(faster_hc_, stage_, caller_context_,
                                             caller_callback_, monotonic_serial_num_)
     {}
+
   /// The deep-copy constructor.
   HotColdReadContext(HotColdReadContext& other_, IAsyncContext* caller_context_)
     : AsyncHotColdReadContext<key_t, value_t>(other_, caller_context_)
@@ -230,7 +231,6 @@ class HotColdRmwReadContext : public IAsyncContext {
  public:
   typedef K key_t;
   typedef V value_t;
-  //typedef MC hc_rmw_context_t; // can also be async
 
   HotColdRmwReadContext(key_t key, IAsyncContext* rmw_context_)
     : key_{ key }
@@ -277,7 +277,7 @@ class HotColdRmwReadContext : public IAsyncContext {
 };
 
 template <class MC, class RC>
-class HotColdRmwCopyContext: public CopyToTailContextBase<typename MC::key_t> {
+class HotColdRmwConditionalInsertContext: public IAsyncContext {
  public:
   // Typedefs on the key and value required internally by FASTER.
   typedef MC rmw_context_t;
@@ -289,49 +289,67 @@ class HotColdRmwCopyContext: public CopyToTailContextBase<typename MC::key_t> {
   typedef Record<key_t, value_t> record_t;
   constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
-  HotColdRmwCopyContext(rmw_context_t* rmw_context, read_context_t* read_context,
-                        HashBucketEntry& expected_entry, void* dest_store)
-    : CopyToTailContextBase<key_t>(expected_entry, dest_store)
-    , rmw_context_{ rmw_context }
+  HotColdRmwConditionalInsertContext(rmw_context_t* rmw_context, read_context_t* read_context, bool rmw_rcu)
+    : rmw_context_{ rmw_context }
     , read_context_{ read_context }
+    , rmw_rcu_{ rmw_rcu }
   {}
   /// Copy constructor deleted; copy to tail request doesn't go async
-  HotColdRmwCopyContext(const HotColdRmwCopyContext& from) = delete;
+  HotColdRmwConditionalInsertContext(const HotColdRmwConditionalInsertContext& from)
+    : rmw_context_{ from.rmw_context_ }
+    , read_context_{ from.read_context_ }
+    , rmw_rcu_{ from.rmw_rcu_ }
+  {}
 
-  inline const key_t& key() const final {
+ protected:
+  /// The explicit interface requires a DeepCopy_Internal() implementation.
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+    // need to deep copy read context, if didn't went async
+    IAsyncContext* read_context = static_cast<IAsyncContext*>(read_context_);
+    Status read_deep_copy_status = read_context_->DeepCopy(read_context);
+    if (read_deep_copy_status != Status::Ok) {
+      return read_deep_copy_status;
+    }
+    // need to deep copy rmw context, if didn't went async
+    IAsyncContext* rmw_context = static_cast<IAsyncContext*>(rmw_context_);
+    Status rmw_deep_copy_status = rmw_context_->DeepCopy(rmw_context);
+    if (rmw_deep_copy_status != Status::Ok) {
+      return rmw_deep_copy_status;
+    }
+    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+  }
+
+ public:
+  inline const key_or_shallow_key_t& key() const {
     return rmw_context_->key();
   }
-  inline uint32_t key_size() const final {
-    return key().size();
-  }
-  inline KeyHash get_key_hash() const final {
-    return key().GetHash();
-  }
-  inline bool is_key_equal(const key_t& other) const final {
-    return key() == other;
-  }
-  inline uint32_t value_size() const final {
+  inline uint32_t value_size() const {
     return rmw_context_->value_size();
   }
-  inline bool is_tombstone() const final {
-    // rmw never copies tombstone records
-    return false;
+  inline bool is_tombstone() const {
+    return false; // rmw never copies tombstone records
   }
 
-  inline bool copy_at(void* dest, uint32_t alloc_size) const final {
+  inline bool Insert(void* dest, uint32_t alloc_size) const {
     record_t* record = reinterpret_cast<record_t*>(dest);
     // write key
     key_t* key_dest = const_cast<key_t*>(&record->key());
     write_deep_key_at_helper<kIsShallowKey>::execute(rmw_context_->key(), key_dest);
     // write value
-    // NOTE: unfortunately, we cannot use any of the RmwInitial/RmwCopy/RmwAtomic methods...
-    memcpy(&record->value(), &read_context_->value(), rmw_context_->value_size(read_context_->value()));
+    if (rmw_rcu_) {
+      // insert updated value
+      rmw_context_->RmwCopy(read_context_->value(), record->value());
+    } else {
+      // Insert initial value
+      rmw_context_->RmwInitial(record->value());
+    }
     return true;
   }
 
  private:
   rmw_context_t* rmw_context_;
   read_context_t* read_context_;
+  bool rmw_rcu_;
 };
 
 template<class K, class V, class D>
@@ -610,7 +628,7 @@ inline Status FasterKvHC<K, V, D>::InternalRmw(C& hc_rmw_context) {
   //typedef typename C::rmw_context_t rmw_context_t;
   typedef AsyncHotColdRmwContext<K, V> async_hc_rmw_context_t;
   typedef HotColdRmwReadContext<K, V> hc_rmw_read_context_t;
-  typedef HotColdRmwCopyContext<async_hc_rmw_context_t, hc_rmw_read_context_t> hc_rmw_copy_context_t;
+  typedef HotColdRmwConditionalInsertContext<async_hc_rmw_context_t, hc_rmw_read_context_t> hc_rmw_ci_context_t;
 
   uint64_t monotonic_serial_num = hc_rmw_context.serial_num;
 
@@ -625,46 +643,35 @@ inline Status FasterKvHC<K, V, D>::InternalRmw(C& hc_rmw_context) {
   hc_rmw_read_context_t rmw_read_context { hc_rmw_context.key(), &hc_rmw_context };
   Status read_status = cold_store.Read(rmw_read_context, AsyncContinuePendingRmwRead,
                                         monotonic_serial_num);
-  if (read_status == Status::Ok) {
-    // Conditional copy to hot log
-    hc_rmw_copy_context_t copy_context{ &hc_rmw_context, &rmw_read_context,
-                                        hc_rmw_context.expected_entry,
-                                        static_cast<void*>(&hot_store) };
-    OperationStatus copy_status = hot_store.ConditionalCopyToTail(copy_context);
-    if (copy_status == OperationStatus::RECORD_ON_DISK) {
+
+  if (read_status == Status::Ok || read_status == Status::NotFound) {
+    // Conditional insert to hot log
+    hc_rmw_context.stage = RmwOperationStage::HOT_LOG_CONDITIONAL_INSERT;
+
+    bool rmw_rcu = (read_status == Status::Ok);
+    hc_rmw_ci_context_t ci_context{ &hc_rmw_context, &rmw_read_context, rmw_rcu };
+    Status ci_status = hot_store.ConditionalInsert(ci_context,  AsyncContinuePendingRmw,
+                                                  hc_rmw_context.expected_entry.address(),
+                                                  static_cast<void*>(&hot_store));
+    if (ci_status == Status::Aborted || ci_status == Status::NotFound) {
       // add to retry rmw queue
-      hc_rmw_context.expected_entry = copy_context.expected_entry;
+      hc_rmw_context.stage = RmwOperationStage::WAIT_FOR_RETRY;
+      hc_rmw_context.expected_entry = HashBucketEntry::kInvalidEntry;
       retry_rmw_requests.push(&hc_rmw_context);
       return Status::Pending;
     }
-    assert(copy_status == OperationStatus::SUCCESS ||
-            copy_status == OperationStatus::ABORTED);
+    // return to user
+    assert (ci_status == Status::Ok || ci_status == Status::Pending);
+    return ci_status;
+  }
 
-    // call rmw on hot log again -- we expect that hot log contains the record
-    hc_rmw_context.stage = RmwOperationStage::HOT_LOG_RMW_RETRY_IF_NOT_FOUND;
-    Status status = hot_store.Rmw(hc_rmw_context, AsyncContinuePendingRmw,
-                                monotonic_serial_num, false);
-    if (status != Status::NotFound) {
-      return status;
-    }
-    // This can only happen if compaction moved this entry to cold log -- retry
-    hc_rmw_context.expected_entry = copy_context.expected_entry;
-    retry_rmw_requests.push(&hc_rmw_context);
-    return Status::Pending;
-  }
-  else if (read_status == Status::NotFound) {
-    // Issue Rmw to hot log; will create an initial rmw
-    // ... unless a concurrent upsert/rmw was performed in the meantime
-    hc_rmw_context.stage = RmwOperationStage::HOT_LOG_RMW_CALL_USER_CALLBACK;
-    return hot_store.Rmw(hc_rmw_context, AsyncContinuePendingRmw, monotonic_serial_num, true);
-  }
   // pending or error status
   return read_status;
 }
 
 template<class K, class V, class D>
 inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmw(IAsyncContext* ctxt, Status result) {
-  typedef HotColdRmwCopyContext<async_hc_rmw_context_t, hc_rmw_read_context_t> hc_rmw_copy_context_t;
+  typedef HotColdRmwConditionalInsertContext<async_hc_rmw_context_t, hc_rmw_read_context_t> hc_rmw_ci_context_t;
 
   CallbackContext<async_hc_rmw_context_t> context{ ctxt };
   faster_hc_t* faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
@@ -679,7 +686,7 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmw(IAsyncContext* ctxt, St
     // issue read request to cold log
     context->stage = RmwOperationStage::COLD_LOG_READ;
     Status read_status = faster_hc->cold_store.Read(rmw_read_context, AsyncContinuePendingRmwRead,
-                                                  context->serial_num);
+                                                    context->serial_num);
     if (read_status == Status::Pending) {
       context.async = true;
       return;
@@ -690,59 +697,43 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmw(IAsyncContext* ctxt, St
 
   if (context->stage == RmwOperationStage::COLD_LOG_READ) {
     // result corresponds to cold log Read op status
-    if (result == Status::Ok) {
+    if (result == Status::Ok || result == Status::NotFound) {
       assert(context->read_context != nullptr);
-      hc_rmw_copy_context_t copy_context{ context.get(), context->read_context, context->expected_entry,
-                                          static_cast<void*>(&faster_hc->hot_store) };
-      OperationStatus copy_status = faster_hc->hot_store.ConditionalCopyToTail(copy_context);
-      if (copy_status == OperationStatus::RECORD_ON_DISK) {
-        // add to retry queue
-        context.async = true; // do not free context
-        context->expected_entry = copy_context.expected_entry;
-        context->read_context = nullptr;
-        faster_hc->retry_rmw_requests.push(context.get());
-        return;
-      }
-      assert(copy_status == OperationStatus::SUCCESS ||
-              copy_status == OperationStatus::ABORTED);
-      // call rmw on hot log again -- we expect that hot log contains the record
-      context->stage = RmwOperationStage::HOT_LOG_RMW_RETRY_IF_NOT_FOUND;
-      Status status = faster_hc->hot_store.Rmw(*context.get(), AsyncContinuePendingRmw,
-                                              context->serial_num, false);
-      if (status == Status::Pending) {
+
+      // issue conditional insert request to hot log
+      context->stage = RmwOperationStage::HOT_LOG_CONDITIONAL_INSERT;
+
+      bool rmw_rcu = (result == Status::Ok);
+      hc_rmw_ci_context_t ci_context{ context.get(), context->read_context, rmw_rcu };
+      Status ci_status = faster_hc->hot_store.ConditionalInsert(ci_context, AsyncContinuePendingRmw,
+                                                                context->expected_entry.address(),
+                                                                static_cast<void*>(&faster_hc->hot_store));
+      if (ci_status == Status::Pending) {
         context.async = true;
         return;
       }
-      result = status;
+      result = ci_status;
     }
-    else if (result == Status::NotFound) {
-      // Issue Rmw to hot log -- a record will be created if not exists
-      context->stage = RmwOperationStage::HOT_LOG_RMW_CALL_USER_CALLBACK;
-      Status status = faster_hc->hot_store.Rmw(*context.get(), AsyncContinuePendingRmw,
-                                              context->serial_num, true);
-      assert(status != Status::NotFound);
-      if (status == Status::Pending) {
-        context.async = true;
-        return;
-      }
-      result = status;
-    }
-
-  }
-
-  if (context->stage == RmwOperationStage::HOT_LOG_RMW_RETRY_IF_NOT_FOUND) {
-    if (result != Status::NotFound) {
+    else {
+      // call user-provided callback -- error status
       context->caller_callback(context->caller_context, result);
       return;
     }
-    // This can only happen if compaction moved this entry to cold -- retry request
-    context.async = true;
-    faster_hc->retry_rmw_requests.push(context.get());
-    return;
   }
 
-  if (context->stage == RmwOperationStage::HOT_LOG_RMW_CALL_USER_CALLBACK) {
-    context->caller_callback(context->caller_context, result);
+  if (context->stage == RmwOperationStage::HOT_LOG_CONDITIONAL_INSERT) {
+    // result corresponds to hot log Conditional Insert op status
+    if (result != Status::Aborted && result != Status::NotFound) {
+      // Status::Ok or error
+      context->caller_callback(context->caller_context, result);
+      return;
+    }
+    // add to retry queue
+    context.async = true; // do not free context
+    context->stage = RmwOperationStage::WAIT_FOR_RETRY;
+    context->expected_entry = HashBucketEntry::kInvalidEntry;
+    context->read_context = nullptr;
+    faster_hc->retry_rmw_requests.push(context.get());
     return;
   }
 
@@ -842,15 +833,23 @@ template<class K, class V, class D>
 inline void FasterKvHC<K, V, D>::CompleteRmwRetryRequests() {
   async_hc_rmw_context_t* ctxt;
   while (retry_rmw_requests.try_pop(ctxt)) {
-    // Re-issue RMW request
     CallbackContext<async_hc_rmw_context_t> context{ ctxt };
+    // Get hash bucket entry
+    KeyHash hash = context->key().GetHash();
+    HashBucketEntry entry;
+    const AtomicHashBucketEntry* atomic_entry = hot_store.FindEntry(hash, entry);
+    // Initialize rmw context vars
+    context->expected_entry = entry;
     context->stage = RmwOperationStage::HOT_LOG_RMW;
+    // Re-issue RMW request
     Status status = InternalRmw(*context.get());
-    if (status != Status::Pending) {
-      // if done, callback user code
-      context->caller_callback(context->caller_context, status);
+    if (status == Status::Pending) {
+      context.async = true;
+      continue;
     }
-    context.async = true;
+    // if done, issue user callback
+    context->caller_callback(context->caller_context, status);
+    context.async = false;
   }
 }
 
