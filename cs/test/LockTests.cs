@@ -15,6 +15,10 @@ namespace FASTER.test
     {
         internal class Functions : SimpleFunctions<int, int>
         {
+            public Functions() : base(true)
+            {
+            }
+
             static bool Increment(ref int dst)
             {
                 ++dst;
@@ -24,14 +28,6 @@ namespace FASTER.test
             public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref RecordInfo recordInfo, long address) => Increment(ref dst);
 
             public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, long address) => Increment(ref value);
-
-            public override bool SupportsLocking => true;
-            public override void Lock(ref RecordInfo recordInfo, ref int key, ref int value, LockType lockType, ref long lockContext) => recordInfo.SpinLock();
-            public override bool Unlock(ref RecordInfo recordInfo, ref int key, ref int value, LockType lockType, long lockContext)
-            {
-                recordInfo.Unlock();
-                return true;
-            }
         }
 
         private FasterKV<int, int> fkv;
@@ -69,7 +65,9 @@ namespace FASTER.test
                 RecordInfo recordInfo = new RecordInfo();
                 RecordInfo* ri = &recordInfo;
 
-                XLockTest(() => ri->SpinLock(), () => ri->Unlock());
+                XLockTest(() => ri->LockX(), () => ri->UnlockX());
+                SLockTest(() => ri->LockS(), () => ri->UnlockS());
+                XSLockTest(() => ri->LockX(), () => ri->UnlockX(), () => ri->LockS(), () => ri->UnlockS());
             }
         }
 
@@ -93,6 +91,70 @@ namespace FASTER.test
                     Thread.Yield();
                     lockTestValue = temp + 1;
                     unlocker();
+                }
+            }
+        }
+
+        private void SLockTest(Action locker, Action unlocker)
+        {
+            long lockTestValue = 1;
+            long lockTestValueResult = 0;
+
+            const int numThreads = 50;
+            const int numIters = 5000;
+
+            var tasks = Enumerable.Range(0, numThreads).Select(ii => Task.Factory.StartNew(SLockTestFunc)).ToArray();
+            Task.WaitAll(tasks);
+
+            Assert.AreEqual(numThreads * numIters, lockTestValueResult);
+
+            void SLockTestFunc()
+            {
+                for (int ii = 0; ii < numIters; ++ii)
+                {
+                    locker();
+                    Interlocked.Add(ref lockTestValueResult, Interlocked.Read(ref lockTestValue));
+                    Thread.Yield();
+                    unlocker();
+                }
+            }
+        }
+
+        private void XSLockTest(Action xlocker, Action xunlocker, Action slocker, Action sunlocker)
+        {
+            long lockTestValue = 0;
+            long lockTestValueResult = 0;
+
+            const int numThreads = 50;
+            const int numIters = 5000;
+
+            var tasks = Enumerable.Range(0, numThreads).Select(ii => Task.Factory.StartNew(XLockTestFunc))
+                .Concat(Enumerable.Range(0, numThreads).Select(ii => Task.Factory.StartNew(SLockTestFunc))).ToArray();
+            Task.WaitAll(tasks);
+
+            Assert.AreEqual(numThreads * numIters, lockTestValue);
+            Assert.AreEqual(numThreads * numIters, lockTestValueResult);
+
+            void XLockTestFunc()
+            {
+                for (int ii = 0; ii < numIters; ++ii)
+                {
+                    xlocker();
+                    var temp = lockTestValue;
+                    Thread.Yield();
+                    lockTestValue = temp + 1;
+                    xunlocker();
+                }
+            }
+
+            void SLockTestFunc()
+            {
+                for (int ii = 0; ii < numIters; ++ii)
+                {
+                    slocker();
+                    Interlocked.Add(ref lockTestValueResult, 1);
+                    Thread.Yield();
+                    sunlocker();
                 }
             }
         }

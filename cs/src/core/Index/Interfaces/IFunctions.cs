@@ -276,7 +276,7 @@ namespace FASTER.core
 
         #region Locking
         /// <summary>
-        /// User-provided lock call, defaulting to no-op. A default exclusive implementation is available via <see cref="RecordInfo.SpinLock()"/>.
+        /// User-provided lock call, defaulting to no-op. A default implementation is available via <see cref="RecordInfo.LockX()"/> and <see cref="RecordInfo.LockS()"/>.
         /// See also <see cref="IntExclusiveLocker"/> to use two bits of an existing int value.
         /// </summary>
         /// <param name="recordInfo">The header for the current record</param>
@@ -290,7 +290,7 @@ namespace FASTER.core
         void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext);
 
         /// <summary>
-        /// User-provided unlock call, defaulting to no-op. A default exclusive implementation is available via <see cref="RecordInfo.Unlock()"/>.
+        /// User-provided unlock call, defaulting to no-op. A default exclusive implementation is available via <see cref="RecordInfo.UnlockX()"/> and <see cref="RecordInfo.UnlockS()"/>.
         /// See also <see cref="IntExclusiveLocker"/> to use two bits of an existing int value.
         /// </summary>
         /// <param name="recordInfo">The header for the current record</param>

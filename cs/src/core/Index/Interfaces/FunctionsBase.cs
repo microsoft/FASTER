@@ -77,13 +77,19 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
         {
-            recordInfo.SpinLock();
+            if (lockType == LockType.Exclusive)
+                recordInfo.LockX();
+            else
+                recordInfo.LockS();
         }
 
         /// <inheritdoc/>
         public virtual bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
         {
-            recordInfo.Unlock();
+            if (lockType == LockType.Exclusive)
+                recordInfo.UnlockX();
+            else
+                recordInfo.UnlockS();
             return true;
         }
     }

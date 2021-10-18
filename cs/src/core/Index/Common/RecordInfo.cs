@@ -3,104 +3,62 @@
 
 #pragma warning disable 1591
 
-//#define RECORD_INFO_WITH_PIN_COUNT
-
-using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace FASTER.core
 {
-#if RECORD_INFO_WITH_PIN_COUNT
-    [StructLayout(LayoutKind.Explicit, Size = 12)]
-#else
+    // RecordInfo layout (64 bits total):
+    // [VVVVV][Dirty][Stub][Sealed] [Valid][Tombstone][X][SSSSS] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
+    //     where V = version, X = exclusive lock, S = shared lock, A = address
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-#endif
-    public unsafe struct RecordInfo
+    public struct RecordInfo
     {
-        public const int kLatchBitOffset = 48;
+        const int kTotalSizeInBytes = 8;
+        const int kTotalBits = kTotalSizeInBytes * 8;
 
-        public const int kTombstoneBitOffset = 49;
+        // Previous address
+        const int kPreviousAddressBits = 48;
+        const long kPreviousAddressMaskInWord = (1L << kPreviousAddressBits) - 1;
 
-        public const int kInvalidBitOffset = 50;
+        // Shift position of lock in word
+        const int kLockShiftInWord = 48;
 
-        public const int kVersionBits = 13;
+        // We use 6 lock bits: 5 shared lock bits + 1 exclusive lock bit
+        const int kSharedLockBits = 5;
+        const int kExlcusiveLockBits = 1;
 
-        public const int kVersionShiftInWord = 51;
+        // Shared lock constants
+        const long kSharedLockMaskInWord = ((1L << kSharedLockBits) - 1) << kLockShiftInWord;
+        const long kSharedLockIncrement = 1L << kLockShiftInWord;
 
-        public const long kVersionMaskInWord = ((1L << kVersionBits) - 1) << kVersionShiftInWord;
+        // Exclusive lock constants
+        const int kExclusiveLockBitOffset = 53;
+        const long kExclusiveLockBitMask = 1L << kExclusiveLockBitOffset;
 
-        public const long kVersionMaskInInteger = (1L << kVersionBits) - 1;
+        // Other marker bits
+        const int kTombstoneBitOffset = 54;
+        const int kValidBitOffset = 55;
+        const int kStubBitOffset = 56;
+        const int kSealedBitOffset = 57;
+        const int kDirtyBitOffset = 58;
 
-        public const long kPreviousAddressMask = (1L << 48) - 1;
+        const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
+        const long kValidBitMask = 1L << kValidBitOffset;
+        const long kStubBitMask = 1L << kStubBitOffset;
+        const long kSealedBitMask = 1L << kSealedBitOffset;
+        const long kDirtyBitMask = 1L << kDirtyBitOffset;
 
-        public const long kLatchBitMask = (1L << kLatchBitOffset);
+        // Shift position of version in word
+        const int kVersionShiftInWord = 59;
 
-        public const long kTombstoneMask = (1L << kTombstoneBitOffset);
+        // We use 5 version bits
+        const int kVersionBits = 5;
 
-        public const long kInvalidBitMask = (1L << kInvalidBitOffset);
-
-#if RECORD_INFO_WITH_PIN_COUNT
-        public const int kTotalSizeInBytes = sizeof(long) + sizeof(int);
-
-        public const int kTotalBits = kTotalSizeInBytes * 8;
-
-        [FieldOffset(0)]
-        private long word;
-
-        [FieldOffset(sizeof(long))]
-        private int access_data;
-
-        public static void WriteInfo(RecordInfo* info, int checkpointVersion, bool tombstone, bool invalidBit, long previousAddress)
-        {
-            info->word = default(long);
-            info->Tombstone = tombstone;
-            info->Invalid = invalidBit;
-            info->PreviousAddress = previousAddress;
-            info->Version = checkpointVersion;
-            info->access_data = 0;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryPin()
-        {
-            return Interlocked.Increment(ref access_data) > 0;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryMarkReadOnly()
-        {
-            return Interlocked.CompareExchange(ref access_data, int.MinValue, 0) == 0;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void MarkReadOnly()
-        {
-            var found_value = Interlocked.CompareExchange(ref access_data, int.MinValue, 0);
-            if (found_value != 0)
-            {
-                int num_iterations = 1000;
-                Thread.SpinWait(num_iterations);
-                while (Interlocked.CompareExchange(ref access_data, int.MinValue, 0) != 0)
-                {
-                    Thread.SpinWait(num_iterations);
-                    num_iterations <<= 1;
-                }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Unpin()
-        {
-            Interlocked.Decrement(ref access_data);
-        }
-
-#else
-        public const int kTotalSizeInBytes = sizeof(long);
-
-        public const int kTotalBits = kTotalSizeInBytes * 8;
+        // Version constants
+        const long kVersionMaskInWord = ((1L << kVersionBits) - 1) << kVersionShiftInWord;
+        const long kVersionMaskInInteger = (1L << kVersionBits) - 1;
 
         [FieldOffset(0)]
         private long word;
@@ -113,129 +71,128 @@ namespace FASTER.core
             info.PreviousAddress = previousAddress;
             info.Version = checkpointVersion;
         }
-        
-
-        public static string ToString(RecordInfo* info)
-        {
-            return "RecordHeader Word = " + info->word;
-        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryPin()
+        public void LockX()
         {
-            throw new InvalidOperationException();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryMarkReadOnly()
-        {
-            throw new InvalidOperationException();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void MarkReadOnly()
-        {
-            throw new InvalidOperationException();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Unpin()
-        {
-            throw new InvalidOperationException();
-        }
-#endif
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SpinLock()
-        {
-            // Note: Any improvements here should be done in IntExclusiveLocker.SpinLock() as well.
+            // Acquire exclusive lock (readers may still be present)
             while (true)
             {
                 long expected_word = word;
-                if ((expected_word & kLatchBitMask) == 0)
+                if ((expected_word & kExclusiveLockBitMask) == 0)
                 {
-                    var found_word = Interlocked.CompareExchange(ref word, expected_word | kLatchBitMask, expected_word);
-                    if (found_word == expected_word)
-                        return;
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
+                        break;
+                }
+                Thread.Yield();
+            }
+
+            // Wait for readers to drain
+            while ((word & kSharedLockMaskInWord) != 0) Thread.Yield();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UnlockX() => word &= ~kExclusiveLockBitMask;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void LockS()
+        {
+            // Acquire shared lock
+            while (true)
+            {
+                long expected_word = word;
+                if (((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
+                    && (expected_word & kSharedLockMaskInWord) != kSharedLockMaskInWord) // shared lock is not full
+                {
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word + kSharedLockIncrement, expected_word))
+                        break;
                 }
                 Thread.Yield();
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Unlock()
-        {
-            word &= ~kLatchBitMask;
-        }
+        public void UnlockS() => Interlocked.Add(ref word, -kSharedLockIncrement);
 
-        public bool IsNull()
-        {
-            return word == 0;
-        }
+        public bool IsNull() => word == 0;
 
         public bool Tombstone
         {
-            get
-            {
-                return (word & kTombstoneMask) > 0;
-            }
-
+            get => (word & kTombstoneBitMask) > 0;
             set
             {
-                if (value)
-                {
-                    word |= kTombstoneMask;
-                }
-                else
-                {
-                    word &= ~kTombstoneMask;
-                }
+                if (value) word |= kTombstoneBitMask;
+                else word &= ~kTombstoneBitMask;
+            }
+        }
+
+        public bool Valid
+        {
+            get => (word & kValidBitMask) > 0;
+            set
+            {
+                if (value) word |= kValidBitMask;
+                else word &= ~kValidBitMask;
+            }
+        }
+
+        public bool Stub
+        {
+            get => (word & kTombstoneBitMask) > 0;
+            set
+            {
+                if (value) word |= kStubBitMask;
+                else word &= ~kStubBitMask;
+            }
+        }
+
+        public bool Sealed
+        {
+            get => (word & kSealedBitMask) > 0;
+            set
+            {
+                if (value) word |= kSealedBitMask;
+                else word &= ~kSealedBitMask;
+            }
+        }
+
+        public bool Dirty
+        {
+            get => (word & kDirtyBitMask) > 0;
+            set
+            {
+                if (value) word |= kDirtyBitMask;
+                else word &= ~kDirtyBitMask;
             }
         }
 
         public bool Invalid
         {
-            get
-            {
-                return !((word & kInvalidBitMask) > 0);
-            }
+            get => !((word & kValidBitMask) > 0);
             set
             {
-                if (value)
-                {
-                    word &= ~kInvalidBitMask; 
-                }
-                else
-                {
-                    word |= kInvalidBitMask;
-                }
+                if (value) word &= ~kValidBitMask;
+                else word |= kValidBitMask;
             }
         }
 
         public int Version
         {
-            get
-            {
-                return (int)(((word & kVersionMaskInWord) >> kVersionShiftInWord) & kVersionMaskInInteger);
-            }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => (int)((word & kVersionMaskInWord) >> kVersionShiftInWord);
             set
             {
                 word &= ~kVersionMaskInWord;
-                word |= ((value & kVersionMaskInInteger) << kVersionShiftInWord);
+                word |= (value & kVersionMaskInInteger) << kVersionShiftInWord;
             }
         }
 
         public long PreviousAddress
         {
-            get
-            {
-                return (word & kPreviousAddressMask);
-            }
+            get => word & kPreviousAddressMaskInWord;
             set
             {
-                word &= ~kPreviousAddressMask;
-                word |= (value & kPreviousAddressMask);
+                word &= ~kPreviousAddressMaskInWord;
+                word |= value & kPreviousAddressMaskInWord;
             }
         }
 

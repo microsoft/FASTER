@@ -15,7 +15,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void SpinLock(ref int value)
         {
-            // Note: Any improvements here should be done in RecordInfo.SpinLock() as well.
             while (true)
             {
                 int expected_word = value;
