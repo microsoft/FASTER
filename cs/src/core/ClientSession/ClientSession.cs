@@ -1165,14 +1165,16 @@ namespace FASTER.core
             #endregion IFunctions - Reads
 
             #region IFunctions - Upserts
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
                 => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
             {
                 lockContext = 0;
                 this.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
-                if (this.SupportsLocking)
+                if (this.SupportsPostOperations)
                 {
                     // Lock must be taken after the value is initialized. Unlocked in PostSingleWriterLock.
                     this.Lock(ref recordInfo, ref key, ref dst, LockType.Exclusive, ref lockContext);
@@ -1185,6 +1187,8 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, long lockContext)
             {
+                if (!this.SupportsPostOperations)
+                    return;
                 if (!this.SupportsLocking)
                     PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
                 else
@@ -1247,17 +1251,19 @@ namespace FASTER.core
 
             #region IFunctions - RMWs
             #region InitialUpdater
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output)
                 => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output);
 
             public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
                 => throw new FasterException("The lockContext form of InitialUpdater should always be called");
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
             {
                 lockContext = 0;
                 _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
-                if (this.SupportsLocking)
+                if (this.SupportsPostOperations)
                 {
                     // Lock must be taken after the value is initialized. Unlocked in PostInitialUpdaterLock.
                     this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref lockContext);
@@ -1270,6 +1276,8 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, long lockContext)
             {
+                if (!this.SupportsPostOperations)
+                    return;
                 if (!this.SupportsLocking)
                     PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref recordInfo, address);
                 else
@@ -1299,17 +1307,20 @@ namespace FASTER.core
             #endregion InitialUpdater
 
             #region CopyUpdater
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
                 => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
                 => throw new FasterException("The lockContext form of CopyUpdater should always be called");
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
             {
                 lockContext = 0;
                 _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
-                if (this.SupportsLocking)
+                if (this.SupportsPostOperations)
                 {
                     // Lock must be taken after the value is initialized. Unlocked in PostInitialUpdaterLock.
                     this.Lock(ref recordInfo, ref key, ref newValue, LockType.Exclusive, ref lockContext);
@@ -1320,10 +1331,14 @@ namespace FASTER.core
                 => throw new FasterException("The lockContext form of PostCopyUpdater should always be called");
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, long lockContext) 
-                => !this.SupportsLocking
+            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, long lockContext)
+            {
+                if (!this.SupportsPostOperations)
+                    return true;
+                return !this.SupportsLocking
                     ? PostCopyUpdaterNoLock(ref key, ref input, ref output, ref oldValue, ref newValue, ref recordInfo, address)
                     : PostCopyUpdaterLock(ref key, ref input, ref output, ref oldValue, ref newValue, ref recordInfo, address, lockContext);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool PostCopyUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue, ref RecordInfo recordInfo, long address)
@@ -1332,6 +1347,7 @@ namespace FASTER.core
                 return _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool PostCopyUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue, ref RecordInfo recordInfo, long address, long lockContext)
             {
                 // Lock was taken in CopyUpdaterLock
@@ -1386,6 +1402,9 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address)
             {
+                if (!this.SupportsPostOperations)
+                    return;
+
                 // There is no value to lock here, so we take a RecordInfo lock in InternalDelete and release it here.
                 recordInfo.Version = _clientSession.ctx.version;
                 _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
@@ -1407,6 +1426,7 @@ namespace FASTER.core
                 return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 long context = 0;

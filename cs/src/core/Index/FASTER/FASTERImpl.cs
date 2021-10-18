@@ -1270,6 +1270,7 @@ namespace FASTER.core
                     // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.
                     fasterSession.PostSingleDeleter(ref key, ref recordInfo, newLogicalAddress);
                     recordInfo.Unlock();
+                    pendingContext.recordInfo = recordInfo;
                     pendingContext.logicalAddress = newLogicalAddress;
                     status = OperationStatus.SUCCESS;
                     goto LatchRelease;
@@ -1623,10 +1624,11 @@ namespace FASTER.core
                     if (status != OperationStatus.SUCCESS)
                     {
                         Debug.Assert(OperationStatus.NOTFOUND == status);
-                        fasterSession.PostInitialUpdater(ref key, 
+                        fasterSession.PostInitialUpdater(ref key,
                                           ref pendingContext.input.Get(),
                                           ref hlog.GetValue(newPhysicalAddress),
                                           ref pendingContext.output, ref recordInfo, newLogicalAddress, lockContext);
+                        pendingContext.recordInfo = recordInfo;
                         pendingContext.logicalAddress = newLogicalAddress;
                         return status;
                     }
@@ -1638,6 +1640,7 @@ namespace FASTER.core
                                           ref hlog.GetValue(newPhysicalAddress),
                                           ref pendingContext.output, ref recordInfo, newLogicalAddress, lockContext))
                     {
+                        pendingContext.recordInfo = recordInfo;
                         pendingContext.logicalAddress = newLogicalAddress;
                         return status;
                     }
