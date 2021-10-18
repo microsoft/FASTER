@@ -49,7 +49,6 @@ namespace FASTER.server
 
             server = new FasterServer(opts.Address, opts.Port);
             server.Register(WireFormat.DefaultVarLenKV, provider);
-            server.Register(WireFormat.WebSocket, provider);
         }
 
         /// <summary>

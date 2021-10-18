@@ -7,21 +7,16 @@ namespace FASTER.common
     /// Wire format for a session, you can add custom session types on the server and client side
     /// (e.g., one per distinct store and/or function types).
     /// </summary>
-    public enum WireFormat : byte
+    public enum NetworkProtocol : byte
     {
         /// <summary>
-        /// Default varlen KV based on SpanByte (binary)
+        /// Use TCP for communication between FASTER client and server
         /// </summary>
-        DefaultVarLenKV = 0,
+        TCP = 0,
 
         /// <summary>
-        /// Default fixed-len KV with 8-byte keys and values (binary)
+        /// Use WebSockets for communication between FASTER client and server
         /// </summary>
-        DefaultFixedLenKV = 1,
-
-        /// <summary>
-        /// ASCII wire format (non-binary protocol)
-        /// </summary>
-        ASCII = 255
+        WebSocket = 1
     }
 }

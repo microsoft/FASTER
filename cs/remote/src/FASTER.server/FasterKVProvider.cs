@@ -45,16 +45,20 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public IServerSession GetSession(WireFormat wireFormat, Socket socket)
+        public IServerSession GetSession(WireFormat wireFormat, Socket socket, NetworkProtocol protocol)
         {
             switch (wireFormat)
             {
-                case WireFormat.WebSocket:
-                    return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker, true);
                 default:
-                    return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker);
+                    switch (protocol)
+                    {
+                        case NetworkProtocol.WebSocket:
+                            return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
+                                (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker, true);
+                        default:
+                            return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
+                                (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker);
+                    }
             }
         }
     }

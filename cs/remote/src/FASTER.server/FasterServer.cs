@@ -199,7 +199,8 @@ namespace FASTER.server
                 return true;
             }
 
-            WireFormat protocol;
+            WireFormat wireFormat;
+            NetworkProtocol networkProtocol;
 
             // FASTER's binary protocol family is identified by inverted size (int) field in the start of a packet
             // This results in a fourth byte value (little endian) > 127, denoting a non-ASCII wire format.
@@ -211,20 +212,23 @@ namespace FASTER.server
                     return true;
                 }
                 fixed (void* bh = &e.Buffer[4])
-                    protocol = ((BatchHeader*)bh)->Protocol;
+                    wireFormat = ((BatchHeader*)bh)->Protocol;
+                networkProtocol = NetworkProtocol.TCP;
             }
             else if (e.Buffer[0] == 71 && e.Buffer[1] == 69 && e.Buffer[2] == 84)
             {
-                protocol = WireFormat.WebSocket;
+                wireFormat = WireFormat.DefaultVarLenKV;
+                networkProtocol = NetworkProtocol.WebSocket;
             }
             else
             {
-                protocol = WireFormat.ASCII;
+                wireFormat = WireFormat.ASCII;
+                networkProtocol = NetworkProtocol.TCP;
             }
 
-            if (!sessionProviders.TryGetValue(protocol, out var provider))
+            if (!sessionProviders.TryGetValue(wireFormat, out var provider))
             {
-                Console.WriteLine($"Unsupported incoming wire format {protocol}");
+                Console.WriteLine($"Unsupported incoming wire format {wireFormat}");
                 DisposeConnectionSession(e);
                 return false;
             }
@@ -235,7 +239,7 @@ namespace FASTER.server
                 return false;
             }
 
-            connArgs.session = provider.GetSession(protocol, connArgs.socket);
+            connArgs.session = provider.GetSession(wireFormat, connArgs.socket, networkProtocol);
 
             activeSessions.TryAdd(connArgs.session, default);
 

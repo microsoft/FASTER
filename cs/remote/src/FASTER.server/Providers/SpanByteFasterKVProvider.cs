@@ -62,16 +62,21 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public virtual IServerSession GetSession(WireFormat wireFormat, Socket socket)
+        public virtual IServerSession GetSession(WireFormat wireFormat, Socket socket, NetworkProtocol protocol)
         {
             switch (wireFormat)
             {
-                case WireFormat.WebSocket:
-                    return new BinaryServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
-                        (socket, store, new SpanByteFunctionsForServer<long>(), serializer, maxSizeSettings, kvBroker, broker, true);
                 default:
-                    return new BinaryServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
-                        (socket, store, new SpanByteFunctionsForServer<long>(), serializer, maxSizeSettings, kvBroker, broker);
+                    switch (protocol)
+                    {
+                        case NetworkProtocol.WebSocket:
+                            return new BinaryServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
+                                (socket, store, new SpanByteFunctionsForServer<long>(), serializer, maxSizeSettings, kvBroker, broker, true);
+
+                        default:
+                            return new BinaryServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
+                                (socket, store, new SpanByteFunctionsForServer<long>(), serializer, maxSizeSettings, kvBroker, broker);
+                    }
             }
         }
     }
