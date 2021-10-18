@@ -58,7 +58,7 @@ namespace FASTER.core
 
         // Version constants
         const long kVersionMaskInWord = ((1L << kVersionBits) - 1) << kVersionShiftInWord;
-        const long kVersionMaskInInteger = (1L << kVersionBits) - 1;
+        internal const long kVersionMaskInInteger = (1L << kVersionBits) - 1;
 
         [FieldOffset(0)]
         private long word;
