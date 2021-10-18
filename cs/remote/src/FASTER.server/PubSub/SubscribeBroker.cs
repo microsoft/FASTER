@@ -381,6 +381,7 @@ namespace FASTER.server
 
             var start = key;
             ref Key k = ref keySerializer.ReadKeyByRef(ref key);
+            // TODO: this needs to be a single atomic enqueue
             byte[] logEntryBytes = new byte[(key - start) + valueLength + sizeof(bool)];
             fixed (byte* logEntryBytePtr = &logEntryBytes[0])
             {
