@@ -205,7 +205,6 @@ namespace FASTER.core
             }
 
             autoCommitOnFlush = logSettings.AutoCommitOnFlush;
-            commitCookies = new Queue<(long, byte[])>();
             cookieChanged = false;
             currentManualRequest = new ManualCheckpointRequest();
         }
@@ -500,6 +499,11 @@ namespace FASTER.core
         public bool AddCommitCookie(byte[] cookie, long addrLowerBound = -1)
         {
             if (addrLowerBound == -1) addrLowerBound = TailAddress;
+            
+            // Lazily allocate data structure
+            if (commitCookies == null)
+                Interlocked.CompareExchange(ref commitCookies, new Queue<(long, byte[])>(), null);
+            
             // Not expected to have heavy contention
             lock (commitCookies)
             {
@@ -1003,19 +1007,23 @@ namespace FASTER.core
         {
             byte[] cookie = null;
             // Not expected to have heavy contention
-            lock (commitCookies)
+            if (commitCookies != null)
             {
-                if (commitCookies.Count != 0)
+                lock (commitCookies)
                 {
-                    while (true)
+                    if (commitCookies.Count != 0)
                     {
-                        var (addr, bytes) = commitCookies.Peek();
-                        cookie = bytes;
-                        if (addr > commitInfo.UntilAddress) break;
-                        if (commitCookies.Count == 1) break;
-                        commitCookies.Dequeue();
+                        while (true)
+                        {
+                            var (addr, bytes) = commitCookies.Peek();
+                            cookie = bytes;
+                            if (addr > commitInfo.UntilAddress) break;
+                            if (commitCookies.Count == 1) break;
+                            commitCookies.Dequeue();
+                        }
+
+                        cookieChanged = false;
                     }
-                    cookieChanged = false;
                 }
             }
 
