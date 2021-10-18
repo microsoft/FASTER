@@ -44,7 +44,7 @@ class CompactionConditionalInsertContext : public IAsyncContext {
    , pending_records_{ pending_records }
   {}
 
-  /// Copy constructor -- required for when the Exists operation goes async
+  /// Copy constructor -- required for when operation goes async
   CompactionConditionalInsertContext(const CompactionConditionalInsertContext& from)
    : record_{ from.record_ }
    , address_{ from.address_ }
@@ -67,6 +67,15 @@ class CompactionConditionalInsertContext : public IAsyncContext {
     }
     memcpy(dest, record_, alloc_size);
     return true;
+  }
+  inline void Put(void* rec) {
+    // Manually copy value contents to new destination
+    record_t* dest = reinterpret_cast<record_t*>(rec);
+    memcpy(&dest->value(), &record_->value(), record_->value().size());
+  }
+  inline bool PutAtomic(void *rec) {
+    // Cannot guarrantee atomic upsert
+    return false; // enforce fallback to RCU
   }
 
   /// Invoked from within callback

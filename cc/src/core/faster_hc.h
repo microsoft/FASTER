@@ -124,7 +124,7 @@ class HotColdReadContext : public AsyncHotColdReadContext <typename RC::key_t, t
   }
 };
 
-/// Context that holds user context for Read request
+/// Context that holds user context for RMW request
 
 // forward declaration
 template<class K, class V>
@@ -344,6 +344,15 @@ class HotColdRmwConditionalInsertContext: public IAsyncContext {
       rmw_context_->RmwInitial(record->value());
     }
     return true;
+  }
+  inline void Put(void* rec) {
+    // this should never be called
+    assert(false);
+  }
+  inline bool PutAtomic(void* rec) {
+    // this should never be called
+    assert(false);
+    return false;
   }
 
  private:
@@ -625,7 +634,6 @@ inline Status FasterKvHC<K, V, D>::Rmw(MC& context, AsyncCallback callback,
 template <class K, class V, class D>
 template <class C>
 inline Status FasterKvHC<K, V, D>::InternalRmw(C& hc_rmw_context) {
-  //typedef typename C::rmw_context_t rmw_context_t;
   typedef AsyncHotColdRmwContext<K, V> async_hc_rmw_context_t;
   typedef HotColdRmwReadContext<K, V> hc_rmw_read_context_t;
   typedef HotColdRmwConditionalInsertContext<async_hc_rmw_context_t, hc_rmw_read_context_t> hc_rmw_ci_context_t;

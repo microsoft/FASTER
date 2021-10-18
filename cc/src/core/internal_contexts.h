@@ -512,7 +512,12 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
   virtual uint32_t value_size() const = 0;
   virtual bool is_tombstone() const = 0;
 
+  // Called when writing to same store
   virtual bool Insert(void* dest, uint32_t alloc_size) const = 0;
+  // Called when writing to different store (i.e. hot-cold compaction)
+  // NOTE: these methods are called by FASTER InternalUpsert method
+  virtual void Put(void *rec) = 0;
+  virtual bool PutAtomic(void *rec) = 0;
  public:
   HashBucketEntry start_search_entry;
   Address min_search_offset;
@@ -528,7 +533,6 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
   typedef typename conditional_insert_context_t::value_t value_t;
   using key_or_shallow_key_t = std::remove_const_t<std::remove_reference_t<std::result_of_t<decltype(&CIC::key)(CIC)>>>;
   typedef Record<key_t, value_t> record_t;
-  constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
   PendingConditionalInsertContext(conditional_insert_context_t& caller_context_, AsyncCallback caller_callback_,
                                   HashBucketEntry start_search_entry_, Address min_search_offset_, void* dest_store_)
@@ -560,8 +564,11 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
     return conditional_insert_context().key().size();
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    // this should never be called
-    assert(false);
+    // Only called with doing hot-cold compaction, by the FASTER InternalUpsert method
+    // Here, we cannot utilize the `write_deep_key_at_helper`, because the
+    // user does NOT provides us with a context that contains the ShallowKey
+    // Instead, we manually memcpy the key contents (hot log) to the new destination (cold log)
+    memcpy(dst, &conditional_insert_context().key(), conditional_insert_context().key().size());
   }
   inline KeyHash get_key_hash() const final {
     return conditional_insert_context().key().GetHash();
@@ -573,12 +580,18 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
     return conditional_insert_context().value_size();
   }
 
-  // Conditional insert contexts contains these two additional methods
+  // ConditionalInsert contexts contains these additional methods
   inline bool is_tombstone() const final {
     return conditional_insert_context().is_tombstone();
   }
   inline bool Insert(void* dest, uint32_t alloc_size) const final {
     return conditional_insert_context().Insert(dest, alloc_size);
+  }
+  inline void Put(void* rec) final {
+    conditional_insert_context().Put(rec);
+  }
+  inline bool PutAtomic(void* rec) final {
+    return conditional_insert_context().PutAtomic(rec);
   }
 };
 

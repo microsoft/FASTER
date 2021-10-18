@@ -1280,6 +1280,9 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context, boo
     if (!force_tombstone) {
       return OperationStatus::NOT_FOUND;
     } else {
+      // Create hash bucket entry
+      atomic_entry = FindOrCreateEntry(hash, expected_entry);
+      assert(atomic_entry != nullptr);
       goto create_record;
     }
   }
@@ -1382,7 +1385,7 @@ create_record:
   } else {
     // Try again.
     record->header.invalid = true;
-    return OperationStatus::RETRY_NOW;
+    return InternalDelete(pending_context, force_tombstone);
   }
 }
 
@@ -3405,17 +3408,16 @@ inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_c
 
 create_record:
   // Append entry to the log
-  uint32_t record_size = record_t::size(pending_context.key_size(), pending_context.value_size());
-  Address new_address = dest_store->BlockAllocate(record_size, this);
-  record_t* record = reinterpret_cast<record_t*>(dest_store->hlog.Get(new_address));
-  // Copy record
-  assert(pending_context.Insert(record, record_size));
-
   if (dest_store == this) {
-    // Case: Single log compaction, or RMW conditional copy from cold to hot
+    // Case: Single log compaction, or Hot-Cold RMW conditional insert
     assert(!pending_context.is_tombstone());
-
-    // Replace record header
+    // Create record
+    uint32_t record_size = record_t::size(pending_context.key_size(), pending_context.value_size());
+    Address new_address = BlockAllocate(record_size, this);
+    record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+    // Copy record
+    assert(pending_context.Insert(record, record_size));
+    // Replace record header content
     new(record) record_t{
       RecordInfo{
         static_cast<uint16_t>(thread_ctx().version),
@@ -3427,35 +3429,20 @@ create_record:
       // Installed the new record in the hash table.
       return OperationStatus::SUCCESS;
     }
-    // Hash-chain changed since last time
+    // Hash-chain changed since last time -- retry!
+    record->header.invalid = true;
+    return InternalConditionalInsert(pending_context);
   }
   else {
     // Case: hot-cold compaction
-    HashBucketEntry dest_entry;
-    AtomicHashBucketEntry* dest_atomic_entry = dest_store->FindOrCreateEntry(hash, dest_entry);
-    assert(dest_atomic_entry != nullptr);
-    // NOTE: dest_entry can be kInvalidAddress for hot-cold, if key does not exists in cold store
-    HashBucketEntry dest_updated_entry{ new_address, hash.tag(), false };
-    // NOTE: we don't have to check if new records for the same key have been inserted in the meantime.
-    //       this can only happen if we are concurrently doing cold-cold log compaction. Even in this case,
-    //       records found in hot log have priority over those in cold one. This means that the thread
-    //       performing the cold-cold compaction will properly check for updated chain (and possibly abort).
-    // Replace record header
-    new(record) record_t{
-      RecordInfo{
-        static_cast<uint16_t>(dest_store->thread_ctx().version),
-        true, pending_context.is_tombstone(), false, dest_entry.address() }
-    };
-    // Try to update hash bucket address -- retry until succeed
-    if(dest_atomic_entry->compare_exchange_strong(dest_entry, dest_updated_entry)) {
-      // Installed the new record in the hash table.
-      return OperationStatus::SUCCESS;
+    // Upsert/Deletes on cold log should not go pending since upserts only go pending when during checkpointing
+    if (!pending_context.is_tombstone()) {
+      assert(dest_store->InternalUpsert(pending_context) == OperationStatus::SUCCESS);
+    } else {
+      assert(dest_store->InternalDelete(pending_context, true) == OperationStatus::SUCCESS);
     }
-    dest_store->Refresh();
+    return OperationStatus::SUCCESS;
   }
-  // retry request
-  record->header.invalid = true;
-  return InternalConditionalInsert(pending_context);
 }
 
 /// When invoked, compacts the hybrid-log between the begin address and a
