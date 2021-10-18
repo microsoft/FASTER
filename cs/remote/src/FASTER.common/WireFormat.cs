@@ -25,6 +25,11 @@ namespace FASTER.common
         WebSocket = 2,
 
         /// <summary>
+        /// WireFormat similar to DefaultVarLenKV used for Koin 
+        /// </summary>
+        KoinVarLenKV = 3,
+
+        /// <summary>
         /// ASCII wire format (non-binary protocol)
         /// </summary>
         ASCII = 255
