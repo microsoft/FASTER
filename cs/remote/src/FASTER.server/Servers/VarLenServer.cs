@@ -45,10 +45,11 @@ namespace FASTER.server
             }
 
             // Create session provider for VarLen
-            provider = new SpanByteFasterKVProvider(store, kvBroker, broker, opts);
+            provider = new SpanByteFasterKVProvider(store, kvBroker, broker, opts.Recover);
 
             server = new FasterServer(opts.Address, opts.Port);
             server.Register(WireFormat.DefaultVarLenKV, provider);
+            server.Register(WireFormat.WebSocket, provider);
         }
 
         /// <summary>

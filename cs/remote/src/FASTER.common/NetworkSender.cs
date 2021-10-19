@@ -35,7 +35,7 @@ namespace FASTER.common
         /// Get reusable SocketAsyncEventArgs buffer
         /// </summary>
         /// <returns></returns>
-        public ReusableObject<SeaaBuffer> GetReusableSeaaBuffer() => reusableSeaaBuffer.Checkout();
+        public SeaaBuffer GetReusableSeaaBuffer() => reusableSeaaBuffer.Checkout();
 
         /// <summary>
         /// Send
@@ -44,20 +44,26 @@ namespace FASTER.common
         /// <param name="sendObject">Reusable SocketAsyncEventArgs buffer</param>
         /// <param name="offset">Offset</param>
         /// <param name="size">Size in bytes</param>
-        public unsafe void Send(Socket socket, ReusableObject<SeaaBuffer> sendObject, int offset, int size)
+        public unsafe void Send(Socket socket, SeaaBuffer sendObject, int offset, int size)
         {
             // Reset send buffer
-            sendObject.obj.socketEventAsyncArgs.SetBuffer(offset, size);
+            sendObject.socketEventAsyncArgs.SetBuffer(offset, size);
             // Set user context to reusable object handle for disposal when send is done
-            sendObject.obj.socketEventAsyncArgs.UserToken = sendObject;
-            if (!socket.SendAsync(sendObject.obj.socketEventAsyncArgs))
-                SeaaBuffer_Completed(null, sendObject.obj.socketEventAsyncArgs);
+            sendObject.socketEventAsyncArgs.UserToken = sendObject;
+            if (!socket.SendAsync(sendObject.socketEventAsyncArgs))
+                SeaaBuffer_Completed(null, sendObject.socketEventAsyncArgs);
         }
 
         private void SeaaBuffer_Completed(object sender, SocketAsyncEventArgs e)
         {
-            ((ReusableObject<SeaaBuffer>)e.UserToken).Dispose();
+            reusableSeaaBuffer.Return((SeaaBuffer)e.UserToken);
         }
+
+        /// <summary>
+        /// Return to pool
+        /// </summary>
+        /// <param name="obj"></param>
+        public void Return(SeaaBuffer obj) => reusableSeaaBuffer.Return(obj);
 
         /// <summary>
         /// Receive
