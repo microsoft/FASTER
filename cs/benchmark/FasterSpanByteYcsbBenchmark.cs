@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable CS0162 // Unreachable code detected -- when switching on YcsbConstants 
-
 // Define below to enable continuous performance report for dashboard
 // #define DASHBOARD
 

@@ -161,14 +161,6 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void IntExclusiveLockerTest()
-        {
-            int lockTestValue = 0;
-            XLockTest(() => IntExclusiveLocker.SpinLock(ref lockTestValue), () => IntExclusiveLocker.Unlock(ref lockTestValue));
-        }
-
-        [Test]
-        [Category("FasterKV")]
         public void FunctionsLockTest()
         {
             // Populate
