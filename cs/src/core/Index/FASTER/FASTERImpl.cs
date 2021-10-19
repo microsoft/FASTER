@@ -1251,7 +1251,7 @@ namespace FASTER.core
                 hlog.Serialize(ref key, newPhysicalAddress);
 
                 // There is no Value to lock, so we lock the RecordInfo directly. TODO: Updaters must honor this lock as well
-                recordInfo.SpinLock();
+                recordInfo.LockExclusive();
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
@@ -1269,7 +1269,7 @@ namespace FASTER.core
                     // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
                     // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.
                     fasterSession.PostSingleDeleter(ref key, ref recordInfo, newLogicalAddress);
-                    recordInfo.Unlock();
+                    recordInfo.UnlockExclusive();
                     pendingContext.recordInfo = recordInfo;
                     pendingContext.logicalAddress = newLogicalAddress;
                     status = OperationStatus.SUCCESS;
@@ -1277,7 +1277,7 @@ namespace FASTER.core
                 }
                 else
                 {
-                    recordInfo.Unlock();
+                    recordInfo.UnlockExclusive();
                     recordInfo.Invalid = true;
                     status = OperationStatus.RETRY_NOW;
                     goto LatchRelease;

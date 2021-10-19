@@ -1409,7 +1409,7 @@ namespace FASTER.core
                 recordInfo.Version = _clientSession.ctx.version;
                 _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
                 if (this.SupportsLocking)
-                    recordInfo.Unlock();
+                    recordInfo.UnlockExclusive();
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
