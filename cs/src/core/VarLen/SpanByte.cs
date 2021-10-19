@@ -12,18 +12,17 @@ namespace FASTER.core
     /// <summary>
     /// Represents a pinned variable length byte array that is viewable as a fixed (pinned) Span&lt;byte&gt;
     /// Format: [4-byte (int) length of payload][[optional 8-byte metadata] payload bytes...]
-    /// First 4 bits of length are used as a mask for various properties, so max length is 256MB
+    /// First 2 bits of length are used as a mask for properties, so max payload length is 1GB
     /// </summary>
     [StructLayout(LayoutKind.Explicit)]
     public unsafe struct SpanByte
     {
-        // Byte #30 and #31 are used for read-only and lock respectively
-        // Byte #29 is used to denote unserialized (1) or serialized (0) data 
-        const int kUnserializedBitMask = 1 << 29;
-        // Byte #28 is used to denote extra metadata present (1) or absent (0) in payload
-        const int kExtraMetadataBitMask = 1 << 28;
+        // Byte #31 is used to denote unserialized (1) or serialized (0) data 
+        const int kUnserializedBitMask = 1 << 31;
+        // Byte #30 is used to denote extra metadata present (1) or absent (0) in payload
+        const int kExtraMetadataBitMask = 1 << 30;
         // Mask for header
-        const int kHeaderMask = 0xf << 28;
+        const int kHeaderMask = 0x3 << 30;
 
         /// <summary>
         /// Length of the payload
@@ -77,7 +76,7 @@ namespace FASTER.core
         /// <summary>
         /// Size of metadata header, if any (returns 0 or 8)
         /// </summary>
-        public int MetadataSize => (length & kExtraMetadataBitMask) >> (28 - 3);
+        public int MetadataSize => (length & kExtraMetadataBitMask) >> (30 - 3);
 
         /// <summary>
         /// Constructor
@@ -445,27 +444,5 @@ namespace FASTER.core
                 Buffer.MemoryCopy((void*)payload, destination + sizeof(int), Length, Length);
             }
         }
-
-        /// <summary>
-        /// Lock SpanByte, using 2 most significant bits from the length header
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SpinLock() => IntExclusiveLocker.SpinLock(ref length);
-
-        /// <summary>
-        /// Unlock SpanByte, using 2 most significant bits from the length header
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Unlock() => IntExclusiveLocker.Unlock(ref length);
-
-        /// <summary>
-        /// Mark SpanByte as read-only, using 2 most significant bits from the length header
-        /// </summary>
-        public void MarkReadOnly() => IntExclusiveLocker.Mark(ref length);
-
-        /// <summary>
-        /// Check if SpanByte is marked as read-only, using 2 most significant bits from the length header
-        /// </summary>
-        public bool IsMarkedReadOnly() => IntExclusiveLocker.IsMarked(ref length);
     }
 }

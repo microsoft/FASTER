@@ -32,51 +32,5 @@ namespace FASTER.core
             }
             return true;
         }
-
-        /// <summary>
-        /// Lock Memory serialized on log, using 2 most significant bits from the length header
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="memory"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe void SpinLock<T>(this Memory<T> memory) where T : unmanaged
-        {
-            var ptr = Unsafe.AsPointer(ref memory.Span[0]);
-            IntExclusiveLocker.SpinLock(ref Unsafe.AsRef<int>((byte*)ptr - sizeof(int)));
-        }
-
-        /// <summary>
-        /// Unlock Memory serialized on log, using 2 most significant bits from the length header
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="memory"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe void Unlock<T>(this Memory<T> memory) where T : unmanaged
-        {
-            var ptr = Unsafe.AsPointer(ref memory.Span[0]);
-            IntExclusiveLocker.Unlock(ref Unsafe.AsRef<int>((byte*)ptr - sizeof(int)));
-        }
-
-        /// <summary>
-        /// Mark Memory serialized on log as read-only, using 2 most significant bits from the length header
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="memory"></param>
-        public static unsafe void MarkReadOnly<T>(this Memory<T> memory) where T : unmanaged
-        {
-            var ptr = Unsafe.AsPointer(ref memory.Span[0]);
-            IntExclusiveLocker.Mark(ref Unsafe.AsRef<int>((byte*)ptr - sizeof(int)));
-        }
-
-        /// <summary>
-        /// Check is Memory serialized on log is marked as read-only, using 2 most significant bits from the length header
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="memory"></param>
-        public static unsafe bool IsMarkedReadOnly<T>(this Memory<T> memory) where T : unmanaged
-        {
-            var ptr = Unsafe.AsPointer(ref memory.Span[0]);
-            return IntExclusiveLocker.IsMarked(ref Unsafe.AsRef<int>((byte*)ptr - sizeof(int)));
-        }
     }
 }

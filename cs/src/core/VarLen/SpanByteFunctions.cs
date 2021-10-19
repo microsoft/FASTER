@@ -25,14 +25,14 @@ namespace FASTER.core
         /// <inheritdoc />
         public override bool ConcurrentWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref RecordInfo recordInfo, long address)
         {
-            if (locking) dst.SpinLock();
-
             // We can write the source (src) data to the existing destination (dst) in-place, 
             // only if there is sufficient space
-            if (dst.Length < src.Length || dst.IsMarkedReadOnly())
+            if (recordInfo.Sealed)
+                return false; 
+            
+            if (dst.Length < src.Length)
             {
-                dst.MarkReadOnly();
-                if (locking) dst.Unlock();
+                recordInfo.Sealed = true;
                 return false;
             }
 
@@ -44,7 +44,6 @@ namespace FASTER.core
             // This method will also zero out the extra space to retain log scan correctness.
             dst.ShrinkSerializedLength(src.Length);
 
-            if (locking) dst.Unlock();
             return true;
         }
 
@@ -105,13 +104,19 @@ namespace FASTER.core
         /// <inheritdoc />
         public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
         {
-            value.SpinLock();
+            if (lockType == LockType.Exclusive)
+                recordInfo.LockExclusive();
+            else
+                recordInfo.LockShared();
         }
 
         /// <inheritdoc />
         public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
         {
-            value.Unlock();
+            if (lockType == LockType.Exclusive)
+                recordInfo.UnlockExclusive();
+            else
+                recordInfo.UnlockShared();
             return true;
         }
     }
@@ -147,13 +152,19 @@ namespace FASTER.core
         /// <inheritdoc />
         public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
         {
-            value.SpinLock();
+            if (lockType == LockType.Exclusive)
+                recordInfo.LockExclusive();
+            else
+                recordInfo.LockShared();
         }
 
         /// <inheritdoc />
         public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
         {
-            value.Unlock();
+            if (lockType == LockType.Exclusive)
+                recordInfo.UnlockExclusive();
+            else
+                recordInfo.UnlockShared();
             return true;
         }
     }

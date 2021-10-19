@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable CS0162 // Unreachable code detected -- when switching on YcsbConstants 
-
 // Define below to enable continuous performance report for dashboard
 // #define DASHBOARD
 
@@ -297,7 +295,7 @@ namespace FASTER.benchmark
                         long start = swatch.ElapsedTicks;
                         if (store.TakeHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType, testLoader.Options.PeriodicCheckpointTryIncremental))
                         {
-                            store.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                            store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                             var timeTaken = (swatch.ElapsedTicks - start) / TimeSpan.TicksPerMillisecond;
                             Console.WriteLine("Checkpoint time: {0}ms", timeTaken);
                             checkpointTaken++;
