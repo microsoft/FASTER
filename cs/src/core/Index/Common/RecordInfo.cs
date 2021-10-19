@@ -53,7 +53,7 @@ namespace FASTER.core
         // Shift position of version in word
         const int kVersionShiftInWord = kDirtyBitOffset + 1;
 
-        // We use 5 version bits
+        // We use the remaining bits (64 - 59 = 5) as a short version for record
         const int kVersionBits = kTotalBits - kVersionShiftInWord;
 
         // Version constants
