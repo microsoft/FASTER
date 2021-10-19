@@ -23,7 +23,7 @@ namespace FASTER.core
         const long kPreviousAddressMaskInWord = (1L << kPreviousAddressBits) - 1;
 
         // Shift position of lock in word
-        const int kLockShiftInWord = 48;
+        const int kLockShiftInWord = kPreviousAddressBits;
 
         // We use 6 lock bits: 5 shared lock bits + 1 exclusive lock bit
         const int kSharedLockBits = 5;
@@ -34,15 +34,15 @@ namespace FASTER.core
         const long kSharedLockIncrement = 1L << kLockShiftInWord;
 
         // Exclusive lock constants
-        const int kExclusiveLockBitOffset = 53;
+        const int kExclusiveLockBitOffset = kLockShiftInWord + kSharedLockBits;
         const long kExclusiveLockBitMask = 1L << kExclusiveLockBitOffset;
 
         // Other marker bits
-        const int kTombstoneBitOffset = 54;
-        const int kValidBitOffset = 55;
-        const int kStubBitOffset = 56;
-        const int kSealedBitOffset = 57;
-        const int kDirtyBitOffset = 58;
+        const int kTombstoneBitOffset = kExclusiveLockBitOffset + 1;
+        const int kValidBitOffset = kTombstoneBitOffset + 1;
+        const int kStubBitOffset = kValidBitOffset + 1;
+        const int kSealedBitOffset = kStubBitOffset + 1;
+        const int kDirtyBitOffset = kSealedBitOffset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
@@ -51,10 +51,10 @@ namespace FASTER.core
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
 
         // Shift position of version in word
-        const int kVersionShiftInWord = 59;
+        const int kVersionShiftInWord = kDirtyBitOffset + 1;
 
         // We use 5 version bits
-        const int kVersionBits = 5;
+        const int kVersionBits = kTotalBits - kVersionShiftInWord;
 
         // Version constants
         const long kVersionMaskInWord = ((1L << kVersionBits) - 1) << kVersionShiftInWord;
