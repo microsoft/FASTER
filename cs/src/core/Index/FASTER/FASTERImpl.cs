@@ -597,7 +597,7 @@ namespace FASTER.core
 
             // CAS failed - let user dispose similar to a deleted record
             if (fasterSession.SupportsLocking)
-                fasterSession.Unlock(ref recordInfo, ref key, ref value, LockType.Exclusive, lockContext);
+                fasterSession.UnlockExclusive(ref recordInfo, ref key, ref value, lockContext);
             ref RecordInfo insertedRecordInfo = ref hlog.GetInfo(newPhysicalAddress);
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
@@ -1025,7 +1025,7 @@ namespace FASTER.core
             {
                 // CAS failed
                 if (fasterSession.SupportsLocking)
-                    fasterSession.Unlock(ref recordInfo, ref key, ref hlog.GetValue(newPhysicalAddress), LockType.Exclusive, lockContext);
+                    fasterSession.UnlockExclusive(ref recordInfo, ref key, ref hlog.GetValue(newPhysicalAddress), lockContext);
                 hlog.GetInfo(newPhysicalAddress).Invalid = true;
             }
             status = OperationStatus.RETRY_NOW;

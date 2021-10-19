@@ -75,23 +75,26 @@ namespace FASTER.core
         public virtual bool SupportsLocking => locking;
 
         /// <inheritdoc/>
-        public virtual void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
+        public virtual void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) => recordInfo.LockExclusive();
+
+        /// <inheritdoc/>
+        public virtual void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) => recordInfo.UnlockExclusive();
+
+        /// <inheritdoc/>
+        public virtual bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
+
+        /// <inheritdoc/>
+        public virtual void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) => recordInfo.LockShared();
+
+        /// <inheritdoc/>
+        public virtual bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext)
         {
-            if (lockType == LockType.Exclusive)
-                recordInfo.LockExclusive();
-            else
-                recordInfo.LockShared();
+            recordInfo.UnlockShared();
+            return true;
         }
 
         /// <inheritdoc/>
-        public virtual bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
-        {
-            if (lockType == LockType.Exclusive)
-                recordInfo.UnlockExclusive();
-            else
-                recordInfo.UnlockShared();
-            return true;
-        }
+        public virtual bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
     }
 
     /// <summary>

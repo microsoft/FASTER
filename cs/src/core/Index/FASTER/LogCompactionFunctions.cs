@@ -70,7 +70,11 @@ namespace FASTER.core
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx) { }
 
         public bool SupportsLocking => false;
-        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) { }
-        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => true;
+        public void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) { }
+        public void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) { }
+        public bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => true;
+        public void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) { }
+        public bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) => true;
+        public bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => true;
     }
 }
