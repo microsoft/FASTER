@@ -12,7 +12,7 @@ namespace FASTER.benchmark
         readonly bool locking;
         readonly bool postOps;
 
-        public Functions(bool locking, bool postOps = false)
+        public Functions(bool locking, bool postOps)
         {
             this.locking = locking;
             this.postOps = postOps;

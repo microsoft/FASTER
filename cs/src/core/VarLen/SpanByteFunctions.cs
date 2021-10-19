@@ -14,7 +14,8 @@ namespace FASTER.core
         /// Constructor
         /// </summary>
         /// <param name="locking"></param>
-        public SpanByteFunctions(bool locking = false) : base(locking) { }
+        /// <param name="postOps"></param>
+        public SpanByteFunctions(bool locking = false, bool postOps = false) : base(locking, postOps) { }
 
         /// <inheritdoc />
         public override void SingleWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref RecordInfo recordInfo, long address)
@@ -79,7 +80,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="memoryPool"></param>
         /// <param name="locking"></param>
-        public SpanByteFunctions(MemoryPool<byte> memoryPool = default, bool locking = false) : base(locking)
+        /// <param name="postOps"></param>
+        public SpanByteFunctions(MemoryPool<byte> memoryPool = default, bool locking = false, bool postOps = false) : base(locking, postOps)
         {
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
