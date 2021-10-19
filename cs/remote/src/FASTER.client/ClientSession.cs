@@ -38,7 +38,7 @@ namespace FASTER.client
         private bool subscriptionSession;
 
         bool disposed;
-        ReusableObject<SeaaBuffer> sendObject;
+        SeaaBuffer sendObject;
         byte* offset;
         int numMessages;
         int numPendingBatches;
@@ -75,7 +75,7 @@ namespace FASTER.client
 
             numPendingBatches = 0;
             sendObject = messageManager.GetReusableSeaaBuffer();
-            offset = sendObject.obj.bufferPtr + sizeof(int) + BatchHeader.Size;
+            offset = sendObject.bufferPtr + sizeof(int) + BatchHeader.Size;
             numMessages = 0;
             sendSocket = GetSendSocket(address, port);
         }
@@ -276,15 +276,15 @@ namespace FASTER.client
         /// </summary>
         public void Flush()
         {
-            if (offset > sendObject.obj.bufferPtr + sizeof(int) + BatchHeader.Size)
+            if (offset > sendObject.bufferPtr + sizeof(int) + BatchHeader.Size)
             {
-                int payloadSize = (int)(offset - sendObject.obj.bufferPtr);
+                int payloadSize = (int)(offset - sendObject.bufferPtr);
 
-                ((BatchHeader*)(sendObject.obj.bufferPtr + sizeof(int)))->SetNumMessagesProtocol(numMessages, wireFormat);
+                ((BatchHeader*)(sendObject.bufferPtr + sizeof(int)))->SetNumMessagesProtocol(numMessages, wireFormat);
                 Interlocked.Increment(ref numPendingBatches);
 
                 // Set packet size in header
-                *(int*)sendObject.obj.bufferPtr = -(payloadSize - sizeof(int));
+                *(int*)sendObject.bufferPtr = -(payloadSize - sizeof(int));
 
                 try
                 {
@@ -296,7 +296,7 @@ namespace FASTER.client
                     throw;
                 }
                 sendObject = messageManager.GetReusableSeaaBuffer();
-                offset = sendObject.obj.bufferPtr + sizeof(int) + BatchHeader.Size;
+                offset = sendObject.bufferPtr + sizeof(int) + BatchHeader.Size;
                 numMessages = 0;
             }
         }
@@ -320,7 +320,8 @@ namespace FASTER.client
         public void Dispose()
         {
             disposed = true;
-            sendObject.Dispose();
+            if (sendObject != null)
+                messageManager.Return(sendObject);
             sendSocket.Dispose();
             messageManager.Dispose();
         }
@@ -723,7 +724,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* end = sendObject.bufferPtr + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -746,7 +747,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* end = sendObject.bufferPtr + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -769,7 +770,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* end = sendObject.bufferPtr + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -792,7 +793,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* end = sendObject.bufferPtr + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -814,7 +815,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* end = sendObject.bufferPtr + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -837,7 +838,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* end = sendObject.bufferPtr + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -860,7 +861,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* end = sendObject.bufferPtr + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
