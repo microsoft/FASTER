@@ -173,11 +173,10 @@ namespace FASTER.core
                     break;
                 case Phase.PREPARE:
                     nextState.Phase = Phase.IN_PROGRESS;
-                    // 13 bits of 1s --- FASTER records only store 13 bits of version number, and we need to ensure that
-                    // the next version is distinguishable from the last in those 13 bits.
-                    var bitMask = (1L << 13) - 1;
+                    // FASTER records only store a few bits of version number, and we need to ensure that
+                    // the next version is distinguishable from the last in those bits.
                     // If they are not distinguishable, simply increment target version to resolve this
-                    if (((targetVersion - start.Version) & bitMask) == 0)
+                    if (((targetVersion - start.Version) & RecordInfo.kVersionMaskInInteger) == 0)
                         targetVersion++;
 
                     // TODO: Move to long for system state as well. 

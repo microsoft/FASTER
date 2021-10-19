@@ -33,9 +33,12 @@ namespace FASTER.core
         {
             // We can write the source (src) data to the existing destination (dst) in-place, 
             // only if there is sufficient space
-            if (dst.Length < src.Length || dst.IsMarkedReadOnly())
+            if (recordInfo.Sealed)
+                return false;
+
+            if (dst.Length < src.Length)
             {
-                dst.MarkReadOnly();
+                recordInfo.Sealed = true;
                 return false;
             }
 
@@ -84,22 +87,6 @@ namespace FASTER.core
         {
             // The default implementation of IPU simply writes input to destination, if there is space
             return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref recordInfo, address);
-        }
-
-        /// <inheritdoc />
-        public override bool SupportsLocking => locking;
-
-        /// <inheritdoc />
-        public override void Lock(ref RecordInfo recordInfo, ref Key key, ref Memory<T> value, LockType lockType, ref long lockContext)
-        {
-            value.SpinLock();
-        }
-
-        /// <inheritdoc />
-        public override bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Memory<T> value, LockType lockType, long lockContext)
-        {
-            value.Unlock();
-            return true;
         }
     }
 }
