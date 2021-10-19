@@ -65,9 +65,9 @@ namespace FASTER.test
                 RecordInfo recordInfo = new RecordInfo();
                 RecordInfo* ri = &recordInfo;
 
-                XLockTest(() => ri->LockX(), () => ri->UnlockX());
-                SLockTest(() => ri->LockS(), () => ri->UnlockS());
-                XSLockTest(() => ri->LockX(), () => ri->UnlockX(), () => ri->LockS(), () => ri->UnlockS());
+                XLockTest(() => ri->LockExclusive(), () => ri->UnlockExclusive());
+                SLockTest(() => ri->LockShared(), () => ri->UnlockShared());
+                XSLockTest(() => ri->LockExclusive(), () => ri->UnlockExclusive(), () => ri->LockShared(), () => ri->UnlockShared());
             }
         }
 

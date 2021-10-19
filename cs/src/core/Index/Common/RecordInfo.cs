@@ -72,8 +72,11 @@ namespace FASTER.core
             info.Version = checkpointVersion;
         }
 
+        /// <summary>
+        /// Take exclusive (write) lock on RecordInfo
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void LockX()
+        public void LockExclusive()
         {
             // Acquire exclusive lock (readers may still be present)
             while (true)
@@ -91,11 +94,17 @@ namespace FASTER.core
             while ((word & kSharedLockMaskInWord) != 0) Thread.Yield();
         }
 
+        /// <summary>
+        /// Unlock RecordInfo that was previously locked for exclusive access, via <see cref="LockExclusive"/>
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockX() => word &= ~kExclusiveLockBitMask;
+        public void UnlockExclusive() => word &= ~kExclusiveLockBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point
 
+        /// <summary>
+        /// Take shared (read) lock on RecordInfo
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void LockS()
+        public void LockShared()
         {
             // Acquire shared lock
             while (true)
@@ -111,8 +120,11 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Unlock RecordInfo that was previously locked for shared access, via <see cref="LockShared"/>
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockS() => Interlocked.Add(ref word, -kSharedLockIncrement);
+        public void UnlockShared() => Interlocked.Add(ref word, -kSharedLockIncrement);
 
         public bool IsNull() => word == 0;
 
