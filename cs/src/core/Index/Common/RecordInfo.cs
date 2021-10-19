@@ -101,6 +101,32 @@ namespace FASTER.core
         public void UnlockExclusive() => word &= ~kExclusiveLockBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point
 
         /// <summary>
+        /// Try to take an exclusive (write) lock on RecordInfo
+        /// </summary>
+        /// <param name="spinCount">Number of attempts before giving up</param>
+        /// <returns>Whether lock was acquired successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryLockExclusive(int spinCount = 1)
+        {
+            // Acquire exclusive lock (readers may still be present)
+            while (true)
+            {
+                long expected_word = word;
+                if ((expected_word & kExclusiveLockBitMask) == 0)
+                {
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
+                        break;
+                }
+                if (--spinCount <= 0) return false;
+                Thread.Yield();
+            }
+
+            // Wait for readers to drain
+            while ((word & kSharedLockMaskInWord) != 0) Thread.Yield();
+            return true;
+        }
+
+        /// <summary>
         /// Take shared (read) lock on RecordInfo
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -125,6 +151,30 @@ namespace FASTER.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockShared() => Interlocked.Add(ref word, -kSharedLockIncrement);
+
+        /// <summary>
+        /// Take shared (read) lock on RecordInfo
+        /// </summary>
+        /// <param name="spinCount">Number of attempts before giving up</param>
+        /// <returns>Whether lock was acquired successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryLockShared(int spinCount = 1)
+        {
+            // Acquire shared lock
+            while (true)
+            {
+                long expected_word = word;
+                if (((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
+                    && (expected_word & kSharedLockMaskInWord) != kSharedLockMaskInWord) // shared lock is not full
+                {
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word + kSharedLockIncrement, expected_word))
+                        break;
+                }
+                if (--spinCount <= 0) return false;
+                Thread.Yield();
+            }
+            return true;
+        }
 
         public bool IsNull() => word == 0;
 
