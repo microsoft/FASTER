@@ -62,7 +62,7 @@ namespace FASTER.test
         {
             for (var ii = 0; ii < 5; ++ii)
             {
-                RecordInfo recordInfo = new RecordInfo();
+                RecordInfo recordInfo = new();
                 RecordInfo* ri = &recordInfo;
 
                 XLockTest(() => ri->LockExclusive(), () => ri->UnlockExclusive());
