@@ -126,16 +126,11 @@ class HotColdReadContext : public AsyncHotColdReadContext <typename RC::key_t, t
 
 /// Context that holds user context for RMW request
 
-// forward declaration
-template<class K, class V>
-class HotColdRmwReadContext;
-
 template <class K, class V>
 class AsyncHotColdRmwContext : public HotColdContext<K> {
  public:
   typedef K key_t;
   typedef V value_t;
-  typedef HotColdRmwReadContext<K, V> rmw_read_context_t;
  protected:
   AsyncHotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, HashBucketEntry& expected_entry_,
                       IAsyncContext& caller_context_, AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
@@ -166,7 +161,7 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
 
   RmwOperationStage stage;
   HashBucketEntry expected_entry;
-  rmw_read_context_t* read_context;
+  IAsyncContext* read_context;
 };
 
 template <class MC>
@@ -635,7 +630,6 @@ template <class K, class V, class D>
 template <class C>
 inline Status FasterKvHC<K, V, D>::InternalRmw(C& hc_rmw_context) {
   typedef AsyncHotColdRmwContext<K, V> async_hc_rmw_context_t;
-  typedef HotColdRmwReadContext<K, V> hc_rmw_read_context_t;
   typedef HotColdRmwConditionalInsertContext<async_hc_rmw_context_t, hc_rmw_read_context_t> hc_rmw_ci_context_t;
 
   uint64_t monotonic_serial_num = hc_rmw_context.serial_num;
@@ -712,7 +706,8 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmw(IAsyncContext* ctxt, St
       context->stage = RmwOperationStage::HOT_LOG_CONDITIONAL_INSERT;
 
       bool rmw_rcu = (result == Status::Ok);
-      hc_rmw_ci_context_t ci_context{ context.get(), context->read_context, rmw_rcu };
+      hc_rmw_ci_context_t ci_context{ context.get(),
+                          static_cast<hc_rmw_read_context_t*>(context->read_context), rmw_rcu };
       Status ci_status = faster_hc->hot_store.ConditionalInsert(ci_context, AsyncContinuePendingRmw,
                                                                 context->expected_entry.address(),
                                                                 static_cast<void*>(&faster_hc->hot_store));
