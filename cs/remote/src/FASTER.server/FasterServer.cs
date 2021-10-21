@@ -230,7 +230,7 @@ namespace FASTER.server
             {
                 // Do the parsing here similar to BinaryServerSession,
                 // and find out byte value to get wire format
-                var (decodedMessage, _) = connArgs.websocketUtils.DecodeWebsocketHeader(e.Buffer, connArgs.bytesRead - e.BytesTransferred, e.BytesTransferred);
+                var (decodedMessage, _) = WebsocketUtils.DecodeWebsocketHeader(e.Buffer, connArgs.bytesRead - e.BytesTransferred, e.BytesTransferred);
                 fixed (void* bh = &decodedMessage[4])
                     wireFormat = ((BatchHeader*)bh)->Protocol;
                 //e.SetBuffer(e.BytesTransferred, e.Buffer.Length - e.BytesTransferred);

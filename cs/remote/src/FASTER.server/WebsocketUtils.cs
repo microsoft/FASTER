@@ -9,6 +9,9 @@ using System.Threading.Tasks;
 
 namespace FASTER.server
 {
+    /// <summary>
+    /// Utilities for Websocket communication
+    /// </summary>
     public class WebsocketUtils
     {
         /// <summary>
@@ -40,6 +43,10 @@ namespace FASTER.server
             public int dataStart;
         };
 
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="socket"></param>
         public WebsocketUtils(Socket socket)
         {
             this.socket = socket;
@@ -48,6 +55,11 @@ namespace FASTER.server
             messageManager = new NetworkSender(serverBufferSize);
         }
 
+        /// <summary>
+        /// The first connection setup packet where message is received through HTTP, 
+        /// and then it is upgraded to websocket
+        /// </summary>
+        /// <param name="buf"></param>
         public unsafe void UpgradeHTTPToWebSocket(byte[] buf)
         {
             responseObject = messageManager.GetReusableSeaaBuffer();
@@ -88,16 +100,17 @@ namespace FASTER.server
             }
         }
 
-        public unsafe (byte[], int) DecodeWebsocketHeader(byte[] buf, int offset, int bytesRead)
+        /// <summary>
+        /// Decode the packet received from client
+        /// </summary>
+        /// <param name="buf">The buffer received over the wire</param>
+        /// <param name="offset">Offset in the buffer from which the commands start</param>
+        /// <param name="bytesRead">Number of bytes read</param>
+        /// <returns></returns>
+        public static unsafe (byte[], int) DecodeWebsocketHeader(byte[] buf, int offset, int bytesRead)
         {
-            //byte* d = responseObject.bufferPtr;
-            //var dend = d + responseObject.buffer.Length;
-            //byte* dcurr = d; // reserve space for size
-            //var bytesAvailable = bytesRead - readHead;
-            //var _origReadHead = readHead;
             int msglen = 0;
             byte[] decoded = Array.Empty<byte>();
-            //var ptr = recvBufferPtr + readHead;
             var totalMsgLen = 0;
             List<Decoder> decoderInfoList = new();
 
@@ -205,6 +218,60 @@ namespace FASTER.server
 
             offset += totalMsgLen;            
             return (decoded, offset);
+        }
+
+        /// <summary>
+        /// Create the send header packet for websockets
+        /// </summary>
+        /// <param name="d">Sending byte pointer</param>
+        /// <param name="payloadLen">Length of the payload</param>
+        public static unsafe void CreateWebsocketPacketHeader(ref byte* d, int payloadLen)
+        {
+            if (payloadLen < 126)
+            {
+                d += 8;
+            }
+            else if (payloadLen < 65536)
+            {
+                d += 6;
+            }
+            byte* dcurr = d;
+
+            *dcurr = 0b10000010;
+            dcurr++;
+            if (payloadLen < 126)
+            {
+                *dcurr = (byte)(payloadLen & 0b01111111);
+                dcurr++;
+            }
+            else if (payloadLen < 65536)
+            {
+                *dcurr = (byte)(0b01111110);
+                dcurr++;
+                byte[] payloadLenBytes = BitConverter.GetBytes((UInt16)payloadLen);
+                if (BitConverter.IsLittleEndian)
+                    Array.Reverse(payloadLenBytes);
+
+                *dcurr++ = payloadLenBytes[0];
+                *dcurr++ = payloadLenBytes[1];
+            }
+            else
+            {
+                *dcurr = (byte)(0b01111111);
+                dcurr++;
+                byte[] payloadLenBytes = BitConverter.GetBytes((UInt64)payloadLen);
+                if (BitConverter.IsLittleEndian)
+                    Array.Reverse(payloadLenBytes);
+
+                *dcurr++ = (byte)(payloadLenBytes[0] & 0b01111111);
+                *dcurr++ = payloadLenBytes[1];
+                *dcurr++ = payloadLenBytes[2];
+                *dcurr++ = payloadLenBytes[3];
+                *dcurr++ = payloadLenBytes[4];
+                *dcurr++ = payloadLenBytes[5];
+                *dcurr++ = payloadLenBytes[6];
+                *dcurr++ = payloadLenBytes[7];
+            }
         }
     }
 }

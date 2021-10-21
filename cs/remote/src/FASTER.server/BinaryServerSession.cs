@@ -7,7 +7,6 @@ using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.RegularExpressions;
 using FASTER.common;
 using FASTER.core;
 
@@ -148,55 +147,6 @@ namespace FASTER.server
             return true;
         }
 
-        private static unsafe void CreateWSSendPacketHeader(ref byte* d, int payloadLen)
-        {
-            if (payloadLen < 126)
-            {
-                d += 8;
-            }
-            else if (payloadLen < 65536)
-            {
-                d += 6;
-            }
-            byte* dcurr = d;
-
-            *dcurr = 0b10000010;
-            dcurr++;
-            if (payloadLen < 126)
-            {
-                *dcurr = (byte)(payloadLen & 0b01111111);
-                dcurr++;
-            }
-            else if (payloadLen < 65536)
-            {
-                *dcurr = (byte)(0b01111110);
-                dcurr++;
-                byte[] payloadLenBytes = BitConverter.GetBytes((UInt16)payloadLen);
-                if (BitConverter.IsLittleEndian)
-                    Array.Reverse(payloadLenBytes);
-
-                *dcurr++ = payloadLenBytes[0];
-                *dcurr++ = payloadLenBytes[1];
-            }
-            else
-            {
-                *dcurr = (byte)(0b01111111);
-                dcurr++;
-                byte[] payloadLenBytes = BitConverter.GetBytes((UInt64)payloadLen);
-                if (BitConverter.IsLittleEndian)
-                    Array.Reverse(payloadLenBytes);
-
-                *dcurr++ = (byte)(payloadLenBytes[0] & 0b01111111);
-                *dcurr++ = payloadLenBytes[1];
-                *dcurr++ = payloadLenBytes[2];
-                *dcurr++ = payloadLenBytes[3];
-                *dcurr++ = payloadLenBytes[4];
-                *dcurr++ = payloadLenBytes[5];
-                *dcurr++ = payloadLenBytes[6];
-                *dcurr++ = payloadLenBytes[7];
-            }
-        }
-
         private unsafe void ProcessBatch(byte* b, byte* d, byte* dend)
         {
             int origPendingSeqNo = pendingSeqNo;
@@ -324,12 +274,6 @@ namespace FASTER.server
                 ProcessBatch(b, d, dend);
             }
         }
-        internal struct Decoder
-        {
-            public int msgLen;
-            public int maskStart;
-            public int dataStart;
-        };
 
         private unsafe bool ProcessWebSocket(byte[] buf, int offset)
         {
@@ -343,10 +287,8 @@ namespace FASTER.server
                 dcurr = d; // reserve space for size
                 var bytesAvailable = bytesRead - readHead;
                 var _origReadHead = readHead;
-                int msglen = 0;
                 byte[] decoded;
                 var ptr = recvBufferPtr + readHead;
-                var totalMsgLen = 0;
                 List<Decoder> decoderInfoList = new();
                 bool firstCommand = false;
 
@@ -358,7 +300,7 @@ namespace FASTER.server
                     firstCommand = true;
                 }
 
-                (decoded, offset) = websocketUtils.DecodeWebsocketHeader(buf, offset, bytesRead);
+                (decoded, offset) = WebsocketUtils.DecodeWebsocketHeader(buf, offset, bytesRead);
                 if (offset == -1)
                     return false;
 
@@ -467,7 +409,7 @@ namespace FASTER.server
                 var dtemp = d + 10;
                 var dstart = dtemp + sizeof(int);
 
-                CreateWSSendPacketHeader(ref d, packetLen);
+                WebsocketUtils.CreateWebsocketPacketHeader(ref d, packetLen);
 
                 *(int*)dtemp = (packetLen - sizeof(int));
                 *(int*)dstart = 0;
@@ -544,7 +486,7 @@ namespace FASTER.server
                     var dtemp = d + 10;
                     dstart = dtemp + sizeof(int);
 
-                    CreateWSSendPacketHeader(ref d, packetLen);
+                    WebsocketUtils.CreateWebsocketPacketHeader(ref d, packetLen);
 
                     *(int*)dtemp = (packetLen - sizeof(int));
                     *(int*)dstart = 0;
