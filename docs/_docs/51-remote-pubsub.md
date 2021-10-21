@@ -54,8 +54,9 @@ the clientSession cannot accept other commands (such as `Upsert()`, `RMW()`, etc
 
 ## Publishing a key from a client:
 
-a `FASTERClient` can publish a key and value, for pushing the updated value for the key to all its subscribers. 
+a `FASTERClient` can publish a key and value, for pushing the updated value for the key to all its subscribers either synchronously or asynchronously. 
 ```cs
-clientSession.Publish(key, value); // Used for publishing a key and value that is not stored in FasterKV
+clientSession.Publish(key, value); // Used for publishing a key and value that is not stored in FasterKV, asynchronously
+clientSession.PublishNow(key, value); // Used for publishing a key and value and is not stored in FasterKV, synchronously
 ``` 
 For the case of (P)SubscribeKV, the key and value is automatically pushed to the subscribers on `Upsert()` or `RMW()`.
