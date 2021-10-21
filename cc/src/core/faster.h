@@ -2185,7 +2185,10 @@ bool FasterKv<K, V, D>::CleanHashTableBuckets() {
     upper_bound = state_[version].size() - (chunk * kGcHashTableChunkSize);
   }
   for(uint64_t idx = 0; idx < upper_bound; ++idx) {
-    HashBucket* bucket = &state_[version].bucket(chunk * kGcHashTableChunkSize + idx);
+    uint64_t bucket_idx = chunk * kGcHashTableChunkSize + idx;
+    if (bucket_idx >= state_[version].size()) {
+      break;
+    }
     while(true) {
       for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
         AtomicHashBucketEntry& atomic_entry = bucket->entries[entry_idx];
@@ -3119,7 +3122,8 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
       // find and store the hash bucket of record
       // NOTE: a hash bucket *must* exist, since the record exists in the hybrid log
       hash = record->key().GetHash();
-      assert( FindEntry(hash, expected_entry) != nullptr );
+      auto check_ptr = FindEntry(hash, expected_entry);
+      assert(check_ptr != nullptr);
       // search entire hash chain (i.e. until record adress)
       record_info = new (pending_record_entry) pending_record_entry_t(
                             record, record_address, expected_entry, record_address + 1);
