@@ -137,6 +137,19 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
+        public void RemoveCommit(long commitNum)
+        {
+            deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+        }
+
+        /// <inheritdoc />
+        public void RemoveAllCommits()
+        {
+            foreach (var commitNum in ListCommits())
+                RemoveCommit(commitNum);
+        }
+
+        /// <inheritdoc />
         public byte[] GetCommitMetadata(long commitNum)
         {
             IDevice device;

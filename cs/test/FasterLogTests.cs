@@ -88,7 +88,7 @@ namespace FASTER.test
             log?.Dispose();
             log = null;
             if (!deleteOnClose)
-                manager.PurgeAll();
+                manager.RemoveAllCommits();
             manager?.Dispose();
             manager = null;
             device?.Dispose();
@@ -943,7 +943,5 @@ namespace FASTER.test
             }
             
         }
-        
-        
     }
 }

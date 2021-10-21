@@ -34,5 +34,16 @@ namespace FASTER.core
         /// </summary>
         /// <returns></returns>
         public IEnumerable<long> ListCommits();
+
+        /// <summary>
+        /// Remove the given commit, if present
+        /// </summary>
+        /// <param name="commitNum">commit num to remove</param>
+        public void RemoveCommit(long commitNum);
+
+        /// <summary>
+        /// Remove all log commits from this manager
+        /// </summary>
+        public void RemoveAllCommits();
     }
 }

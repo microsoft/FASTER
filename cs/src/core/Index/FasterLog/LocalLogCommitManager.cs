@@ -78,5 +78,21 @@ namespace FASTER.core
             // we only use a single commit file in this implementation
             yield return 0;
         }
+        
+        /// <inheritdoc />
+        public void RemoveCommit(long commitNum)
+        {
+            // we only use a single commit file in this implementation
+            if (commitNum != 0) return;
+            File.Delete(commitFile);
+        }
+
+        /// <inheritdoc />
+        public void RemoveAllCommits()
+        {
+            // we only use a single commit file in this implementation
+            RemoveCommit(0);
+        }
+
     }
 }
