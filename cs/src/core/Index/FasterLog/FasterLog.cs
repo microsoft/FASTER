@@ -7,7 +7,6 @@ using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -17,6 +16,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    // Manual checkpoint request with information about the desired commit num
     internal struct ManualCheckpointRequest
     {
         private long proposedCommitNum;
@@ -151,6 +151,7 @@ namespace FASTER.core
         /// Create new log instance
         /// </summary>
         /// <param name="logSettings"></param>
+        /// <param name="requestedCommitNum"> specific commit number to recover from (or -1 for latest) </param>
         public FasterLog(FasterLogSettings logSettings, long requestedCommitNum = -1)
             : this(logSettings, false)
         {
@@ -496,6 +497,17 @@ namespace FASTER.core
 
         #region Commit and CommitAsync
 
+        /// <summary>
+        /// Associates the given cookie (an opaque chunk of client-specified bytes) with a log address (or -1 for
+        /// current tail). If the method returns true, the cookie will be recovered in RecoveredCookie as part of any
+        /// commit including the log address, unless overwritten by a later cookie.
+        ///
+        /// Thread-safe. Generally, cookies associated with larger address are considered more recent. Behavior is
+        /// arbitrary if multiple cookies are associated with the same address concurrently.
+        /// </summary>
+        /// <param name="cookie"> custom byte chunks to persist with commits </param>
+        /// <param name="addrLowerBound"> address to associate cookie with, or -1 for current tail </param>
+        /// <returns> whether the cookie will be present with all future commits including the lower bound</returns>
         public bool AddCommitCookie(byte[] cookie, long addrLowerBound = -1)
         {
             if (addrLowerBound == -1) addrLowerBound = TailAddress;
@@ -508,7 +520,7 @@ namespace FASTER.core
             lock (commitCookies)
             {
                 // Ensure that cookie is going to be a part of any commit that includes the specified addrLowerBound
-                if (CommittedUntilAddress >= cookieUntilAddr) return false;
+                if (CommittedUntilAddress >= addrLowerBound) return false;
                 
                 // Reject any out-of-order commit cookies as they will never be written out
                 if (cookieUntilAddr > addrLowerBound) return false;
@@ -586,13 +598,14 @@ namespace FASTER.core
         /// that the supplied commitNum is unique and monotonically increasing.
         /// </summary>
         /// <param name="commitNum"> the commit num to write out</param>
+        /// <param name="spinWait">spin until commit is complete</param>
         /// <returns>whether manual request is successfully triggered. If not, request should be retried later. </returns>
-        public bool CommitManuallyAtNum(long commitNum)
+        public bool CommitManuallyAtNum(long commitNum, bool spinWait = false)
         {
             if (autoCommitOnFlush)
                 throw new FasterException("Specifying of commit num is only supported when auto commit is turned off");
             if (!currentManualRequest.TrySetCommitNum(commitNum)) return false;
-            CommitInternal();
+            CommitInternal(spinWait);
             return true;
         }
 
@@ -1016,8 +1029,8 @@ namespace FASTER.core
                         while (true)
                         {
                             var (addr, bytes) = commitCookies.Peek();
-                            cookie = bytes;
                             if (addr > commitInfo.UntilAddress) break;
+                            cookie = bytes;
                             if (commitCookies.Count == 1) break;
                             commitCookies.Dequeue();
                         }
@@ -1462,12 +1475,15 @@ namespace FASTER.core
             return length;
         }
 
-        private long CommitInternal(bool spinWait = false)
+        private long CommitInternal(bool spinWait = false, long commitNum = -1)
         {
             if (readOnlyMode)
                 throw new FasterException("Cannot commit in read-only mode");
 
             epoch.Resume();
+
+            if (autoCommitOnFlush == false)
+                currentManualRequest.TrySetCommitNum(commitNum);
 
             if (allocator.ShiftReadOnlyToTail(out long tailAddress, out _))
             {

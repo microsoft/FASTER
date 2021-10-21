@@ -9,7 +9,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
+using NUnit.Compatibility;
 using NUnit.Framework;
+using NUnit.Framework.Internal;
 
 namespace FASTER.test
 {
@@ -60,6 +62,8 @@ namespace FASTER.test
         protected static readonly byte[] entry = new byte[100];
         protected static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10000);
 
+        private bool deleteOnClose;
+
         protected struct ReadOnlySpanBatch : IReadOnlySpanBatch
         {
             private readonly int batchSize;
@@ -68,20 +72,23 @@ namespace FASTER.test
             public int TotalEntries() => batchSize;
         }
 
-        protected void BaseSetup()
+        protected void BaseSetup(bool overwriteCommit = true, bool deleteOnClose = true)
         {
             path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path, wait: true);
 
-            manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(path));
+            manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: deleteOnClose), new DefaultCheckpointNamingScheme(path), overwriteLogCommits: overwriteCommit);
+            this.deleteOnClose = deleteOnClose;
         }
 
         protected void BaseTearDown()
         {
             log?.Dispose();
             log = null;
+            if (!deleteOnClose)
+                manager.PurgeAll();
             manager?.Dispose();
             manager = null;
             device?.Dispose();
@@ -783,6 +790,160 @@ namespace FASTER.test
             }
             log.Dispose();
         }
+    }
+    
+     [TestFixture]
+    internal class FasterLogCustomCommitTests : FasterLogTestBase
+    {
+        [SetUp]
+        public void Setup() => base.BaseSetup(false, false);
 
+        [TearDown]
+        public void TearDown() => base.BaseTearDown();
+
+        [Test]
+        [Category("FasterLog")]
+        [Category("Smoke")]
+        public void FasterLogSimpleCommitCookieTest([Values] bool autoCommit)
+        {
+            var cookie = new byte[100];
+            new Random().NextBytes(cookie);
+            
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager, AutoCommitOnFlush = autoCommit};
+            log = new FasterLog(logSettings);
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+
+            Assert.IsTrue(log.AddCommitCookie(cookie));
+            log.Commit(true);
+
+            var recoveredLog = new FasterLog(logSettings);
+            Assert.AreEqual(cookie, recoveredLog.RecoveredCookie);
+            recoveredLog.Dispose();
+        }
+        
+        [Test]
+        [Category("FasterLog")]
+        public void FasterLogManualCommitTest()
+        {
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager, AutoCommitOnFlush = false};
+            log = new FasterLog(logSettings);
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+
+            var commit1Addr = log.TailAddress;
+            var cookie1 = new byte[100];
+            new Random().NextBytes(cookie1);
+            log.AddCommitCookie(cookie1);
+            log.CommitManuallyAtNum(1, true);
+            
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+            
+            var commit2Addr = log.TailAddress;
+            var cookie2 = new byte[100];
+            new Random().NextBytes(cookie2);
+            log.AddCommitCookie(cookie2);
+            log.CommitManuallyAtNum(2, true);
+            
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+            
+            var commit6Addr = log.TailAddress;
+            var cookie6 = new byte[100];
+            new Random().NextBytes(cookie6);
+            log.AddCommitCookie(cookie6);
+            log.CommitManuallyAtNum(6, true);
+
+            var recoveredLog = new FasterLog(logSettings, 1);
+            Assert.AreEqual(cookie1, recoveredLog.RecoveredCookie);
+            Assert.AreEqual(commit1Addr, recoveredLog.TailAddress);
+            recoveredLog.Dispose();
+            
+            recoveredLog = new FasterLog(logSettings, 2);
+            Assert.AreEqual(cookie2, recoveredLog.RecoveredCookie);
+            Assert.AreEqual(commit2Addr, recoveredLog.TailAddress);
+            recoveredLog.Dispose();
+
+            // Default argument should recover to most recent
+            recoveredLog = new FasterLog(logSettings);
+            Assert.AreEqual(cookie6, recoveredLog.RecoveredCookie);
+            Assert.AreEqual(commit6Addr, recoveredLog.TailAddress);
+            recoveredLog.Dispose();
+        }
+        
+        [Test]
+        [Category("FasterLog")]
+        public void FasterLogMultiCommitCookieTest()
+        {
+            var cookies = new List<byte[]>();
+            var cookieStatus = new List<(long, bool)>();
+            for (var i = 0; i < 10; i++)
+            {
+                var cookie = new byte[100];
+                new Random().NextBytes(cookie);
+                cookies.Add(cookie);
+            }
+
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager, AutoCommitOnFlush = true};
+            log = new FasterLog(logSettings);
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (var j = 0; j < 10; j++)
+            {
+                for (int i = 0; i < numEntries; i++)
+                {
+                    log.Enqueue(entry);
+                }
+
+                var success = log.AddCommitCookie(cookies[j]);
+                cookieStatus.Add(ValueTuple.Create(log.TailAddress, success));
+            }
+
+            foreach (var commitNum in manager.ListCommits())
+            {
+                var recoveredLog = new FasterLog(logSettings, commitNum);
+                var recoveredTail = recoveredLog.TailAddress;
+                
+                // Check that the closest successful cookie is recovered
+                byte[] expectedCookie = null;
+                for (var i = 0; i < 10; i++)
+                {
+                    if (!cookieStatus[i].Item2) continue;
+                    if (cookieStatus[i].Item1 > recoveredTail) break;
+                    expectedCookie = cookies[i];
+                }
+
+                Assert.AreEqual(expectedCookie, recoveredLog.RecoveredCookie);
+                recoveredLog.Dispose();
+            }
+            
+        }
+        
+        
     }
 }

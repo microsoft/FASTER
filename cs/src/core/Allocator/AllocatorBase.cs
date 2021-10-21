@@ -1124,7 +1124,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="tailAddress"></param>
         /// <param name="notifyDone"></param>
-        public bool ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone, long version = -1)
+        public bool ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone)
         {
             notifyDone = null;
             tailAddress = GetTailAddress();
