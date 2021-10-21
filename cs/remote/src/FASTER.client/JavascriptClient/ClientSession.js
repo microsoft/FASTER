@@ -169,7 +169,7 @@
 
             var payloadSize = this.offset;
             this.intSerializer.serialize(this.reusableBuffer, 4, 0);
-            this.intSerializer.serialize(this.reusableBuffer, 8, this.numMessages);
+            this.intSerializer.serialize(this.reusableBuffer, 8, (this.numMessages << 8 | WireFormat.DefaultVarLenKV));
             this.intSerializer.serialize(this.reusableBuffer, 0, (payloadSize - 4));
             this.numPendingBatches++;
 

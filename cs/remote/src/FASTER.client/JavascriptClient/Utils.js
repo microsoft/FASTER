@@ -33,6 +33,12 @@ const Status = {
     ERROR: 3
 };
 
+const WireFormat = {
+    DefaultVarLenKV: 0,
+    DefaultFixedLenKV: 1,
+    ASCII: 255
+};
+
 const MessageType = {
     Read: 0,
     Upsert: 1,
