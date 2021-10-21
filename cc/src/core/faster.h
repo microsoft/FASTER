@@ -2189,6 +2189,7 @@ bool FasterKv<K, V, D>::CleanHashTableBuckets() {
     if (bucket_idx >= state_[version].size()) {
       break;
     }
+    HashBucket* bucket = &state_[version].bucket(bucket_idx);
     while(true) {
       for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
         AtomicHashBucketEntry& atomic_entry = bucket->entries[entry_idx];
