@@ -20,6 +20,11 @@ namespace FASTER.common
         DefaultFixedLenKV = 1,
 
         /// <summary>
+        /// Default Varlen KV for Koin based on SpanByte (binary)
+        /// </summary>
+        KoinVarLenKV = 2,
+
+        /// <summary>
         /// ASCII wire format (non-binary protocol)
         /// </summary>
         ASCII = 255
