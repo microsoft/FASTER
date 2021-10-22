@@ -500,7 +500,7 @@ namespace FASTER.core
         public async ValueTask CompleteCheckpointAsync(CancellationToken token = default)
         {
             if (LightEpoch.AnyInstanceProtected())
-                throw new FasterException("Cannot use CompleteCheckpointAsync when using legacy or non-async sessions");
+                throw new FasterException("Cannot use CompleteCheckpointAsync when using non-async sessions");
 
             token.ThrowIfCancellationRequested();
 
@@ -715,7 +715,7 @@ namespace FASTER.core
         public bool GrowIndex()
         {
             if (LightEpoch.AnyInstanceProtected())
-                throw new FasterException("Cannot use GrowIndex when using legacy or non-async sessions");
+                throw new FasterException("Cannot use GrowIndex when using non-async sessions");
 
             if (!StartStateMachine(new IndexResizeStateMachine())) return false;
 
