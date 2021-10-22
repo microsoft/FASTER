@@ -84,7 +84,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             dst.value = src.value;
             return true;
@@ -109,7 +109,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }
@@ -143,7 +143,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool ConcurrentWriter(ref MyValue key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref MyValue key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             dst.value = src.value;
             return true;
@@ -168,7 +168,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref MyValue key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(ref MyValue key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }
@@ -202,7 +202,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             dst = src;
             return true;
@@ -237,7 +237,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }
@@ -269,7 +269,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool ConcurrentWriter(ref int key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref int key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             dst.value = src.value;
             return true;
@@ -281,7 +281,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref int key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(ref int key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }
@@ -349,13 +349,13 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyLargeValue src, ref MyLargeValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyLargeValue src, ref MyLargeValue dst, ref MyLargeOutput output, ref RecordInfo recordInfo, long address)
         {
             dst = src;
             return true;
         }
 
-        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyLargeValue src, ref MyLargeValue dst, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyLargeValue src, ref MyLargeValue dst, ref MyLargeOutput output, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }

@@ -96,8 +96,8 @@ namespace FASTER.core
         /// </summary>
         public struct ReadAsyncResult<Input, Output, Context>
         {
-            internal readonly Status status;
-            internal readonly Output output;
+            private readonly Status status;
+            private readonly Output output;
             readonly RecordMetadata recordMetadata;
 
             internal readonly ReadAsyncInternal<Input, Output, Context> readAsyncInternal;

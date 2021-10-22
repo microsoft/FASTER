@@ -14,16 +14,17 @@ namespace FASTER.core
         /// Constructor
         /// </summary>
         /// <param name="locking"></param>
-        public SpanByteFunctions(bool locking = false) : base(locking) { }
+        /// <param name="postOps"></param>
+        public SpanByteFunctions(bool locking = false, bool postOps = false) : base(locking, postOps) { }
 
         /// <inheritdoc />
-        public override void SingleWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref RecordInfo recordInfo, long address)
         {
             src.CopyTo(ref dst);
         }
 
         /// <inheritdoc />
-        public override bool ConcurrentWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref RecordInfo recordInfo, long address)
         {
             // We can write the source (src) data to the existing destination (dst) in-place, 
             // only if there is sufficient space
@@ -63,7 +64,7 @@ namespace FASTER.core
         public override bool InPlaceUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             // The default implementation of IPU simply writes input to destination, if there is space
-            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref recordInfo, address);
+            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref recordInfo, address);
         }
     }
 
@@ -79,7 +80,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="memoryPool"></param>
         /// <param name="locking"></param>
-        public SpanByteFunctions(MemoryPool<byte> memoryPool = default, bool locking = false) : base(locking)
+        /// <param name="postOps"></param>
+        public SpanByteFunctions(MemoryPool<byte> memoryPool = default, bool locking = false, bool postOps = false) : base(locking, postOps)
         {
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
@@ -102,24 +104,27 @@ namespace FASTER.core
         public override bool SupportsLocking => locking;
 
         /// <inheritdoc />
-        public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
+        public override void LockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockExclusive();
+
+        /// <inheritdoc />
+        public override void UnlockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext) => recordInfo.UnlockExclusive();
+
+        /// <inheritdoc />
+        public override bool TryLockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
+
+        /// <inheritdoc />
+        public override void LockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockShared();
+
+        /// <inheritdoc />
+        public override bool UnlockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext)
         {
-            if (lockType == LockType.Exclusive)
-                recordInfo.LockExclusive();
-            else
-                recordInfo.LockShared();
+            recordInfo.UnlockShared();
+            return true;
         }
 
         /// <inheritdoc />
-        public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
-        {
-            if (lockType == LockType.Exclusive)
-                recordInfo.UnlockExclusive();
-            else
-                recordInfo.UnlockShared();
-            return true;
-        }
-    }
+        public override bool TryLockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
+}
 
     /// <summary>
     /// Callback functions for SpanByte with byte[] output, for SpanByte key, value, input
@@ -150,22 +155,25 @@ namespace FASTER.core
         public override bool SupportsLocking => locking;
 
         /// <inheritdoc />
-        public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
+        public override void LockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockExclusive();
+
+        /// <inheritdoc />
+        public override void UnlockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext) => recordInfo.UnlockExclusive();
+
+        /// <inheritdoc />
+        public override bool TryLockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
+
+        /// <inheritdoc />
+        public override void LockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockShared();
+
+        /// <inheritdoc />
+        public override bool UnlockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext)
         {
-            if (lockType == LockType.Exclusive)
-                recordInfo.LockExclusive();
-            else
-                recordInfo.LockShared();
+            recordInfo.UnlockShared();
+            return true;
         }
 
         /// <inheritdoc />
-        public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
-        {
-            if (lockType == LockType.Exclusive)
-                recordInfo.UnlockExclusive();
-            else
-                recordInfo.UnlockShared();
-            return true;
-        }
+        public override bool TryLockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
     }
 }

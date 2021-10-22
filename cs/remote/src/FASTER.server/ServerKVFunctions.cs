@@ -32,8 +32,8 @@ namespace FASTER.server
         public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             => functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
-        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-            => functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+            => functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
         public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output)
             => functions.NeedInitialUpdate(ref key, ref input, ref output);
@@ -73,18 +73,35 @@ namespace FASTER.server
         public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             => functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
-        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-            => functions.SingleWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+            => functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
-        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { }
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
 
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, long ctx)
             => functions.UpsertCompletionCallback(ref key, ref input, ref value, ctx);
 
-        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
-            => functions.Lock(ref recordInfo, ref key, ref value, lockType, ref lockContext);
+        public void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext)
+            => functions.LockExclusive(ref recordInfo, ref key, ref value, ref lockContext);
 
-        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
-            => functions.Unlock(ref recordInfo, ref key, ref value, lockType, lockContext);
+        /// <inheritdoc />
+        public void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext)
+            => functions.UnlockExclusive(ref recordInfo, ref key, ref value, lockContext);
+
+        /// <inheritdoc />
+        public bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1)
+            => functions.TryLockExclusive(ref recordInfo, ref key, ref value, ref lockContext, spinCount);
+
+        /// <inheritdoc />
+        public void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext)
+            => functions.LockShared(ref recordInfo, ref key, ref value, ref lockContext);
+
+        /// <inheritdoc />
+        public bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) 
+            => functions.UnlockShared(ref recordInfo, ref key, ref value, lockContext);
+
+        /// <inheritdoc />
+        public bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1)
+            => functions.TryLockShared(ref recordInfo, ref key, ref value, ref lockContext, spinCount);
     }
 }

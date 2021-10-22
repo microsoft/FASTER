@@ -51,7 +51,7 @@ namespace FASTER.benchmark
             numaStyle = testLoader.Options.NumaStyle;
             readPercent = testLoader.Options.ReadPercent;
             var lockImpl = testLoader.LockImpl;
-            functions = new FunctionsSB(lockImpl != LockImpl.None);
+            functions = new FunctionsSB(lockImpl != LockImpl.None, testLoader.Options.PostOps);
 
 #if DASHBOARD
             statsWritten = new AutoResetEvent[threadCount];

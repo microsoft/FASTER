@@ -464,7 +464,8 @@ namespace FASTER.core
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0)
         {
             Input input = default;
-            return Upsert(ref key, ref input, ref desiredValue, userContext, serialNo);
+            Output output = default;
+            return Upsert(ref key, ref input, ref desiredValue, ref output, out _, userContext, serialNo);
         }
 
         /// <summary>
@@ -473,16 +474,32 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="desiredValue"></param>
+        /// <param name="output"></param>
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0)
+        public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, Context userContext = default, long serialNo = 0) 
+            => Upsert(ref key, ref input, ref desiredValue, ref output, out _, userContext, serialNo);
+
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="output"></param>
+        /// <param name="recordMetadata"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextUpsert(ref key, ref input, ref desiredValue, userContext, FasterSession, serialNo, ctx);
+                return fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -508,12 +525,13 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="desiredValue"></param>
+        /// <param name="output"></param>
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(Key key, Input input, Value desiredValue, Context userContext = default, long serialNo = 0)
-            => Upsert(ref key, ref input, ref desiredValue, userContext, serialNo);
+        public Status Upsert(Key key, Input input, Value desiredValue, ref Output output, Context userContext = default, long serialNo = 0)
+            => Upsert(ref key, ref input, ref desiredValue, ref output, out _, userContext, serialNo);
 
         /// <summary>
         /// Async Upsert operation
@@ -1037,15 +1055,16 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <param name="desiredValue"></param>
         /// <param name="foundLogicalAddress"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CopyToTail(ref Key key, ref Input input, ref Value desiredValue, long foundLogicalAddress)
+        internal void CopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long foundLogicalAddress)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                fht.InternalCopyToTail(ref key, ref input, ref desiredValue, foundLogicalAddress, FasterSession, ctx, noReadCache: true);
+                fht.InternalCopyToTail(ref key, ref input, ref desiredValue, ref output, foundLogicalAddress, FasterSession, ctx, noReadCache: true);
             }
             finally
             {
@@ -1104,13 +1123,15 @@ namespace FASTER.core
                 _clientSession = clientSession;
             }
 
-            public bool SupportsPostOperations => _clientSession.functions.SupportsPostOperations;
+            #region IFunctions - Optional features supported
+            public bool SupportsLocking => _clientSession.functions.SupportsLocking;
 
-            public void CheckpointCompletionCallback(string guid, CommitPoint commitPoint)
-            {
-                _clientSession.functions.CheckpointCompletionCallback(guid, commitPoint);
-                _clientSession.LatestCommitPoint = commitPoint;
-            }
+            public bool SupportsPostOperations => _clientSession.functions.SupportsPostOperations;
+            #endregion IFunctions - Optional features supported
+
+            #region IFunctions - Reads
+            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
+                => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) 
@@ -1125,93 +1146,199 @@ namespace FASTER.core
                 {
                     success = false;
                     long context = 0;
-                    this.Lock(ref recordInfo, ref key, ref value, LockType.Shared, ref context);
+                    this.LockShared(ref recordInfo, ref key, ref value, ref context);
                     try
                     {
                         success = _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
                     }
                     finally
                     {
-                        retry = !this.Unlock(ref recordInfo, ref key, ref value, LockType.Shared, context);
+                        retry = !this.UnlockShared(ref recordInfo, ref key, ref value, context);
                     }
                 }
                 return success;
             }
 
+            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
+                => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
+
+            #endregion IFunctions - Reads
+
+            #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-                => !this.SupportsLocking
-                    ? ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref recordInfo, address)
-                    : ConcurrentWriterLock(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+                => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
+            {
+                lockContext = 0;
+                this.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+                if (this.SupportsPostOperations)
+                {
+                    // Lock must be taken after the value is initialized. Unlocked in PostSingleWriterLock.
+                    this.LockExclusive(ref recordInfo, ref key, ref dst, ref lockContext);
+                }
+            }
+
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+                => throw new FasterException("The lockContext form of PostSingleWriter should always be called");
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, long lockContext)
+            {
+                if (!this.SupportsPostOperations)
+                    return;
+                if (!this.SupportsLocking)
+                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+                else
+                    PostSingleWriterLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, lockContext);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void PostSingleWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+            {
+                recordInfo.Version = _clientSession.ctx.version;
+                _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void PostSingleWriterLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, long lockContext)
+            {
+                // Lock was taken in SingleWriterLock
+                try
+                {
+                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+                }
+                finally
+                {
+                    this.UnlockExclusive(ref recordInfo, ref key, ref dst, lockContext);
+                }
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+                => !this.SupportsLocking
+                    ? ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address)
+                    : ConcurrentWriterLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private bool ConcurrentWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 recordInfo.Version = _clientSession.ctx.version;
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
-                return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+                return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            private bool ConcurrentWriterLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 long context = 0;
-                this.Lock(ref recordInfo, ref key, ref dst, LockType.Exclusive, ref context);
+                this.LockExclusive(ref recordInfo, ref key, ref dst, ref context);
                 try
                 {
-                    return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+                    return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
                 }
                 finally
                 {
-                    this.Unlock(ref recordInfo, ref key, ref dst, LockType.Exclusive, context);
+                    this.UnlockExclusive(ref recordInfo, ref key, ref dst, context);
                 }
             }
 
+            public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx)
+                => _clientSession.functions.UpsertCompletionCallback(ref key, ref input, ref value, ctx);
+            #endregion IFunctions - Upserts
+
+            #region IFunctions - RMWs
+            #region InitialUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address)
-                => _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
-                => (!this.SupportsLocking)
-                    ? ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address)
-                    : ConcurrentDeleterLock(ref key, ref value, ref recordInfo, address);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
-            {
-                recordInfo.Version = _clientSession.ctx.version;
-                recordInfo.Tombstone = true;
-                return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
-            }
-
-            private bool ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
-            {
-                long context = 0;
-                this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref context);
-                try
-                {
-                    return ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address);
-                }
-                finally
-                {
-                    this.Unlock(ref recordInfo, ref key, ref value, LockType.Exclusive, context);
-                }
-            }
-
             public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output)
                 => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output);
 
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+                => throw new FasterException("The lockContext form of InitialUpdater should always be called");
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
+            {
+                lockContext = 0;
+                _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+                if (this.SupportsPostOperations)
+                {
+                    // Lock must be taken after the value is initialized. Unlocked in PostInitialUpdaterLock.
+                    this.LockExclusive(ref recordInfo, ref key, ref value, ref lockContext);
+                }
+            }
+
+            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+                => throw new FasterException("The lockContext form of PostInitialUpdater should always be called");
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, long lockContext)
+            {
+                if (!this.SupportsPostOperations)
+                    return;
+                if (!this.SupportsLocking)
+                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref recordInfo, address);
+                else
+                    PostInitialUpdaterLock(ref key, ref input, ref value, ref output, ref recordInfo, address, lockContext);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void PostInitialUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+            {
+                recordInfo.Version = _clientSession.ctx.version;
+                _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void PostInitialUpdaterLock(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, long lockContext)
+            {
+                // Lock was taken in InitialUpdaterLock
+                try
+                {
+                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref recordInfo, address);
+                }
+                finally
+                {
+                    this.UnlockExclusive(ref recordInfo, ref key, ref value, lockContext);
+                }
+            }
+            #endregion InitialUpdater
+
+            #region CopyUpdater
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
                 => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
+                => throw new FasterException("The lockContext form of CopyUpdater should always be called");
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) => !this.SupportsLocking
-                ? PostCopyUpdaterNoLock(ref key, ref input, ref output, ref oldValue, ref newValue, ref recordInfo, address)
-                : PostCopyUpdaterLock(ref key, ref input, ref output, ref oldValue, ref newValue, ref recordInfo, address);
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
+            {
+                lockContext = 0;
+                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
+                if (this.SupportsPostOperations)
+                {
+                    // Lock must be taken after the value is initialized. Unlocked in PostInitialUpdaterLock.
+                    this.LockExclusive(ref recordInfo, ref key, ref newValue, ref lockContext);
+                }
+            }
+
+            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
+                => throw new FasterException("The lockContext form of PostCopyUpdater should always be called");
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, long lockContext)
+            {
+                if (!this.SupportsPostOperations)
+                    return true;
+                return !this.SupportsLocking
+                    ? PostCopyUpdaterNoLock(ref key, ref input, ref output, ref oldValue, ref newValue, ref recordInfo, address)
+                    : PostCopyUpdaterLock(ref key, ref input, ref output, ref oldValue, ref newValue, ref recordInfo, address, lockContext);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool PostCopyUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue, ref RecordInfo recordInfo, long address)
@@ -1220,10 +1347,10 @@ namespace FASTER.core
                 return _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
             }
 
-            private bool PostCopyUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue, ref RecordInfo recordInfo, long address)
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private bool PostCopyUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue, ref RecordInfo recordInfo, long address, long lockContext)
             {
-                long context = 0;
-                this.Lock(ref recordInfo, ref key, ref newValue, LockType.Exclusive, ref context);
+                // Lock was taken in CopyUpdaterLock
                 try
                 {
                     // KeyIndexes do not need notification of in-place updates because the key does not change.
@@ -1231,25 +1358,12 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    this.Unlock(ref recordInfo, ref key, ref newValue, LockType.Exclusive, context);
+                    this.UnlockExclusive(ref recordInfo, ref key, ref newValue, lockContext);
                 }
             }
+            #endregion CopyUpdater
 
-            public void DeleteCompletionCallback(ref Key key, Context ctx) 
-                => _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
-
-            public int GetInitialLength(ref Input input)
-                => _clientSession.variableLengthStruct.GetInitialLength(ref input);
-
-            public int GetLength(ref Value t, ref Input input) 
-                => _clientSession.variableLengthStruct.GetLength(ref t, ref input);
-
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
-
-            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
-                => _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
-
+            #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
                 => !this.SupportsLocking
@@ -1267,44 +1381,105 @@ namespace FASTER.core
             private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 long context = 0;
-                this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref context);
+                this.LockExclusive(ref recordInfo, ref key, ref value, ref context);
                 try
                 {
                     return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address);
                 }
                 finally
                 {
-                    this.Unlock(ref recordInfo, ref key, ref value, LockType.Exclusive, context);
+                    this.UnlockExclusive(ref recordInfo, ref key, ref value, context);
                 }
             }
 
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) 
-                => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
-
-            public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) 
+            public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
                 => _clientSession.functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
 
-            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
+            #endregion InPlaceUpdater
+            #endregion IFunctions - RMWs
 
-            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+            #region IFunctions - Deletes
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address)
+            {
+                if (!this.SupportsPostOperations)
+                    return;
 
-            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+                // There is no value to lock here, so we take a RecordInfo lock in InternalDelete and release it here.
+                recordInfo.Version = _clientSession.ctx.version;
+                _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
+                if (this.SupportsLocking)
+                    recordInfo.UnlockExclusive();
+            }
 
-            public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx) 
-                => _clientSession.functions.UpsertCompletionCallback(ref key, ref input, ref value, ctx);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+                => (!this.SupportsLocking)
+                    ? ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address)
+                    : ConcurrentDeleterLock(ref key, ref value, ref recordInfo, address);
 
-            public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread();
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private bool ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+            {
+                recordInfo.Version = _clientSession.ctx.version;
+                recordInfo.Tombstone = true;
+                return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
+            }
 
-            public void UnsafeSuspendThread() => _clientSession.UnsafeSuspendThread();
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private bool ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+            {
+                long context = 0;
+                this.LockExclusive(ref recordInfo, ref key, ref value, ref context);
+                try
+                {
+                    return ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address);
+                }
+                finally
+                {
+                    this.UnlockExclusive(ref recordInfo, ref key, ref value, context);
+                }
+            }
 
-            public bool SupportsLocking => _clientSession.functions.SupportsLocking;
+            public void DeleteCompletionCallback(ref Key key, Context ctx)
+                => _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
+            #endregion IFunctions - Deletes
 
-            public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) => _clientSession.functions.Lock(ref recordInfo, ref key, ref value, lockType, ref lockContext);
+            #region IFunctions - Locking
 
-            public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => _clientSession.functions.Unlock(ref recordInfo, ref key, ref value, lockType, lockContext);
+            public void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) 
+                => _clientSession.functions.LockExclusive(ref recordInfo, ref key, ref value, ref lockContext);
+
+            public void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext)
+                => _clientSession.functions.UnlockExclusive(ref recordInfo, ref key, ref value, lockContext);
+
+            public bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1)
+                => _clientSession.functions.TryLockExclusive(ref recordInfo, ref key, ref value, ref lockContext, spinCount);
+
+            public void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext)
+                => _clientSession.functions.LockShared(ref recordInfo, ref key, ref value, ref lockContext);
+
+            public bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext)
+                => _clientSession.functions.UnlockShared(ref recordInfo, ref key, ref value, lockContext);
+
+            public bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1)
+                => _clientSession.functions.TryLockShared(ref recordInfo, ref key, ref value, ref lockContext, spinCount);
+            #endregion IFunctions - Locking
+
+            #region IFunctions - Checkpointing
+            public void CheckpointCompletionCallback(string guid, CommitPoint commitPoint)
+            {
+                _clientSession.functions.CheckpointCompletionCallback(guid, commitPoint);
+                _clientSession.LatestCommitPoint = commitPoint;
+            }
+            #endregion IFunctions - Checkpointing
+
+            #region Internal utilities
+            public int GetInitialLength(ref Input input)
+                => _clientSession.variableLengthStruct.GetInitialLength(ref input);
+
+            public int GetLength(ref Value t, ref Input input)
+                => _clientSession.variableLengthStruct.GetLength(ref t, ref input);
 
             public IHeapContainer<Input> GetHeapContainer(ref Input input)
             {
@@ -1313,8 +1488,13 @@ namespace FASTER.core
                 return new VarLenHeapContainer<Input>(ref input, _clientSession.inputVariableLengthStruct, _clientSession.fht.hlog.bufferPool);
             }
 
+            public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread();
+
+            public void UnsafeSuspendThread() => _clientSession.UnsafeSuspendThread();
+
             public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-                => throw new NotImplementedException();
+                => _clientSession.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
+            #endregion Internal utilities
         }
     }
 }
