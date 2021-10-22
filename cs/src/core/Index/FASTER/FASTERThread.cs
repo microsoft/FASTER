@@ -153,7 +153,7 @@ namespace FASTER.core
                 #region Previous pending requests
                 if (!RelaxedCPR)
                 {
-                    if (ctx.phase == Phase.IN_PROGRESS || ctx.phase == Phase.WAIT_PENDING)
+                    if (ctx.phase == Phase.IN_PROGRESS)
                     {
                         InternalCompletePendingRequests(ctx.prevCtx, ctx, fasterSession, completedOutputs);
                         InternalCompleteRetryRequests(ctx.prevCtx, ctx, fasterSession);
