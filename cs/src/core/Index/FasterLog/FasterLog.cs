@@ -20,21 +20,39 @@ namespace FASTER.core
     internal struct ManualCheckpointRequest
     {
         private long proposedCommitNum;
+        private long untilOffset;
 
-        internal bool IsSet() => proposedCommitNum != 0;
-        
-        internal long DrainCommitNum()
+        internal bool ShouldCommitManually(CommitInfo commitInfo)
         {
-            var result = Interlocked.Exchange(ref proposedCommitNum, 0);
-            if (result == 0) return -1;
-            return result;
+            // This means that there are no current set requests
+            if (proposedCommitNum == 0) return false;
+            // If offset is 0, commit request is still trying to set offsets, spin wait while that happens. Will never
+            // trigger when auto committing 
+            while (proposedCommitNum != 0 && untilOffset == 0) {}
+            // Otherwise, check that the commit content equals the ones requested. offset field will not be updated
+            // concurrently as it is protected by proposedCommitNum not being set back to 0
+            if (proposedCommitNum == 0) return false;
+            return commitInfo.UntilAddress == untilOffset;
         }
 
-        internal bool TrySetCommitNum(long num)
+        internal bool ReserveCommitNum(long num)
         {
             return Interlocked.CompareExchange(ref proposedCommitNum, num, 0) == 0;
         }
-        
+
+        internal void FinishCommitRequest(long untilOffset)
+        {
+            this.untilOffset = untilOffset;
+        }
+
+        internal long DrainCommitNum()
+        {
+            // set offset to 0 first so any successful TrySetCommitNum has a chance to set their own offset after
+            // cmpxchg succeeds
+            untilOffset = 0;
+            var result = Interlocked.Exchange(ref proposedCommitNum, 0);
+            return result;
+        }
     }
     
     
@@ -595,18 +613,15 @@ namespace FASTER.core
 
         /// <summary>
         /// Issue commit request for log (until tail), persisting as the given commitNum. It is up to the users to ensure
-        /// that the supplied commitNum is unique and monotonically increasing.
+        /// that the supplied commitNum is unique and monotonically increasing to ensure correctness here.
         /// </summary>
         /// <param name="commitNum"> the commit num to write out</param>
         /// <param name="spinWait">spin until commit is complete</param>
-        /// <returns>whether manual request is successfully triggered. If not, request should be retried later. </returns>
-        public bool CommitManuallyAtNum(long commitNum, bool spinWait = false)
+        public void CommitManuallyAtNum(long commitNum, bool spinWait = false)
         {
             if (autoCommitOnFlush)
                 throw new FasterException("Specifying of commit num is only supported when auto commit is turned off");
-            if (!currentManualRequest.TrySetCommitNum(commitNum)) return false;
-            CommitInternal(spinWait);
-            return true;
+            CommitInternal(spinWait, commitNum);
         }
 
         /// <summary>
@@ -1018,6 +1033,9 @@ namespace FASTER.core
 
         private void SerialCommitCallbackWorker(CommitInfo commitInfo)
         {
+            // AutoCommit is off and there is no outstanding request --- safe to skip
+            if (!autoCommitOnFlush && !currentManualRequest.ShouldCommitManually(commitInfo)) return;
+            
             byte[] cookie = null;
             // Not expected to have heavy contention
             if (commitCookies != null)
@@ -1040,9 +1058,6 @@ namespace FASTER.core
                 }
             }
 
-            // AutoCommit is off and there is no outstanding request --- safe to skip
-            if (!autoCommitOnFlush && !currentManualRequest.IsSet()) return;
-            
             // Check if commit is already covered
             if (CommittedBeginAddress >= BeginAddress &&
                 CommittedUntilAddress >= commitInfo.UntilAddress &&
@@ -1074,7 +1089,7 @@ namespace FASTER.core
                 // Take snapshot of persisted iterators
                 info.SnapshotIterators(PersistedIterators);
 
-                logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray(), currentManualRequest.DrainCommitNum());
+                logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray(), autoCommitOnFlush ? -1 : currentManualRequest.DrainCommitNum());
 
                 LastPersistedIterators = info.Iterators;
                 CommittedBeginAddress = info.BeginAddress;
@@ -1480,13 +1495,24 @@ namespace FASTER.core
             if (readOnlyMode)
                 throw new FasterException("Cannot commit in read-only mode");
 
+            if (!autoCommitOnFlush)
+            {
+                // when manually committing, ensure that we are serializing commit requests.
+                // we expect manual commit mode to mostly have sequential commit requests so this is fine
+                while (true)
+                {
+                    if (currentManualRequest.ReserveCommitNum(commitNum)) break;
+                    Thread.Yield();
+                }
+            }
+            
             epoch.Resume();
-
-            if (autoCommitOnFlush == false)
-                currentManualRequest.TrySetCommitNum(commitNum);
 
             if (allocator.ShiftReadOnlyToTail(out long tailAddress, out _))
             {
+                if (!autoCommitOnFlush)
+                    currentManualRequest.FinishCommitRequest(tailAddress);
+
                 if (spinWait)
                 {
                     while (CommittedUntilAddress < tailAddress)
@@ -1502,20 +1528,32 @@ namespace FASTER.core
             {
                 // May need to commit begin address and/or iterators
                 epoch.Suspend();
+
                 var beginAddress = allocator.BeginAddress;
                 // Reading cookieChanged concurrently without locking is fine here --- if interleaved with a concurrent
                 // AddCommitCookie call, the function will not properly trigger a checkpoint, and users will perceive 
                 // it as if AddCommitCookie is ordered after the Commit call. 
                 if (beginAddress > CommittedBeginAddress || IteratorsChanged() || cookieChanged)
                 {
+                    var fromAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress;
+                    var untilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress;
+
                     Interlocked.Increment(ref commitMetadataVersion);
+                    // Here, even though a concurrent auto flush commit may have the same until address, it would write
+                    // out the same content as this manual commit, so there is no need to distinguish
+                    if (!autoCommitOnFlush)
+                        currentManualRequest.FinishCommitRequest(untilAddress);
+                    
                     CommitCallback(new CommitInfo
                     {
-                        FromAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
-                        UntilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
+                        FromAddress = fromAddress,
+                        UntilAddress = untilAddress,
                         ErrorCode = 0,
                     });
                 }
+                // Otherwise, release manual commit request if necessary as no request will be written out
+                else if (!autoCommitOnFlush)
+                    currentManualRequest.DrainCommitNum();
             }
 
             return tailAddress;
