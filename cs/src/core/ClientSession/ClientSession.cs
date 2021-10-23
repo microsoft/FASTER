@@ -183,6 +183,20 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Unsafe read operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key">The key to look up</param>
+        /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
+        /// <param name="output">The location to place the retrieved value</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeRead(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
+            => fht.ContextRead(ref key, ref input, ref output, userContext, FasterSession, serialNo, ctx);
+
+        /// <summary>
         /// Read operation
         /// </summary>
         /// <param name="key">The key to look up</param>
@@ -199,6 +213,23 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Unsafe read operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key">The key to look up</param>
+        /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
+        /// <param name="output">The location to place the retrieved value</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeRead(Key key, Input input, out Output output, Context userContext = default, long serialNo = 0)
+        {
+            output = default;
+            return UnsafeRead(ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
         /// Read operation
         /// </summary>
         /// <param name="key">The key to look up</param>
@@ -211,6 +242,22 @@ namespace FASTER.core
         {
             Input input = default;
             return Read(ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// Unsafe read operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key">The key to look up</param>
+        /// <param name="output">The location to place the retrieved value</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeRead(ref Key key, ref Output output, Context userContext = default, long serialNo = 0)
+        {
+            Input input = default;
+            return UnsafeRead(ref key, ref input, ref output, userContext, serialNo);
         }
 
         /// <summary>
@@ -230,6 +277,23 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Unsafe read operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="output"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeRead(Key key, out Output output, Context userContext = default, long serialNo = 0)
+        {
+            Input input = default;
+            output = default;
+            return UnsafeRead(ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
         /// Read operation
         /// </summary>
         /// <param name="key"></param>
@@ -242,6 +306,22 @@ namespace FASTER.core
             Input input = default;
             Output output = default;
             return (Read(ref key, ref input, ref output, userContext, serialNo), output);
+        }
+
+        /// <summary>
+        /// Unsafe read operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public (Status status, Output output) UnsafeRead(Key key, Context userContext = default, long serialNo = 0)
+        {
+            Input input = default;
+            Output output = default;
+            return (UnsafeRead(ref key, ref input, ref output, userContext, serialNo), output);
         }
 
         /// <summary>
@@ -275,6 +355,28 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Unsafe read operation that accepts a <paramref name="recordInfo"/> ref argument to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
+        ///     and is updated with the record header for the found record (which contains previous address in the hash chain for this key; this can
+        ///     be used as <paramref name="recordInfo"/> in a subsequent call to iterate all records for <paramref name="key"/>).
+        ///     <para>Assumes caller handles epoch resume and suspend. Can be used to issue multiple data operations under the same epoch protection.
+        ///         Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.</para>
+        /// </summary>
+        /// <param name="key">The key to look up</param>
+        /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
+        /// <param name="output">The location to place the retrieved value</param>
+        /// <param name="recordInfo">On input contains the address to start at in its <see cref="RecordInfo.PreviousAddress"/>; if this is Constants.kInvalidAddress, the
+        ///     search starts with the key as in other forms of Read. On output, receives a copy of the record's header, which can be passed
+        ///     in a subsequent call, thereby enumerating all records in a key's hash chain.</param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <remarks>This method on non-Advanced ClientSessions is not suitable for read loops, because ReadCompletionCallback does not have RecordInfo.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeRead(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0) 
+            => fht.ContextRead(ref key, ref input, ref output, ref recordInfo, readFlags, userContext, FasterSession, serialNo, ctx);
+
+        /// <summary>
         /// Read operation that accepts an <paramref name="address"/> argument to lookup at, instead of a key.
         /// </summary>
         /// <param name="address">The address to look up</param>
@@ -297,6 +399,22 @@ namespace FASTER.core
                 if (SupportAsync) UnsafeSuspendThread();
             }
         }
+
+        /// <summary>
+        /// Unsafe read operation that accepts an <paramref name="address"/> argument to lookup at, instead of a key.
+        ///     <para>Assumes caller handles epoch resume and suspend. Can be used to issue multiple data operations under the same epoch protection.
+        ///         Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.</para>
+        /// </summary>
+        /// <param name="address">The address to look up</param>
+        /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
+        /// <param name="output">The location to place the retrieved value</param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation; this should store the key if it needs it</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeReadAtAddress(long address, ref Input input, ref Output output, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0) 
+            => fht.ContextReadAtAddress(address, ref input, ref output, readFlags, userContext, FasterSession, serialNo, ctx);
 
         /// <summary>
         /// Async read operation. May return uncommitted results; to ensure reading of committed results, complete the read and then call WaitForCommitAsync.
@@ -473,6 +591,19 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Unsafe upsert operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple 
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeUpsert(ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0) 
+            => fht.ContextUpsert(ref key, ref desiredValue, userContext, FasterSession, serialNo, ctx);
+
+        /// <summary>
         /// Upsert operation
         /// </summary>
         /// <param name="key"></param>
@@ -483,6 +614,19 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(Key key, Value desiredValue, Context userContext = default, long serialNo = 0)
             => Upsert(ref key, ref desiredValue, userContext, serialNo);
+
+        /// <summary>
+        /// Unsafe upsert operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple 
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeUpsert(Key key, Value desiredValue, Context userContext = default, long serialNo = 0)
+            => UnsafeUpsert(ref key, ref desiredValue, userContext, serialNo);
 
         /// <summary>
         /// Async Upsert operation
@@ -551,6 +695,20 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Unsafe RMW operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple 
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeRMW(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0) 
+            => fht.ContextRMW(ref key, ref input, ref output, userContext, FasterSession, serialNo, ctx);
+
+        /// <summary>
         /// RMW operation
         /// </summary>
         /// <param name="key"></param>
@@ -564,6 +722,23 @@ namespace FASTER.core
         {
             output = default;
             return RMW(ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// Unsafe RMW operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple 
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeRMW(Key key, Input input, out Output output, Context userContext = default, long serialNo = 0)
+        {
+            output = default;
+            return UnsafeRMW(ref key, ref input, ref output, userContext, serialNo);
         }
 
         /// <summary>
@@ -582,6 +757,22 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Unsafe RMW operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple 
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeRMW(ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
+        {
+            Output output = default;
+            return UnsafeRMW(ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
         /// RMW operation
         /// </summary>
         /// <param name="key"></param>
@@ -594,6 +785,22 @@ namespace FASTER.core
         {
             Output output = default;
             return RMW(ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// Unsafe RMW operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple 
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeRMW(Key key, Input input, Context userContext = default, long serialNo = 0)
+        {
+            Output output = default;
+            return UnsafeRMW(ref key, ref input, ref output, userContext, serialNo);
         }
 
         /// <summary>
@@ -659,6 +866,18 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Unsafe Delete operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple 
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeDelete(ref Key key, Context userContext = default, long serialNo = 0) 
+            => fht.ContextDelete(ref key, userContext, FasterSession, serialNo, ctx);
+
+        /// <summary>
         /// Delete operation
         /// </summary>
         /// <param name="key"></param>
@@ -668,6 +887,18 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(Key key, Context userContext = default, long serialNo = 0)
             => Delete(ref key, userContext, serialNo);
+
+        /// <summary>
+        /// Unsafe Delete operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple 
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status UnsafeDelete(Key key, Context userContext = default, long serialNo = 0)
+            => UnsafeDelete(ref key, userContext, serialNo);
 
         /// <summary>
         /// Async Delete operation
@@ -719,6 +950,31 @@ namespace FASTER.core
         /// <param name="fromAddress">Look until this address</param>
         /// <returns>Status</returns>
         internal Status ContainsKeyInMemory(ref Key key, out long logicalAddress, long fromAddress = -1)
+        {
+            if (SupportAsync) UnsafeResumeThread();
+            try
+            {
+                return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, out logicalAddress, fromAddress);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
+        }
+
+        /// <summary>
+        /// Experimental feature
+        /// Checks whether specified record is present in memory
+        /// (between HeadAddress and tail, or between fromAddress
+        /// and tail), including tombstones.
+        /// <para>Unsafe operation, assumes caller handles epoch resume and suspend. Can be used to issue multiple 
+        /// data operations under the same epoch protection. Use UnsafeResumeThread and UnsafeSuspendThread to manage epochs.</para>
+        /// </summary>
+        /// <param name="key">Key of the record.</param>
+        /// <param name="logicalAddress">Logical address of record, if found</param>
+        /// <param name="fromAddress">Look until this address</param>
+        /// <returns>Status</returns>
+        internal Status UnsafeContainsKeyInMemory(ref Key key, out long logicalAddress, long fromAddress = -1)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
@@ -982,7 +1238,7 @@ namespace FASTER.core
         /// Call SuspendThread before any async op
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeResumeThread()
+        public void UnsafeResumeThread()
         {
             fht.epoch.Resume();
             fht.InternalRefresh(ctx, FasterSession);
@@ -992,9 +1248,20 @@ namespace FASTER.core
         /// Suspend session on current thread
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeSuspendThread()
+        public void UnsafeSuspendThread()
         {
             fht.epoch.Suspend();
+        }
+
+        /// <summary>
+        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
+        /// </summary>
+        /// <param name="resumeEpoch">Epoch that session resumes on; can be saved to see if epoch has changed</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UnsafeResumeThread(out int resumeEpoch)
+        {
+            fht.epoch.Resume(out resumeEpoch);
+            fht.InternalRefresh(ctx, FasterSession);
         }
 
         void IClientSession.AtomicSwitch(int version)
