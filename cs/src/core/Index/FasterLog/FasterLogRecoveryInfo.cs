@@ -35,6 +35,8 @@ namespace FASTER.core
         /// User-specified commit cookie
         /// </summary>
         public byte[] Cookie;
+        
+        public long CommitNum;
 
         /// <summary>
         /// Initialize

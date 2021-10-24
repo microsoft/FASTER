@@ -90,11 +90,11 @@ namespace FASTER.core
         public bool ReadOnlyMode = false;
 
         /// <summary>
-        /// When set to true --- automatically create a commit for every disk flush (which may happen in the background
-        /// due to enqueue operations). Otherwise, a commit will only be created and recoverable where Commit() is \
-        /// invoked manually 
+        /// When FastCommitMode is enabled, FasterLog will reduce commit critical path latency, but may result in slower
+        /// recovery to a commit on restart. Additionally, FastCommitMode is only possible when log checksum is turned
+        /// on.
         /// </summary>
-        public bool AutoCommitOnFlush = true;
+        public bool FastCommitMode = false;
 
         internal LogSettings GetLogSettings()
         {

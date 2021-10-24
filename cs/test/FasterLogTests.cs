@@ -804,13 +804,13 @@ namespace FASTER.test
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
-        public void FasterLogSimpleCommitCookieTest([Values] bool autoCommit)
+        public void FasterLogSimpleCommitCookieTest()
         {
             var cookie = new byte[100];
             new Random().NextBytes(cookie);
             
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager, AutoCommitOnFlush = autoCommit};
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager};
             log = new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
@@ -835,7 +835,7 @@ namespace FASTER.test
         public void FasterLogManualCommitTest()
         {
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager, AutoCommitOnFlush = false};
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager};
             log = new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
@@ -906,7 +906,7 @@ namespace FASTER.test
             }
 
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager, AutoCommitOnFlush = true};
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager};
             log = new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
