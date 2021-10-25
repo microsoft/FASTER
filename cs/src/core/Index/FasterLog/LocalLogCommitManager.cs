@@ -30,10 +30,9 @@ namespace FASTER.core
         /// <param name="commitMetadata">Commit metadata</param>
         /// <param name="proposedCommitNum"> Ignored param </param>
 
-        public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long proposedCommitNum = -1)
+        public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long proposedCommitNum)
         {
-            if (proposedCommitNum != -1)
-                throw new FasterException("LocalLogCommitManager does not support custom commit numbering");
+
             // Two phase to ensure we write metadata in single Write operation
             using MemoryStream ms = new();
             using (BinaryWriter writer = new(ms))

@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -201,10 +202,14 @@ namespace FASTER.core
                 nextAddress = default;
                 return false;
             }
-
             epoch.Resume();
-            if (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress, out nextAddress))
+            
+            // Continue looping until we find a record that is not a commit record
+            while (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress, out nextAddress,
+                out var isCommitRecord))
             {
+                if (isCommitRecord) continue;
+                
                 if (getMemory != null)
                 {
                     // Use user delegate to allocate memory
@@ -264,8 +269,12 @@ namespace FASTER.core
             }
 
             epoch.Resume();
-            if (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress, out nextAddress))
+            
+            // Continue looping until we find a record that is not a commit record
+            while (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress, out nextAddress, out var isCommitRecord))
             {
+                if (isCommitRecord) continue;
+                
                 entry = pool.Rent(entryLength);
 
                 fixed (byte* bp = &entry.Memory.Span.GetPinnableReference())
@@ -275,6 +284,7 @@ namespace FASTER.core
                 return true;
             }
 
+            
             entry = default;
             entryLength = default;
             epoch.Suspend();
@@ -368,6 +378,48 @@ namespace FASTER.core
             return (length + 3) & ~3;
         }
 
+        internal unsafe bool ScanForwardForCommit(ref FasterLogRecoveryInfo info)
+        {
+            epoch.Resume();
+            var foundCommit = false;
+            try
+            {
+                // Continue looping until we find a record that is a commit record
+                while (GetNextInternal(out long physicalAddress, out var entryLength, out currentAddress,
+                    out nextAddress,
+                    out var isCommitRecord))
+                {
+                    if (!isCommitRecord) continue;
+
+                    foundCommit = true;
+                    byte[] entry;
+                    if (getMemory != null)
+                    {
+                        // Use user delegate to allocate memory
+                        entry = getMemory(entryLength);
+                        if (entry.Length < entryLength)
+                            throw new FasterException("Byte array provided has invalid length");
+                    }
+                    else
+                    {
+                        // We allocate a byte array from heap
+                        entry = new byte[entryLength];
+                    }
+
+                    fixed (byte* bp = entry)
+                        Buffer.MemoryCopy((void*) (headerSize + physicalAddress), bp, entryLength, entryLength);
+                    info.Initialize(new BinaryReader(new MemoryStream(entry)));
+                }
+            }
+            catch (FasterException)
+            {
+                // If we are here --- simply stop scanning because we ran into an incomplete entry
+            }
+
+            epoch.Suspend();
+            return foundCommit; 
+        }
+
         /// <summary>
         /// Retrieve physical address of next iterator value
         /// (under epoch protection if it is from main page buffer)
@@ -377,7 +429,7 @@ namespace FASTER.core
         /// <param name="currentAddress"></param>
         /// <param name="outNextAddress"></param>
         /// <returns></returns>
-        private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress)
+        private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress, out bool commitRecord)
         {
             while (true)
             {
@@ -385,6 +437,7 @@ namespace FASTER.core
                 entryLength = 0;
                 currentAddress = nextAddress;
                 outNextAddress = nextAddress;
+                commitRecord = false;
 
                 // Check for boundary conditions
                 if (currentAddress < allocator.BeginAddress)
@@ -441,12 +494,18 @@ namespace FASTER.core
                         var curPage = currentAddress >> allocator.LogPageSizeBits;
                         throw new FasterException("Invalid checksum found during scan, skipping page " + curPage);
                     }
-                    else
-                        continue;
+                    continue;
+                }
+
+                // commit records have negative length fields
+                if (entryLength < 0)
+                {
+                    commitRecord = true;
+                    entryLength = -entryLength;
                 }
 
                 int recordSize = headerSize + Align(entryLength);
-                if (entryLength < 0 || (_currentOffset + recordSize > allocator.PageSize))
+                if (_currentOffset + recordSize > allocator.PageSize)
                 {
                     currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
                     if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
@@ -454,8 +513,7 @@ namespace FASTER.core
                         epoch.Suspend();
                         throw new FasterException("Invalid length of record found: " + entryLength + " at address " + currentAddress + ", skipping page");
                     }
-                    else
-                        continue;
+                    continue;
                 }
 
                 // Verify checksum if needed
@@ -470,8 +528,7 @@ namespace FASTER.core
                             epoch.Suspend();
                             throw new FasterException("Invalid checksum found during scan, skipping page " + curPage);
                         }
-                        else
-                            continue;
+                        continue;
                     }
                 }
 

@@ -24,7 +24,7 @@ namespace FASTER.core
         /// <summary>
         /// Flushed logical address
         /// </summary>
-        public long FlushedUntilAddress;
+        public long UntilAddress;
 
         /// <summary>
         /// Persisted iterators
@@ -37,17 +37,18 @@ namespace FASTER.core
         public byte[] Cookie;
         
         public long CommitNum;
-
+        
         /// <summary>
         /// Initialize
         /// </summary>
         public void Initialize()
         {
             BeginAddress = 0;
-            FlushedUntilAddress = 0;
+            UntilAddress = 0;
             Iterators = null;
             Cookie = null;
         }
+        
 
         /// <summary>
         /// Initialize from stream
@@ -62,7 +63,7 @@ namespace FASTER.core
                 version = reader.ReadInt32();
                 checkSum = reader.ReadInt64();
                 BeginAddress = reader.ReadInt64();
-                FlushedUntilAddress = reader.ReadInt64();
+                UntilAddress = reader.ReadInt64();
             }
             catch (Exception e)
             {
@@ -71,7 +72,7 @@ namespace FASTER.core
             if (version != 0)
                 throw new FasterException("Invalid version found during commit recovery");
 
-            if (checkSum != (BeginAddress ^ FlushedUntilAddress))
+            if (checkSum != (BeginAddress ^ UntilAddress))
                 throw new FasterException("Invalid checksum found during commit recovery");
 
             var count = 0;
@@ -117,9 +118,9 @@ namespace FASTER.core
             using (BinaryWriter writer = new(ms))
             {
                 writer.Write(0); // version
-                writer.Write(BeginAddress ^ FlushedUntilAddress); // checksum
+                writer.Write(BeginAddress ^ UntilAddress); // checksum
                 writer.Write(BeginAddress);
-                writer.Write(FlushedUntilAddress);
+                writer.Write(UntilAddress);
                 if (Iterators?.Count > 0)
                 {
                     writer.Write(Iterators.Count);
@@ -145,6 +146,18 @@ namespace FASTER.core
                 }
             }
             return ms.ToArray();
+        }
+
+        public int SerializedSize()
+        {
+            var iteratorSize = sizeof(int);
+            if (Iterators != null)
+            {
+                foreach (var kvp in Iterators)
+                    iteratorSize += kvp.Key.Length + sizeof(long);
+            }
+
+            return sizeof(int) + 3 * sizeof(long) + iteratorSize + Cookie?.Length ?? 0;
         }
 
         /// <summary>
@@ -187,7 +200,7 @@ namespace FASTER.core
             Debug.WriteLine("******** Log Commit Info ********");
 
             Debug.WriteLine("BeginAddress: {0}", BeginAddress);
-            Debug.WriteLine("FlushedUntilAddress: {0}", FlushedUntilAddress);
+            Debug.WriteLine("FlushedUntilAddress: {0}", UntilAddress);
         }
     }
 }

@@ -822,8 +822,7 @@ namespace FASTER.test
                 log.Enqueue(entry);
             }
 
-            Assert.IsTrue(log.AddCommitCookie(cookie));
-            log.Commit(true);
+            log.Commit(true, cookie);
 
             var recoveredLog = new FasterLog(logSettings);
             Assert.AreEqual(cookie, recoveredLog.RecoveredCookie);
@@ -847,33 +846,27 @@ namespace FASTER.test
                 log.Enqueue(entry);
             }
 
-            var commit1Addr = log.TailAddress;
             var cookie1 = new byte[100];
             new Random().NextBytes(cookie1);
-            log.AddCommitCookie(cookie1);
-            log.CommitManuallyAtNum(1, true);
+            var commit1Addr = log.Commit(true, cookie1, 1);
             
             for (int i = 0; i < numEntries; i++)
             {
                 log.Enqueue(entry);
             }
             
-            var commit2Addr = log.TailAddress;
             var cookie2 = new byte[100];
             new Random().NextBytes(cookie2);
-            log.AddCommitCookie(cookie2);
-            log.CommitManuallyAtNum(2, true);
+            var commit2Addr = log.Commit(true, cookie2, 2);
             
             for (int i = 0; i < numEntries; i++)
             {
                 log.Enqueue(entry);
             }
             
-            var commit6Addr = log.TailAddress;
             var cookie6 = new byte[100];
             new Random().NextBytes(cookie6);
-            log.AddCommitCookie(cookie6);
-            log.CommitManuallyAtNum(6, true);
+            var commit6Addr = log.Commit(true, cookie6, 6);
 
             var recoveredLog = new FasterLog(logSettings, 1);
             Assert.AreEqual(cookie1, recoveredLog.RecoveredCookie);
@@ -890,58 +883,6 @@ namespace FASTER.test
             Assert.AreEqual(cookie6, recoveredLog.RecoveredCookie);
             Assert.AreEqual(commit6Addr, recoveredLog.TailAddress);
             recoveredLog.Dispose();
-        }
-        
-        [Test]
-        [Category("FasterLog")]
-        public void FasterLogMultiCommitCookieTest()
-        {
-            var cookies = new List<byte[]>();
-            var cookieStatus = new List<(long, bool)>();
-            for (var i = 0; i < 10; i++)
-            {
-                var cookie = new byte[100];
-                new Random().NextBytes(cookie);
-                cookies.Add(cookie);
-            }
-
-            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager};
-            log = new FasterLog(logSettings);
-
-            byte[] entry = new byte[entryLength];
-            for (int i = 0; i < entryLength; i++)
-                entry[i] = (byte)i;
-
-            for (var j = 0; j < 10; j++)
-            {
-                for (int i = 0; i < numEntries; i++)
-                {
-                    log.Enqueue(entry);
-                }
-
-                var success = log.AddCommitCookie(cookies[j]);
-                cookieStatus.Add(ValueTuple.Create(log.TailAddress, success));
-            }
-
-            foreach (var commitNum in manager.ListCommits())
-            {
-                var recoveredLog = new FasterLog(logSettings, commitNum);
-                var recoveredTail = recoveredLog.TailAddress;
-                
-                // Check that the closest successful cookie is recovered
-                byte[] expectedCookie = null;
-                for (var i = 0; i < 10; i++)
-                {
-                    if (!cookieStatus[i].Item2) continue;
-                    if (cookieStatus[i].Item1 > recoveredTail) break;
-                    expectedCookie = cookies[i];
-                }
-
-                Assert.AreEqual(expectedCookie, recoveredLog.RecoveredCookie);
-                recoveredLog.Dispose();
-            }
-            
         }
     }
 }

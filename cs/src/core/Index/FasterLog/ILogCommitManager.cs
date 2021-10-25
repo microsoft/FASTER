@@ -20,7 +20,7 @@ namespace FASTER.core
         /// <param name="commitMetadata">Commit metadata - should be persisted</param>
         /// <param name="commitNum">Proposed commit num, or -1 if none, in which case the implementation will pick one.
         /// Caller must ensure commit num supplied is unique and monotonically increasing </param>
-        void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum = -1);
+        void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum);
 
         /// <summary>
         /// Return commit metadata
