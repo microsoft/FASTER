@@ -22,15 +22,18 @@ namespace FASTER.core
             this.commitFile = commitFile;
         }
 
+        /// <inheritdoc/>
+        public bool PreciseCommitNumRecoverySupport() => false;
+
+
         /// <summary>
         /// Perform (synchronous) commit with specified metadata
         /// </summary>
         /// <param name="beginAddress">Committed begin address (for information only, not necessary to persist)</param>
         /// <param name="untilAddress">Address committed until (for information only, not necessary to persist)</param>
         /// <param name="commitMetadata">Commit metadata</param>
-        /// <param name="proposedCommitNum"> Ignored param </param>
-
-        public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long proposedCommitNum)
+        /// <param name="commitNum"> Ignored param </param>
+        public void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum)
         {
 
             // Two phase to ensure we write metadata in single Write operation
@@ -81,9 +84,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public void RemoveCommit(long commitNum)
         {
-            // we only use a single commit file in this implementation
-            if (commitNum != 0) return;
-            File.Delete(commitFile);
+            throw new FasterException("removing commit by commit num is not supported when overwriting log commits");
         }
 
         /// <inheritdoc />

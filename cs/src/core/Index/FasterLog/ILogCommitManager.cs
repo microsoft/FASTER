@@ -12,14 +12,17 @@ namespace FASTER.core
     /// </summary>
     public interface ILogCommitManager : IDisposable
     {
+        /// <summary></summary>
+        /// <returns> Whether this log commit manager supports recovering to a specific commit num </returns>
+        bool PreciseCommitNumRecoverySupport();
+        
         /// <summary>
         /// Perform (synchronous) commit with specified metadata
         /// </summary>
         /// <param name="beginAddress">Committed begin address (for information only, not necessary to persist)</param>
         /// <param name="untilAddress">Address committed until (for information only, not necessary to persist)</param>
         /// <param name="commitMetadata">Commit metadata - should be persisted</param>
-        /// <param name="commitNum">Proposed commit num, or -1 if none, in which case the implementation will pick one.
-        /// Caller must ensure commit num supplied is unique and monotonically increasing </param>
+        /// <param name="commitNum">commit num</param>
         void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum);
 
         /// <summary>
@@ -36,7 +39,7 @@ namespace FASTER.core
         public IEnumerable<long> ListCommits();
 
         /// <summary>
-        /// Remove the given commit, if present
+        /// Remove the given commit, if present. Should only be invoked if PreciseCommitNumRecoverySupport returns true
         /// </summary>
         /// <param name="commitNum">commit num to remove</param>
         public void RemoveCommit(long commitNum);

@@ -129,7 +129,16 @@ namespace FASTER.core
         public FasterLog(FasterLogSettings logSettings, long requestedCommitNum = -1)
             : this(logSettings, false)
         {
-            Restore(out var it, out RecoveredCookie, requestedCommitNum);
+            Dictionary<string, long> it;
+            if (requestedCommitNum == -1)
+                RestoreLatest(out it, out RecoveredCookie);
+            else
+            {
+                if (!logCommitManager.PreciseCommitNumRecoverySupport())
+                    throw new FasterException("Recovering to a specific commit is not supported for given log setting");
+                RestoreSpecificCommit(requestedCommitNum, out it, out RecoveredCookie);
+            }
+
             RecoveredIterators = it;
         }
 
@@ -1026,7 +1035,7 @@ namespace FASTER.core
 
                 foreach (var recoveryInfo in coveredCommits)
                 {
-                    logCommitManager.Commit(recoveryInfo.BeginAddress, recoveryInfo.UntilAddress, recoveryInfo.ToByteArray(), recoveryInfo.CommitNum);
+                    // logCommitManager.Commit(recoveryInfo.BeginAddress, recoveryInfo.UntilAddress, recoveryInfo.ToByteArray(), recoveryInfo.CommitNum);
                     // Otherwise, set committed state as we commit metadata explicitly
                     if (!fastCommitMode)
                         UpdateCommittedState(recoveryInfo);
@@ -1086,6 +1095,8 @@ namespace FASTER.core
             }
         }
 
+        
+        // TODO(Tianyu): Will we ever need to recover to a specific commit for read-only cases?
         /// <summary>
         /// Synchronously recover instance to FasterLog's latest commit, when being used as a readonly log iterator
         /// </summary>
@@ -1094,7 +1105,7 @@ namespace FASTER.core
             if (!readOnlyMode)
                 throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            this.Restore(out _, out _);
+            this.RestoreLatest(out _, out _);
             SignalWaitingROIterators();
         }
 
@@ -1130,47 +1141,75 @@ namespace FASTER.core
             _commitTcs?.TrySetResult(lci);
         }
 
+        private bool LoadCommitMetadata(long commitNum, out FasterLogRecoveryInfo info)
+        {
+            var commitInfo = logCommitManager.GetCommitMetadata(commitNum);
+            if (commitInfo is null)
+            {
+                info = default;
+                return false;
+            }
+
+            info = new FasterLogRecoveryInfo();
+            using (BinaryReader r = new(new MemoryStream(commitInfo)))
+            {
+                info.Initialize(r);
+            }
+
+            return true;
+        }
+
         private bool RestoreLatest(out Dictionary<string, long> iterators, out byte[] cookie)
         {
             iterators = null;
             cookie = null;
+            FasterLogRecoveryInfo info = new();
             
-            foreach (var commitNum in logCommitManager.ListCommits())
+            foreach (var metadataCommit in logCommitManager.ListCommits())
             {
                 try
                 {
-                     if (RestoreFromCommitFile(commitNum, out iterators, out cookie));
+                    if (LoadCommitMetadata(metadataCommit, out info))
+                        break;
                 }
                 catch { }
             }
-            Debug.WriteLine("Unable to recover using any available commit");
-            return false;
-        }
 
-        /// <summary>
-        /// Restore log synchronously
-        /// </summary>
-        private bool RestoreCommitNum(long commitNum, out Dictionary<string, long> iterators, out byte[] cookie)
-        {
-            throw new NotImplementedException();
-        }
-
-        private bool RestoreFromCommitFile(long commitNum, out Dictionary<string, long> iterators, out byte[] cookie)
-        {
-            iterators = null;
-            cookie = null;
-            if (!PrepareToRestoreFromCommit(commitNum, out var info, out var headAddress))
+            // Shut up safe guards, I know what I am doing
+            CommittedUntilAddress = long.MaxValue;
+            allocator.HeadAddress = long.MaxValue;
+            using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+            scanIterator.ScanForwardForCommit(ref info);
+            if (info.UntilAddress == 0)
             {
-                Debug.WriteLine("Unable to recover using any specified commit num: " + commitNum);
+                Debug.WriteLine("Unable to recover using any available commit");
+                // Reset things to be something normal lol
+                allocator.Initialize();
+                CommittedUntilAddress = Constants.kFirstValidAddress;
                 return false;
             }
+            
+            if (!readOnlyMode)
+            {
+                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                if (info.BeginAddress > headAddress)
+                    headAddress = info.BeginAddress;
 
-            if (headAddress > 0)
+                if (headAddress == 0)
+                    headAddress = Constants.kFirstValidAddress;
                 allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
+            }
 
             iterators = CompleteRestoreFromCommit(info);
             cookie = info.Cookie;
+
             return true;
+        }
+        
+
+        private bool RestoreSpecificCommit(long commitNum, out Dictionary<string, long> iterators, out byte[] cookie)
+        {
+            throw new NotImplementedException();
         }
 
         /// <summary>
@@ -1199,18 +1238,7 @@ namespace FASTER.core
         private bool PrepareToRestoreFromCommit(long commitNum, out FasterLogRecoveryInfo info, out long headAddress)
         {
             headAddress = 0;
-            var commitInfo = logCommitManager.GetCommitMetadata(commitNum);
-            if (commitInfo is null)
-            {
-                info = default;
-                return false;
-            }
-
-            info = new FasterLogRecoveryInfo();
-            using (BinaryReader r = new(new MemoryStream(commitInfo)))
-            {
-                info.Initialize(r);
-            }
+            if (!LoadCommitMetadata(commitNum, out info)) return false;
 
             if (!readOnlyMode)
             {

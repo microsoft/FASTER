@@ -822,6 +822,13 @@ namespace FASTER.test
                 log.Enqueue(entry);
             }
 
+            log.Commit(true, null);
+            
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+
             log.Commit(true, cookie);
 
             var recoveredLog = new FasterLog(logSettings);

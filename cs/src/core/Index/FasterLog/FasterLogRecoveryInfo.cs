@@ -64,6 +64,7 @@ namespace FASTER.core
                 checkSum = reader.ReadInt64();
                 BeginAddress = reader.ReadInt64();
                 UntilAddress = reader.ReadInt64();
+                CommitNum = reader.ReadInt64();
             }
             catch (Exception e)
             {
@@ -121,6 +122,7 @@ namespace FASTER.core
                 writer.Write(BeginAddress ^ UntilAddress); // checksum
                 writer.Write(BeginAddress);
                 writer.Write(UntilAddress);
+                writer.Write(CommitNum);
                 if (Iterators?.Count > 0)
                 {
                     writer.Write(Iterators.Count);
@@ -157,7 +159,7 @@ namespace FASTER.core
                     iteratorSize += kvp.Key.Length + sizeof(long);
             }
 
-            return sizeof(int) + 3 * sizeof(long) + iteratorSize + Cookie?.Length ?? 0;
+            return sizeof(int) + 4 * sizeof(long) + iteratorSize + sizeof(int) + (Cookie?.Length ?? 0);
         }
 
         /// <summary>
