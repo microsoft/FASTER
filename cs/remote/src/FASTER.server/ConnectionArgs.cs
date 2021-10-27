@@ -9,9 +9,7 @@ namespace FASTER.server
     internal class ConnectionArgs
     {
         public Socket socket;
-        public WebsocketUtils websocketUtils;
         public IServerSession session;
         public int bytesRead;
-        public NetworkProtocol networkProtocol;
     }
 }

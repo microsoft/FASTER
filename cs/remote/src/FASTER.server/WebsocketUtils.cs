@@ -60,7 +60,7 @@ namespace FASTER.server
         /// and then it is upgraded to websocket
         /// </summary>
         /// <param name="buf"></param>
-        public unsafe void UpgradeHTTPToWebSocket(byte[] buf)
+        public unsafe bool UpgradeHTTPToWebSocket(byte[] buf)
         {
             responseObject = messageManager.GetReusableSeaaBuffer();
 
@@ -104,10 +104,10 @@ namespace FASTER.server
         /// Decode the packet received from client
         /// </summary>
         /// <param name="buf">The buffer received over the wire</param>
-        /// <param name="offset">Offset in the buffer from which the commands start</param>
-        /// <param name="bytesRead">Number of bytes read</param>
+        /// <param name="readHead">Current read head</param>
+        /// <param name="numBytes">Number of bytes read</param>
         /// <returns></returns>
-        public static unsafe (byte[], int) DecodeWebsocketHeader(byte[] buf, int offset, int bytesRead)
+        public static unsafe (byte[], int) DecodeWebsocketHeader(byte[] buf, int readHead, int numBytes)
         {
             int msglen = 0;
             byte[] decoded = Array.Empty<byte>();
@@ -116,38 +116,38 @@ namespace FASTER.server
 
             var decoderInfo = new Decoder();
 
-            bool fin = (buf[offset] & 0b10000000) != 0,
-                mask = (buf[offset + 1] & 0b10000000) != 0; // must be true, "All messages from the client to the server have this bit set"
+            bool fin = (buf[readHead] & 0b10000000) != 0,
+                mask = (buf[readHead + 1] & 0b10000000) != 0; // must be true, "All messages from the client to the server have this bit set"
 
-            int opcode = buf[offset] & 0b00001111; // expecting 1 - text message
-            offset++;
+            int opcode = buf[readHead] & 0b00001111; // expecting 1 - text message
+            readHead++;
 
-            msglen = buf[offset] - 128; // & 0111 1111
+            msglen = buf[readHead] - 128; // & 0111 1111
 
             if (msglen < 125)
             {
-                offset++;
+                readHead++;
             }
             else if (msglen == 126)
             {
-                msglen = BitConverter.ToUInt16(new byte[] { buf[offset + 2], buf[offset + 1] }, 0);
-                offset += 3;
+                msglen = BitConverter.ToUInt16(new byte[] { buf[readHead + 2], buf[readHead + 1] }, 0);
+                readHead += 3;
             }
             else if (msglen == 127)
             {
-                msglen = (int)BitConverter.ToUInt64(new byte[] { buf[offset + 8], buf[offset + 7], buf[offset + 6], buf[offset + 5], buf[offset + 4], buf[offset + 3], buf[offset + 2], buf[offset + 1] }, 0);
-                offset += 9;
+                msglen = (int)BitConverter.ToUInt64(new byte[] { buf[readHead + 8], buf[readHead + 7], buf[readHead + 6], buf[readHead + 5], buf[readHead + 4], buf[readHead + 3], buf[readHead + 2], buf[readHead + 1] }, 0);
+                readHead += 9;
             }
 
             if (msglen == 0)
                 Console.WriteLine("msglen == 0");
 
-            decoderInfo.maskStart = offset;
+            decoderInfo.maskStart = readHead;
             decoderInfo.msgLen = msglen;
-            decoderInfo.dataStart = offset + 4;
+            decoderInfo.dataStart = readHead + 4;
             decoderInfoList.Add(decoderInfo);
             totalMsgLen += msglen;
-            offset += 4;
+            readHead += 4;
 
             if (fin == false)
             {
@@ -156,11 +156,11 @@ namespace FASTER.server
                 for (int i = 0; i < sizeof(Int32); ++i)
                     decodedClientMsgLen[i] = (byte)(buf[decoderInfo.dataStart + i] ^ clientMsgLenMask[i % 4]);
                 var clientMsgLen = (int)BitConverter.ToInt32(decodedClientMsgLen, 0);
-                if (clientMsgLen > bytesRead)
+                if (clientMsgLen > numBytes)
                     return (null, -1);
             }
 
-            var nextBufOffset = offset;
+            var nextBufOffset = readHead;
 
             while (fin == false)
             {
@@ -171,23 +171,23 @@ namespace FASTER.server
                 nextBufOffset++;
                 var nextMsgLen = buf[nextBufOffset] - 128; // & 0111 1111
 
-                offset++;
+                readHead++;
                 nextBufOffset++;
 
                 if (nextMsgLen < 125)
                 {
                     nextBufOffset++;
-                    offset++;
+                    readHead++;
                 }
                 else if (nextMsgLen == 126)
                 {
-                    offset += 3;
+                    readHead += 3;
                     nextMsgLen = BitConverter.ToUInt16(new byte[] { buf[nextBufOffset + 1], buf[nextBufOffset] }, 0);
                     nextBufOffset += 2;
                 }
                 else if (nextMsgLen == 127)
                 {
-                    offset += 9;
+                    readHead += 9;
                     nextMsgLen = (int)BitConverter.ToUInt64(new byte[] { buf[nextBufOffset + 7], buf[nextBufOffset + 6], buf[nextBufOffset + 5], buf[nextBufOffset + 4], buf[nextBufOffset + 3], buf[nextBufOffset + 2], buf[nextBufOffset + 1], buf[nextBufOffset] }, 0);
                     nextBufOffset += 8;
                 }
@@ -198,7 +198,7 @@ namespace FASTER.server
                 nextDecoderInfo.dataStart = nextBufOffset + 4;
                 decoderInfoList.Add(nextDecoderInfo);
                 totalMsgLen += nextMsgLen;
-                offset += 4;
+                readHead += 4;
             }
 
             //bool completeWSCommand = true;
@@ -216,8 +216,8 @@ namespace FASTER.server
                 }
             }
 
-            offset += totalMsgLen;            
-            return (decoded, offset);
+            readHead += totalMsgLen;            
+            return (decoded, readHead);
         }
 
         /// <summary>

@@ -169,19 +169,6 @@ namespace FASTER.server
 
             if (connArgs.session == null)
             {
-                if (e.Buffer[connArgs.bytesRead] == 71 && e.Buffer[connArgs.bytesRead + 1] == 69 && e.Buffer[connArgs.bytesRead + 2] == 84)
-                {
-                    connArgs.networkProtocol = NetworkProtocol.WebSocket;
-                    if (connArgs.websocketUtils == null)
-                        connArgs.websocketUtils = new WebsocketUtils(connArgs.socket);
-                    connArgs.websocketUtils.UpgradeHTTPToWebSocket(e.Buffer);
-                    connArgs.bytesRead += e.BytesTransferred;
-                    e.SetBuffer(connArgs.bytesRead, e.Buffer.Length - connArgs.bytesRead);
-                    return true;
-                }
-                else if (connArgs.networkProtocol != NetworkProtocol.WebSocket)
-                    connArgs.networkProtocol = NetworkProtocol.TCP;
-
                 return CreateSession(e);
             }
 
@@ -213,10 +200,35 @@ namespace FASTER.server
             }
 
             WireFormat wireFormat;
+            NetworkProtocol networkProtocol;
 
             // FASTER's binary protocol family is identified by inverted size (int) field in the start of a packet
             // This results in a fourth byte value (little endian) > 127, denoting a non-ASCII wire format.
-            if (connArgs.networkProtocol == NetworkProtocol.TCP && e.Buffer[3] > 127)
+
+
+
+            if (e.Buffer[0] == 71 && e.Buffer[1] == 69 && e.Buffer[2] == 84)
+            {
+                networkProtocol = NetworkProtocol.WebSocket;
+                var websocketUtils = new WebsocketUtils(connArgs.socket);
+                if (!websocketUtils.UpgradeHTTPToWebSocket(e.Buffer))
+                {
+                    e.SetBuffer(connArgs.bytesRead, e.Buffer.Length - connArgs.bytesRead);
+                    return true;
+                }
+
+                // Do the parsing here similar to BinaryServerSession,
+                // and find out byte value to get wire format
+                var (decodedMessage, readHead) = WebsocketUtils.DecodeWebsocketHeader(e.Buffer, 0, e.BytesTransferred);
+                if (readHead == -1)
+                {
+                    e.SetBuffer(connArgs.bytesRead, e.Buffer.Length - connArgs.bytesRead);
+                    return true;
+                }
+                fixed (void* bh = &decodedMessage[4])
+                    wireFormat = ((BatchHeader*)bh)->Protocol;
+            }
+            else if (e.Buffer[3] > 127)
             {
                 if (connArgs.bytesRead < 4 + BatchHeader.Size)
                 {
@@ -225,16 +237,6 @@ namespace FASTER.server
                 }
                 fixed (void* bh = &e.Buffer[4])
                     wireFormat = ((BatchHeader*)bh)->Protocol;
-            }
-            else if (connArgs.networkProtocol == NetworkProtocol.WebSocket)
-            {
-                // Do the parsing here similar to BinaryServerSession,
-                // and find out byte value to get wire format
-                var (decodedMessage, _) = WebsocketUtils.DecodeWebsocketHeader(e.Buffer, connArgs.bytesRead - e.BytesTransferred, e.BytesTransferred);
-                fixed (void* bh = &decodedMessage[4])
-                    wireFormat = ((BatchHeader*)bh)->Protocol;
-                //e.SetBuffer(e.BytesTransferred, e.Buffer.Length - e.BytesTransferred);
-                //wireFormat = WireFormat.DefaultVarLenKV;
             }
             else
             {
@@ -254,7 +256,7 @@ namespace FASTER.server
                 return false;
             }
 
-            connArgs.session = provider.GetSession(wireFormat, connArgs.socket, connArgs.networkProtocol);
+            connArgs.session = provider.GetSession(wireFormat, connArgs.socket, networkProtocol);
 
             activeSessions.TryAdd(connArgs.session, default);
 

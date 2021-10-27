@@ -19,8 +19,6 @@ namespace FASTER.server
     {
         readonly HeaderReaderWriter hrw;
         int readHead;
-        GCHandle recvHandle;
-        byte* recvBufferPtr;
 
         int seqNo, pendingSeqNo, msgnum, start;
         byte* dcurr;
@@ -54,23 +52,10 @@ namespace FASTER.server
 
         public override int TryConsumeMessages(byte[] buf)
         {
-            if (this.isWebSocket)
-            {
-                if (recvBufferPtr == null)
-                {
-                    recvHandle = GCHandle.Alloc(buf, GCHandleType.Pinned);
-                    recvBufferPtr = (byte*)recvHandle.AddrOfPinnedObject();
-                }
-            }
-
             while (TryReadMessages(buf, out var offset))
             {
-                if (this.isWebSocket)
-                {
-                    bool completeWSCommand = ProcessWebSocket(buf, offset);
-                    if (!completeWSCommand)
-                        return bytesRead;
-                }
+                if (isWebSocket)
+                    ProcessWebSocket(buf, offset);
                 else
                     ProcessBinary(buf, offset);
             }
@@ -130,7 +115,7 @@ namespace FASTER.server
             // Need to at least have read off of size field on the message
             if (bytesAvailable < sizeof(int)) return false;
 
-            if (this.isWebSocket)
+            if (isWebSocket)
             {
                 offset = readHead;
                 return true;
@@ -163,6 +148,7 @@ namespace FASTER.server
             src += BatchHeader.Size;
             Status status = default;
 
+            dcurr += sizeof(int);
             dcurr += BatchHeader.Size;
             start = 0;
             msgnum = 0;
@@ -263,6 +249,7 @@ namespace FASTER.server
             }
         }
 
+
         private unsafe void ProcessBinary(byte[] buf, int offset)
         {
             GetResponseObject();
@@ -270,57 +257,43 @@ namespace FASTER.server
             {
                 byte* d = responseObject.bufferPtr;
                 var dend = d + responseObject.buffer.Length;
-                dcurr = d + sizeof(int); // reserve space for size
+                dcurr = d;
                 ProcessBatch(b, d, dend);
             }
         }
 
         private unsafe bool ProcessWebSocket(byte[] buf, int offset)
         {
-            bool completeWSCommand = true;
+            var _origReadHead = readHead;
+            byte[] decoded;
+
+            if (bytesRead - readHead < 3)
+                return false;
+
+            if (buf[readHead] == 71 && buf[readHead + 1] == 69 && buf[readHead + 2] == 84)
+            {
+                if (bytesRead - readHead < 510) return false;
+                readHead += 510;
+            }
+
+            (decoded, readHead) = WebsocketUtils.DecodeWebsocketHeader(buf, readHead, bytesRead - readHead);
+            if (readHead == -1)
+            {
+                readHead = _origReadHead;
+                return false;
+            }
+            readHead = offset;
 
             GetResponseObject();
-            fixed (byte* b = &buf[offset])
-            {
-                byte* d = responseObject.bufferPtr;
-                var dend = d + responseObject.buffer.Length;
-                dcurr = d; // reserve space for size
-                var bytesAvailable = bytesRead - readHead;
-                var _origReadHead = readHead;
-                byte[] decoded;
-                var ptr = recvBufferPtr + readHead;
-                List<Decoder> decoderInfoList = new();
-                bool firstCommand = false;
+            byte* d = responseObject.bufferPtr;
+            var dend = d + responseObject.buffer.Length;
+            dcurr = d;
+            dcurr += 10;
 
-                if (buf[offset] == 71 && buf[offset + 1] == 69 && buf[offset + 2] == 84)
-                {
-                    offset = 510;
-                    bytesRead -= 510;
-                    readHead = bytesRead;
-                    firstCommand = true;
-                }
+            fixed (byte* ptr1 = &decoded[4])
+                ProcessBatch(ptr1, d, dend);
 
-                (decoded, offset) = WebsocketUtils.DecodeWebsocketHeader(buf, offset, bytesRead);
-                if (offset == -1)
-                    return false;
-
-                readHead = offset;
-                if (firstCommand == true)
-                    bytesRead = readHead;
-
-                dcurr = d;
-                dcurr += 10;
-                dcurr += sizeof(int); // reserve space for size
-                int origPendingSeqNo = pendingSeqNo;
-
-                start = 0;
-                msgnum = 0;
-
-                fixed (byte* ptr1 = &decoded[4])
-                    ProcessBatch(ptr1, d, dend);
-
-                return completeWSCommand;
-            }
+            return true;
         }
 
         /// <inheritdoc />
