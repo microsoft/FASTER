@@ -1,7 +1,7 @@
 ---
 title: "Remote FASTER - Publish/Subscribe"
-permalink: /docs/pubsub/
-excerpt: "Remote FASTER"
+permalink: /docs/remote-pubsub/
+excerpt: "Remote FASTER - Pub/Sub"
 last_modified_at: 2021-10-21
 toc: false
 classes: wide
