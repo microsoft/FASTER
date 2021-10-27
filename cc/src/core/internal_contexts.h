@@ -18,6 +18,7 @@
 #include "state_transitions.h"
 #include "thread.h"
 #include "key_hash.h"
+#include "hc_internal_contexts.h"
 
 namespace FASTER {
 namespace core {
@@ -116,32 +117,6 @@ class PendingContext : public IAsyncContext {
   HashBucketEntry entry;
 };
 
-// A helper class to copy the key into FASTER log.
-// In old API, the Key provided is just the Key type, and we use in-place-new and copy constructor
-// to copy the key into the log. In new API, the user provides a ShallowKey, and we call the
-// ShallowKey's write_deep_key_at() method to write the key content into the log.
-// New API case (user provides ShallowKey)
-//
-template<bool isShallowKey>
-struct write_deep_key_at_helper
-{
-  template<class ShallowKey, class Key>
-  static inline void execute(const ShallowKey& key, Key* dst) {
-    key.write_deep_key_at(dst);
-  }
-};
-
-// Old API case (user provides Key)
-//
-template<>
-struct write_deep_key_at_helper<false>
-{
-  template<class Key>
-  static inline void execute(const Key& key, Key* dst) {
-    new (dst) Key(key);
-  }
-};
-
 /// FASTER's internal Read() context.
 
 /// An internal Read() context that has gone async and lost its type information.
@@ -168,15 +143,13 @@ class AsyncPendingReadContext : public PendingContext<K> {
 };
 
 /// A synchronous Read() context preserves its type information.
-template <class RC>
+template <class RC, bool IsHCContext = is_hc_read_context<RC>>
 class PendingReadContext : public AsyncPendingReadContext<typename RC::key_t> {
  public:
   typedef RC read_context_t;
   typedef typename read_context_t::key_t key_t;
   typedef typename read_context_t::value_t value_t;
-  using key_or_shallow_key_t = std::remove_const_t<std::remove_reference_t<std::result_of_t<decltype(&RC::key)(RC)>>>;
   typedef Record<key_t, value_t> record_t;
-  constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
   PendingReadContext(read_context_t& caller_context_, AsyncCallback caller_callback_, bool abort_if_tombstone_)
     : AsyncPendingReadContext<key_t>(caller_context_, caller_callback_, abort_if_tombstone_) {
@@ -199,29 +172,24 @@ class PendingReadContext : public AsyncPendingReadContext<typename RC::key_t> {
   }
  public:
   /// Accessors.
-  inline const key_or_shallow_key_t& get_key_or_shallow_key() const {
-    return read_context().key();
-  }
   inline uint32_t key_size() const final {
-    return read_context().key().size();
+    return hc_context_helper<IsHCContext>::key_size(read_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
     // this should never be called
     assert(false);
   }
   inline KeyHash get_key_hash() const final {
-    return read_context().key().GetHash();
+    return hc_context_helper<IsHCContext>::get_key_hash(read_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return read_context().key() == other;
+    return hc_context_helper<IsHCContext>::is_key_equal(read_context(), other);
   }
   inline void Get(const void* rec) final {
-    const record_t* record = reinterpret_cast<const record_t*>(rec);
-    read_context().Get(record->value());
+    hc_context_helper<IsHCContext>::template Get<read_context_t, record_t>(read_context(), rec);
   }
   inline void GetAtomic(const void* rec) final {
-    const record_t* record = reinterpret_cast<const record_t*>(rec);
-    read_context().GetAtomic(record->value());
+    hc_context_helper<IsHCContext>::template GetAtomic<read_context_t, record_t>(read_context(), rec);
   }
 };
 
@@ -340,15 +308,13 @@ class AsyncPendingRmwContext : public PendingContext<K> {
 };
 
 /// A synchronous Rmw() context preserves its type information.
-template <class MC>
+template <class MC, bool IsHCContext = is_hc_rmw_context<MC>>
 class PendingRmwContext : public AsyncPendingRmwContext<typename MC::key_t> {
  public:
   typedef MC rmw_context_t;
   typedef typename rmw_context_t::key_t key_t;
   typedef typename rmw_context_t::value_t value_t;
-  using key_or_shallow_key_t = std::remove_const_t<std::remove_reference_t<std::result_of_t<decltype(&MC::key)(MC)>>>;
   typedef Record<key_t, value_t> record_t;
-  constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
   PendingRmwContext(rmw_context_t& caller_context_, AsyncCallback caller_callback_, bool create_if_not_exists_)
     : AsyncPendingRmwContext<key_t>(caller_context_, caller_callback_, create_if_not_exists_) {
@@ -371,20 +337,18 @@ class PendingRmwContext : public AsyncPendingRmwContext<typename MC::key_t> {
   }
  public:
   /// Accessors.
-  inline const key_or_shallow_key_t& get_key_or_shallow_key() const {
-    return rmw_context().key();
-  }
   inline uint32_t key_size() const final {
-    return rmw_context().key().size();
+    return hc_context_helper<IsHCContext>::key_size(rmw_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    write_deep_key_at_helper<kIsShallowKey>::execute(rmw_context().key(), dst);
+    hc_context_helper<IsHCContext>::write_deep_key_at(rmw_context(), dst);
+    //write_deep_key_at_helper<kIsShallowKey>::execute(rmw_context().key(), dst);
   }
   inline KeyHash get_key_hash() const final {
-    return rmw_context().key().GetHash();
+    return hc_context_helper<IsHCContext>::get_key_hash(rmw_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return rmw_context().key() == other;
+    return hc_context_helper<IsHCContext>::is_key_equal(rmw_context(), other);
   }
   /// Set initial value.
   inline void RmwInitial(void* rec) final {
@@ -525,13 +489,12 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
 };
 
 /// A synchronous ConditionalInsert() context preserves its type information.
-template<class CIC>
+template<class CIC, bool IsHCContext = is_hc_ci_context<CIC>>
 class PendingConditionalInsertContext : public AsyncPendingConditionalInsertContext<typename CIC::key_t> {
  public:
   typedef CIC conditional_insert_context_t;
   typedef typename conditional_insert_context_t::key_t key_t;
   typedef typename conditional_insert_context_t::value_t value_t;
-  using key_or_shallow_key_t = std::remove_const_t<std::remove_reference_t<std::result_of_t<decltype(&CIC::key)(CIC)>>>;
   typedef Record<key_t, value_t> record_t;
 
   PendingConditionalInsertContext(conditional_insert_context_t& caller_context_, AsyncCallback caller_callback_,
@@ -557,24 +520,17 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
   }
  public:
   /// Accessors.
-  inline const key_or_shallow_key_t& get_key_or_shallow_key() const {
-    return conditional_insert_context().key();
-  }
   inline uint32_t key_size() const final {
-    return conditional_insert_context().key().size();
+    return hc_context_helper<IsHCContext>::key_size(conditional_insert_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    // Only called with doing hot-cold compaction, by the FASTER InternalUpsert method
-    // Here, we cannot utilize the `write_deep_key_at_helper`, because the
-    // user does NOT provides us with a context that contains the ShallowKey
-    // Instead, we manually memcpy the key contents (hot log) to the new destination (cold log)
-    memcpy(dst, &conditional_insert_context().key(), conditional_insert_context().key().size());
+    conditional_insert_context().write_deep_key_at(dst);
   }
   inline KeyHash get_key_hash() const final {
-    return conditional_insert_context().key().GetHash();
+    return hc_context_helper<IsHCContext>::get_key_hash(conditional_insert_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return conditional_insert_context().key() == other;
+    return hc_context_helper<IsHCContext>::is_key_equal(conditional_insert_context(), other);
   }
   inline uint32_t value_size() const final {
     return conditional_insert_context().value_size();

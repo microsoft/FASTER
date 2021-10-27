@@ -29,6 +29,7 @@ struct CompactionThreadsContext {
 };
 
 /// ConditionalInsert context used by compaction algorithm.
+/// NOTE: This context is used in both single-log & hot-cold cases
 template <class K, class V>
 class CompactionConditionalInsertContext : public IAsyncContext {
  public:
@@ -57,6 +58,10 @@ class CompactionConditionalInsertContext : public IAsyncContext {
   }
   inline uint32_t value_size() const {
     return record_->value().size();
+  }
+  inline void write_deep_key_at(key_t* dst) const {
+    // Copy the already "deep-written" key to the new destination
+    memcpy(dst, &this->key(), this->key().size());
   }
   inline bool is_tombstone() const {
     return record_->header.tombstone;
