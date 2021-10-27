@@ -822,13 +822,6 @@ namespace FASTER.test
                 log.Enqueue(entry);
             }
 
-            log.Commit(true, null);
-            
-            for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
-
             log.Commit(true, cookie);
 
             var recoveredLog = new FasterLog(logSettings);
@@ -855,7 +848,8 @@ namespace FASTER.test
 
             var cookie1 = new byte[100];
             new Random().NextBytes(cookie1);
-            var commit1Addr = log.Commit(true, cookie1, 1);
+            var commitSuccessful = log.Commit(out var commit1Addr, out _, true, cookie1, 1);
+            Assert.IsTrue(commitSuccessful);
             
             for (int i = 0; i < numEntries; i++)
             {
@@ -864,7 +858,8 @@ namespace FASTER.test
             
             var cookie2 = new byte[100];
             new Random().NextBytes(cookie2);
-            var commit2Addr = log.Commit(true, cookie2, 2);
+            commitSuccessful = log.Commit(out var commit2Addr, out _, true, cookie2, 2);
+            Assert.IsTrue(commitSuccessful);
             
             for (int i = 0; i < numEntries; i++)
             {
@@ -873,7 +868,8 @@ namespace FASTER.test
             
             var cookie6 = new byte[100];
             new Random().NextBytes(cookie6);
-            var commit6Addr = log.Commit(true, cookie6, 6);
+            commitSuccessful = log.Commit(out var commit6Addr, out _, true, cookie6, 6);
+            Assert.IsTrue(commitSuccessful);
 
             var recoveredLog = new FasterLog(logSettings, 1);
             Assert.AreEqual(cookie1, recoveredLog.RecoveredCookie);

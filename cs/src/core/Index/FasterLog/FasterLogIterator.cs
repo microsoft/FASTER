@@ -378,7 +378,7 @@ namespace FASTER.core
             return (length + 3) & ~3;
         }
 
-        internal unsafe bool ScanForwardForCommit(ref FasterLogRecoveryInfo info)
+        internal unsafe bool ScanForwardForCommit(ref FasterLogRecoveryInfo info, long commitNum = -1)
         {
             epoch.Resume();
             var foundCommit = false;
@@ -409,15 +409,23 @@ namespace FASTER.core
                     fixed (byte* bp = entry)
                         Buffer.MemoryCopy((void*) (headerSize + physicalAddress), bp, entryLength, entryLength);
                     info.Initialize(new BinaryReader(new MemoryStream(entry)));
+                    
+                    // If we have already found the commit number we are looking for, can stop early
+                    if (info.CommitNum == commitNum) break;
                 }
             }
             catch (FasterException)
             {
                 // If we are here --- simply stop scanning because we ran into an incomplete entry
             }
-
             epoch.Suspend();
-            return foundCommit; 
+            if (info.CommitNum == commitNum)
+                return true;
+            // User wants any commie
+            if (commitNum == -1)
+                return foundCommit;
+            // requested commit not found
+            return false;
         }
 
         /// <summary>
