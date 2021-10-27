@@ -1227,13 +1227,17 @@ namespace FASTER.core
                 catch { }
             }
 
-            // Shut up safe guards, I know what I am doing
-            CommittedUntilAddress = long.MaxValue;
-            beginAddress = info.BeginAddress;
-            allocator.HeadAddress = long.MaxValue;
-            using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-            scanIterator.ScanForwardForCommit(ref info);
-            
+            // Only in fast commit mode will we potentially need to recover from an entry in the log
+            if (fastCommitMode)
+            {
+                // Shut up safe guards, I know what I am doing
+                CommittedUntilAddress = long.MaxValue;
+                beginAddress = info.BeginAddress;
+                allocator.HeadAddress = long.MaxValue;
+                using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                scanIterator.ScanForwardForCommit(ref info);
+            }
+
             // if until address is 0, that means info is still its default value and we haven't been able to recover
             // from any any commit. Set the log to its start position and return
             if (info.UntilAddress == 0)
@@ -1258,6 +1262,7 @@ namespace FASTER.core
 
             iterators = CompleteRestoreFromCommit(info);
             cookie = info.Cookie;
+            commitNum = info.CommitNum;
         }
 
         private void RestoreSpecificCommit(long requestedCommitNum, out Dictionary<string, long> iterators, out byte[] cookie)
@@ -1268,6 +1273,7 @@ namespace FASTER.core
             cookie = null;
             FasterLogRecoveryInfo info = new();
 
+            // Find the closest commit metadata with commit num smaller than requested
             long scanStart = 0;
             foreach (var metadataCommit in logCommitManager.ListCommits())
             {
@@ -1282,17 +1288,22 @@ namespace FASTER.core
                 }
                 catch { }
             }
-
+            
+            // Need to potentially scan log for the entry 
             if (scanStart < requestedCommitNum)
             {
+                // If not in fast commit mode, do not scan log
+                if (!fastCommitMode)
+                    // In the case where precisely requested commit num is not available, can just throw exception
+                    throw new FasterException("requested commit num is not available");
+                
                 // If no exact metadata is found, scan forward to see if we able to find a commit entry
                 // Shut up safe guards, I know what I am doing
                 CommittedUntilAddress = long.MaxValue;
                 beginAddress = info.BeginAddress;
                 allocator.HeadAddress = long.MaxValue;
                 using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-                if (!scanIterator.ScanForwardForCommit(ref info))
-                    // In the case where precisely requested commit num is not available, can just throw exception
+                if (!scanIterator.ScanForwardForCommit(ref info, requestedCommitNum))
                     throw new FasterException("requested commit num is not available");
             }
 
@@ -1311,7 +1322,7 @@ namespace FASTER.core
 
             iterators = CompleteRestoreFromCommit(info);
             cookie = info.Cookie;
-            
+            commitNum = info.CommitNum;
         }
 
         /// <summary>
