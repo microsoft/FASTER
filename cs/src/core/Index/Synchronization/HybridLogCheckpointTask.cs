@@ -384,7 +384,7 @@ namespace FASTER.core
             var result = SystemState.Copy(ref start);
             switch (start.Phase)
             {
-                case Phase.WAIT_PENDING:
+                case Phase.IN_PROGRESS:
                     result.Phase = Phase.WAIT_FLUSH;
                     break;
                 case Phase.WAIT_FLUSH:

@@ -80,23 +80,6 @@ namespace FASTER.core
                     if (faster.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.Version))
                         faster.GlobalStateMachineStep(current);
                     break;
-                case Phase.WAIT_PENDING:
-                    if (ctx != null)
-                    {
-                        if (!faster.RelaxedCPR && !ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
-                        {
-                            if (ctx.prevCtx.HasNoPendingRequests)
-                                ctx.prevCtx.markers[EpochPhaseIdx.WaitPending] = true;
-                            else
-                                break;
-                        }
-
-                        faster.epoch.Mark(EpochPhaseIdx.WaitPending, current.Version);
-                    }
-
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitPending, current.Version))
-                        faster.GlobalStateMachineStep(current);
-                    break;
                 case Phase.REST:
                     break;
             }
@@ -184,10 +167,6 @@ namespace FASTER.core
                     nextState.Version = (int) ToVersion();
                     break;
                 case Phase.IN_PROGRESS:
-                    // This phase has no effect if using relaxed CPR model
-                    nextState.Phase = Phase.WAIT_PENDING;
-                    break;
-                case Phase.WAIT_PENDING:
                     nextState.Phase = Phase.REST;
                     break;
                 default:

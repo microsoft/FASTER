@@ -28,9 +28,6 @@ namespace FASTER.core
         /// <summary>In-progress phase, entering (v+1) version</summary>
         IN_PROGRESS,
 
-        /// <summary>Wait-pending phase, waiting for pending (v) operations to complete</summary>
-        WAIT_PENDING,
-
         /// <summary>Wait for an index checkpoint to finish</summary>
         WAIT_INDEX_CHECKPOINT,
 

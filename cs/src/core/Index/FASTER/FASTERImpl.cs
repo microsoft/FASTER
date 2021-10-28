@@ -529,22 +529,6 @@ namespace FASTER.core
                         }
                         break; // Normal Processing
                     }
-                case Phase.WAIT_PENDING:
-                    {
-                        if (!CheckEntryVersionNew(logicalAddress, sessionCtx))
-                        {
-                            if (HashBucket.NoSharedLatches(bucket))
-                            {
-                                return LatchDestination.CreateNewRecord; // Create a (v+1) record
-                            }
-                            else
-                            {
-                                status = OperationStatus.RETRY_LATER;
-                                return LatchDestination.CreatePendingContext; // Go Pending
-                            }
-                        }
-                        break; // Normal Processing
-                    }
                 case Phase.WAIT_FLUSH:
                     {
                         if (!CheckEntryVersionNew(logicalAddress, sessionCtx))
@@ -895,23 +879,6 @@ namespace FASTER.core
                         }
                         break; // Normal Processing
                     }
-                case Phase.WAIT_PENDING:
-                    {
-                        if (!CheckEntryVersionNew(logicalAddress, sessionCtx))
-                        {
-                            if (HashBucket.NoSharedLatches(bucket))
-                            {
-                                if (logicalAddress >= hlog.HeadAddress)
-                                    return LatchDestination.CreateNewRecord; // Create a (v+1) record
-                            }
-                            else
-                            {
-                                status = OperationStatus.RETRY_LATER;
-                                return LatchDestination.CreatePendingContext; // Go Pending
-                            }
-                        }
-                        break; // Normal Processing
-                    }
                 case Phase.WAIT_FLUSH:
                     {
                         if (!CheckEntryVersionNew(logicalAddress, sessionCtx))
@@ -1148,22 +1115,6 @@ namespace FASTER.core
                                 {
                                     // Set to release exclusive latch (default)
                                     latchOperation = LatchOperation.Exclusive;
-                                    goto CreateNewRecord; // Create a (v+1) record
-                                }
-                                else
-                                {
-                                    status = OperationStatus.RETRY_LATER;
-                                    goto CreatePendingContext; // Go Pending
-                                }
-                            }
-                            break; // Normal Processing
-                        }
-                    case Phase.WAIT_PENDING:
-                        {
-                            if (!CheckEntryVersionNew(logicalAddress, sessionCtx))
-                            {
-                                if (HashBucket.NoSharedLatches(bucket))
-                                {
                                     goto CreateNewRecord; // Create a (v+1) record
                                 }
                                 else
