@@ -37,6 +37,8 @@ namespace FASTER.core
         public byte[] Cookie;
         
         public long CommitNum;
+
+        public bool FastForwardAllowed;
         
         /// <summary>
         /// Initialize
