@@ -411,7 +411,7 @@ namespace FASTER.core
                     info.Initialize(new BinaryReader(new MemoryStream(entry)));
                     
                     // If we have already found the commit number we are looking for, can stop early
-                    if (info.CommitNum == commitNum) break;
+                    if (Math.Abs(info.CommitNum) == commitNum) break;
                 }
             }
             catch (FasterException)
@@ -419,7 +419,7 @@ namespace FASTER.core
                 // If we are here --- simply stop scanning because we ran into an incomplete entry
             }
             epoch.Suspend();
-            if (info.CommitNum == commitNum)
+            if (Math.Abs(info.CommitNum) == commitNum)
                 return true;
             // User wants any commie
             if (commitNum == -1)

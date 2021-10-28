@@ -804,13 +804,13 @@ namespace FASTER.test
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
-        public void FasterLogSimpleCommitCookieTest()
+        public void FasterLogSimpleCommitCookieTest([Values] bool fastCommit)
         {
             var cookie = new byte[100];
             new Random().NextBytes(cookie);
             
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager};
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = fastCommit};
             log = new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
