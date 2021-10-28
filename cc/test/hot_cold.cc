@@ -785,91 +785,139 @@ TEST_P(HotColdParameterizedTestFixture, ConcurrentOps) {
 TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
   using Key = VariableSizeKey;
   using ShallowKey = VariableSizeShallowKey;
-  using Value = MediumValue;
+  using Value = LargeValue;
 
   class UpsertContext : public IAsyncContext {
-  public:
-      typedef Key key_t;
-      typedef Value value_t;
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
 
-      UpsertContext(uint32_t* key, uint32_t key_length, Value value)
-        : key_{ key, key_length }
-        , value_{ value } {
-      }
+    UpsertContext(uint32_t* key, uint32_t key_length, Value value)
+      : key_{ key, key_length }
+      , value_{ value } {
+    }
 
-      /// Copy (and deep-copy) constructor.
-      UpsertContext(const UpsertContext& other)
-        : key_{ other.key_ }
-        , value_{ other.value_ } {
-      }
+    /// Copy (and deep-copy) constructor.
+    UpsertContext(const UpsertContext& other)
+      : key_{ other.key_ }
+      , value_{ other.value_ } {
+    }
 
-      /// The implicit and explicit interfaces require a key() accessor.
-      inline const ShallowKey& key() const {
-        return key_;
-      }
-      inline static constexpr uint32_t value_size() {
-        return sizeof(value_t);
-      }
-      /// Non-atomic and atomic Put() methods.
-      inline void Put(Value& value) {
-        value.value = value_.value;
-      }
-      inline bool PutAtomic(Value& value) {
-        value.atomic_value.store(value_.value);
-        return true;
-      }
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const ShallowKey& key() const {
+      return key_;
+    }
+    inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    /// Non-atomic and atomic Put() methods.
+    inline void Put(Value& value) {
+      value.value = value_.value;
+    }
+    inline bool PutAtomic(Value& value) {
+      value.atomic_value.store(value_.value);
+      return true;
+    }
 
-  protected:
-      /// The explicit interface requires a DeepCopy_Internal() implementation.
-      Status DeepCopy_Internal(IAsyncContext*& context_copy) {
-        return IAsyncContext::DeepCopy_Internal(*this, context_copy);
-      }
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
 
-  private:
-      ShallowKey key_;
-      Value value_;
+   private:
+    ShallowKey key_;
+    Value value_;
   };
 
   class ReadContext : public IAsyncContext {
-  public:
-      typedef Key key_t;
-      typedef Value value_t;
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
 
-      ReadContext(uint32_t* key, uint32_t key_length)
-              : key_{ key, key_length } {
-      }
+    ReadContext(uint32_t* key, uint32_t key_length)
+            : key_{ key, key_length } {
+    }
 
-      /// Copy (and deep-copy) constructor.
-      ReadContext(const ReadContext& other)
-              : key_{ other.key_ } {
-      }
+    /// Copy (and deep-copy) constructor.
+    ReadContext(const ReadContext& other)
+            : key_{ other.key_ } {
+    }
 
-      /// The implicit and explicit interfaces require a key() accessor.
-      inline const ShallowKey& key() const {
-        return key_;
-      }
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const ShallowKey& key() const {
+      return key_;
+    }
 
-      inline void Get(const Value& value) {
-        output.value = value.value;
-      }
-      inline void GetAtomic(const Value& value) {
-        output.value = value.atomic_value.load();
-      }
+    inline void Get(const Value& value) {
+      output.value = value.value;
+    }
+    inline void GetAtomic(const Value& value) {
+      output.value = value.atomic_value.load();
+    }
 
-  protected:
-      /// The explicit interface requires a DeepCopy_Internal() implementation.
-      Status DeepCopy_Internal(IAsyncContext*& context_copy) {
-        return IAsyncContext::DeepCopy_Internal(*this, context_copy);
-      }
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
 
-  private:
-      ShallowKey key_;
-  public:
-      Value output;
+   private:
+    ShallowKey key_;
+   public:
+    Value output;
+  };
+
+  class RmwContext : public IAsyncContext {
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    RmwContext(uint32_t* key, uint32_t key_length, value_t incr)
+      : key_{ key, key_length }
+      , incr_{ incr } {
+    }
+
+    /// Copy (and deep-copy) constructor.
+    RmwContext(const RmwContext& other)
+      : key_{ other.key_ }
+      , incr_{ other.incr_ } {
+    }
+
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const ShallowKey& key() const {
+      return key_;
+    }
+    inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
+      return sizeof(value_t);
+    }
+    inline void RmwInitial(value_t& value) {
+      value.value = incr_.value;
+    }
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
+      value.value = old_value.value + incr_.value;
+    }
+    inline bool RmwAtomic(value_t& value) {
+      value.atomic_value.fetch_add(incr_.value);
+      return true;
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+   private:
+    ShallowKey key_;
+    Value incr_;
   };
 
   class DeleteContext : public IAsyncContext {
-  public:
+   public:
     typedef Key key_t;
     typedef Value value_t;
 
@@ -889,7 +937,7 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
       return sizeof(value_t);
     }
 
-  protected:
+   protected:
     /// The explicit interface requires a DeepCopy_Internal() implementation.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
@@ -910,7 +958,7 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
                       192_MiB, 2048, cold_fp, // [cold] 192 MB mem size, 512 entries in hash index
                       0.4, 0,                 // 64 MB mutable hot log, minimum mutable cold (i.e. 64 MB)
                       auto_compaction };      // automatic or manual compaction
-  static constexpr int num_records = 12500;
+  int num_records = auto_compaction ? 10000 : 17500;
 
   store.StartSession();
 
@@ -960,9 +1008,9 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
       free(key);
     }
   }
-  // Update one thrid
+  // Update one fourth of the entries
   for(uint32_t idx = 1; idx <= num_records; ++idx) {
-    if (idx % 3 == 0) {
+    if (idx % 4 == 0) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         // Writes do not go pending in normal operation
         ASSERT_TRUE(false);
@@ -979,9 +1027,9 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
       free(key);
     }
   }
-  // Delete another one third
+  // Delete another one fourth
   for(uint32_t idx = 1; idx <= num_records; ++idx) {
-    if (idx % 3 == 1) {
+    if (idx % 4 == 1) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         ASSERT_TRUE(false); // deletes do not go pending
       };
@@ -995,6 +1043,29 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
       Status result = store.Delete(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
       free(key);
+    }
+  }
+  // RMW another one fourth
+  for(uint32_t idx = 1; idx <= num_records; ++idx) {
+    if (idx % 4 == 2) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        ASSERT_EQ(result, Status::Ok);
+        // free memory
+        CallbackContext<RmwContext> context{ ctxt };
+        free(context->key().key_data_);
+      };
+      // Create the key as a variable length array
+      uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      for (uint32_t j = 0; j < idx; ++j) {
+        key[j] = j;
+      }
+
+      RmwContext context{ key, idx, idx };
+      Status result = store.Rmw(context, callback, 1);
+      ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+      if (result == Status::Ok) {
+        free(key);
+      }
     }
   }
   store.CompletePending(true);
@@ -1011,12 +1082,15 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context{ ctxt };
       // check request result & value
-      if (context->key().key_length_ % 3 == 0) {
+      if (context->key().key_length_ % 4 == 0) { // Upsert
         ASSERT_EQ(Status::Ok, result);
         ASSERT_EQ(context->output.value, 2 * context->key().key_length_);
-      } else if (context->key().key_length_ % 3 == 1) {
+      } else if (context->key().key_length_ % 4 == 1) { // Delete
         ASSERT_EQ(Status::NotFound, result);
-      } else { // key_length_ % 3 == 2
+      } else if (context->key().key_length_ % 4 == 2) { // Rmw
+        ASSERT_EQ(Status::Ok, result);
+        ASSERT_EQ(context->output.value, 2 * context->key().key_length_);
+      } else { // key_length_ % 4 == 3 (Intact)
         ASSERT_EQ(Status::Ok, result);
         ASSERT_EQ(context->output.value, context->key().key_length_);
       }
@@ -1037,9 +1111,11 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
     ASSERT_TRUE(result == Status::Ok || result == Status::Pending ||
                 result == Status::NotFound);
     if (result == Status::Ok) {
-      if (idx % 3 == 0) {
+      if (idx % 4 == 0) { // Upsert
         ASSERT_EQ(2 * idx, context.output.value);
-      } else if (idx % 3 == 2) {
+      } else if (idx % 4 == 2) { // RMW
+        ASSERT_EQ(2 * idx, context.output.value);
+      } else if (idx % 4 == 3) { // Intact
         ASSERT_EQ(idx, context.output.value);
       }
       else ASSERT_TRUE(false);
@@ -1048,8 +1124,8 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
       }
       free(key);
     }
-    else if (result == Status::NotFound) {
-      ASSERT_TRUE(idx % 3 == 1);
+    else if (result == Status::NotFound) { // Deleted
+      ASSERT_TRUE(idx % 4 == 1);
       free(key);
     }
   }
