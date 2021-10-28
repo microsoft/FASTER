@@ -355,20 +355,19 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRead(IAsyncContext* ctxt, S
     Status status = faster_hc->cold_store.Read(*context.get(),
                                               AsyncContinuePendingRead,
                                               context->serial_num);
-    if (status != Status::Pending) {
-      context->caller_callback(context->caller_context, status);
+    if (status == Status::Pending) {
+      context.async = true;
       return;
     }
-    context.async = true;
-    // User-provided callback will eventually be called from cold log
   }
-  else if (context->stage == ReadOperationStage::COLD_LOG_READ) {
+
+  if (context->stage == ReadOperationStage::COLD_LOG_READ) {
     // call user-provided callback
     context->caller_callback(context->caller_context, result);
+    return;
   }
-  else {
-    assert(false); // not reachable
-  }
+
+  assert(false); // not reachable
 }
 
 

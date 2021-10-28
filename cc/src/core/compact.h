@@ -76,7 +76,7 @@ class CompactionConditionalInsertContext : public IAsyncContext {
   inline void Put(void* rec) {
     // Manually copy value contents to new destination
     record_t* dest = reinterpret_cast<record_t*>(rec);
-    memcpy(&dest->value(), &record_->value(), record_->value().size());
+    memcpy(&dest->value(), &record_->value(), value_size());
   }
   inline bool PutAtomic(void *rec) {
     // Cannot guarrantee atomic upsert
