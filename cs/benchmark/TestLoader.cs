@@ -332,10 +332,14 @@ namespace FASTER.benchmark
 
         internal string BackupPath => $"{DataPath}/{this.Distribution}_{(this.Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(this.Options.UseSmallData ? "2.5M_10M" : "250M_1000M")}";
 
+
+        internal bool CheckpointRecoverStore
+            => Options.BackupAndRestore && Options.PeriodicCheckpointMilliseconds <= 0;
+
         internal bool MaybeRecoverStore<K, V>(FasterKV<K, V> store)
         {
             // Recover database for fast benchmark repeat runs.
-            if (this.Options.BackupAndRestore && this.Options.PeriodicCheckpointMilliseconds <= 0)
+            if (CheckpointRecoverStore)
             {
                 if (this.Options.UseSmallData)
                 {
@@ -364,7 +368,7 @@ namespace FASTER.benchmark
         internal void MaybeCheckpointStore<K, V>(FasterKV<K, V> store)
         {
             // Checkpoint database for fast benchmark repeat runs.
-            if (this.Options.BackupAndRestore && this.Options.PeriodicCheckpointMilliseconds <= 0)
+            if (CheckpointRecoverStore)
             {
                 Console.WriteLine($"Checkpointing FasterKV to {this.BackupPath} for fast restart");
                 var sw = Stopwatch.StartNew();
