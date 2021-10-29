@@ -185,7 +185,6 @@ namespace FASTER.core
                 logSettings.GetLogSettings(), null,
                 null, epoch, CommitCallback);
             allocator.Initialize();
-            // TODO(Tianyu): Move to track commit record tail rather than user tail
             beginAddress = allocator.BeginAddress;
 
             // FasterLog is used as a read-only iterator
@@ -1122,6 +1121,7 @@ namespace FASTER.core
                 if (latestCommit.FastForwardAllowed) WriteCommitMetadata(latestCommit);
             }
 
+            // TODO(Tianyu): Can invoke earlier in the case of fast commit
             var _commitTcs = commitTcs;
             commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
             var lci = new LinkedCommitInfo
