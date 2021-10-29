@@ -110,7 +110,7 @@ namespace ReadAddress
             using var s = store.For(new Functions()).NewSession<Functions>();
             Console.WriteLine($"Writing {numKeys} keys to FASTER", numKeys);
 
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
             var prevLap = 0;
             for (int ii = 0; ii < numKeys; ii++)

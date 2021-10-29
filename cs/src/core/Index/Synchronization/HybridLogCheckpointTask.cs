@@ -48,7 +48,7 @@ namespace FASTER.core
             }
         }
 
-        protected void CollectMetadata<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
+        protected static void CollectMetadata<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
         {
             // Collect object log offsets only after flushes
             // are completed

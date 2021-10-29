@@ -127,7 +127,7 @@ namespace FASTER.core
     /// </summary>
     internal class VersionChangeStateMachine : SynchronizationStateMachineBase
     {
-        private long targetVersion;
+        private readonly long targetVersion;
 
         /// <summary>
         /// Construct a new VersionChangeStateMachine with the given tasks. Does not load any tasks by default.
