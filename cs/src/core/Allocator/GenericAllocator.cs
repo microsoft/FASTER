@@ -448,8 +448,6 @@ namespace FASTER.core
 
                     var _objBuffer = bufferPool.Get(memoryStreamLength);
 
-                    asyncResult.done = new AutoResetEvent(false);
-
                     var _alignedLength = (memoryStreamLength + (sectorSize - 1)) & ~(sectorSize - 1);
 
                     var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
@@ -479,6 +477,8 @@ namespace FASTER.core
                         // Reset address list for next chunk
                         addr = new List<long>();
 
+                        asyncResult.done = new AutoResetEvent(false);
+
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
                             (int)(alignedDestinationAddress >> LogSegmentSizeBits),
@@ -492,6 +492,9 @@ namespace FASTER.core
                     {
                         // need to write both page and object cache
                         Interlocked.Increment(ref asyncResult.count);
+
+                        if (asyncResult.flushCompletionTracker != null)
+                            Interlocked.Increment(ref asyncResult.flushCompletionTracker.count);
 
                         asyncResult.freeBuffer2 = _objBuffer;
                         objlogDevice.WriteAsync(

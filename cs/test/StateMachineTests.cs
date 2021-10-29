@@ -399,7 +399,7 @@ namespace FASTER.test.statemachine
         [TestCase]
         [Category("FasterKV")]
         [Category("CheckpointRestore")]
-        public void VersionChangeRollOverTest()
+        public void VersionChangeTest()
         {
             var toVersion = 1 + (1 << 14);
             Prepare(out var f, out var s1, out var s2, toVersion);
@@ -411,13 +411,13 @@ namespace FASTER.test.statemachine
             s2.Refresh();
             s1.Refresh();
 
-            // We should now be in IN_PROGRESS, toVersion + 1 (because of rollover of 13 bit short version)
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, toVersion + 1), fht1.SystemState));
+            // We should now be in IN_PROGRESS, toVersion
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, toVersion), fht1.SystemState));
 
             s2.Refresh();
 
             // We should be in WAIT_FLUSH, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, toVersion + 1), fht1.SystemState));
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, toVersion), fht1.SystemState));
 
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
@@ -428,11 +428,11 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(f.checkpointCallbackExpectation == 0);
 
             // We should be in PERSISTENCE_CALLBACK, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, toVersion + 1), fht1.SystemState));
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, toVersion), fht1.SystemState));
 
             s2.Refresh();
 
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, toVersion + 1), fht1.SystemState));
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, toVersion), fht1.SystemState));
 
 
             // Dispose session s2; does not move state machine forward

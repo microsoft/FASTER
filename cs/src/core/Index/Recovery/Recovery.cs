@@ -788,7 +788,7 @@ namespace FASTER.core
                     entry = default;
                     FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
 
-                    if (info.Version != RecordInfo.GetShortVersion(nextVersion) || !undoNextVersion)
+                    if (!info.NewVersion || !undoNextVersion)
                     {
                         entry.Address = pageLogicalAddress + pointer;
                         entry.Tag = tag;
@@ -799,7 +799,7 @@ namespace FASTER.core
                     else
                     {
                         touched = true;
-                        info.Invalid = true;
+                        info.SetInvalid();
                         if (info.PreviousAddress < startRecoveryAddress)
                         {
                             entry.Address = info.PreviousAddress;

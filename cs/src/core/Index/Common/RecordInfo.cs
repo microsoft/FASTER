@@ -10,8 +10,8 @@ using System.Threading;
 namespace FASTER.core
 {
     // RecordInfo layout (64 bits total):
-    // [VVVVV][Dirty][Stub][Sealed] [Valid][Tombstone][X][SSSSS] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
-    //     where V = version, X = exclusive lock, S = shared lock, A = address
+    // [--][CPR][Filler][Dirty][Stub][Sealed] [Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
+    //     where V = version, X = exclusive lock, S = shared lock, A = address, R = readcache, - = unused
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
     {
@@ -25,8 +25,8 @@ namespace FASTER.core
         // Shift position of lock in word
         const int kLockShiftInWord = kPreviousAddressBits;
 
-        // We use 6 lock bits: 5 shared lock bits + 1 exclusive lock bit
-        const int kSharedLockBits = 5;
+        // We use 7 lock bits: 6 shared lock bits + 1 exclusive lock bit
+        const int kSharedLockBits = 6;
         const int kExlcusiveLockBits = 1;
 
         // Shared lock constants
@@ -43,33 +43,28 @@ namespace FASTER.core
         const int kStubBitOffset = kValidBitOffset + 1;
         const int kSealedBitOffset = kStubBitOffset + 1;
         const int kDirtyBitOffset = kSealedBitOffset + 1;
+        const int kFillerBitOffset = kDirtyBitOffset + 1;
+        const int kNewVersionBitOffset = kFillerBitOffset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
         const long kStubBitMask = 1L << kStubBitOffset;
         const long kSealedBitMask = 1L << kSealedBitOffset;
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
-
-        // Shift position of version in word
-        const int kVersionShiftInWord = kDirtyBitOffset + 1;
-
-        // We use the remaining bits (64 - 59 = 5) as a short version for record
-        const int kVersionBits = kTotalBits - kVersionShiftInWord;
-
-        // Version constants
-        const long kVersionMaskInWord = ((1L << kVersionBits) - 1) << kVersionShiftInWord;
-        internal const long kVersionMaskInInteger = (1L << kVersionBits) - 1;
+        const long kFillerBitMask = 1L << kFillerBitOffset;
+        const long kNewVersionBitMask = 1L << kNewVersionBitOffset;
 
         [FieldOffset(0)]
         private long word;
 
-        public static void WriteInfo(ref RecordInfo info, int checkpointVersion, bool tombstone, bool invalidBit, long previousAddress)
+        public static void WriteInfo(ref RecordInfo info, bool newVersion, bool tombstone, bool dirty, long previousAddress)
         {
             info.word = default;
             info.Tombstone = tombstone;
-            info.Invalid = invalidBit;
+            info.SetValid();
+            info.Dirty = dirty;
             info.PreviousAddress = previousAddress;
-            info.Version = checkpointVersion;
+            info.NewVersion = newVersion;
         }
 
         /// <summary>
@@ -218,6 +213,21 @@ namespace FASTER.core
             }
         }
 
+        public bool DirtyAtomic
+        {
+            set
+            {
+                while (true)
+                {
+                    long expected_word = word;
+                    long new_word = value ? (word | kDirtyBitMask) : (word & ~kDirtyBitMask);
+                    if (expected_word == Interlocked.CompareExchange(ref word, new_word, expected_word))
+                        break;
+                    Thread.Yield();
+                }
+            }
+        }
+
         public bool Dirty
         {
             get => (word & kDirtyBitMask) > 0;
@@ -228,25 +238,32 @@ namespace FASTER.core
             }
         }
 
-        public bool Invalid
+        public bool Filler
         {
-            get => !((word & kValidBitMask) > 0);
+            get => (word & kFillerBitMask) > 0;
             set
             {
-                if (value) word &= ~kValidBitMask;
-                else word |= kValidBitMask;
+                if (value) word |= kFillerBitMask;
+                else word &= ~kFillerBitMask;
             }
         }
 
-        public int Version
+        public bool NewVersion
         {
-            get => (int)((word & kVersionMaskInWord) >> kVersionShiftInWord);
+            get => (word & kNewVersionBitMask) > 0;
             set
             {
-                word &= ~kVersionMaskInWord;
-                word |= (value & kVersionMaskInInteger) << kVersionShiftInWord;
+                if (value) word |= kNewVersionBitMask;
+                else word &= ~kNewVersionBitMask;
             }
         }
+
+        public void SetDirty() => word |= kDirtyBitMask;
+        public void SetTombstone() => word |= kTombstoneBitMask;
+        public void SetValid() => word |= kValidBitMask;
+        public void SetInvalid() => word &= ~kValidBitMask;
+
+        public bool Invalid => (word & kValidBitMask) == 0;
 
         public long PreviousAddress
         {
@@ -263,9 +280,6 @@ namespace FASTER.core
         {
             return kTotalSizeInBytes;
         }
-        
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetShortVersion(long version) => (int) (version & kVersionMaskInInteger);
 
         public override string ToString() => word.ToString();
     }
