@@ -1275,6 +1275,8 @@ namespace FASTER.core
                 allocator.Initialize();
                 CommittedUntilAddress = Constants.kFirstValidAddress;
                 beginAddress = allocator.BeginAddress;
+                if (readOnlyMode)
+                    allocator.HeadAddress = long.MaxValue;
                 return;
             }
             
@@ -1293,6 +1295,8 @@ namespace FASTER.core
             cookie = info.Cookie;
             commitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
+            if (readOnlyMode)
+                allocator.HeadAddress = long.MaxValue;
         }
 
         private void RestoreSpecificCommit(long requestedCommitNum, out Dictionary<string, long> iterators, out byte[] cookie)
@@ -1354,6 +1358,8 @@ namespace FASTER.core
             cookie = info.Cookie;
             commitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
+            if (readOnlyMode)
+                allocator.HeadAddress = long.MaxValue;
         }
 
         /// <summary>
@@ -1393,6 +1399,8 @@ namespace FASTER.core
                 allocator.Initialize();
                 CommittedUntilAddress = Constants.kFirstValidAddress;
                 beginAddress = allocator.BeginAddress;
+                if (readOnlyMode)
+                    allocator.HeadAddress = long.MaxValue;
                 return ValueTuple.Create<Dictionary<string, long>, byte[]>(new Dictionary<string, long>(), null);
             }
             
@@ -1411,25 +1419,9 @@ namespace FASTER.core
             var cookie = info.Cookie;
             commitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
+            if (readOnlyMode)
+                allocator.HeadAddress = long.MaxValue;
             return ValueTuple.Create(iterators, cookie);
-        }
-
-        private bool PrepareToRestoreFromCommit(long commitNum, out FasterLogRecoveryInfo info, out long headAddress)
-        {
-            headAddress = 0;
-            if (!LoadCommitMetadata(commitNum, out info)) return false;
-
-            if (!readOnlyMode)
-            {
-                headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
-                if (info.BeginAddress > headAddress)
-                    headAddress = info.BeginAddress;
-
-                if (headAddress == 0)
-                    headAddress = Constants.kFirstValidAddress;
-            }
-
-            return true;
         }
 
         private Dictionary<string, long> CompleteRestoreFromCommit(FasterLogRecoveryInfo info)
