@@ -23,7 +23,7 @@ namespace FASTER.core
         [FieldOffset(8)]
         public long LastClosedUntilAddress;
         [FieldOffset(16)]
-        public int Dirty;
+        public long Dirty;
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -413,7 +413,7 @@ namespace FASTER.core
         /// <param name="prevEndAddress"></param>
         /// <param name="version"></param>
         /// <param name="deltaLog"></param>
-        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
+        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog)
         {
             long startPage = GetPage(startAddress);
             long endPage = GetPage(endAddress);
@@ -530,7 +530,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPage(long logicalAddress, int version)
+        internal void MarkPage(long logicalAddress, long version)
         {
             var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
             if (PageStatusIndicator[offset].Dirty < version)
@@ -538,7 +538,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPageAtomic(long logicalAddress, int version)
+        internal void MarkPageAtomic(long logicalAddress, long version)
         {
             var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
             Utility.MonotonicUpdate(ref PageStatusIndicator[offset].Dirty, version, out _);

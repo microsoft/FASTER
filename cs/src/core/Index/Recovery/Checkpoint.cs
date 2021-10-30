@@ -92,7 +92,7 @@ namespace FASTER.core
             _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size, checkpointManager);
         }
 
-        internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
+        internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, long version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
         }

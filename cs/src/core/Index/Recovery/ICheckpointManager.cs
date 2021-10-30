@@ -65,7 +65,7 @@ namespace FASTER.core
         /// <param name="version"></param>
         /// <param name="commitMetadata"></param>
         /// <param name="deltaLog"></param>
-        void CommitLogIncrementalCheckpoint(Guid logToken, int version, byte[] commitMetadata, DeltaLog deltaLog);
+        void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog);
 
         /// <summary>
         /// Retrieve commit metadata for specified index checkpoint

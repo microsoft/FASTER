@@ -363,8 +363,7 @@ namespace FASTER.core
             currentSyncStateMachine = null;
 
             // Set new system state after recovery
-            systemState.Phase = Phase.REST;
-            systemState.Version = recoveredHLCInfo.info.version + 1;
+            systemState = SystemState.Make(Phase.REST, recoveredHLCInfo.info.version + 1);
 
             if (!recoveredICInfo.IsDefault() && recoveryCountdown != null)
             {
@@ -442,7 +441,7 @@ namespace FASTER.core
             return true;
         }
 
-        private void RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, int nextVersion, CheckpointType checkpointType, bool undoNextVersion)
+        private void RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, CheckpointType checkpointType, bool undoNextVersion)
         {
             if (untilAddress <= scanFromAddress)
                 return;
@@ -478,7 +477,7 @@ namespace FASTER.core
             WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
         }
 
-        private async ValueTask RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, int nextVersion, CheckpointType checkpointType, bool undoNextVersion, CancellationToken cancellationToken)
+        private async ValueTask RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, CheckpointType checkpointType, bool undoNextVersion, CancellationToken cancellationToken)
         {
             if (untilAddress <= scanFromAddress)
                 return;
@@ -529,7 +528,7 @@ namespace FASTER.core
             return new RecoveryStatus(capacity, endPage, untilAddress, checkpointType);
         }
 
-        private bool ProcessReadPage(long recoverFromAddress, long untilAddress, int nextVersion, bool undoNextVersion, RecoveryStatus recoveryStatus, long page, int pageIndex)
+        private bool ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, bool undoNextVersion, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
             var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
@@ -569,7 +568,7 @@ namespace FASTER.core
                 await recoveryStatus.WaitFlushAsync(hlog.GetPageIndexForPage(page), cancellationToken).ConfigureAwait(false);
         }
 
-        private void RecoverHybridLogFromSnapshotFile(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, int nextVersion, Guid guid, bool undoNextVersion, DeltaLog deltaLog, long recoverTo)
+        private void RecoverHybridLogFromSnapshotFile(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, bool undoNextVersion, DeltaLog deltaLog, long recoverTo)
         {
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadFirst);
 
@@ -626,7 +625,7 @@ namespace FASTER.core
             recoveryStatus.Dispose();
         }
 
-        private async ValueTask RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, int nextVersion, Guid guid, bool undoNextVersion, DeltaLog deltaLog, long recoverTo, CancellationToken cancellationToken)
+        private async ValueTask RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, bool undoNextVersion, DeltaLog deltaLog, long recoverTo, CancellationToken cancellationToken)
         {
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadFirst);
 
@@ -716,7 +715,7 @@ namespace FASTER.core
             numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
         }
 
-        private void ProcessReadSnapshotPage(long fromAddress, long untilAddress, int nextVersion, bool undoNextVersion, RecoveryStatus recoveryStatus, long page, int pageIndex)
+        private void ProcessReadSnapshotPage(long fromAddress, long untilAddress, long nextVersion, bool undoNextVersion, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             // Page at hand
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
@@ -753,7 +752,7 @@ namespace FASTER.core
                                      long untilLogicalAddressInPage,
                                      long pageLogicalAddress,
                                      long pagePhysicalAddress,
-                                     int nextVersion, bool undoNextVersion)
+                                     long nextVersion, bool undoNextVersion)
         {
             bool touched = false;
 
@@ -851,7 +850,7 @@ namespace FASTER.core
             }
         }
 
-        internal bool AtomicSwitch<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> fromCtx, FasterExecutionContext<Input, Output, Context> toCtx, int version, ConcurrentDictionary<string, CommitPoint> tokens)
+        internal bool AtomicSwitch<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> fromCtx, FasterExecutionContext<Input, Output, Context> toCtx, long version, ConcurrentDictionary<string, CommitPoint> tokens)
         {
             lock (toCtx)
             {

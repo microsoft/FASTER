@@ -228,9 +228,7 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            systemState = default;
-            systemState.Phase = Phase.REST;
-            systemState.Version = 1;
+            systemState = SystemState.Make(Phase.REST, 1);
         }
 
         /// <summary>

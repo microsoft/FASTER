@@ -1108,7 +1108,7 @@ namespace FASTER.core
             fht.epoch.Suspend();
         }
 
-        void IClientSession.AtomicSwitch(int version)
+        void IClientSession.AtomicSwitch(long version)
         {
             fht.AtomicSwitch(ctx, ctx.prevCtx, version, fht._hybridLogCheckpoint.info.checkpointTokens);
         }
