@@ -1987,10 +1987,15 @@ namespace FASTER.core
                 PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)context;
 
                 // Unset dirty bit for flushed pages
+                bool epochTaken = false;
+                if (!epoch.ThisInstanceProtected())
+                {
+                    epochTaken = true;
+                    epoch.Resume();
+                }
+
                 try
                 {
-                    epoch.Resume();
-
                     var startAddress = result.page << LogPageSizeBits;
                     var endAddress = startAddress + PageSize;
 
@@ -2021,7 +2026,8 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    epoch.Suspend();
+                    if (epochTaken)
+                        epoch.Suspend();
                 }
 
                 if (Interlocked.Decrement(ref result.flushCompletionTracker.count) == 0)
