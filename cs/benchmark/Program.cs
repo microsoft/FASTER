@@ -12,8 +12,8 @@ namespace FASTER.benchmark
 
         public static void Main(string[] args)
         {
-            TestLoader testLoader = new();
-            if (!testLoader.Parse(args))
+            TestLoader testLoader = new(args);
+            if (testLoader.error)
                 return;
 
             TestStats testStats = new(testLoader.Options);

@@ -68,7 +68,7 @@ namespace FASTER.benchmark
             for (int i = 0; i < 8; i++)
                 input_[i].value = i;
 
-            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.CheckpointRecoverStore, useIoCompletionPort: true);
+            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
             if (testLoader.Options.ThreadCount >= 16)
                 device.ThrottleLimit = testLoader.Options.ThreadCount * 12;

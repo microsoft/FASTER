@@ -19,27 +19,29 @@ namespace FASTER.benchmark
 
     class TestLoader
     {
-        internal Options Options;
-
-        internal BenchmarkType BenchmarkType;
-        internal LockImpl LockImpl;
-        internal string Distribution;
-
+        internal readonly Options Options;
+        internal readonly string Distribution;
         internal Key[] init_keys = default;
         internal Key[] txn_keys = default;
         internal KeySpanByte[] init_span_keys = default;
         internal KeySpanByte[] txn_span_keys = default;
 
-        internal long InitCount;
-        internal long TxnCount;
-        internal int MaxKey;
+        internal readonly BenchmarkType BenchmarkType;
+        internal readonly LockImpl LockImpl;
+        internal readonly long InitCount;
+        internal readonly long TxnCount;
+        internal readonly int MaxKey;
+        internal readonly bool RecoverMode;
+        internal readonly bool error;
 
-        internal bool Parse(string[] args)
+
+        internal TestLoader(string[] args)
         {
+            error = true;
             ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
             if (result.Tag == ParserResultType.NotParsed)
             {
-                return false;
+                return;
             }
             Options = result.MapResult(o => o, xs => new Options());
 
@@ -52,33 +54,34 @@ namespace FASTER.benchmark
 
             this.BenchmarkType = (BenchmarkType)Options.Benchmark;
             if (!verifyOption(Enum.IsDefined(typeof(BenchmarkType), this.BenchmarkType), "Benchmark"))
-                return false;
+                return;
 
             if (!verifyOption(Options.NumaStyle >= 0 && Options.NumaStyle <= 1, "NumaStyle"))
-                return false;
+                return;
 
             this.LockImpl = (LockImpl)Options.LockImpl;
             if (!verifyOption(Enum.IsDefined(typeof(LockImpl), this.LockImpl), "Lock Implementation"))
-                return false;
+                return;
 
             if (!verifyOption(Options.IterationCount > 0, "Iteration Count"))
-                return false;
+                return;
 
             if (!verifyOption(Options.ReadPercent >= -1 && Options.ReadPercent <= 100, "Read Percent"))
-                return false;
+                return;
 
             this.Distribution = Options.DistributionName.ToLower();
             if (!verifyOption(this.Distribution == YcsbConstants.UniformDist || this.Distribution == YcsbConstants.ZipfDist, "Distribution"))
-                return false;
+                return;
 
             if (!verifyOption(this.Options.RunSeconds >= 0, "RunSeconds"))
-                return false;
+                return;
 
             this.InitCount = this.Options.UseSmallData ? 2500480 : 250000000;
             this.TxnCount = this.Options.UseSmallData ? 10000000 : 1000000000;
             this.MaxKey = this.Options.UseSmallData ? 1 << 22 : 1 << 28;
+            this.RecoverMode = Options.BackupAndRestore && Options.PeriodicCheckpointMilliseconds <= 0;
 
-            return true;
+            error = false;
         }
 
         internal void LoadData()
@@ -330,14 +333,10 @@ namespace FASTER.benchmark
 
         internal string BackupPath => $"{DataPath}/{this.Distribution}_{(this.Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(this.Options.UseSmallData ? "2.5M_10M" : "250M_1000M")}";
 
-
-        internal bool CheckpointRecoverStore
-            => Options.BackupAndRestore && Options.PeriodicCheckpointMilliseconds <= 0;
-
         internal bool MaybeRecoverStore<K, V>(FasterKV<K, V> store)
         {
             // Recover database for fast benchmark repeat runs.
-            if (CheckpointRecoverStore)
+            if (RecoverMode)
             {
                 if (this.Options.UseSmallData)
                 {
@@ -366,7 +365,7 @@ namespace FASTER.benchmark
         internal void MaybeCheckpointStore<K, V>(FasterKV<K, V> store)
         {
             // Checkpoint database for fast benchmark repeat runs.
-            if (CheckpointRecoverStore)
+            if (RecoverMode)
             {
                 Console.WriteLine($"Checkpointing FasterKV to {this.BackupPath} for fast restart");
                 var sw = Stopwatch.StartNew();
