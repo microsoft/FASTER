@@ -1711,9 +1711,6 @@ namespace FASTER.core
                 CommitMetadataOnly(ref info, spinWait);
             }
             epoch.Suspend();
-            // No need to trigger a manual commit even if no flush is triggered here -- if someone flushed the commit
-            // record between our last check of FlushedUntilAddress and now, their flush callback would observe 
-            // this commitRecord in outstandingCommitRecords and commit it for us
             return true;
         }
 

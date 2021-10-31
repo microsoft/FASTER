@@ -90,7 +90,7 @@ namespace FASTER.test
             LocalMemory
         }
 
-        internal static IDevice CreateTestDevice(DeviceType testDeviceType, string filename, int latencyMs = 20)  // latencyMs works only for DeviceType = LocalMemory
+        internal static IDevice CreateTestDevice(DeviceType testDeviceType, string filename, int latencyMs = 20, bool deleteOnClose = false)  // latencyMs works only for DeviceType = LocalMemory
         {
             IDevice device = null;
             bool preallocateFile = false;
@@ -98,9 +98,7 @@ namespace FASTER.test
             bool recoverDevice = false;
             bool useIoCompletionPort = false;
             bool disableFileBuffering = true;
-
-            bool deleteOnClose = false;
-
+            
             switch (testDeviceType)
             {
 #if WINDOWS
@@ -112,7 +110,7 @@ namespace FASTER.test
                     break;
                 case DeviceType.EmulatedAzure:
                     IgnoreIfNotRunningAzureTests();
-                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: false);
+                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose);
                     break;
 #endif
                 case DeviceType.MLSD:
@@ -120,7 +118,7 @@ namespace FASTER.test
                     break;
                 // Emulated higher latency storage device - takes a disk latency arg (latencyMs) and emulates an IDevice using main memory, serving data at specified latency
                 case DeviceType.LocalMemory:  
-                    device = new LocalMemoryDevice(1L << 26, 1L << 22, 2, sector_size: 512, latencyMs: latencyMs, fileName: filename);  // 64 MB (1L << 26) is enough for our test cases
+                    device = new LocalMemoryDevice(1L << 30, 1L << 30, 2, sector_size: 512, latencyMs: latencyMs, fileName: filename);  // 64 MB (1L << 26) is enough for our test cases
                     break;
             }
 
