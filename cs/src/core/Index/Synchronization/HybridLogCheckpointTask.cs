@@ -48,7 +48,7 @@ namespace FASTER.core
             }
         }
 
-        protected void CollectMetadata<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
+        protected static void CollectMetadata<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
         {
             // Collect object log offsets only after flushes
             // are completed
@@ -384,7 +384,7 @@ namespace FASTER.core
             var result = SystemState.Copy(ref start);
             switch (start.Phase)
             {
-                case Phase.WAIT_PENDING:
+                case Phase.IN_PROGRESS:
                     result.Phase = Phase.WAIT_FLUSH;
                     break;
                 case Phase.WAIT_FLUSH:

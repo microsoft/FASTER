@@ -23,7 +23,7 @@ namespace FASTER.core
         [FieldOffset(8)]
         public long LastClosedUntilAddress;
         [FieldOffset(16)]
-        public int Dirty;
+        public long Dirty;
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -413,7 +413,7 @@ namespace FASTER.core
         /// <param name="prevEndAddress"></param>
         /// <param name="version"></param>
         /// <param name="deltaLog"></param>
-        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
+        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog)
         {
             long startPage = GetPage(startAddress);
             long endPage = GetPage(endAddress);
@@ -446,8 +446,9 @@ namespace FASTER.core
                 {
                     ref var info = ref GetInfo(physicalAddress);
                     var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
-                    if (info.Version == RecordInfo.GetShortVersion(version))
+                    if (info.Dirty)
                     {
+                        info.DirtyAtomic = false; // there may be read locks being taken, hence atomic
                         int size = sizeof(long) + sizeof(int) + alignedRecordSize;
                         if (destOffset + size > entryLength)
                         {
@@ -457,9 +458,9 @@ namespace FASTER.core
                             if (destOffset + size > entryLength)
                                 throw new FasterException("Insufficient page size to write delta");
                         }
-                        *((long*)(destPhysicalAddress + destOffset)) = logicalAddress;
+                        *(long*)(destPhysicalAddress + destOffset) = logicalAddress;
                         destOffset += sizeof(long);
-                        *((int*)(destPhysicalAddress + destOffset)) = alignedRecordSize;
+                        *(int*)(destPhysicalAddress + destOffset) = alignedRecordSize;
                         destOffset += sizeof(int);
                         Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
                         destOffset += alignedRecordSize;
@@ -529,7 +530,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPage(long logicalAddress, int version)
+        internal void MarkPage(long logicalAddress, long version)
         {
             var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
             if (PageStatusIndicator[offset].Dirty < version)
@@ -537,7 +538,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPageAtomic(long logicalAddress, int version)
+        internal void MarkPageAtomic(long logicalAddress, long version)
         {
             var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
             Utility.MonotonicUpdate(ref PageStatusIndicator[offset].Dirty, version, out _);
@@ -1810,7 +1811,7 @@ namespace FASTER.core
         {
             int totalNumPages = (int)(endPage - startPage);
             completedSemaphore = new SemaphoreSlim(0);
-            var asyncResult = new PageAsyncFlushResult<Empty>
+            var flushCompletionTracker = new FlushCompletionTracker
             {
                 completedSemaphore = completedSemaphore,
                 count = totalNumPages
@@ -1819,11 +1820,18 @@ namespace FASTER.core
 
             for (long flushPage = startPage; flushPage < endPage; flushPage++)
             {
-
+                long flushPageAddress = flushPage << LogPageSizeBits;
                 var pageSize = PageSize;
-
                 if (flushPage == endPage - 1)
-                    pageSize = (int)(endLogicalAddress - (flushPage << LogPageSizeBits));
+                    pageSize = (int)(endLogicalAddress - flushPageAddress);
+
+                var asyncResult = new PageAsyncFlushResult<Empty>
+                {
+                    flushCompletionTracker = flushCompletionTracker,
+                    page = flushPage,
+                    fromAddress = flushPageAddress,
+                    untilAddress = flushPageAddress + pageSize,
+                };
 
                 // Intended destination is flushPage
                 WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets);
@@ -1977,7 +1985,52 @@ namespace FASTER.core
                 }
 
                 PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)context;
-                if (Interlocked.Decrement(ref result.count) == 0)
+
+                // Unset dirty bit for flushed pages
+                bool epochTaken = false;
+                if (!epoch.ThisInstanceProtected())
+                {
+                    epochTaken = true;
+                    epoch.Resume();
+                }
+
+                try
+                {
+                    var startAddress = result.page << LogPageSizeBits;
+                    var endAddress = startAddress + PageSize;
+
+                    if (result.fromAddress > startAddress)
+                        startAddress = result.fromAddress;
+                    var _readOnlyAddress = SafeReadOnlyAddress;
+                    if (_readOnlyAddress > startAddress)
+                        startAddress = _readOnlyAddress;
+
+                    if (result.untilAddress < endAddress)
+                        endAddress = result.untilAddress;
+                    int flushWidth = (int)(endAddress - startAddress);
+
+                    if (flushWidth > 0)
+                    {
+                        var physicalAddress = GetPhysicalAddress(startAddress);
+                        var endPhysicalAddress = physicalAddress + flushWidth;
+
+                        while (physicalAddress < endPhysicalAddress)
+                        {
+                            ref var info = ref GetInfo(physicalAddress);
+                            var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
+                            if (info.Dirty)
+                                info.DirtyAtomic = false; // there may be read locks being taken, hence atomic
+                            physicalAddress += alignedRecordSize;
+                        }
+                    }
+                }
+                finally
+                {
+                    if (epochTaken)
+                        epoch.Suspend();
+                }
+
+                if (Interlocked.Decrement(ref result.flushCompletionTracker.count) == 0)
                 {
                     result.Free();
                 }

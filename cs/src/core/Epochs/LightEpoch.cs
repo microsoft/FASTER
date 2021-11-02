@@ -474,9 +474,9 @@ namespace FASTER.core
         /// <param name="version">Version</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Mark(int markerIdx, int version)
+        public void Mark(int markerIdx, long version)
         {
-            (*(tableAligned + threadEntryIndex)).markers[markerIdx] = version;
+            (*(tableAligned + threadEntryIndex)).markers[markerIdx] = (int)version;
         }
 
         /// <summary>
@@ -487,7 +487,7 @@ namespace FASTER.core
         /// <param name="version">Version</param>
         /// <returns>Whether complete</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CheckIsComplete(int markerIdx, int version)
+        public bool CheckIsComplete(int markerIdx, long version)
         {
             // check if all threads have reported complete
             for (int index = 1; index <= kTableSize; ++index)
@@ -496,7 +496,7 @@ namespace FASTER.core
                 int fc_version = (*(tableAligned + index)).markers[markerIdx];
                 if (0 != entry_epoch)
                 {
-                    if (fc_version != version && entry_epoch < int.MaxValue)
+                    if ((fc_version != (int)version) && (entry_epoch < int.MaxValue))
                     {
                         return false;
                     }

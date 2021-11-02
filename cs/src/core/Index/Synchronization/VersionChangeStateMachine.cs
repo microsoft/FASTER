@@ -80,23 +80,6 @@ namespace FASTER.core
                     if (faster.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.Version))
                         faster.GlobalStateMachineStep(current);
                     break;
-                case Phase.WAIT_PENDING:
-                    if (ctx != null)
-                    {
-                        if (!faster.RelaxedCPR && !ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
-                        {
-                            if (ctx.prevCtx.HasNoPendingRequests)
-                                ctx.prevCtx.markers[EpochPhaseIdx.WaitPending] = true;
-                            else
-                                break;
-                        }
-
-                        faster.epoch.Mark(EpochPhaseIdx.WaitPending, current.Version);
-                    }
-
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitPending, current.Version))
-                        faster.GlobalStateMachineStep(current);
-                    break;
                 case Phase.REST:
                     break;
             }
@@ -144,7 +127,7 @@ namespace FASTER.core
     /// </summary>
     internal class VersionChangeStateMachine : SynchronizationStateMachineBase
     {
-        private long targetVersion;
+        private readonly long targetVersion;
 
         /// <summary>
         /// Construct a new VersionChangeStateMachine with the given tasks. Does not load any tasks by default.
@@ -173,21 +156,11 @@ namespace FASTER.core
                     break;
                 case Phase.PREPARE:
                     nextState.Phase = Phase.IN_PROGRESS;
-                    // FASTER records only store a few bits of version number, and we need to ensure that
-                    // the next version is distinguishable from the last in those bits.
-                    // If they are not distinguishable, simply increment target version to resolve this
-                    if (((targetVersion - start.Version) & RecordInfo.kVersionMaskInInteger) == 0)
-                        targetVersion++;
-
                     // TODO: Move to long for system state as well. 
                     SetToVersion(targetVersion == -1 ? start.Version + 1 : targetVersion);
                     nextState.Version = (int) ToVersion();
                     break;
                 case Phase.IN_PROGRESS:
-                    // This phase has no effect if using relaxed CPR model
-                    nextState.Phase = Phase.WAIT_PENDING;
-                    break;
-                case Phase.WAIT_PENDING:
                     nextState.Phase = Phase.REST;
                     break;
                 default:

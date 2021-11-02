@@ -1108,7 +1108,7 @@ namespace FASTER.core
             fht.epoch.Suspend();
         }
 
-        void IClientSession.AtomicSwitch(int version)
+        void IClientSession.AtomicSwitch(long version)
         {
             fht.AtomicSwitch(ctx, ctx.prevCtx, version, fht._hybridLogCheckpoint.info.checkpointTokens);
         }
@@ -1198,7 +1198,6 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void PostSingleWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                recordInfo.Version = _clientSession.ctx.version;
                 _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
             }
 
@@ -1225,7 +1224,7 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool ConcurrentWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                recordInfo.Version = _clientSession.ctx.version;
+                recordInfo.SetDirty();
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
             }
@@ -1287,7 +1286,6 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void PostInitialUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                recordInfo.Version = _clientSession.ctx.version;
                 _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
 
@@ -1343,7 +1341,6 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool PostCopyUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue, ref RecordInfo recordInfo, long address)
             {
-                recordInfo.Version = _clientSession.ctx.version;
                 return _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
             }
 
@@ -1373,7 +1370,7 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
             {
-                recordInfo.Version = _clientSession.ctx.version;
+                recordInfo.SetDirty();
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
@@ -1406,7 +1403,6 @@ namespace FASTER.core
                     return;
 
                 // There is no value to lock here, so we take a RecordInfo lock in InternalDelete and release it here.
-                recordInfo.Version = _clientSession.ctx.version;
                 _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
                 if (this.SupportsLocking)
                     recordInfo.UnlockExclusive();
@@ -1421,8 +1417,8 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             {
-                recordInfo.Version = _clientSession.ctx.version;
-                recordInfo.Tombstone = true;
+                recordInfo.SetDirty();
+                recordInfo.SetTombstone();
                 return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
             }
 

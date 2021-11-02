@@ -1,10 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
-
-//#define WAIT_FOR_INDEX_CHECKPOINT
-
 using System;
 using System.Linq;
 using System.Text;
@@ -36,8 +32,7 @@ namespace FASTER.core
     public partial class FasterKV<Key, Value>
     {
         
-        internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs
-            = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
             
         internal Guid _indexCheckpointToken;
         internal Guid _hybridLogCheckpointToken;
@@ -97,7 +92,7 @@ namespace FASTER.core
             _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size, checkpointManager);
         }
 
-        internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
+        internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, long version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
         }
