@@ -221,7 +221,7 @@ namespace FASTER.core
                     await readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
             }
 
-            public bool NewVersion => phase < Phase.REST;
+            public bool InNewVersion => phase < Phase.REST;
 
             public FasterExecutionContext<Input, Output, Context> prevCtx;
         }

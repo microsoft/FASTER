@@ -43,23 +43,15 @@ namespace FASTER.core
             // A version shift can only in an address after the checkpoint starts, as v_new threads RCU entries to the tail.
             if (entry.Address < _hybridLogCheckpoint.info.startLogicalAddress) return false;
 
-            // Otherwise, check if the version suffix of the entry matches v_new.
-            if (UseReadCache && entry.ReadCache)
-            {
-                var _addr = readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
-                if ((entry.Address & ~Constants.kReadCacheBitMask) >= readcache.HeadAddress)
-                    return readcache.GetInfo(_addr).NewVersion;
-                else
-                    return false;
-            }
+            // Read cache entries are not in new version
+            if (UseReadCache && entry.ReadCache) return false;
+
+            // Check if record has the new version bit set
+            var _addr = hlog.GetPhysicalAddress(entry.Address);
+            if (entry.Address >= hlog.HeadAddress)
+                return hlog.GetInfo(_addr).InNewVersion;
             else
-            {
-                var _addr = hlog.GetPhysicalAddress(entry.Address);
-                if (entry.Address >= hlog.HeadAddress)
-                    return hlog.GetInfo(_addr).NewVersion;
-                else
-                    return false;
-            }
+                return false;
         }
 
         internal enum LatchOperation : byte
@@ -566,7 +558,7 @@ namespace FASTER.core
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo,
-                           newVersion: sessionCtx.NewVersion,
+                           inNewVersion: sessionCtx.InNewVersion,
                            tombstone: false, dirty: true,
                            latestLogicalAddress);
             hlog.Serialize(ref key, newPhysicalAddress);
@@ -930,7 +922,7 @@ namespace FASTER.core
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo, 
-                            newVersion: sessionCtx.NewVersion,
+                            inNewVersion: sessionCtx.InNewVersion,
                             tombstone: false, dirty: true,
                             latestLogicalAddress);
             hlog.Serialize(ref key, newPhysicalAddress);
@@ -1207,7 +1199,7 @@ namespace FASTER.core
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
-                               newVersion: sessionCtx.NewVersion,
+                               inNewVersion: sessionCtx.InNewVersion,
                                tombstone: true, dirty: true,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
@@ -1549,7 +1541,7 @@ namespace FASTER.core
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
-                               newVersion: opCtx.NewVersion,
+                               inNewVersion: opCtx.InNewVersion,
                                tombstone: false, dirty: true,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
@@ -2021,7 +2013,7 @@ namespace FASTER.core
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
                 ref RecordInfo recordInfo = ref readcache.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
-                                    newVersion: false,
+                                    inNewVersion: false,
                                     tombstone: false, dirty: false,
                                     entry.Address);
                 readcache.Serialize(ref key, newPhysicalAddress);
@@ -2035,7 +2027,7 @@ namespace FASTER.core
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
-                                newVersion: opCtx.NewVersion,
+                                inNewVersion: opCtx.InNewVersion,
                                 tombstone: false, dirty: true,
                                 latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);

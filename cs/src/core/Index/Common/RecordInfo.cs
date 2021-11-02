@@ -10,7 +10,7 @@ using System.Threading;
 namespace FASTER.core
 {
     // RecordInfo layout (64 bits total):
-    // [--][NewVersion][Filler][Dirty][Stub][Sealed] [Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
+    // [--][InNewVersion][Filler][Dirty][Stub][Sealed] [Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
     //     where X = exclusive lock, S = shared lock, R = readcache, A = address, - = unused
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
@@ -44,7 +44,7 @@ namespace FASTER.core
         const int kSealedBitOffset = kStubBitOffset + 1;
         const int kDirtyBitOffset = kSealedBitOffset + 1;
         const int kFillerBitOffset = kDirtyBitOffset + 1;
-        const int kNewVersionBitOffset = kFillerBitOffset + 1;
+        const int kInNewVersionBitOffset = kFillerBitOffset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
@@ -52,19 +52,19 @@ namespace FASTER.core
         const long kSealedBitMask = 1L << kSealedBitOffset;
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
         const long kFillerBitMask = 1L << kFillerBitOffset;
-        const long kNewVersionBitMask = 1L << kNewVersionBitOffset;
+        const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
 
         [FieldOffset(0)]
         private long word;
 
-        public static void WriteInfo(ref RecordInfo info, bool newVersion, bool tombstone, bool dirty, long previousAddress)
+        public static void WriteInfo(ref RecordInfo info, bool inNewVersion, bool tombstone, bool dirty, long previousAddress)
         {
             info.word = default;
             info.Tombstone = tombstone;
             info.SetValid();
             info.Dirty = dirty;
             info.PreviousAddress = previousAddress;
-            info.NewVersion = newVersion;
+            info.InNewVersion = inNewVersion;
         }
 
         /// <summary>
@@ -248,13 +248,13 @@ namespace FASTER.core
             }
         }
 
-        public bool NewVersion
+        public bool InNewVersion
         {
-            get => (word & kNewVersionBitMask) > 0;
+            get => (word & kInNewVersionBitMask) > 0;
             set
             {
-                if (value) word |= kNewVersionBitMask;
-                else word &= ~kNewVersionBitMask;
+                if (value) word |= kInNewVersionBitMask;
+                else word &= ~kInNewVersionBitMask;
             }
         }
 
