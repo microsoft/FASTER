@@ -431,6 +431,8 @@ namespace FASTER.core
                     fixed (byte* bp = entry)
                         Buffer.MemoryCopy((void*) (headerSize + physicalAddress), bp, entryLength, entryLength);
                     info.Initialize(new BinaryReader(new MemoryStream(entry)));
+                    
+                    Debug.Assert(info.CommitNum != -1);
 
                     // If we have already found the commit number we are looking for, can stop early
                     if (info.CommitNum == commitNum) break;

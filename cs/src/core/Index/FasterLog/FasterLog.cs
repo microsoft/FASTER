@@ -210,6 +210,7 @@ namespace FASTER.core
 
         internal void TrueDispose()
         {
+            commitQueue.Dispose();
             commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();
             epoch.Dispose();
@@ -1236,6 +1237,9 @@ namespace FASTER.core
                 info.Initialize(r);
             }
 
+            if (info.CommitNum == -1)
+                info.CommitNum = commitNum;
+
             return true;
         }
 
@@ -1279,7 +1283,7 @@ namespace FASTER.core
                     allocator.HeadAddress = long.MaxValue;
                 return;
             }
-            
+
             if (!readOnlyMode)
             {
                 var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
@@ -1288,6 +1292,7 @@ namespace FASTER.core
 
                 if (headAddress == 0)
                     headAddress = Constants.kFirstValidAddress;
+                
                 allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
             }
 
@@ -1693,7 +1698,7 @@ namespace FASTER.core
             }
              
             // Otherwise, move to set read-only tail and flush 
-            epoch.Resume();
+            // epoch.Resume();
 
             if (allocator.ShiftReadOnlyToTail(out _, out _))
             {
@@ -1701,7 +1706,7 @@ namespace FASTER.core
                 {
                     while (CommittedUntilAddress < commitTail)
                     {
-                        epoch.ProtectAndDrain();
+                        // epoch.ProtectAndDrain();
                         Thread.Yield();
                     }
                 }
@@ -1710,7 +1715,7 @@ namespace FASTER.core
             {
                 CommitMetadataOnly(ref info, spinWait);
             }
-            epoch.Suspend();
+            // epoch.Suspend();
             return true;
         }
 

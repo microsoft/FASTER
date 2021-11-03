@@ -66,13 +66,16 @@ namespace FASTER.core
                 checkSum = reader.ReadInt64();
                 BeginAddress = reader.ReadInt64();
                 UntilAddress = reader.ReadInt64();
-                CommitNum = reader.ReadInt64();
+                if (version == 1)
+                    CommitNum = reader.ReadInt64();
+                else
+                    CommitNum = -1;
             }
             catch (Exception e)
             {
                 throw new FasterException("Unable to recover from previous commit. Inner exception: " + e.ToString());
             }
-            if (version != 0)
+            if (version != 0 && version != 1)
                 throw new FasterException("Invalid version found during commit recovery");
 
             if (checkSum != (BeginAddress ^ UntilAddress))
@@ -93,15 +96,18 @@ namespace FASTER.core
                     Iterators.Add(reader.ReadString(), reader.ReadInt64());
                 }
             }
-            
-            try
-            {
-                count = reader.ReadInt32();
-            }
-            catch { }
 
-            if (count > 0)
-                Cookie = reader.ReadBytes(count);
+            if (version == 1)
+            {
+                try
+                {
+                    count = reader.ReadInt32();
+                }
+                catch { }
+
+                if (count > 0)
+                    Cookie = reader.ReadBytes(count);
+            }
         }
 
         /// <summary>
@@ -120,7 +126,7 @@ namespace FASTER.core
             using MemoryStream ms = new();
             using (BinaryWriter writer = new(ms))
             {
-                writer.Write(0); // version
+                writer.Write(1); // version
                 writer.Write(BeginAddress ^ UntilAddress); // checksum
                 writer.Write(BeginAddress);
                 writer.Write(UntilAddress);

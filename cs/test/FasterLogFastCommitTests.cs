@@ -26,7 +26,8 @@ namespace FASTER.test
             var cookie = new byte[100];
             new Random().NextBytes(cookie);
             
-            device = TestUtils.CreateTestDevice(deviceType, "fasterlog.log", deleteOnClose: true);
+            var filename = path + "fastCommit" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename, deleteOnClose: true);
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true};
             log = new FasterLog(logSettings);
 
@@ -93,11 +94,10 @@ namespace FASTER.test
             var cookie = new byte[100];
             new Random().NextBytes(cookie);
             
-            device = TestUtils.CreateTestDevice(deviceType, "fasterlog.log", deleteOnClose: true);
+            var filename = path + "boundedGrowth" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename, deleteOnClose: true);
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true};
             log = new FasterLog(logSettings);
-            
-
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)

@@ -12,7 +12,7 @@ namespace FASTER.core
     /// Shared work queue that ensures one worker at any given time. Uses LIFO ordering of work.
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    class WorkQueueLIFO<T>
+    class WorkQueueLIFO<T> : IDisposable
     {
         const int kMaxQueueSize = 1 << 30;
         readonly ConcurrentStack<T> _queue;
@@ -24,6 +24,12 @@ namespace FASTER.core
             _queue = new ConcurrentStack<T>();
             _work = work;
             _count = 0;
+        }
+
+        public void Dispose()
+        {
+            while (_count != 0)
+                Thread.Sleep(10);
         }
 
         /// <summary>
@@ -54,17 +60,17 @@ namespace FASTER.core
 
         private void ProcessQueue()
         {
-            // Process items in qork queue
+            // Process items in work queue
             while (true)
             {
                 while (_queue.TryPop(out var workItem))
                 {
-                    Interlocked.Decrement(ref _count);
                     try
                     {
                         _work(workItem);
                     }
                     catch { }
+                    Interlocked.Decrement(ref _count);
                 }
 
                 int count = _count;

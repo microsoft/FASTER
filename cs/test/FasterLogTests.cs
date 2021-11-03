@@ -808,7 +808,7 @@ namespace FASTER.test
             var cookie = new byte[100];
             new Random().NextBytes(cookie);
             
-            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            device = Devices.CreateLogDevice(path + "SimpleCommitCookie" + fastCommit + ".log", deleteOnClose: true);
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = fastCommit};
             log = new FasterLog(logSettings);
 
@@ -832,7 +832,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         public void FasterLogManualCommitTest()
         {
-            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            device = Devices.CreateLogDevice(path + "logManualCommitTest.log", deleteOnClose: true);
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager};
             log = new FasterLog(logSettings);
 
