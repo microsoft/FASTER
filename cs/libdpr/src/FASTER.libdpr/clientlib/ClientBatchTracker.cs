@@ -10,13 +10,12 @@ namespace FASTER.libdpr
         internal const int MaxHeaderSize = 4096;
         internal readonly byte[] header;
         internal bool allocated;
-        internal int batchId, batchSize;
+        internal int batchId;
         internal Worker workerId;
 
         internal BatchInfo(int batchId)
         {
             this.batchId = batchId;
-            batchSize = 0;
             allocated = false;
             workerId = default;
             header = new byte[MaxHeaderSize];
@@ -27,6 +26,7 @@ namespace FASTER.libdpr
     // a number of frames that hold batch information as specified in the constructor. 
     internal class ClientBatchTracker : IEnumerable<BatchInfo>
     {
+        public const int INVALID_BATCH_ID = -1;
         private readonly BatchInfo[] buffers;
         private readonly ConcurrentQueue<int> freeBuffers;
 

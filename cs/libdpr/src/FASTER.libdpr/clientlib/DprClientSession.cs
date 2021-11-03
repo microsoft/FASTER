@@ -93,7 +93,6 @@ namespace FASTER.libdpr
                     ref var dprHeader = ref Unsafe.AsRef<DprBatchRequestHeader>(b);
                     // Populate info with relevant request information
                     info.workerId = workerId;
-                    info.batchSize = batchSize;
 
                     // Populate header with relevant request information
                     dprHeader.batchId = info.batchId;
@@ -122,12 +121,13 @@ namespace FASTER.libdpr
         ///     longer be safe to access if reply is moved, modified, or deallocated.
         /// </param>
         /// <returns>whether it is safe to proceed with consuming the operation result</returns>
-        public unsafe bool ResolveBatch(ReadOnlyMemory<byte> reply, out IReadOnlyList<long> versionVector)
+        public unsafe bool ResolveBatch(ReadOnlySpan<byte> reply, out DprBatchVersionVector versionVector)
         {
-            fixed (byte* h = reply.Span)
+            versionVector = new DprBatchVersionVector(Span<byte>.Empty);
+
+            fixed (byte* h = reply)
             {
                 ref var responseHeader = ref Unsafe.AsRef<DprBatchResponseHeader>(h);
-                versionVector = Array.Empty<long>();
                 var batchInfo = batchTracker.GetBatch(responseHeader.batchId);
 
                 fixed (byte* b = batchInfo.header)
@@ -157,8 +157,9 @@ namespace FASTER.libdpr
                     // TODO(Tianyu): Not necessary to iterate through all of the vector, can probably do an optimization
                     // to compute the max on the sender side to avoid iteration. 
                     long maxVersion = 0;
-                    foreach (var v in new DprBatchVersionVector(reply))
-                        maxVersion = Math.Max(maxVersion, v);
+                    versionVector = new DprBatchVersionVector(reply);
+                    for (var i = 0; i < versionVector.Count; i++)
+                        maxVersion = Math.Max(maxVersion, versionVector[i]);
                     core.Utility.MonotonicUpdate(ref clientVersion, maxVersion, out _);
                     versionVector = new DprBatchVersionVector(reply);
 
@@ -187,6 +188,41 @@ namespace FASTER.libdpr
             }
 
             return true;
+        }
+
+        /// <summary>
+        ///      Consumes a DPR subscription batch reply and update tracking information. This method should be called
+        ///      before exposing the batch; if the method returns false, the results are rolled back and should be
+        ///      discarded. Returns a versionVector that allows callers to inspect the version each operation executed
+        ///      at, in the same order operations appeared in the batch.
+        ///     Thread-safe to invoke with other methods of the object.
+        /// </summary>
+        /// <param name="src"> Id of the work this batch is from </param>
+        /// <param name="header">The received subscription batch header</param>
+        /// <param name="versionVector">
+        ///     An IEnumerable holding the version each operation in the batch executed at. Operations are identified by
+        ///     the offset they appeared in the original batch. This object shares scope with the reply Memory and will no
+        ///     longer be safe to access if reply is moved, modified, or deallocated.
+        /// </param>
+        /// <returns>whether it is safe to proceed with consuming the operation result</returns>
+        public unsafe bool ResolveSubscriptionBatch(Worker src, ReadOnlySpan<byte> header,
+            out DprBatchVersionVector versionVector)
+        {
+            CheckWorldlineChange();
+            // Wait for a batch slot to become available
+            BatchInfo info;
+            // TODO(Tianyu): Probably rewrite with async
+            while (!batchTracker.TryGetBatchInfo(out info))
+                Thread.Yield();
+            info.workerId = src;
+
+            fixed (byte* h = header)
+            {
+                ref var responseHeader = ref Unsafe.AsRef<DprBatchResponseHeader>(h);
+                responseHeader.batchId = info.batchId;
+            }
+
+            return ResolveBatch(header, out versionVector);
         }
     }
 }

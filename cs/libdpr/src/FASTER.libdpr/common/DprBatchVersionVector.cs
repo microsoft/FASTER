@@ -8,84 +8,30 @@ namespace FASTER.libdpr
     /// <summary>
     ///     on-wire format for a vector of version numbers. Does not own or allocate underlying memory.
     /// </summary>
-    public unsafe struct DprBatchVersionVector : IReadOnlyList<long>
+    public unsafe ref struct DprBatchVersionVector
     {
-        private readonly ReadOnlyMemory<byte> responseHead;
+        private readonly ReadOnlySpan<byte> responseHead;
 
         /// <summary>
         ///     Construct a new VersionVector to be backed by the given byte*
         /// </summary>
         /// <param name="vectorHead"> Reference to the response bytes</param>
-        public DprBatchVersionVector(ReadOnlyMemory<byte> responseHead)
+        public DprBatchVersionVector(ReadOnlySpan<byte> responseHead)
         {
             this.responseHead = responseHead;
-            fixed (byte* h = responseHead.Span)
+            if (responseHead.IsEmpty)
+                Count = 0;
+            else
             {
-                fixed (byte* b = Unsafe.AsRef<DprBatchResponseHeader>(h).versions)
-                {
-                    var l = (long*) b;
-                    Count = (int) l[0];
-                }
-            }
-        }
-
-        private class DprBatchVersionVectorEnumerator : IEnumerator<long>
-        {
-            private readonly ReadOnlyMemory<byte> start;
-            private long index = -1;
-
-            public DprBatchVersionVectorEnumerator(ReadOnlyMemory<byte> start)
-            {
-                this.start = start;
-            }
-
-            public bool MoveNext()
-            {
-                fixed (byte* h = start.Span)
+                fixed (byte* h = responseHead)
                 {
                     fixed (byte* b = Unsafe.AsRef<DprBatchResponseHeader>(h).versions)
                     {
                         var l = (long*) b;
-                        return ++index < l[0];
+                        Count = (int) l[0];
                     }
                 }
             }
-
-            public void Reset()
-            {
-                index = 0;
-            }
-
-            public long Current
-            {
-                get
-                {
-                    fixed (byte* h = start.Span)
-                    {
-                        fixed (byte* b = Unsafe.AsRef<DprBatchResponseHeader>(h).versions)
-                        {
-                            var l = (long*) b;
-                            return l[index + 1];
-                        }
-                    }
-                }
-            }
-
-            object IEnumerator.Current => Current;
-
-            public void Dispose()
-            {
-            }
-        }
-
-        public IEnumerator<long> GetEnumerator()
-        {
-            return new DprBatchVersionVectorEnumerator(responseHead);
-        }
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
         }
 
         public int Count { get; }
@@ -94,7 +40,7 @@ namespace FASTER.libdpr
         {
             get
             {
-                fixed (byte* h = responseHead.Span)
+                fixed (byte* h = responseHead)
                 {
                     fixed (byte* b = Unsafe.AsRef<DprBatchResponseHeader>(h).versions)
                     {
