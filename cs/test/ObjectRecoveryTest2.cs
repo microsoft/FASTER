@@ -47,7 +47,7 @@ namespace FASTER.test.recovery.objects
             session1.Dispose();
 
             h.TakeFullCheckpoint(out _);
-            h.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            h.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             Destroy(log, objlog, h);
 
@@ -111,7 +111,7 @@ namespace FASTER.test.recovery.objects
                 if (i % 100 == 0)
                 {
                     fht.TakeFullCheckpoint(out _);
-                    fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                    fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                 }
             }
         }
@@ -229,10 +229,10 @@ namespace FASTER.test.recovery.objects
 
     public class MyFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output) => value.value = input.value;
+        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, long address) => value.value = input.value;
         public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyOutput output) => true;
-        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output) => newValue = oldValue;
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output)
+        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RecordInfo recordInfo, long address) => newValue = oldValue;
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             if (value.value.Length < input.value.Length)
                 return false;
@@ -241,10 +241,21 @@ namespace FASTER.test.recovery.objects
         }
 
 
-        public override void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
-        public override void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst) => dst = src;
-        public override void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
-        public override bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
+        {
+            dst.value = value;
+            return true;
+        }
+
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address) => dst = src;
+
+        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
+        {
+            dst.value = value;
+            return true;
+        }
+
+        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             if (src == null)
                 return false;
@@ -256,6 +267,6 @@ namespace FASTER.test.recovery.objects
             return true;
         }
 
-        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status) => ctx.Populate(ref status, ref output);
+        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status, RecordMetadata recordMetadata) => ctx.Populate(ref status, ref output);
     }
 }

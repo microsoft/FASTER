@@ -65,7 +65,7 @@ namespace FASTER.core
         /// <param name="version"></param>
         /// <param name="commitMetadata"></param>
         /// <param name="deltaLog"></param>
-        void CommitLogIncrementalCheckpoint(Guid logToken, int version, byte[] commitMetadata, DeltaLog deltaLog);
+        void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog);
 
         /// <summary>
         /// Retrieve commit metadata for specified index checkpoint
@@ -82,7 +82,7 @@ namespace FASTER.core
         /// <param name="scanDelta"> whether or not to scan through the delta log to acquire latest entry</param>
         /// <param name="recoverTo"> version upper bound to scan for in the delta log. Function will return the largest version metadata no greater than the given version.</param>
         /// <returns>Metadata, or null if invalid</returns>
-        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo);
+        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta = false, long recoverTo = -1);
 
         /// <summary>
         /// Get list of index checkpoint tokens, in order of usage preference

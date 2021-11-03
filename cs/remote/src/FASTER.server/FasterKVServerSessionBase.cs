@@ -5,10 +5,10 @@ using FASTER.core;
 namespace FASTER.server
 {
     internal abstract class FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> : FasterKVServerSessionBase<Output>
-        where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
+        where Functions : IFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
-        protected readonly AdvancedClientSession<Key, Value, Input, Output, long, ServerKVFunctions<Key, Value, Input, Output, Functions>> session;
+        protected readonly ClientSession<Key, Value, Input, Output, long, ServerKVFunctions<Key, Value, Input, Output, Functions>> session;
         protected readonly ParameterSerializer serializer;
 
         public FasterKVServerSessionBase(Socket socket, FasterKV<Key, Value> store, Functions functions,

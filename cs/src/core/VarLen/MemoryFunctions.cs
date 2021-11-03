@@ -23,19 +23,22 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override void SingleWriter(ref Key key, ref Memory<T> src, ref Memory<T> dst)
+        public override void SingleWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
         {
             src.CopyTo(dst);
         }
 
         /// <inheritdoc/>
-        public override bool ConcurrentWriter(ref Key key, ref Memory<T> src, ref Memory<T> dst)
+        public override bool ConcurrentWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
         {
             // We can write the source (src) data to the existing destination (dst) in-place, 
             // only if there is sufficient space
-            if (dst.Length < src.Length || dst.IsMarkedReadOnly())
+            if (recordInfo.Sealed)
+                return false;
+
+            if (dst.Length < src.Length)
             {
-                dst.MarkReadOnly();
+                recordInfo.Sealed = true;
                 return false;
             }
 
@@ -50,54 +53,40 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override void SingleReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst)
+        public override bool SingleReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst, ref RecordInfo recordInfo, long address)
         {
             dst.Item1 = memoryPool.Rent(value.Length);
             dst.Item2 = value.Length;
             value.CopyTo(dst.Item1.Memory);
+            return true;
         }
 
         /// <inheritdoc/>
-        public override void ConcurrentReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst)
+        public override bool ConcurrentReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst, ref RecordInfo recordInfo, long address)
         {
             dst.Item1 = memoryPool.Rent(value.Length);
             dst.Item2 = value.Length;
             value.CopyTo(dst.Item1.Memory);
+            return true;
         }
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output)
+        public override void InitialUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
         {
             input.CopyTo(value);
         }
 
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref Memory<T> input, ref Memory<T> oldValue, ref Memory<T> newValue, ref (IMemoryOwner<T>, int) output)
+        public override void CopyUpdater(ref Key key, ref Memory<T> input, ref Memory<T> oldValue, ref Memory<T> newValue, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
         {
             oldValue.CopyTo(newValue);
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output)
+        public override bool InPlaceUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
         {
             // The default implementation of IPU simply writes input to destination, if there is space
-            return ConcurrentWriter(ref key, ref input, ref value);
-        }
-
-        /// <inheritdoc />
-        public override bool SupportsLocking => locking;
-
-        /// <inheritdoc />
-        public override void Lock(ref RecordInfo recordInfo, ref Key key, ref Memory<T> value, LockType lockType, ref long lockContext)
-        {
-            value.SpinLock();
-        }
-
-        /// <inheritdoc />
-        public override bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Memory<T> value, LockType lockType, long lockContext)
-        {
-            value.Unlock();
-            return true;
+            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref recordInfo, address);
         }
     }
 }

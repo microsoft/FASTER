@@ -283,7 +283,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public unsafe void CommitLogIncrementalCheckpoint(Guid logToken, int version, byte[] commitMetadata, DeltaLog deltaLog)
+        public unsafe void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog)
         {
             deltaLog.Allocate(out int length, out long physicalAddress);
             if (length < commitMetadata.Length)

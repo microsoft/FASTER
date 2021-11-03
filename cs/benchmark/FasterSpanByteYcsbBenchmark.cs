@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable CS0162 // Unreachable code detected -- when switching on YcsbConstants 
-
 // Define below to enable continuous performance report for dashboard
 // #define DASHBOARD
 
@@ -53,7 +51,7 @@ namespace FASTER.benchmark
             numaStyle = testLoader.Options.NumaStyle;
             readPercent = testLoader.Options.ReadPercent;
             var lockImpl = testLoader.LockImpl;
-            functions = new FunctionsSB(lockImpl != LockImpl.None);
+            functions = new FunctionsSB(lockImpl != LockImpl.None, testLoader.Options.PostOps);
 
 #if DASHBOARD
             statsWritten = new AutoResetEvent[threadCount];
@@ -73,7 +71,7 @@ namespace FASTER.benchmark
             for (int i = 0; i < 8; i++)
                 input_[i].value = i;
 
-            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: true);
+            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<SpanByte, SpanByte>
@@ -297,7 +295,7 @@ namespace FASTER.benchmark
                         long start = swatch.ElapsedTicks;
                         if (store.TakeHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType, testLoader.Options.PeriodicCheckpointTryIncremental))
                         {
-                            store.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                            store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                             var timeTaken = (swatch.ElapsedTicks - start) / TimeSpan.TicksPerMillisecond;
                             Console.WriteLine("Checkpoint time: {0}ms", timeTaken);
                             checkpointTaken++;

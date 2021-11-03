@@ -22,8 +22,9 @@ namespace FASTER.core
             /// </summary>
             /// <param name="status">The status code; for this variant of <typeparamref name="TAsyncResult"/> intantiation, this will not be <see cref="Status.PENDING"/></param>
             /// <param name="output">The completed output of the operation, if any</param>
+            /// <param name="recordMetadata">The record metadata from the operation (currently used by RMW only)</param>
             /// <returns></returns>
-            TAsyncResult CreateResult(Status status, Output output);
+            TAsyncResult CreateResult(Status status, Output output, RecordMetadata recordMetadata);
 
             /// <summary>
             /// This performs the low-level synchronous operation for the implementation class of <typeparamref name="TAsyncResult"/>; for example,
@@ -162,7 +163,7 @@ namespace FASTER.core
                     if (status != Status.PENDING)
                     {
                         _pendingContext.Dispose();
-                        asyncResult = _asyncOperation.CreateResult(status, output);
+                        asyncResult = _asyncOperation.CreateResult(status, output, new RecordMetadata(_pendingContext.recordInfo, _pendingContext.logicalAddress));
                         return true;
                     }
                 }

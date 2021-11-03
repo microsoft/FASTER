@@ -13,6 +13,8 @@ namespace FASTER.test.recovery.sumstore
         public long GetHashCode64(ref AdId key) => Utility.GetHashCode(key.adId);
 
         public bool Equals(ref AdId k1, ref AdId k2) => k1.adId == k2.adId;
+
+        public override string ToString() => adId.ToString();
     }
 
     public struct AdInput
@@ -40,23 +42,25 @@ namespace FASTER.test.recovery.sumstore
     public class Functions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
         // Read functions
-        public override void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
+        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
+            return true;
         }
 
-        public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst)
+        public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
+            return true;
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             value = input.numClicks;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
@@ -64,7 +68,7 @@ namespace FASTER.test.recovery.sumstore
 
         public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output) => true;
 
-        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output)
+        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, long address)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }

@@ -18,7 +18,10 @@ namespace StoreCheckpointRecover
         {
             return key1.key == key2.key;
         }
+
+        public override string ToString() => key.ToString();
     }
+
     public class MyKeySerializer : BinaryObjectSerializer<MyKey>
     {
         public override void Serialize(ref MyKey key)
@@ -39,6 +42,8 @@ namespace StoreCheckpointRecover
     public class MyValue
     {
         public int value;
+
+        public override string ToString() => value.ToString();
     }
 
     public class MyValueSerializer : BinaryObjectSerializer<MyValue>
@@ -61,11 +66,15 @@ namespace StoreCheckpointRecover
     public class MyInput
     {
         public int value;
+
+        public override string ToString() => value.ToString();
     }
 
     public class MyOutput
     {
         public MyValue value;
+
+        public override string ToString() => value.ToString();
     }
 
     public class MyContext { }

@@ -54,13 +54,19 @@ namespace FASTER.core
 
             if ((!keyBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
             {
-                Debug.WriteLine("Key is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
+#if DEBUG
+                if (typeof(Key) != typeof(byte[]) && typeof(Key) != typeof(string))
+                    Debug.WriteLine("Key is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
+#endif
                 SerializerSettings.keySerializer = ObjectSerializer.Get<Key>();
             }
 
             if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
             {
-                Debug.WriteLine("Value is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
+#if DEBUG
+                if (typeof(Value) != typeof(byte[]) && typeof(Value) != typeof(string))
+                    Debug.WriteLine("Value is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
+#endif
                 SerializerSettings.valueSerializer = ObjectSerializer.Get<Value>();
             }
 
@@ -442,8 +448,6 @@ namespace FASTER.core
 
                     var _objBuffer = bufferPool.Get(memoryStreamLength);
 
-                    asyncResult.done = new AutoResetEvent(false);
-
                     var _alignedLength = (memoryStreamLength + (sectorSize - 1)) & ~(sectorSize - 1);
 
                     var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
@@ -473,6 +477,8 @@ namespace FASTER.core
                         // Reset address list for next chunk
                         addr = new List<long>();
 
+                        asyncResult.done = new AutoResetEvent(false);
+
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
                             (int)(alignedDestinationAddress >> LogSegmentSizeBits),
@@ -486,6 +492,9 @@ namespace FASTER.core
                     {
                         // need to write both page and object cache
                         Interlocked.Increment(ref asyncResult.count);
+
+                        if (asyncResult.flushCompletionTracker != null)
+                            Interlocked.Increment(ref asyncResult.flushCompletionTracker.count);
 
                         asyncResult.freeBuffer2 = _objBuffer;
                         objlogDevice.WriteAsync(
@@ -1043,7 +1052,7 @@ namespace FASTER.core
             }
         }
 
-        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
+        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog)
         {
             throw new FasterException("Incremental snapshots not supported with generic allocator");
         }

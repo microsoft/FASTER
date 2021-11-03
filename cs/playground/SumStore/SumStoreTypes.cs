@@ -45,29 +45,31 @@ namespace SumStore
         }
 
         // Read functions
-        public override void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public override bool SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
+            return true;
         }
 
-        public override void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public override bool ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref RecordInfo recordInfo, long address)
         {
             dst.value = value;
+            return true;
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output)
+        public override void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             value = input.numClicks;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output)
+        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output)
+        public override void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, long address)
         {
             newValue.numClicks = oldValue.numClicks + input.numClicks.numClicks;
         }

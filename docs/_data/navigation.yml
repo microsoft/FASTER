@@ -44,6 +44,8 @@ docs:
     children:
       - title: "Basics"
         url: /docs/remote-basics/
+      - title: "Pub-sub"
+        url: /docs/remote-pubsub/
 
   - title: Developer Guide
     children:

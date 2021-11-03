@@ -104,10 +104,10 @@ Apart from Key and Value, the IFunctions interface is defined on three additiona
 2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value. Single writer can assume that there are no concurrent operations on the record.
 3. Completion callbacks: Called by FASTER when various operations complete after they have gone "pending" due to requiring IO.
 4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation and return the Output to the caller. There is also a NeedCopyUpdate() method that is called before appending a copied-and-updated record to the tail of the log; if it returns false, the record is not copied.
-5. Locking: There is one property and two methods; if the SupportsLocking property returns true, then FASTER will call Lock and Unlock within a try/finally in the four concurrent callback methods: ConcurrentReader, ConcurrentWriter, ConcurrentDeleter (new in IAdvancedFunctions), and InPlaceUpdater. FunctionsBase illustrates the default implementation of Lock and Unlock as an exclusive lock using a bit in RecordInfo.
+5. Locking: There is one property and two methods; if the SupportsLocking property returns true, then FASTER will call Lock and Unlock within a try/finally in the four concurrent callback methods: ConcurrentReader, ConcurrentWriter, ConcurrentDeleter, and InPlaceUpdater. FunctionsBase illustrates the default implementation of Lock and Unlock as an exclusive lock using a bit in RecordInfo.
 
-FASTER also support an advanced callback functions API with more hooks. See 
-[here](#advanced-functions) for details.
+Callbacks for in-place updates receive the logical address of the record, which can be useful for applications such as indexing, and a reference to the `RecordInfo` header of the record, for use with the new locking calls.
+ReadCompletionCallback receives the `RecordInfo` of the record that was read.
 
 ### Sessions
 
@@ -394,29 +394,3 @@ Typically, you may compact around 20% (up to 100%) of the log, e.g., you could s
 FASTER can operate as a persistent store supporting asynchronous non-blocking 
 checkpoint-based recovery. Go to [Checkpointing and Recovery](/FASTER/docs/fasterkv-recovery) 
 for details and examples of this capability.
-
-## Advanced Functions
-
-Users can use `IAdvancedFunctions` instead of `IFunctions` to get access to 
-a richer callback API. `IAdvancedFunctions` is a superset of `IFunctions` and 
-provides the same methods with some additional parameters:
-- Callbacks for in-place updates receive the logical address of the record, which can be useful for applications such as indexing, and a reference to the `RecordInfo` header of the record, for use with the new locking calls.
-- ReadCompletionCallback receives the `RecordInfo` of the record that was read.
-
-`IAdvancedFunctions` also contains a new method, ConcurrentDeleter, which may 
-be used to implement user-defined post-deletion logic, such as calling object 
-Dispose.
-
-`IAdvancedFunctions` is a separate interface; it does not inherit 
-from `IFunctions`.
-
-As with `IFunctions`, [FunctionsBase.cs](https://github.com/microsoft/FASTER/blob/master/cs/src/core/Index/Interfaces/FunctionsBase.cs)
-defines abstract base classes to provide a default implementation of 
-`IAdvancedFunctions`, using the same names prefixed with `Advanced`.
-
-For sessions, there are separate, non-inheriting session classes that provide 
-identical methods. Just as `ClientSession` is returned by `NewSession` for 
-a `Functions` class that implements `IFunctions`, `AdvancedClientSession` is 
-returned by `NewSession` for a `Functions` class that implements 
-`IAdvancedFunctions`.
-

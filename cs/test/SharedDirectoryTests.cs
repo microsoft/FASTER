@@ -83,9 +83,7 @@ namespace FASTER.test.recovery.sumstore
             // Dispose original, files should not be deleted on Windows
             this.original.TearDown();
 
-#if NETCOREAPP || NET
             if (RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
-#endif
             {
                 // Clone should still work on Windows
                 Assert.IsFalse(IsDirectoryEmpty(this.sharedLogDirectory));
@@ -107,10 +105,9 @@ namespace FASTER.test.recovery.sumstore
 
             public void Initialize(string checkpointDirectory, string logDirectory, bool populateLogHandles = false)
             {
-#if NETCOREAPP || NET
                 if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                     populateLogHandles = false;
-#endif
+
                 this.CheckpointDirectory = checkpointDirectory;
                 this.LogDirectory = logDirectory;
 
@@ -136,13 +133,11 @@ namespace FASTER.test.recovery.sumstore
                     }
                 }
 
-#if NETCOREAPP || NET
                 if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                 {
                     this.LogDevice = new ManagedLocalStorageDevice(deviceFileName, deleteOnClose: true);
                 }
                 else
-#endif
                 {
                     this.LogDevice = new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
                 }

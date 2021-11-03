@@ -24,7 +24,7 @@ namespace FASTER.core
             #region Previous pending requests
             if (!RelaxedCPR)
             {
-                if (currentCtx.phase == Phase.IN_PROGRESS || currentCtx.phase == Phase.WAIT_PENDING)
+                if (currentCtx.phase == Phase.IN_PROGRESS)
                 {
                     if (currentCtx.prevCtx.SyncIoPendingCount != 0)
                         await currentCtx.prevCtx.readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
@@ -52,7 +52,7 @@ namespace FASTER.core
                 #region Previous pending requests
                 if (!RelaxedCPR)
                 {
-                    if (currentCtx.phase == Phase.IN_PROGRESS || currentCtx.phase == Phase.WAIT_PENDING)
+                    if (currentCtx.phase == Phase.IN_PROGRESS)
                     {
                         fasterSession.UnsafeResumeThread();
                         try

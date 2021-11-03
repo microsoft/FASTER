@@ -3,7 +3,6 @@
 
 #define CPR
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -29,26 +28,30 @@ namespace FASTER.core
         {
             HashBucketEntry entry = default;
             entry.word = logicalAddress;
-            return CheckBucketVersionNew(ref entry, sessionCtx);
+            return CheckBucketVersionNew(ref entry);
         }
 
         /// <summary>
         /// Check the version of the passed-in entry. 
         /// The semantics of this function are to check the tail of a bucket (indicated by entry), so we name it this way.
         /// </summary>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
         /// <param name="entry">the last entry of a bucket</param>
-        /// <param name="sessionCtx"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CheckBucketVersionNew<Input, Output, Context>(ref HashBucketEntry entry, FasterExecutionContext<Input, Output, Context> sessionCtx)
+        private bool CheckBucketVersionNew(ref HashBucketEntry entry)
         {
             // A version shift can only in an address after the checkpoint starts, as v_new threads RCU entries to the tail.
             if (entry.Address < _hybridLogCheckpoint.info.startLogicalAddress) return false;
-            // Otherwise, check if the version suffix of the entry matches v_new.
-            return GetLatestRecordVersion(ref entry, sessionCtx.version) == RecordInfo.GetShortVersion(currentSyncStateMachine.ToVersion());
+
+            // Read cache entries are not in new version
+            if (UseReadCache && entry.ReadCache) return false;
+
+            // Check if record has the new version bit set
+            var _addr = hlog.GetPhysicalAddress(entry.Address);
+            if (entry.Address >= hlog.HeadAddress)
+                return hlog.GetInfo(_addr).InNewVersion;
+            else
+                return false;
         }
 
         internal enum LatchOperation : byte
@@ -147,16 +150,15 @@ namespace FASTER.core
                     }
                     else if (ReadFromCache(ref key, ref logicalAddress, ref physicalAddress))
                     {
-                        if (sessionCtx.phase == Phase.PREPARE && CheckBucketVersionNew(ref entry, sessionCtx))
-                        {
-                            status = OperationStatus.CPR_SHIFT_DETECTED;
-                            goto CreatePendingContext; // Pivot thread
-                        }
+                        // When session is in PREPARE phase, a read-cache record cannot be new-version.
+                        // This is because a new-version record insertion would have elided the read-cache entry.
+                        // and before the new-version record can go to disk become eligible to enter the read-cache,
+                        // the PREPARE phase for that session will be over due to an epoch refresh.
 
                         // This is not called when looking up by address, so we do not set pendingContext.recordInfo.
                         // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
-                        fasterSession.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output, Constants.kInvalidAddress);
-                        return OperationStatus.SUCCESS;
+                        return fasterSession.SingleReader(ref key, ref input, ref readcache.GetValue(physicalAddress), ref output, ref readcache.GetInfo(physicalAddress), Constants.kInvalidAddress)
+                            ? OperationStatus.SUCCESS : OperationStatus.NOTFOUND;
                     }
                 }
 
@@ -189,7 +191,7 @@ namespace FASTER.core
             }
             #endregion
 
-            if (sessionCtx.phase == Phase.PREPARE && CheckBucketVersionNew(ref entry, sessionCtx))
+            if (sessionCtx.phase == Phase.PREPARE && CheckBucketVersionNew(ref entry))
             {
                 status = OperationStatus.CPR_SHIFT_DETECTED;
                 goto CreatePendingContext; // Pivot thread
@@ -202,25 +204,25 @@ namespace FASTER.core
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 pendingContext.recordInfo = recordInfo;
-                if (!pendingContext.recordInfo.Tombstone)
-                {
-                    fasterSession.ConcurrentReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress);
-                    return OperationStatus.SUCCESS;
-                }
-                return OperationStatus.NOTFOUND;
+                pendingContext.logicalAddress = logicalAddress;
+                return !pendingContext.recordInfo.Tombstone
+                        && fasterSession.ConcurrentReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress)
+                    ? OperationStatus.SUCCESS
+                    : OperationStatus.NOTFOUND;
             }
 
             // Immutable region
             else if (logicalAddress >= hlog.HeadAddress)
             {
                 pendingContext.recordInfo = hlog.GetInfo(physicalAddress);
-                if (!pendingContext.recordInfo.Tombstone)
+                pendingContext.logicalAddress = logicalAddress;
+                if (!pendingContext.recordInfo.Tombstone
+                    && fasterSession.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref pendingContext.recordInfo, logicalAddress))
                 {
-                    fasterSession.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, logicalAddress);
                     if (CopyReadsToTail == CopyReadsToTail.FromReadOnly && !pendingContext.SkipCopyReadsToTail)
                     {
                         var container = hlog.GetValueContainer(ref hlog.GetValue(physicalAddress));
-                        InternalTryCopyToTail(ref key, ref container.Get(), ref pendingContext.recordInfo, logicalAddress, fasterSession, sessionCtx);
+                        InternalTryCopyToTail(ref key, ref input, ref container.Get(), ref output, logicalAddress, fasterSession, sessionCtx);
                         container.Dispose();
                     }
                     return OperationStatus.SUCCESS;
@@ -310,7 +312,9 @@ namespace FASTER.core
         /// else inserts a new record with 'key' and 'value'.
         /// </summary>
         /// <param name="key">key of the record.</param>
+        /// <param name="input">input used to update the value.</param>
         /// <param name="value">value to be updated to (or inserted if key does not exist).</param>
+        /// <param name="output">output where the result of the update can be placed</param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="fasterSession">Callback functions.</param>
@@ -338,7 +342,7 @@ namespace FASTER.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalUpsert<Input, Output, Context, FasterSession>(
-                            ref Key key, ref Value value,
+                            ref Key key, ref Input input, ref Value value, ref Output output,
                             ref Context userContext,
                             ref PendingContext<Input, Output, Context> pendingContext,
                             FasterSession fasterSession,
@@ -388,15 +392,17 @@ namespace FASTER.core
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 if (!recordInfo.Tombstone
-                    && fasterSession.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
+                    && fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress))
                 {
                     hlog.MarkPage(logicalAddress, sessionCtx.version);
+                    pendingContext.recordInfo = recordInfo;
+                    pendingContext.logicalAddress = logicalAddress;
                     return OperationStatus.SUCCESS;
                 }
                 goto CreateNewRecord;
             }
 
-#region Entry latch operation
+            #region Entry latch operation
             if (sessionCtx.phase != Phase.REST)
             {
                 latchDestination = AcquireLatchUpsert(sessionCtx, bucket, ref status, ref latchOperation, ref entry, logicalAddress);
@@ -413,10 +419,12 @@ namespace FASTER.core
                 {
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                     if (!recordInfo.Tombstone
-                        && fasterSession.ConcurrentWriter(ref key, ref value, ref hlog.GetValue(physicalAddress), ref recordInfo, logicalAddress))
+                        && fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress))
                     {
                         if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
                         else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
+                        pendingContext.recordInfo = recordInfo;
+                        pendingContext.logicalAddress = logicalAddress;
                         status = OperationStatus.SUCCESS;
                         goto LatchRelease; // Release shared latch (if acquired)
                     }
@@ -431,7 +439,7 @@ namespace FASTER.core
             if (latchDestination != LatchDestination.CreatePendingContext)
             {
                 // Immutable region or new record
-                status = CreateNewRecordUpsert(ref key, ref value, ref pendingContext, fasterSession, sessionCtx, bucket, slot, tag, entry, latestLogicalAddress);
+                status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, tag, entry, latestLogicalAddress);
                 if (status != OperationStatus.ALLOCATE_FAILED)
                     goto LatchRelease;
                 latchDestination = LatchDestination.CreatePendingContext;
@@ -443,7 +451,13 @@ namespace FASTER.core
             {
                 pendingContext.type = OperationType.UPSERT;
                 if (pendingContext.key == default) pendingContext.key = hlog.GetKeyContainer(ref key);
+                if (pendingContext.input == default) pendingContext.input = fasterSession.GetHeapContainer(ref input);
                 if (pendingContext.value == default) pendingContext.value = hlog.GetValueContainer(ref value);
+
+                pendingContext.output = output;
+                if (pendingContext.output is IHeapConvertible heapConvertible)
+                    heapConvertible.ConvertToHeap();
+
                 pendingContext.userContext = userContext;
                 pendingContext.entry.word = entry.word;
                 pendingContext.logicalAddress = logicalAddress;
@@ -487,7 +501,7 @@ namespace FASTER.core
                             // rather than the traced record (logicalAddress), because I'm worried that the implementation
                             // may not allow in-place updates for version v when the bucket arrives v+1. 
                             // This is safer but potentially unnecessary.
-                            if (CheckBucketVersionNew(ref entry, sessionCtx))
+                            if (CheckBucketVersionNew(ref entry))
                             {
                                 status = OperationStatus.CPR_SHIFT_DETECTED;
                                 return LatchDestination.CreatePendingContext; // Pivot Thread
@@ -518,22 +532,6 @@ namespace FASTER.core
                         }
                         break; // Normal Processing
                     }
-                case Phase.WAIT_PENDING:
-                    {
-                        if (!CheckEntryVersionNew(logicalAddress, sessionCtx))
-                        {
-                            if (HashBucket.NoSharedLatches(bucket))
-                            {
-                                return LatchDestination.CreateNewRecord; // Create a (v+1) record
-                            }
-                            else
-                            {
-                                status = OperationStatus.RETRY_LATER;
-                                return LatchDestination.CreatePendingContext; // Go Pending
-                            }
-                        }
-                        break; // Normal Processing
-                    }
                 case Phase.WAIT_FLUSH:
                     {
                         if (!CheckEntryVersionNew(logicalAddress, sessionCtx))
@@ -548,7 +546,7 @@ namespace FASTER.core
             return LatchDestination.NormalProcessing;
         }
 
-        private OperationStatus CreateNewRecordUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Value value, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
+        private OperationStatus CreateNewRecordUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                              FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, ushort tag, HashBucketEntry entry,
                                                                                              long latestLogicalAddress) 
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
@@ -558,13 +556,14 @@ namespace FASTER.core
             if (newLogicalAddress == 0)
                 return OperationStatus.ALLOCATE_FAILED;
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
-                           sessionCtx.version,
-                           tombstone: false, invalidBit: false,
+            ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
+            RecordInfo.WriteInfo(ref recordInfo,
+                           inNewVersion: sessionCtx.InNewVersion,
+                           tombstone: false, dirty: true,
                            latestLogicalAddress);
             hlog.Serialize(ref key, newPhysicalAddress);
-            fasterSession.SingleWriter(ref key, ref value,
-                                   ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+            ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+            fasterSession.SingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress, out long lockContext);
 
             var updatedEntry = default(HashBucketEntry);
             updatedEntry.Tag = tag;
@@ -577,16 +576,20 @@ namespace FASTER.core
 
             if (foundEntry.word == entry.word)
             {
+                fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress, lockContext);
+                pendingContext.recordInfo = recordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
                 return OperationStatus.SUCCESS;
             }
 
             // CAS failed - let user dispose similar to a deleted record
+            if (fasterSession.SupportsLocking)
+                fasterSession.UnlockExclusive(ref recordInfo, ref key, ref value, lockContext);
             ref RecordInfo insertedRecordInfo = ref hlog.GetInfo(newPhysicalAddress);
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
             // First set Invalid to true so that ConcurrentDeleter knows to dispose key as well
-            insertedRecordInfo.Invalid = true;
+            insertedRecordInfo.SetInvalid();
             fasterSession.ConcurrentDeleter(ref insertedKey, ref insertedValue, ref insertedRecordInfo, newLogicalAddress);
             if (WriteDefaultOnDelete)
             {
@@ -695,6 +698,8 @@ namespace FASTER.core
                     && fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress))
                 {
                     hlog.MarkPage(logicalAddress, sessionCtx.version);
+                    pendingContext.recordInfo = recordInfo;
+                    pendingContext.logicalAddress = logicalAddress;
                     return OperationStatus.SUCCESS;
                 }
                 goto CreateNewRecord;
@@ -717,16 +722,13 @@ namespace FASTER.core
                 {
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                     if (!recordInfo.Tombstone)
-                    { 
-                        if (FoldOverSnapshot)
-                        {
-                            Debug.Assert(recordInfo.Version == sessionCtx.version);
-                        }
-
+                    {
                         if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress))
                         {
                             if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
                             else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
+                            pendingContext.recordInfo = recordInfo;
+                            pendingContext.logicalAddress = logicalAddress;
                             status = OperationStatus.SUCCESS;
                             goto LatchRelease; // Release shared latch (if acquired)
                         }
@@ -780,9 +782,9 @@ namespace FASTER.core
                 }
             }
 
-#endregion
+        #endregion
 
-#region Create new record
+        #region Create new record
         CreateNewRecord:
             if (latchDestination != LatchDestination.CreatePendingContext)
             {
@@ -845,7 +847,7 @@ namespace FASTER.core
                         {
                             // Set to release shared latch (default)
                             latchOperation = LatchOperation.Shared;
-                            if (CheckBucketVersionNew(ref entry, sessionCtx))
+                            if (CheckBucketVersionNew(ref entry))
                             {
                                 status = OperationStatus.CPR_SHIFT_DETECTED;
                                 return LatchDestination.CreatePendingContext; // Pivot Thread
@@ -878,23 +880,6 @@ namespace FASTER.core
                         }
                         break; // Normal Processing
                     }
-                case Phase.WAIT_PENDING:
-                    {
-                        if (!CheckEntryVersionNew(logicalAddress, sessionCtx))
-                        {
-                            if (HashBucket.NoSharedLatches(bucket))
-                            {
-                                if (logicalAddress >= hlog.HeadAddress)
-                                    return LatchDestination.CreateNewRecord; // Create a (v+1) record
-                            }
-                            else
-                            {
-                                status = OperationStatus.RETRY_LATER;
-                                return LatchDestination.CreatePendingContext; // Go Pending
-                            }
-                        }
-                        break; // Normal Processing
-                    }
                 case Phase.WAIT_FLUSH:
                     {
                         if (!CheckEntryVersionNew(logicalAddress, sessionCtx))
@@ -915,12 +900,19 @@ namespace FASTER.core
                                                                                           long physicalAddress, ushort tag, HashBucketEntry entry, long latestLogicalAddress) 
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
+            // Determine if we should allocate a new record
             if (logicalAddress >= hlog.HeadAddress && !hlog.GetInfo(physicalAddress).Tombstone)
             {
                 if (!fasterSession.NeedCopyUpdate(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output))
                     return OperationStatus.SUCCESS;
             }
+            else
+            {
+                if (!fasterSession.NeedInitialUpdate(ref key, ref input, ref output))
+                    return OperationStatus.SUCCESS;
+            }
 
+            // Allocate and initialize the new record
             var (actualSize, allocatedSize) = (logicalAddress < hlog.BeginAddress) ?
                             hlog.GetInitialRecordSize(ref key, ref input, fasterSession) :
                             hlog.GetRecordSize(physicalAddress, ref input, fasterSession);
@@ -928,36 +920,40 @@ namespace FASTER.core
             if (newLogicalAddress == 0)
                 return OperationStatus.ALLOCATE_FAILED;
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), sessionCtx.version,
-                            tombstone: false, invalidBit: false,
+            ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
+            RecordInfo.WriteInfo(ref recordInfo, 
+                            inNewVersion: sessionCtx.InNewVersion,
+                            tombstone: false, dirty: true,
                             latestLogicalAddress);
             hlog.Serialize(ref key, newPhysicalAddress);
 
+            // Populate the new record
             OperationStatus status;
+            long lockContext = 0;
             if (logicalAddress < hlog.BeginAddress)
             {
-                fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output);
+                fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output, ref recordInfo, newLogicalAddress, out lockContext);
                 status = OperationStatus.NOTFOUND;
             }
             else if (logicalAddress >= hlog.HeadAddress)
             {
                 if (hlog.GetInfo(physicalAddress).Tombstone)
                 {
-                    fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output);
+                    fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output, ref recordInfo, newLogicalAddress, out lockContext);
                     status = OperationStatus.NOTFOUND;
                 }
                 else
                 {
                     fasterSession.CopyUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress),
                                             ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
-                                            ref output);
+                                            ref output, ref recordInfo, newLogicalAddress, out lockContext);
                     status = OperationStatus.SUCCESS;
                 }
             }
             else
             {
                 // ah, old record slipped onto disk
-                hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                hlog.GetInfo(newPhysicalAddress).SetInvalid();
                 return OperationStatus.RETRY_NOW;
             }
 
@@ -971,15 +967,37 @@ namespace FASTER.core
             foundEntry.word = Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word);
             if (foundEntry.word == entry.word)
             {
-                pendingContext.logicalAddress = newLogicalAddress;
+                // If IU, status will be NOTFOUND; return that.
+                if (status != OperationStatus.SUCCESS)
+                {
+                    Debug.Assert(OperationStatus.NOTFOUND == status);
+                    fasterSession.PostInitialUpdater(ref key,
+                            ref input, ref hlog.GetValue(newPhysicalAddress),
+                            ref output, ref recordInfo, newLogicalAddress, lockContext);
+                    pendingContext.recordInfo = recordInfo;
+                    pendingContext.logicalAddress = newLogicalAddress;
+                    return status;
+                }
+
+                // Else it was a CopyUpdater so call PCU; if PCU returns true, return success, else retry op.
+                if (fasterSession.PostCopyUpdater(ref key,
+                            ref input, ref hlog.GetValue(physicalAddress),
+                            ref hlog.GetValue(newPhysicalAddress),
+                            ref output, ref recordInfo, newLogicalAddress, lockContext))
+                {
+                    pendingContext.recordInfo = recordInfo;
+                    pendingContext.logicalAddress = newLogicalAddress;
+                    return status;
+                }
             }
             else
             {
                 // CAS failed
-                hlog.GetInfo(newPhysicalAddress).Invalid = true;
-                status = OperationStatus.RETRY_NOW;
+                if (fasterSession.SupportsLocking)
+                    fasterSession.UnlockExclusive(ref recordInfo, ref key, ref hlog.GetValue(newPhysicalAddress), lockContext);
+                hlog.GetInfo(newPhysicalAddress).SetInvalid();
             }
-
+            status = OperationStatus.RETRY_NOW;
             return status;
         }
 
@@ -1078,7 +1096,7 @@ namespace FASTER.core
                             {
                                 // Set to release shared latch (default)
                                 latchOperation = LatchOperation.Shared;
-                                if (CheckBucketVersionNew(ref entry, sessionCtx))
+                                if (CheckBucketVersionNew(ref entry))
                                 {
                                     status = OperationStatus.CPR_SHIFT_DETECTED;
                                     goto CreatePendingContext; // Pivot Thread
@@ -1099,22 +1117,6 @@ namespace FASTER.core
                                 {
                                     // Set to release exclusive latch (default)
                                     latchOperation = LatchOperation.Exclusive;
-                                    goto CreateNewRecord; // Create a (v+1) record
-                                }
-                                else
-                                {
-                                    status = OperationStatus.RETRY_LATER;
-                                    goto CreatePendingContext; // Go Pending
-                                }
-                            }
-                            break; // Normal Processing
-                        }
-                    case Phase.WAIT_PENDING:
-                        {
-                            if (!CheckEntryVersionNew(logicalAddress, sessionCtx))
-                            {
-                                if (HashBucket.NoSharedLatches(bucket))
-                                {
                                     goto CreateNewRecord; // Create a (v+1) record
                                 }
                                 else
@@ -1147,7 +1149,11 @@ namespace FASTER.core
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 ref Value value = ref hlog.GetValue(physicalAddress);
-                fasterSession.ConcurrentDeleter(ref hlog.GetKey(physicalAddress), ref value, ref recordInfo, logicalAddress);
+                
+                // The concurrent delete may fail if the record is sealed
+                if (!fasterSession.ConcurrentDeleter(ref hlog.GetKey(physicalAddress), ref value, ref recordInfo, logicalAddress))
+                    goto CreateNewRecord;
+
                 if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
                 else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
                 if (WriteDefaultOnDelete)
@@ -1191,10 +1197,15 @@ namespace FASTER.core
                     goto CreatePendingContext;
                 }
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress),
-                               sessionCtx.version, tombstone:true, invalidBit:false,
+                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
+                RecordInfo.WriteInfo(ref recordInfo,
+                               inNewVersion: sessionCtx.InNewVersion,
+                               tombstone: true, dirty: true,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
+
+                // There is no Value to lock, so we lock the RecordInfo directly. TODO: Updaters must honor this lock as well
+                recordInfo.LockExclusive();
 
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
@@ -1209,13 +1220,19 @@ namespace FASTER.core
 
                 if (foundEntry.word == entry.word)
                 {
+                    // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
+                    // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.
+                    fasterSession.PostSingleDeleter(ref key, ref recordInfo, newLogicalAddress);
+                    recordInfo.UnlockExclusive();
+                    pendingContext.recordInfo = recordInfo;
                     pendingContext.logicalAddress = newLogicalAddress;
                     status = OperationStatus.SUCCESS;
                     goto LatchRelease;
                 }
                 else
                 {
-                    hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                    recordInfo.UnlockExclusive();
+                    recordInfo.SetInvalid();
                     status = OperationStatus.RETRY_NOW;
                     goto LatchRelease;
                 }
@@ -1360,7 +1377,7 @@ namespace FASTER.core
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
-                Debug.Assert(hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Version <= ctx.version);
+                ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
 
                 if (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
                     return OperationStatus.NOTFOUND;
@@ -1370,8 +1387,9 @@ namespace FASTER.core
                 if (pendingContext.NoKey && pendingContext.key == default)
                     pendingContext.key = hlog.GetKeyContainer(ref hlog.GetContextRecordKey(ref request));
 
-                fasterSession.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input.Get(),
-                                       ref hlog.GetContextRecordValue(ref request), ref pendingContext.output, request.logicalAddress);
+                if (!fasterSession.SingleReader(ref pendingContext.key.Get(), ref pendingContext.input.Get(),
+                                       ref hlog.GetContextRecordValue(ref request), ref pendingContext.output, ref recordInfo, request.logicalAddress))
+                    return OperationStatus.NOTFOUND;
 
                 if ((CopyReadsToTail != CopyReadsToTail.None && !pendingContext.SkipCopyReadsToTail) || (UseReadCache && !pendingContext.SkipReadCache))
                 {
@@ -1402,12 +1420,15 @@ namespace FASTER.core
         {
             Debug.Assert(RelaxedCPR || pendingContext.version == opCtx.version);
 
+            // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
             ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
+
             byte* physicalAddress = request.record.GetValidPointer();
             long logicalAddress = pendingContext.entry.Address;
             ref RecordInfo oldRecordInfo = ref hlog.GetInfoFromBytePointer(physicalAddress);
             
-            InternalTryCopyToTail(opCtx, ref key, ref hlog.GetContextRecordValue(ref request), ref oldRecordInfo, logicalAddress, fasterSession, currentCtx);
+            InternalTryCopyToTail(opCtx, ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), 
+                                 ref pendingContext.output, logicalAddress, fasterSession, currentCtx);
         }
 
         /// <summary>
@@ -1489,18 +1510,23 @@ namespace FASTER.core
                     break;
                 }
 
-#region Create record in mutable region
+                #region Create record in mutable region
 
+                // Determine if we should allocate a new record
                 if ((request.logicalAddress >= hlog.BeginAddress) && !hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
                 {
                     if (!fasterSession.NeedCopyUpdate(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output))
-                    {
                         return OperationStatus.SUCCESS;
-                    }
+                }
+                else
+                {
+                    if (!fasterSession.NeedInitialUpdate(ref key, ref pendingContext.input.Get(), ref pendingContext.output))
+                        return OperationStatus.SUCCESS;
                 }
 
+                // Allocate and initialize the new record
                 int actualSize, allocatedSize;
-                if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
+                if ((request.logicalAddress < hlog.BeginAddress) || hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
                 {
                     (actualSize, allocatedSize) = hlog.GetInitialRecordSize(ref key, ref pendingContext.input.Get(), fasterSession);
                 }
@@ -1513,15 +1539,20 @@ namespace FASTER.core
                 if (newLogicalAddress == 0)
                     return OperationStatus.ALLOCATE_FAILED;
                 var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
-                               tombstone:false, invalidBit:false,
+                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
+                RecordInfo.WriteInfo(ref recordInfo,
+                               inNewVersion: opCtx.InNewVersion,
+                               tombstone: false, dirty: true,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
-                if ((request.logicalAddress < hlog.BeginAddress) || (hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone))
+
+                // Populate the new record
+                long lockContext;
+                if ((request.logicalAddress < hlog.BeginAddress) || hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
                 {
                     fasterSession.InitialUpdater(ref key,
                                              ref pendingContext.input.Get(), ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
-                                             ref pendingContext.output);
+                                             ref pendingContext.output, ref recordInfo, newLogicalAddress, out lockContext);
                     status = OperationStatus.NOTFOUND;
                 }
                 else
@@ -1529,7 +1560,7 @@ namespace FASTER.core
                     fasterSession.CopyUpdater(ref key,
                                           ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request),
                                           ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
-                                          ref pendingContext.output);
+                                          ref pendingContext.output, ref recordInfo, newLogicalAddress, out lockContext);
                     status = OperationStatus.SUCCESS;
                 }
 
@@ -1540,19 +1571,40 @@ namespace FASTER.core
                 updatedEntry.Tentative = false;
 
                 var foundEntry = default(HashBucketEntry);
-                foundEntry.word = Interlocked.CompareExchange(
-                                            ref bucket->bucket_entries[slot],
-                                            updatedEntry.word, entry.word);
-
+                foundEntry.word = Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word);
                 if (foundEntry.word == entry.word)
                 {
-                    return status;
+                    // If IU, status will be NOTFOUND; return that.
+                    if (status != OperationStatus.SUCCESS)
+                    {
+                        Debug.Assert(OperationStatus.NOTFOUND == status);
+                        fasterSession.PostInitialUpdater(ref key,
+                                          ref pendingContext.input.Get(),
+                                          ref hlog.GetValue(newPhysicalAddress),
+                                          ref pendingContext.output, ref recordInfo, newLogicalAddress, lockContext);
+                        pendingContext.recordInfo = recordInfo;
+                        pendingContext.logicalAddress = newLogicalAddress;
+                        return status;
+                    }
+
+                    // Else it was a CopyUpdater so call PCU; if PCU returns true, return success, else retry op.
+                    if (fasterSession.PostCopyUpdater(ref key,
+                                          ref pendingContext.input.Get(),
+                                          ref hlog.GetContextRecordValue(ref request),
+                                          ref hlog.GetValue(newPhysicalAddress),
+                                          ref pendingContext.output, ref recordInfo, newLogicalAddress, lockContext))
+                    {
+                        pendingContext.recordInfo = recordInfo;
+                        pendingContext.logicalAddress = newLogicalAddress;
+                        return status;
+                    }
                 }
                 else
                 {
-                    hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                    // CAS failed. Retry in loop.
+                    hlog.GetInfo(newPhysicalAddress).SetInvalid();
                 }
-#endregion
+                #endregion
             }
 
             OperationStatus internalStatus;
@@ -1625,7 +1677,9 @@ namespace FASTER.core
                             break;
                         case OperationType.UPSERT:
                             internalStatus = InternalUpsert(ref pendingContext.key.Get(),
+                                                            ref pendingContext.input.Get(),
                                                             ref pendingContext.value.Get(),
+                                                            ref pendingContext.output,
                                                             ref pendingContext.userContext,
                                                             ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                             break;
@@ -1843,8 +1897,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalCopyToTail<Input, Output, Context, FasterSession>(
-                                            ref Key key, ref Value value,
-                                            ref RecordInfo recordInfo,
+                                            ref Key key, ref Input input, ref Value value, ref Output output,
                                             long expectedLogicalAddress,
                                             FasterSession fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx,
@@ -1853,7 +1906,7 @@ namespace FASTER.core
         { 
             OperationStatus internalStatus;
             do
-                internalStatus = InternalTryCopyToTail(currentCtx, ref key, ref value, ref recordInfo, expectedLogicalAddress, fasterSession, currentCtx, noReadCache);
+                internalStatus = InternalTryCopyToTail(currentCtx, ref key, ref input, ref value, ref output, expectedLogicalAddress, fasterSession, currentCtx, noReadCache);
             while (internalStatus == OperationStatus.RETRY_NOW);
             return internalStatus;
         }
@@ -1861,20 +1914,19 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalTryCopyToTail<Input, Output, Context, FasterSession>(
-                                            ref Key key, ref Value value,
-                                            ref RecordInfo recordInfo,
+                                            ref Key key, ref Input input, ref Value value, ref Output output,
                                             long foundLogicalAddress,
                                             FasterSession fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx,
                                             bool noReadCache = false)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-            => InternalTryCopyToTail(currentCtx, ref key, ref value, ref recordInfo, foundLogicalAddress, fasterSession, currentCtx, noReadCache);
+            => InternalTryCopyToTail(currentCtx, ref key, ref input, ref value, ref output, foundLogicalAddress, fasterSession, currentCtx, noReadCache);
 
         /// <summary>
         /// Helper function for trying to copy existing immutable records (at foundLogicalAddress) to the tail,
         /// used in <see cref="InternalRead{Input, Output, Context, Functions}(ref Key, ref Input, ref Output, long, ref Context, ref PendingContext{Input, Output, Context}, Functions, FasterExecutionContext{Input, Output, Context}, long)"/>
         /// <see cref="InternalContinuePendingReadCopyToTail{Input, Output, Context, FasterSession}(FasterExecutionContext{Input, Output, Context}, AsyncIOContext{Key, Value}, ref PendingContext{Input, Output, Context}, FasterSession, FasterExecutionContext{Input, Output, Context})"/>,
-        /// and <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}.CopyToTail(ref Key, ref Value, ref RecordInfo, long)"/>
+        /// and <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}.CopyToTail(ref Key, ref Input, ref Value, ref Output, long)"/>
         /// 
         /// Succeed only if the record for the same key hasn't changed.
         /// </summary>
@@ -1887,8 +1939,9 @@ namespace FASTER.core
         /// It's different from currentCtx only when the function is used in InternalContinuePendingReadCopyToTail
         /// </param>
         /// <param name="key"></param>
+        /// <param name="input"></param>
         /// <param name="value"></param>
-        /// <param name="recordInfo"></param>
+        /// <param name="output"></param>
         /// <param name="expectedLogicalAddress">
         /// The expected address of the record being copied.
         /// </param>
@@ -1906,8 +1959,7 @@ namespace FASTER.core
         /// </returns>
         internal OperationStatus InternalTryCopyToTail<Input, Output, Context, FasterSession>(
                                         FasterExecutionContext<Input, Output, Context> opCtx,
-                                        ref Key key, ref Value value,
-                                        ref RecordInfo recordInfo,
+                                        ref Key key, ref Input input, ref Value value, ref Output output,
                                         long expectedLogicalAddress,
                                         FasterSession fasterSession,
                                         FasterExecutionContext<Input, Output, Context> currentCtx,
@@ -1959,25 +2011,29 @@ namespace FASTER.core
             {
                 BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
-                RecordInfo.WriteInfo(ref readcache.GetInfo(newPhysicalAddress), opCtx.version,
-                                    tombstone: false, invalidBit: false,
+                ref RecordInfo recordInfo = ref readcache.GetInfo(newPhysicalAddress);
+                RecordInfo.WriteInfo(ref recordInfo,
+                                    inNewVersion: false,
+                                    tombstone: false, dirty: false,
                                     entry.Address);
                 readcache.Serialize(ref key, newPhysicalAddress);
-                fasterSession.SingleWriter(ref key,
-                                        ref value,
-                                        ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+                fasterSession.SingleWriter(ref key, ref input, ref value,
+                                        ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
+                                        ref recordInfo, Constants.kInvalidAddress); // We do not expose readcache addresses
             }
             else
             {
                 BlockAllocate(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                RecordInfo.WriteInfo(ref hlog.GetInfo(newPhysicalAddress), opCtx.version,
-                                tombstone: false, invalidBit: false,
+                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
+                RecordInfo.WriteInfo(ref recordInfo,
+                                inNewVersion: opCtx.InNewVersion,
+                                tombstone: false, dirty: true,
                                 latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
-                fasterSession.SingleWriter(ref key,
-                                        ref value,
-                                        ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize));
+                fasterSession.SingleWriter(ref key, ref input, ref value,
+                                        ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
+                                        ref recordInfo, newLogicalAddress);
             }
 
 
@@ -1995,7 +2051,7 @@ namespace FASTER.core
                                             entry.word);
             if (foundEntry.word != entry.word)
             {
-                if (!copyToReadCache) hlog.GetInfo(newPhysicalAddress).Invalid = true;
+                if (!copyToReadCache) hlog.GetInfo(newPhysicalAddress).SetInvalid();
                 // Note: only Compact actually retries;
                 // other operations, i.e., copy to tail during reads, just give up if the first try fails
                 return OperationStatus.RETRY_NOW;
@@ -2007,7 +2063,7 @@ namespace FASTER.core
 
         #endregion
 
-        #region Split Index
+#region Split Index
         private void SplitBuckets(long hash)
         {
             long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;
@@ -2320,7 +2376,7 @@ namespace FASTER.core
                 // Invalidate read cache entry if key found
                 if (comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
-                    readcache.GetInfo(physicalAddress).Invalid = true;
+                    readcache.GetInfo(physicalAddress).SetInvalid();
                 }
 
                 logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
@@ -2378,26 +2434,6 @@ namespace FASTER.core
                     continue;
                 }
                 logicalAddress += allocatedSize;
-            }
-        }
-
-        private long GetLatestRecordVersion(ref HashBucketEntry entry, long defaultVersion)
-        {
-            if (UseReadCache && entry.ReadCache)
-            {
-                var _addr = readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
-                if ((entry.Address & ~Constants.kReadCacheBitMask) >= readcache.HeadAddress)
-                    return readcache.GetInfo(_addr).Version;
-                else
-                    return defaultVersion;
-            }
-            else
-            {
-                var _addr = hlog.GetPhysicalAddress(entry.Address);
-                if (entry.Address >= hlog.HeadAddress)
-                    return hlog.GetInfo(_addr).Version;
-                else
-                    return defaultVersion;
             }
         }
 #endregion
