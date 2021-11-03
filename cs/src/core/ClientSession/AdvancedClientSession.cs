@@ -339,7 +339,6 @@ namespace FASTER.core
             return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
         }
 
-
         /// <summary>
         /// Async read operation. May return uncommitted results; to ensure reading of committed results, complete the read and then call WaitForCommitAsync.
         /// </summary>
@@ -703,7 +702,7 @@ namespace FASTER.core
         /// Experimental feature
         /// Checks whether specified record is present in memory
         /// (between HeadAddress and tail, or between fromAddress
-        /// and tail)
+        /// and tail), including tombstones.
         /// </summary>
         /// <param name="key">Key of the record.</param>
         /// <param name="logicalAddress">Logical address of record, if found</param>

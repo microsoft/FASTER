@@ -1,19 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class NeedCopyUpdateTests
     {
@@ -23,8 +15,9 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/NeedCopyUpdateTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/NeedCopyUpdateTests.obj.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/NeedCopyUpdateTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/NeedCopyUpdateTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<int, RMWValue>
                 (128,
@@ -37,15 +30,18 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
-            objlog.Dispose();
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
-
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void TryAddTest()
         {
             using var session = fht.For(new TryAddTestFunctions()).NewSession<TryAddTestFunctions>();
@@ -56,33 +52,33 @@ namespace FASTER.test
             var value2 = new RMWValue { value = 2 };
 
             status = session.RMW(ref key, ref value1); // InitialUpdater + NOTFOUND
-            Assert.IsTrue(status == Status.NOTFOUND);
+            Assert.AreEqual(Status.NOTFOUND, status);
             Assert.IsTrue(value1.flag); // InitialUpdater is called
 
             status = session.RMW(ref key, ref value2); // InPlaceUpdater + OK
-            Assert.IsTrue(status == Status.OK);
+            Assert.AreEqual(Status.OK, status);
 
             fht.Log.Flush(true);
             status = session.RMW(ref key, ref value2); // NeedCopyUpdate + OK
-            Assert.IsTrue(status == Status.OK);
+            Assert.AreEqual(Status.OK, status);
 
             fht.Log.FlushAndEvict(true);
             status = session.RMW(ref key, ref value2, Status.OK, 0); // PENDING + NeedCopyUpdate + OK
-            Assert.IsTrue(status == Status.PENDING);
+            Assert.AreEqual(Status.PENDING, status);
             session.CompletePending(true);
 
             // Test stored value. Should be value1
             var output = new RMWValue();
             status = session.Read(ref key, ref value1, ref output, Status.OK, 0);
-            Assert.IsTrue(status == Status.PENDING);
+            Assert.AreEqual(Status.PENDING, status);
             session.CompletePending(true);
 
             status = session.Delete(ref key);
-            Assert.IsTrue(status == Status.OK);
+            Assert.AreEqual(Status.OK, status);
             session.CompletePending(true);
             fht.Log.FlushAndEvict(true);
             status = session.RMW(ref key, ref value2, Status.NOTFOUND, 0); // PENDING + InitialUpdater + NOTFOUND
-            Assert.IsTrue(status == Status.PENDING);
+            Assert.AreEqual(Status.PENDING, status);
             session.CompletePending(true);
         }
     }
@@ -124,7 +120,7 @@ namespace FASTER.test
 
         public override void RMWCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status)
         {
-            Assert.IsTrue(status == ctx);
+            Assert.AreEqual(ctx, status);
 
             if (status == Status.NOTFOUND)
                 Assert.IsTrue(input.flag); // InitialUpdater is called.
@@ -132,7 +128,7 @@ namespace FASTER.test
 
         public override void ReadCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status)
         {
-            Assert.IsTrue(input.value == output.value);
+            Assert.AreEqual(output.value, input.value);
         }
     }
 }

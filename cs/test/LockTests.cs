@@ -46,7 +46,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericStringTests.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null });
             session = fkv.For(new Functions()).NewSession<Functions>();
         }
@@ -54,12 +55,14 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            session.Dispose();
+            session?.Dispose();
             session = null;
-            fkv.Dispose();
+            fkv?.Dispose();
             fkv = null;
-            log.Dispose();
+            log?.Dispose();
             log = null;
+
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]

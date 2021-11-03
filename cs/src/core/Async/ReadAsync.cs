@@ -156,7 +156,7 @@ namespace FASTER.core
             ref Key key, ref Input input, long startAddress, Context context, long serialNo, CancellationToken token, byte operationFlags = 0)
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.operationFlags = operationFlags;
+            pcontext.SetOperationFlags(operationFlags, startAddress);
             var diskRequest = default(AsyncIOContext<Key, Value>);
             Output output = default;
 

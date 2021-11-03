@@ -2,6 +2,7 @@
 using FASTER.common;
 using NUnit.Framework;
 using System;
+using System.Threading;
 
 namespace FASTER.remote.test
 {
@@ -24,6 +25,9 @@ namespace FASTER.remote.test
 
         public ClientSession<long, long, long, long, long, FixedLenClientFunctions, FixedLenSerializer<long, long, long, long>> GetSession()
             => client.NewSession<long, long, long, FixedLenClientFunctions, FixedLenSerializer<long, long, long, long>>(new FixedLenClientFunctions(), WireFormat.DefaultFixedLenKV);
+
+        public ClientSession<long, long, long, long, long, FixedLenClientFunctions, FixedLenSerializer<long, long, long, long>> GetSession(FixedLenClientFunctions f)
+            => client.NewSession<long, long, long, FixedLenClientFunctions, FixedLenSerializer<long, long, long, long>>(f, WireFormat.DefaultFixedLenKV);
     }
 
     /// <summary>
@@ -31,10 +35,32 @@ namespace FASTER.remote.test
     /// </summary>
     sealed class FixedLenClientFunctions : CallbackFunctionsBase<long, long, long, long, long>
     {
+        readonly ManualResetEvent evt = new ManualResetEvent(false);
+
         public override void ReadCompletionCallback(ref long key, ref long input, ref long output, long ctx, Status status)
         {
             Assert.IsTrue(status == Status.OK);
             Assert.IsTrue(output == ctx);
+        }
+
+        /// <inheritdoc />
+        public override void SubscribeKVCallback(ref long key, ref long input, ref long output, long ctx, Status status)
+        {
+            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(output == 23);
+            evt.Set();
+        }
+
+        /// <inheritdoc />
+        public override void SubscribeCallback(ref long key, ref long value, long ctx)
+        {
+            Assert.IsTrue(value == 23);
+            evt.Set();
+        }
+
+        public void WaitSubscribe()
+        {
+            evt.WaitOne();
         }
     }
 }

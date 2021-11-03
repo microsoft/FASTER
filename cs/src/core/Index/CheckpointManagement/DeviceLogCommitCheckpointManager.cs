@@ -15,6 +15,9 @@ namespace FASTER.core
     /// </summary>
     public class DeviceLogCommitCheckpointManager : ILogCommitManager, ICheckpointManager
     {
+        const int indexTokenCount = 2;
+        const int logTokenCount = 1;
+
         private readonly INamedDeviceFactory deviceFactory;
         private readonly ICheckpointNamingScheme checkpointNamingScheme;
         private readonly SemaphoreSlim semaphore;
@@ -60,7 +63,7 @@ namespace FASTER.core
                 // later log checkpoint to work with
                 indexTokenHistory = new Guid[2];
                 // We only keep the latest log checkpoint
-                logTokenHistory = new Guid[1];
+                logTokenHistory = new Guid[2];
             }
             this._disposed = false;
 
@@ -71,6 +74,15 @@ namespace FASTER.core
         public void PurgeAll()
         {
             deviceFactory.Delete(new FileDescriptor { directoryName = "" });
+        }
+
+        /// <inheritdoc />
+        public void Purge(Guid token)
+        {
+            // Try both because we do not know which type the guid denotes
+            deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(token));
+            deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(token));
+
         }
 
         /// <summary>
@@ -206,7 +218,7 @@ namespace FASTER.core
             {
                 var prior = indexTokenHistory[indexTokenHistoryOffset];
                 indexTokenHistory[indexTokenHistoryOffset] = indexToken;
-                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenHistory.Length;
+                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenCount;
                 if (prior != default)
                     deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(prior));
             }
@@ -253,7 +265,7 @@ namespace FASTER.core
             {
                 var prior = logTokenHistory[logTokenHistoryOffset];
                 logTokenHistory[logTokenHistoryOffset] = logToken;
-                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenHistory.Length;
+                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenCount;
                 if (prior != default)
                     deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(prior));
             }
@@ -265,7 +277,7 @@ namespace FASTER.core
             deltaLog.Allocate(out int length, out long physicalAddress);
             if (length < commitMetadata.Length)
             {
-                deltaLog.Seal(0, type: 1);
+                deltaLog.Seal(0, DeltaLogEntryType.CHECKPOINT_METADATA);
                 deltaLog.Allocate(out length, out physicalAddress);
                 if (length < commitMetadata.Length)
                 {
@@ -277,7 +289,7 @@ namespace FASTER.core
             {
                 Buffer.MemoryCopy(ptr, (void*)physicalAddress, commitMetadata.Length, commitMetadata.Length);
             }
-            deltaLog.Seal(commitMetadata.Length, type: 1);
+            deltaLog.Seal(commitMetadata.Length, DeltaLogEntryType.CHECKPOINT_METADATA);
             deltaLog.FlushAsync().Wait();
         }
 
@@ -288,25 +300,42 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog)
+        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
             byte[] metadata = null;
-            if (deltaLog != null)
+            if (deltaLog != null && scanDelta)
             {
                 // Try to get latest valid metadata from delta-log
                 deltaLog.Reset();
-                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out int type))
+                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out var type))
                 {
-                    if (type != 1) continue; // consider only metadata records
-                    long endAddress = physicalAddress + entryLength;
-                    metadata = new byte[entryLength];
-                    unsafe
+                    switch (type)
                     {
-                        fixed (byte* m = metadata)
-                            Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                        case DeltaLogEntryType.DELTA:
+                            // consider only metadata records
+                            continue;
+                        case DeltaLogEntryType.CHECKPOINT_METADATA:
+                            metadata = new byte[entryLength];
+                            unsafe
+                            {
+                                fixed (byte* m = metadata)
+                                    Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                            }
+                            HybridLogRecoveryInfo recoveryInfo = new();
+                            using (StreamReader s = new(new MemoryStream(metadata))) {
+                                recoveryInfo.Initialize(s);
+                                // Finish recovery if only specific versions are requested
+                                if (recoveryInfo.version == recoverTo || recoveryInfo.version < recoverTo && recoveryInfo.nextVersion > recoverTo) goto LoopEnd;
+                            }
+                            continue;
+                        default:
+                            throw new FasterException("Unexpected entry type");
                     }
+                    LoopEnd:
+                        break;
                 }
                 if (metadata != null) return metadata;
+                
             }
 
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
@@ -320,7 +349,7 @@ namespace FASTER.core
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
             device.Dispose();
-            return new Span<byte>(body).Slice(sizeof(int)).ToArray();
+            return body.AsSpan().Slice(sizeof(int), size).ToArray();
         }
 
         /// <inheritdoc />
@@ -366,12 +395,12 @@ namespace FASTER.core
             if (indexToken != default)
             {
                 indexTokenHistory[indexTokenHistoryOffset] = indexToken;
-                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenHistory.Length;
+                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenCount;
             }
             if (logToken != default)
             {
                 logTokenHistory[logTokenHistoryOffset] = logToken;
-                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenHistory.Length;
+                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenCount;
             }
 
             // Purge all log checkpoints that were not used for recovery

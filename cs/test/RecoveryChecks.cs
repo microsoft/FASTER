@@ -3,7 +3,6 @@
 
 using System.Threading.Tasks;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 using FASTER.test.recovery.sumstore;
 using System;
@@ -17,18 +16,14 @@ namespace FASTER.test.recovery
         Cloud
     }
 
-    [TestFixture]
-    public class RecoveryChecks
+    public class RecoveryCheckBase
     {
-        IDevice log;
-        const int numOps = 5000;
-        AdId[] inputArray;
-        string path;
-        public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-        public const string TEST_CONTAINER = "recoverychecks";
+        protected IDevice log;
+        protected const int numOps = 5000;
+        protected AdId[] inputArray;
+        protected string path;
 
-        [SetUp]
-        public void Setup()
+        protected void BaseSetup()
         {
             inputArray = new AdId[numOps];
             for (int i = 0; i < numOps; i++)
@@ -36,23 +31,24 @@ namespace FASTER.test.recovery
                 inputArray[i].adId = i;
             }
 
-            path = TestContext.CurrentContext.TestDirectory + "/RecoveryChecks/";
+            path = TestUtils.MethodTestDir + "/";
             log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
-            Directory.CreateDirectory(path);
+            TestUtils.RecreateDirectory(path);
         }
 
-        [TearDown]
-        public void TearDown()
+        protected void BaseTearDown()
         {
-            log.Dispose();
-            new DirectoryInfo(path).Delete(true);
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(path);
         }
 
         public class MyFunctions : SimpleFunctions<long, long>
         {
             public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status)
             {
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status, $"status = {status}");
+                Assert.AreEqual(key, output, $"output = {output}");
             }
         }
 
@@ -60,15 +56,34 @@ namespace FASTER.test.recovery
         {
             public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status)
             {
+                Verify(status, key, output);
+            }
+
+            internal static void Verify(Status status, long key, long output)
+            {
+                Assert.AreEqual(Status.OK, status);
                 if (key < 950)
-                    Assert.IsTrue(status == Status.OK && output == key);
+                    Assert.AreEqual(key, output);
                 else
-                    Assert.IsTrue(status == Status.OK && output == key + 1);
+                    Assert.AreEqual(key + 1, output);
             }
         }
+    }
+
+    [TestFixture]
+    public class RecoveryCheck1Tests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
 
         [Test]
         [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async ValueTask RecoveryCheck1([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1<<10)]int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -91,7 +106,10 @@ namespace FASTER.test.recovery
                     long output = default;
                     var status = s1.Read(ref key, ref output);
                     if (status != Status.PENDING)
-                        Assert.IsTrue(status == Status.OK && output == key);
+                    {
+                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
                 }
                 s1.CompletePending(true);
             }
@@ -111,7 +129,7 @@ namespace FASTER.test.recovery
             }
             else
             {
-                var (status, token) = task.GetAwaiter().GetResult();
+                var (status, token) = task.AsTask().GetAwaiter().GetResult();
                 fht2.Recover(default, token);
             }
 
@@ -125,13 +143,27 @@ namespace FASTER.test.recovery
                 long output = default;
                 var status = s2.Read(ref key, ref output);
                 if (status != Status.PENDING)
-                    Assert.IsTrue(status == Status.OK && output == key);
+                {
+                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
             }
             s2.CompletePending(true);
         }
 
+    }
+
+    [TestFixture]
+    public class RecoveryCheck2Tests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
+
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck2([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -163,7 +195,10 @@ namespace FASTER.test.recovery
                         long output = default;
                         var status = s1.Read(ref key, ref output);
                         if (status != Status.PENDING)
-                            Assert.IsTrue(status == Status.OK && output == key);
+                        {
+                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.AreEqual(key, output, $"output = {output}");
+                        }
                     }
                     s1.CompletePending(true);
                 }
@@ -177,7 +212,7 @@ namespace FASTER.test.recovery
                 }
                 else
                 {
-                    var(status, token) = task.GetAwaiter().GetResult();
+                    var(status, token) = task.AsTask().GetAwaiter().GetResult();
                     fht2.Recover(default, token);
                 }
 
@@ -191,14 +226,27 @@ namespace FASTER.test.recovery
                     long output = default;
                     var status = s2.Read(ref key, ref output);
                     if (status != Status.PENDING)
-                        Assert.IsTrue(status == Status.OK && output == key);
+                    {
+                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
                 }
                 s2.CompletePending(true);
             }
         }
+    }
+
+    [TestFixture]
+    public class RecoveryCheck3Tests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck3([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -230,7 +278,10 @@ namespace FASTER.test.recovery
                         long output = default;
                         var status = s1.Read(ref key, ref output);
                         if (status != Status.PENDING)
-                            Assert.IsTrue(status == Status.OK && output == key);
+                        {
+                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.AreEqual(key, output, $"output = {output}");
+                        }
                     }
                     s1.CompletePending(true);
                 }
@@ -244,7 +295,7 @@ namespace FASTER.test.recovery
                 }
                 else
                 {
-                    var (status, token) = task.GetAwaiter().GetResult();
+                    var (status, token) = task.AsTask().GetAwaiter().GetResult();
                     fht2.Recover(default, token);
                 }
 
@@ -258,14 +309,28 @@ namespace FASTER.test.recovery
                     long output = default;
                     var status = s2.Read(ref key, ref output);
                     if (status != Status.PENDING)
-                        Assert.IsTrue(status == Status.OK && output == key);
+                    {
+                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
                 }
                 s2.CompletePending(true);
             }
         }
 
+    }
+
+    [TestFixture]
+    public class RecoveryCheck4Tests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
+
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck4([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -297,13 +362,16 @@ namespace FASTER.test.recovery
                         long output = default;
                         var status = s1.Read(ref key, ref output);
                         if (status != Status.PENDING)
-                            Assert.IsTrue(status == Status.OK && output == key);
+                        {
+                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.AreEqual(key, output, $"output = {output}");
+                        }
                     }
                     s1.CompletePending(true);
                 }
 
                 if (i == 0)
-                    fht1.TakeIndexCheckpointAsync().GetAwaiter().GetResult();
+                    fht1.TakeIndexCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
                 var task = fht1.TakeHybridLogCheckpointAsync(checkpointType);
 
@@ -314,7 +382,7 @@ namespace FASTER.test.recovery
                 }
                 else
                 {
-                    var (status, token) = task.GetAwaiter().GetResult();
+                    var (status, token) = task.AsTask().GetAwaiter().GetResult();
                     fht2.Recover(default, token);
                 }
 
@@ -328,14 +396,29 @@ namespace FASTER.test.recovery
                     long output = default;
                     var status = s2.Read(ref key, ref output);
                     if (status != Status.PENDING)
-                        Assert.IsTrue(status == Status.OK && output == key);
+                    {
+                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
                 }
                 s2.CompletePending(true);
             }
         }
 
+    }
+
+    [TestFixture]
+    public class RecoveryCheck5Tests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
+
         [Test]
         [Category("FasterKV")]
+        [Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck5([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
         {
             using var fht1 = new FasterKV<long, long>
@@ -358,7 +441,10 @@ namespace FASTER.test.recovery
                     long output = default;
                     var status = s1.Read(ref key, ref output);
                     if (status != Status.PENDING)
-                        Assert.IsTrue(status == Status.OK && output == key);
+                    {
+                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
                 }
                 s1.CompletePending(true);
             }
@@ -370,7 +456,10 @@ namespace FASTER.test.recovery
                 long output = default;
                 var status = s1.Read(ref key, ref output);
                 if (status != Status.PENDING)
-                    Assert.IsTrue(status == Status.OK && output == key);
+                {
+                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
             }
             s1.CompletePending(true);
 
@@ -389,7 +478,7 @@ namespace FASTER.test.recovery
             }
             else
             {
-                var (status, token) = task.GetAwaiter().GetResult();
+                var (status, token) = task.AsTask().GetAwaiter().GetResult();
                 fht2.Recover(default, token);
             }
 
@@ -403,13 +492,28 @@ namespace FASTER.test.recovery
                 long output = default;
                 var status = s2.Read(ref key, ref output);
                 if (status != Status.PENDING)
-                    Assert.IsTrue(status == Status.OK && output == key);
+                {
+                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
             }
             s2.CompletePending(true);
         }
+    }
 
+    [TestFixture]
+    public class RecoveryCheckSnapshotTests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
 
         [Test]
+        [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
         public async ValueTask IncrSnapshotRecoveryCheck([Values] DeviceMode deviceMode)
         {
             ICheckpointManager checkpointManager;
@@ -417,18 +521,14 @@ namespace FASTER.test.recovery
             {
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactory(),
-                    new DefaultCheckpointNamingScheme(TestContext.CurrentContext.TestDirectory + $"/RecoveryChecks/IncrSnapshotRecoveryCheck"));
+                    new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir + "/checkpoints/"));  // PurgeAll deletes this directory
             }
             else
             {
-                if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
-                {
-                    checkpointManager = new DeviceLogCommitCheckpointManager(
-                        new AzureStorageNamedDeviceFactory(EMULATED_STORAGE_STRING),
-                        new DefaultCheckpointNamingScheme($"{TEST_CONTAINER}/IncrSnapshotRecoveryCheck"));
-                }
-                else
-                    return;
+                TestUtils.IgnoreIfNotRunningAzureTests();
+                checkpointManager = new DeviceLogCommitCheckpointManager(
+                    new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
+                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             }
 
             await IncrSnapshotRecoveryCheck(checkpointManager);
@@ -436,7 +536,7 @@ namespace FASTER.test.recovery
             checkpointManager.Dispose();
         }
 
-        public async ValueTask IncrSnapshotRecoveryCheck(ICheckpointManager checkpointManager)
+        private async ValueTask IncrSnapshotRecoveryCheck(ICheckpointManager checkpointManager)
         {
             using var fht1 = new FasterKV<long, long>
                 (1 << 10,
@@ -451,31 +551,33 @@ namespace FASTER.test.recovery
             }
 
             var task = fht1.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
-            var result = await task;
+            var (success, token) = await task;
 
             for (long key = 950; key < 1000; key++)
             {
                 s1.Upsert(key, key+1);
             }
 
+            var version1 = fht1.CurrentVersion;
             var _result1 = fht1.TakeHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
             await fht1.CompleteCheckpointAsync();
 
             Assert.IsTrue(_result1);
-            Assert.IsTrue(_token1 == result.token);
+            Assert.AreEqual(token, _token1);
 
             for (long key = 1000; key < 2000; key++)
             {
                 s1.Upsert(key, key + 1);
             }
 
+            var version2 = fht1.CurrentVersion;
             var _result2 = fht1.TakeHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
             await fht1.CompleteCheckpointAsync();
 
             Assert.IsTrue(_result2);
-            Assert.IsTrue(_token2 == result.token);
-            
+            Assert.AreEqual(token, _token2);
 
+            // Test that we can recover to latest version
             using var fht2 = new FasterKV<long, long>
                 (1 << 10,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = null },
@@ -484,7 +586,7 @@ namespace FASTER.test.recovery
 
             await fht2.RecoverAsync(default, _token2);
 
-            Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress, $"fht1 tail = {fht1.Log.TailAddress}; fht2 tail = {fht2.Log.TailAddress}");
+            Assert.AreEqual(fht2.Log.TailAddress, fht1.Log.TailAddress);
 
             using var s2 = fht2.NewSession(new MyFunctions2());
             for (long key = 0; key < 2000; key++)
@@ -493,13 +595,32 @@ namespace FASTER.test.recovery
                 var status = s2.Read(ref key, ref output);
                 if (status != Status.PENDING)
                 {
-                    if (key < 950)
-                        Assert.IsTrue(status == Status.OK && output == key);
-                    else
-                        Assert.IsTrue(status == Status.OK && output == key + 1);
+                    MyFunctions2.Verify(status, key, output);
                 }
             }
             s2.CompletePending(true);
+            
+            // Test that we can recover to earlier version
+            using var fht3 = new FasterKV<long, long>
+            (1 << 10,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = null },
+                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
+            );
+
+            await fht3.RecoverAsync(recoverTo: version1);
+
+            Assert.IsTrue(fht3.EntryCount == 1000);
+            using var s3 = fht3.NewSession(new MyFunctions2());
+            for (long key = 0; key < 1000; key++)
+            {
+                long output = default;
+                var status = s3.Read(ref key, ref output);
+                if (status != Status.PENDING)
+                {
+                    MyFunctions2.Verify(status, key, output);
+                }
+            }
+            s3.CompletePending(true);
         }
     }
 }

@@ -10,7 +10,7 @@ header:
       url: "/docs/quick-start-guide/"
 excerpt: >
   A fast concurrent persistent key-value store and log, in C# and C++.<br />
-  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v1.9.5">Latest release v1.9.5</a></small>
+  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v1.9.6">Latest release v1.9.6</a></small>
 features:
   - image_path: /assets/images/faster-feature-1.png
     alt: "feature1"
@@ -99,7 +99,8 @@ public static void Main()
      );
 
   // Create a session per sequence of interactions with FASTER
-  using var s = store.NewSession(new SimpleFunctions<long, long>());
+  // We use default callback functions with a custom merger: RMW merges input by adding it to value
+  using var s = store.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
   long key = 1, value = 1, input = 10, output = 0;
   
   // Upsert and Read

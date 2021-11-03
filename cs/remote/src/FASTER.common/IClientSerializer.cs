@@ -38,12 +38,26 @@ namespace FASTER.common
         /// <param name="length">Space (bytes) available at destination</param>
         /// <returns>True if write succeeded, false if not (insufficient space)</returns>
         bool Write(ref Input i, ref byte* dst, int length);
-        
+
         /// <summary>
         /// Read output from source memory location, increment pointer by amount read
         /// </summary>
         /// <param name="src">Source memory location</param>
         /// <returns>Output</returns>
         Output ReadOutput(ref byte* src);
+
+        /// <summary>
+        /// Read key from source memory location, increment pointer by amount read
+        /// </summary>
+        /// <param name="src">Source memory location</param>
+        /// <returns>Key</returns>
+        Key ReadKey(ref byte* src);
+
+        /// <summary>
+        /// Read key from source memory location, increment pointer by amount read
+        /// </summary>
+        /// <param name="src">Source memory location</param>
+        /// <returns>Key</returns>
+        Value ReadValue(ref byte* src);
     }
 }
