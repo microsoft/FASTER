@@ -1637,8 +1637,7 @@ namespace FASTER.core
             if (allowFastForward && (cookie != null || proposedCommitNum != -1))
                 throw new FasterException(
                     "Fast forwarding a commit is only allowed when no cookie and not commit num is specified");
-
-
+            
             var info = new FasterLogRecoveryInfo();
             info.FastForwardAllowed = allowFastForward;
 
@@ -1663,7 +1662,6 @@ namespace FASTER.core
                 else
                     // Invalid commit num
                     return false;
-                
 
                 if (fastCommitMode)
                 {
@@ -1698,7 +1696,7 @@ namespace FASTER.core
             }
              
             // Otherwise, move to set read-only tail and flush 
-            // epoch.Resume();
+            epoch.Resume();
 
             if (allocator.ShiftReadOnlyToTail(out _, out _))
             {
@@ -1706,7 +1704,7 @@ namespace FASTER.core
                 {
                     while (CommittedUntilAddress < commitTail)
                     {
-                        // epoch.ProtectAndDrain();
+                        epoch.ProtectAndDrain();
                         Thread.Yield();
                     }
                 }
@@ -1715,7 +1713,7 @@ namespace FASTER.core
             {
                 CommitMetadataOnly(ref info, spinWait);
             }
-            // epoch.Suspend();
+            epoch.Suspend();
             return true;
         }
 
