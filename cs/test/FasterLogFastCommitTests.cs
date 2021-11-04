@@ -65,8 +65,12 @@ namespace FASTER.test
             commitSuccessful = log.CommitStrongly(out var commit6Addr, out _, true, cookie6, 6); 
             Assert.IsTrue(commitSuccessful);
             
+            // Wait for all metadata writes to be complete to avoid a concurrent access exception
+            log.Dispose();
+            log = null;
+            
             // be a deviant and remove commit metadata files
-            manager.PurgeAll();
+            manager.RemoveAllCommits();
 
             // Recovery should still work
             var recoveredLog = new FasterLog(logSettings, 1);
@@ -139,6 +143,8 @@ namespace FASTER.test
             var logTailGrowth = log.TailAddress - referenceTailLength;
             // Check that we are not growing the log more than one commit record per user entry
             Assert.IsTrue(logTailGrowth - referenceTailLength <= commitRecordSize * 5 * numEntries);
+            
+            manager.RemoveAllCommits();
         }
     }
 }
