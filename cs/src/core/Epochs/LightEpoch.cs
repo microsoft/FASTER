@@ -346,7 +346,6 @@ namespace FASTER.core
                     if (++j == 500)
                     {
                         j = 0;
-                        Debug.WriteLine("Delay finding a free entry in the drain list");
                     }
                 }
             }

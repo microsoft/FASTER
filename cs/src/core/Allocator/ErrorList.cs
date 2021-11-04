@@ -22,8 +22,10 @@ namespace FASTER.core
         {
             bool done = false;
             uint errorCode = 0;
+            uint numIterations = 0;
             while (!done)
             {
+                numIterations++;
                 done = true;
                 lock (errorList)
                 {
@@ -40,6 +42,9 @@ namespace FASTER.core
                         }
                     }
                 }
+
+                if (numIterations >= 1000000)
+                    throw new FasterException("Stuck inside CheckAndWait");
             }
             return errorCode;
         }
