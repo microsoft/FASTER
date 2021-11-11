@@ -48,7 +48,7 @@ namespace FASTER.core
             : base(fileName, sector_size, capacity)
         {
             if (capacity == Devices.CAPACITY_UNSPECIFIED) throw new Exception("Local memory device must have a capacity!");
-            Console.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
+            Debug.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
             num_segments = (int)(capacity / sz_segment);
             this.sz_segment = sz_segment;
             this.latencyTicks = latencyMs * TimeSpan.TicksPerMillisecond;
@@ -75,7 +75,7 @@ namespace FASTER.core
                 ioProcessors[i].Start();
             }
 
-            Console.WriteLine("LocalMemoryDevice: " + ram_segments.Length + " pinned in-memory segments created, each with " + sz_segment + " bytes");
+            Debug.WriteLine("LocalMemoryDevice: " + ram_segments.Length + " pinned in-memory segments created, each with " + sz_segment + " bytes");
         }
 
         private void ProcessIOQueue(ConcurrentQueue<IORequestLocalMemory> q)
@@ -150,7 +150,7 @@ namespace FASTER.core
             var req = new IORequestLocalMemory
             {
                 srcAddress = (void*)sourceAddress,
-                dstAddress = ram_segments[segmentId] + destinationAddress,
+                dstAddress = ram_segments[segmentId % parallelism] + destinationAddress,
                 bytes = numBytesToWrite,
                 callback = callback,
                 context = context

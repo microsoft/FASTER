@@ -6,53 +6,83 @@ using NUnit.Framework;
 
 namespace FASTER.test
 {
-
-
     [TestFixture]
     internal class GenericLogCompactionTests
     {
         private FasterKV<MyKey, MyValue> fht;
         private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
         private IDevice log, objlog;
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericLogCompactionTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericLogCompactionTests.obj.log", deleteOnClose: true);
+            path = TestUtils.MethodTestDir + "/";
 
-            fht = new FasterKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
-                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                );
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait:true);
+
+            if (TestContext.CurrentContext.Test.Arguments.Length == 0)
+            {
+                // Default log creation
+                log = Devices.CreateLogDevice(path + "/GenericLogCompactionTests.log", deleteOnClose: true);
+                objlog = Devices.CreateLogDevice(path + "/GenericLogCompactionTests.obj.log", deleteOnClose: true);
+
+                fht = new FasterKV<MyKey, MyValue>
+                    (128,
+                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
+                    checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
+                    serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
+                    );
+            }
+            else
+            {
+                // For this class, deviceType is the only parameter. Using this to illustrate the approach; NUnit doesn't provide metadata for arguments,
+                // so for multi-parameter tests it is probably better to stay with the "separate SetUp method" approach.
+                var deviceType = (TestUtils.DeviceType)TestContext.CurrentContext.Test.Arguments[0];
+
+                log = TestUtils.CreateTestDevice(deviceType, $"{path}LogCompactBasicTest_{deviceType}.log");
+                objlog = TestUtils.CreateTestDevice(deviceType, $"{path}LogCompactBasicTest_{deviceType}.obj.log");
+
+                fht = new FasterKV<MyKey, MyValue>
+                    (128,
+                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9, SegmentSizeBits = 22 },
+                    checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
+                    serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
+                    );
+            }
             session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
         }
 
         [TearDown]
         public void TearDown()
         {
-            session.Dispose();
-            fht.Dispose();
+            session?.Dispose();
+            session = null;
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
-            objlog.Dispose();
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
+
+            TestUtils.DeleteDirectory(path);
         }
 
         // Basic test that where shift begin address to untilAddress after compact
         [Test]
         [Category("FasterKV")]
-        public void LogCompactBasicTest()
+        [Category("Smoke")]
+        public void LogCompactBasicTest([Values] TestUtils.DeviceType deviceType)
         {
             MyInput input = new MyInput();
 
-            const int totalRecords = 2000;
+            const int totalRecords = 500;
             long compactUntil = 0;
 
             for (int i = 0; i < totalRecords; i++)
             {
-                if (i == 1000)
+                if (i == 250)
                     compactUntil = fht.Log.TailAddress;
 
                 var key1 = new MyKey { key = i };
@@ -61,9 +91,9 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
-            // Read 2000 keys - all should be present
+            // Read all keys - all should be present
             for (int i = 0; i < totalRecords; i++)
             {
                 MyOutput output = new MyOutput();
@@ -73,18 +103,24 @@ namespace FASTER.test
 
                 var status = session.Read(ref key1, ref input, ref output, 0, 0);
                 if (status == Status.PENDING)
-                    session.CompletePending(true);
-                else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.value.value == value.value);
+                    session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    Assert.IsTrue(completedOutputs.Next());
+                    Assert.AreEqual(Status.OK, completedOutputs.Current.Status);
+                    output = completedOutputs.Current.Output;
+                    Assert.IsFalse(completedOutputs.Next());
+                    completedOutputs.Dispose();
                 }
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(value.value, output.value.value);
             }
         }
 
         // Basic test where DO NOT shift begin address to untilAddress after compact 
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
+        [Category("Smoke")]
         public void LogCompactNotShiftBeginAddrTest()
         {
             MyInput input = new MyInput();
@@ -119,15 +155,15 @@ namespace FASTER.test
                     session.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.value.value == value.value);
+                    Assert.AreEqual(Status.OK, status);
+                    Assert.AreEqual(value.value, output.value.value);
                 }
             }
         }
 
-
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
         public void LogCompactTestNewEntries()
         {
             MyInput input = new MyInput();
@@ -157,8 +193,8 @@ namespace FASTER.test
 
             var tail = fht.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
-            Assert.IsTrue(fht.Log.TailAddress == tail);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
+            Assert.AreEqual(tail, fht.Log.TailAddress);
 
             // Read 2000 keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -172,14 +208,16 @@ namespace FASTER.test
                     session.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.value.value == value.value);
+                    Assert.AreEqual(Status.OK, status);
+                    Assert.AreEqual(value.value, output.value.value);
                 }
             }
         }
 
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
+        [Category("Smoke")]
         public void LogCompactAfterDeleteTest()
         {
             MyInput input = new MyInput();
@@ -205,9 +243,9 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
-            // Read 2000 keys - all should be present
+            // Read keys - all should be present
             for (int i = 0; i < totalRecords; i++)
             {
                 MyOutput output = new MyOutput();
@@ -223,12 +261,12 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status == Status.OK);
-                        Assert.IsTrue(output.value.value == value.value);
+                        Assert.AreEqual(Status.OK, status);
+                        Assert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     }
                 }
             }
@@ -236,6 +274,8 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
+
         public void LogCompactBasicCustomFctnTest()
         {
             MyInput input = new MyInput();
@@ -254,7 +294,7 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, true, default(EvenCompactionFunctions));
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (var i = 0; i < totalRecords; i++)
@@ -274,12 +314,12 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status == Status.OK);
-                        Assert.IsTrue(output.value.value == value.value);
+                        Assert.AreEqual(Status.OK, status);
+                        Assert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     }
                 }
             }
@@ -288,6 +328,8 @@ namespace FASTER.test
         // Same as basic test of Custom Functions BUT this will NOT shift begin address to untilAddress after compact
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
+
         public void LogCompactCustomFctnNotShiftBeginTest()
         {
             MyInput input = new MyInput();
@@ -306,11 +348,11 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, false, default(EvenCompactionFunctions));
-            Assert.IsFalse(fht.Log.BeginAddress == compactUntil);
+            Assert.AreNotEqual(compactUntil, fht.Log.BeginAddress);
 
             // Verified that begin address not changed so now compact and change Begin to untilAddress
             compactUntil = session.Compact(compactUntil, true, default(EvenCompactionFunctions));
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (var i = 0; i < totalRecords; i++)
@@ -330,12 +372,12 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status == Status.OK);
-                        Assert.IsTrue(output.value.value == value.value);
+                        Assert.AreEqual(Status.OK, status);
+                        Assert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     }
                 }
             }
@@ -343,6 +385,8 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Compaction")]
+
         public void LogCompactCopyInPlaceCustomFctnTest()
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
@@ -376,8 +420,8 @@ namespace FASTER.test
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.value == value.value);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(value.value, output.value.value);
             }
         }
 

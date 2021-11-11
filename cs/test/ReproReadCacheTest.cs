@@ -33,9 +33,11 @@ namespace FASTER.test
         }
 
         [Test]
+        [Category("FasterKV")]
         public unsafe void RandomReadCacheTest1()
         {
-            var log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BasicFasterTests.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicFasterTests.log", deleteOnClose: true);
             var fht = new FasterKV<SpanByte, long>(
                 size: 1L << 20,
                 new LogSettings
@@ -104,6 +106,10 @@ namespace FASTER.test
             {
                 Read(r.Next(num));
             }
+
+            fht.Dispose();
+            log.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
     }
 }

@@ -79,8 +79,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="logToken">Token</param>
         /// <param name="deltaLog">Delta log</param>
+        /// <param name="scanDelta"> whether or not to scan through the delta log to acquire latest entry</param>
+        /// <param name="recoverTo"> version upper bound to scan for in the delta log. Function will return the largest version metadata no greater than the given version.</param>
         /// <returns>Metadata, or null if invalid</returns>
-        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog);
+        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo);
 
         /// <summary>
         /// Get list of index checkpoint tokens, in order of usage preference
@@ -93,7 +95,6 @@ namespace FASTER.core
         /// </summary>
         /// <returns></returns>
         public IEnumerable<Guid> GetLogCheckpointTokens();
-
 
         /// <summary>
         /// Provide device to store index checkpoint (including overflow buckets)
@@ -123,6 +124,11 @@ namespace FASTER.core
         /// <returns></returns>
         IDevice GetDeltaLogDevice(Guid token);
 
+        /// <summary>
+        /// Cleanup all data (subfolder) related to the given guid by this manager
+        /// </summary>
+        public void Purge(Guid token);
+        
         /// <summary>
         /// Cleanup all data (subfolder) related to checkpoints by this manager
         /// </summary>

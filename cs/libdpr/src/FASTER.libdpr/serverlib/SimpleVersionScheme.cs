@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using FASTER.core;
 
 namespace FASTER.libdpr
 {
@@ -9,10 +10,14 @@ namespace FASTER.libdpr
     /// </summary>
     public class SimpleVersionScheme
     {
-        // One count is reserved for the thread that actually advances the version, each batch also gets one
-        private readonly CountdownEvent count = new CountdownEvent(1);
+        private LightEpoch epoch;
         private long version = 1;
         private ManualResetEventSlim versionChanged;
+
+        public SimpleVersionScheme()
+        {
+            epoch = new LightEpoch();
+        }
 
         /// <summary>
         ///     Returns the current version
@@ -31,24 +36,19 @@ namespace FASTER.libdpr
         /// <returns>current version number</returns>
         public long Enter()
         {
+            epoch.Resume();
+            // Temporarily block if a version change is under way --- depending on whether the thread observes
+            // versionChanged, they are either in the current version or the next
             while (true)
             {
                 var ev = versionChanged;
-                if (ev == null)
-                {
-                    if (count.TryAddCount())
-                        // Because version is only changed after count == 0, which we know will never happen before we
-                        // return at this point, it suffices to just read the field. 
-                        return version;
-                    // If the count ever reaches 0, version change may have already occured, and we need to
-                    // back away to retry
-                }
-                else
-                {
-                    // Wait for version advance to complete and then try again.
-                    versionChanged.Wait();
-                }
+                if (ev == null) break;
+                // Allow version change to complete by leaving this epoch. 
+                epoch.Suspend();
+                ev.Wait();
+                epoch.Resume();
             }
+            return version;
         }
 
         /// <summary>
@@ -56,7 +56,7 @@ namespace FASTER.libdpr
         /// </summary>
         public void Leave()
         {
-            count.Signal();
+            epoch.Suspend();
         }
 
         /// <summary>
@@ -72,34 +72,28 @@ namespace FASTER.libdpr
         /// <returns> Whether the advance was successful </returns>
         public bool TryAdvanceVersion(Action<long, long> criticalSection, long targetVersion = -1)
         {
-            if (targetVersion != -1 && targetVersion <= version) return false;
-
             var ev = new ManualResetEventSlim();
             // Compare and exchange to install our advance
             while (Interlocked.CompareExchange(ref versionChanged, ev, null) != null)
             {
             }
 
-            // After success, we have exclusive access to update version
-            var original = version;
             if (targetVersion != -1 && targetVersion <= version)
             {
-                // In this case, advance request is not valid
+                versionChanged.Set();
                 versionChanged = null;
                 return false;
             }
 
-            // One count is reserved for the thread that actually advances the version
-            count.Signal();
-            // Wait until all batches in the previous version has been processed
-            count.Wait();
-
-            version = targetVersion == -1 ? version + 1 : targetVersion;
-            criticalSection(original, version);
-            // Complete the version change
-            count.Reset();
-            ev.Set();
-            versionChanged = null;
+            // Any thread that sees ev will be in v + 1, because the bump happens only after ev is set. 
+            var original = version;
+            epoch.BumpCurrentEpoch(() =>
+            {
+                version = targetVersion == -1 ? version + 1 : targetVersion;
+                criticalSection(original, version);
+                versionChanged.Set();
+                versionChanged = null;
+            });
             return true;
         }
     }

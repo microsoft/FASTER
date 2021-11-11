@@ -38,7 +38,7 @@ namespace FASTER.libdpr
         {
             responses.Remove(op, out var buf);
             Debug.Assert(buf != null);
-            session.ResolveBatch(new ReadOnlyMemory<byte>(buf), out var result);
+            session.ResolveBatch(new ReadOnlySpan<byte>(buf), out var result);
             bufs.Return(buf);
             return result[0];
         }

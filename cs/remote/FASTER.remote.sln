@@ -59,6 +59,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{48000B9F-1
 		..\..\docs\_data\navigation.yml = ..\..\docs\_data\navigation.yml
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "WebClient", "WebClient", "{8D1F793C-DA1E-4C75-B824-E510BB54534E}"
+	ProjectSection(SolutionItems) = preProject
+		samples\WebClient\FASTERFunctions.js = samples\WebClient\FASTERFunctions.js
+		samples\WebClient\WebClient.html = samples\WebClient\WebClient.html
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -162,6 +168,7 @@ Global
 		{4053EC35-77A5-4728-B16F-F4FDD1104CAF} = {1065AE7E-DEA5-4E21-AE39-95B93C074B17}
 		{6A49ADD2-DC25-47E1-9D29-5DC6380E880A} = {6B8D1038-C9D5-4111-B5CE-BF64E7D12AE1}
 		{2238A430-8D61-40A3-A23B-B1163A4CCBC6} = {8CF11B91-A6B6-4B81-AD43-2B07CF60F8FF}
+		{8D1F793C-DA1E-4C75-B824-E510BB54534E} = {1065AE7E-DEA5-4E21-AE39-95B93C074B17}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {FB603D60-F72D-4DAD-9349-442A45E20276}

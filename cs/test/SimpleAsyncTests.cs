@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 using FASTER.test.recovery.sumstore;
 using System.Threading.Tasks;
@@ -28,9 +27,9 @@ namespace FASTER.test.async
                 inputArray[i].adId = i;
             }
 
-            path = TestContext.CurrentContext.TestDirectory + "/SimpleAsyncTests/";
+            path = TestUtils.MethodTestDir + "/";
+            TestUtils.RecreateDirectory(path);
             log = Devices.CreateLogDevice(path + "Async.log", deleteOnClose: true);
-            Directory.CreateDirectory(path);
             fht1 = new FasterKV<long, long>
                 (1L << 10,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 15 },
@@ -41,14 +40,17 @@ namespace FASTER.test.async
         [TearDown]
         public void TearDown()
         {
-            fht1.Dispose();
-            log.Dispose();
-            new DirectoryInfo(path).Delete(true);
+            fht1?.Dispose();
+            fht1 = null;
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(path);
         }
 
         // Test that does .ReadAsync with minimum parameters (ref key)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public async Task ReadAsyncMinParamTest()
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
@@ -62,7 +64,8 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(ref key)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
         }
 
@@ -83,13 +86,15 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(ref key, Empty.Default, 99, cancellationToken)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
         }
 
         // Test that does .ReadAsync no ref key (key)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public async Task ReadAsyncNoRefKeyTest()
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
@@ -102,7 +107,8 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(key,Empty.Default, 99)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
         }
 
@@ -180,6 +186,7 @@ namespace FASTER.test.async
         // Test that does .UpsertAsync, .ReadAsync, .DeleteAsync, .ReadAsync with minimum parameters passed by reference (ref key)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public async Task UpsertReadDeleteReadAsyncMinParamByRefTest()
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
@@ -190,12 +197,13 @@ namespace FASTER.test.async
                     r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
-            Assert.IsTrue(numOps > 100);
+            Assert.Greater(numOps, 100);
 
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(ref key)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
 
             {   // Scope for variables
@@ -205,13 +213,14 @@ namespace FASTER.test.async
                     r = await r.CompleteAsync(); // test async version of Delete completion
 
                 var (status, _) = (await s1.ReadAsync(ref deleteKey)).Complete();
-                Assert.IsTrue(status == Status.NOTFOUND);
+                Assert.AreEqual(Status.NOTFOUND, status);
             }
         }
 
         // Test that does .UpsertAsync, .ReadAsync, .DeleteAsync, .ReadAsync with minimum parameters passed by value (key)
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public async Task UpsertReadDeleteReadAsyncMinParamByValueTest()
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
@@ -221,12 +230,13 @@ namespace FASTER.test.async
                 Assert.AreNotEqual(Status.PENDING, status);
             }
 
-            Assert.IsTrue(numOps > 100);
+            Assert.Greater(numOps, 100);
 
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(key)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(key, output);
             }
 
             {   // Scope for variables
@@ -235,7 +245,7 @@ namespace FASTER.test.async
                 Assert.AreNotEqual(Status.PENDING, status);
 
                 (status, _) = (await s1.ReadAsync(deleteKey)).Complete();
-                Assert.IsTrue(status == Status.NOTFOUND);
+                Assert.AreEqual(Status.NOTFOUND, status);
             }
         }
 
@@ -364,6 +374,7 @@ namespace FASTER.test.async
         // Test that does both UpsertAsync and RMWAsync to populate the FasterKV and update it, possibly after flushing it from memory.
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public async Task UpsertAsyncAndRMWAsyncTest([Values] bool useRMW, [Values] bool doFlush, [Values] bool completeAsync)
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());

@@ -69,7 +69,7 @@ namespace DprCounters
                 receivedBytes += socket.Receive(serializationBuffer, receivedBytes, serializationBuffer.Length - receivedBytes, SocketFlags.None);
 
             // Forward the DPR response header after we are done
-            var success = session.ResolveBatch(new Memory<byte>(serializationBuffer, sizeof(int), size - sizeof(long)), out var vector);
+            var success = session.ResolveBatch(new Span<byte>(serializationBuffer, sizeof(int), size - sizeof(long)), out var vector);
             // Because we use one-off sockets, resolve batch should never fail.
             Debug.Assert(success);
 

@@ -11,7 +11,6 @@ using System.Threading.Tasks;
 
 namespace FASTER.test.recovery.objects
 {
-
     [TestFixture]
     public class ObjectRecoveryTests3
     {
@@ -21,9 +20,8 @@ namespace FASTER.test.recovery.objects
         [SetUp]
         public void Setup()
         {
-            FasterFolderPath = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
-            if (!Directory.Exists(FasterFolderPath))
-                Directory.CreateDirectory(FasterFolderPath);
+            FasterFolderPath = TestUtils.MethodTestDir;
+            TestUtils.RecreateDirectory(FasterFolderPath);
         }
 
         [TearDown]
@@ -33,7 +31,7 @@ namespace FASTER.test.recovery.objects
         }
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask ObjectRecoveryTest3(
             [Values]CheckpointType checkpointType,
             [Values(1000)] int iterations,
@@ -138,8 +136,8 @@ namespace FASTER.test.recovery.objects
                     context.FinalizeRead(ref status, ref g1);
                 }
 
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(g1.value.value == i.ToString());
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(i.ToString(), g1.value.value);
             }
 
             if (delete)
@@ -156,7 +154,7 @@ namespace FASTER.test.recovery.objects
                     context.FinalizeRead(ref status, ref output);
                 }
 
-                Assert.IsTrue(status == Status.NOTFOUND);
+                Assert.AreEqual(Status.NOTFOUND, status);
             }
         }
     }

@@ -1,19 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class BlittableLogCompactionTests
     {
@@ -23,7 +15,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BlittableLogCompactionTests.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BlittableLogCompactionTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
         }
@@ -31,14 +24,18 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
+        [Category("Smoke")]
+
         public void BlittableLogCompactionTest1()
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -60,7 +57,7 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -74,9 +71,9 @@ namespace FASTER.test
                     session.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                    Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                    Assert.AreEqual(Status.OK, status);
+                    Assert.AreEqual(value.vfield1, output.value.vfield1);
+                    Assert.AreEqual(value.vfield2, output.value.vfield2);
                 }
             }
         }
@@ -117,8 +114,8 @@ namespace FASTER.test
 
             var tail = fht.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
-            Assert.IsTrue(fht.Log.TailAddress == tail);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
+            Assert.AreEqual(tail, fht.Log.TailAddress);
 
             // Read 2000 keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -132,9 +129,9 @@ namespace FASTER.test
                     session.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                    Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                    Assert.AreEqual(Status.OK, status);
+                    Assert.AreEqual(value.vfield1, output.value.vfield1);
+                    Assert.AreEqual(value.vfield2, output.value.vfield2);
                 }
             }
         }
@@ -172,7 +169,7 @@ namespace FASTER.test
 
             var tail = fht.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, true);
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -190,13 +187,13 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status == Status.OK);
-                        Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                        Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                        Assert.AreEqual(Status.OK, status);
+                        Assert.AreEqual(value.vfield1, output.value.vfield1);
+                        Assert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                     else
                     {
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     }
                 }
             }
@@ -205,6 +202,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
+        [Category("Smoke")]
 
         public void BlittableLogCompactionCustomFunctionsTest1()
         {
@@ -230,7 +228,7 @@ namespace FASTER.test
 
             // Only leave records with even vfield1
             compactUntil = session.Compact(compactUntil, true, default(EvenCompactionFunctions));
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (var i = 0; i < totalRecords; i++)
@@ -250,13 +248,13 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status == Status.OK);
-                        Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                        Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                        Assert.AreEqual(Status.OK, status);
+                        Assert.AreEqual(value.vfield1, output.value.vfield1);
+                        Assert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                     else
                     {
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     }
                 }
             }
@@ -296,9 +294,9 @@ namespace FASTER.test
             }
             else
             {
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
         }
 

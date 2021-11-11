@@ -2,18 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test.largeobjects
 {
-
     [TestFixture]
     internal class LargeObjectTests
     {
@@ -25,12 +19,8 @@ namespace FASTER.test.largeobjects
         [SetUp]
         public void Setup()
         {
-            if (test_path == null)
-            {
-                test_path = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
-                if (!Directory.Exists(test_path))
-                    Directory.CreateDirectory(test_path);
-            }
+            test_path = TestUtils.MethodTestDir;
+            TestUtils.RecreateDirectory(test_path);
         }
 
         [TearDown]
@@ -100,7 +90,7 @@ namespace FASTER.test.largeobjects
                 {
                     for (int i = 0; i < output.value.value.Length; i++)
                     {
-                        Assert.IsTrue(output.value.value[i] == (byte)(output.value.value.Length+i));
+                        Assert.AreEqual((byte)(output.value.value.Length+i), output.value.value[i]);
                     }
                 }
             }
