@@ -880,6 +880,14 @@ namespace FASTER.test
             Assert.AreEqual(commit2Addr, recoveredLog.TailAddress);
             recoveredLog.Dispose();
 
+            // recovering to a non-existent commit should throw FasterException
+            try
+            {
+                recoveredLog = new FasterLog(logSettings, 4);
+                Assert.Fail();
+            }
+            catch (FasterException) {}
+
             // Default argument should recover to most recent
             recoveredLog = new FasterLog(logSettings);
             Assert.AreEqual(cookie6, recoveredLog.RecoveredCookie);

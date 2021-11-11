@@ -1306,8 +1306,6 @@ namespace FASTER.core
 
         private void RestoreSpecificCommit(long requestedCommitNum, out Dictionary<string, long> iterators, out byte[] cookie)
         {
-            if (!logCommitManager.PreciseCommitNumRecoverySupport())
-                throw new FasterException("Given FasterLog does not support recovery to a precise commit num");
             iterators = null;
             cookie = null;
             FasterLogRecoveryInfo info = new();
