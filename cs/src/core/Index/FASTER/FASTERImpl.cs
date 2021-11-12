@@ -492,7 +492,7 @@ namespace FASTER.core
                         ref RecordInfo recordInfo = ref hlog.GetInfo(stubOrSealedPhysicalAddress);
                         recordInfo.Stub = false;
                         recordInfo.Sealed = false;
-                        recordInfo.Invalid = true;
+                        recordInfo.SetInvalid();
                         fasterSession.UnlockExclusive(ref recordInfo, ref key, ref hlog.GetValue(physicalAddress), sealedLockContext);
                     }
                     goto LatchRelease;
@@ -874,7 +874,7 @@ namespace FASTER.core
                         ref RecordInfo recordInfo = ref hlog.GetInfo(sealedPhysicalAddress);
                         recordInfo.Stub = false;
                         recordInfo.Sealed = false;
-                        recordInfo.Invalid = true;
+                        recordInfo.SetInvalid();
                         fasterSession.UnlockExclusive(ref recordInfo, ref key, ref hlog.GetValue(physicalAddress), sealedLockContext);
                     }
                     goto LatchRelease;

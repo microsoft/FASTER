@@ -429,7 +429,7 @@ namespace FASTER.core
                     if (recordInfo.Stub)
                     {
                         recordInfo.Stub = false;
-                        recordInfo.Invalid = true;
+                        recordInfo.SetInvalid();
                     }
                     if (lockOp.LockType == LockType.Shared)
                         this.UnlockShared(ref recordInfo, ref key, ref value, lockOp.LockContext);
@@ -488,7 +488,6 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
             {
-                recordInfo.Version = _clientSession.ctx.version;
                 _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
                 // Lock (or unlock) here, and do not unlock in PostSingleWriter; wait for the user to explicitly unlock
@@ -506,8 +505,6 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
             {
-                recordInfo.Version = _clientSession.ctx.version;
-
                 if (lockOp.IsSet)
                 {
                     // All lock operations in ConcurrentWriter can return immediately.
@@ -533,7 +530,6 @@ namespace FASTER.core
             public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
             {
                 lockContext = default;
-                recordInfo.Version = _clientSession.ctx.version;
                 _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
 
@@ -554,7 +550,6 @@ namespace FASTER.core
             public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
             {
                 lockContext = 0;
-                recordInfo.Version = _clientSession.ctx.version;
                 _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
             }
 
@@ -570,8 +565,6 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                recordInfo.Version = _clientSession.ctx.version;
-
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
@@ -587,7 +580,6 @@ namespace FASTER.core
             public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address)
             {
                 // There is no value to lock here, so we take a RecordInfo lock in InternalDelete and release it here.
-                recordInfo.Version = _clientSession.ctx.version;
                 if (_clientSession.functions.SupportsPostOperations)
                     _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
             }
@@ -595,7 +587,6 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             {
-                recordInfo.Version = _clientSession.ctx.version;
                 recordInfo.Tombstone = true;
                 return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
             }
