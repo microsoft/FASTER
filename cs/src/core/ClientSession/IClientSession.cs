@@ -5,7 +5,7 @@ namespace FASTER.core
 {
     internal interface IClientSession
     {
-        void AtomicSwitch(int version);
+        void AtomicSwitch(long version);
     }
 }
 

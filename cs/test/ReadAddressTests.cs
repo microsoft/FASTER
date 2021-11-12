@@ -197,7 +197,7 @@ namespace FASTER.test.readaddress
                 await Flush();
             }
 
-            internal bool ProcessChainRecord(Status status, RecordMetadata recordMetadata, int lap, ref Output actualOutput, ref int previousVersion)
+            internal bool ProcessChainRecord(Status status, RecordMetadata recordMetadata, int lap, ref Output actualOutput)
             {
                 var recordInfo = recordMetadata.RecordInfo;
                 Assert.GreaterOrEqual(lap, 0);
@@ -205,13 +205,11 @@ namespace FASTER.test.readaddress
 
                 Assert.AreEqual(status == Status.NOTFOUND, recordInfo.Tombstone, $"status({status}) == NOTFOUND != Tombstone ({recordInfo.Tombstone})");
                 Assert.AreEqual(lap == deleteLap, recordInfo.Tombstone, $"lap({lap}) == deleteLap({deleteLap}) != Tombstone ({recordInfo.Tombstone})");
-                Assert.GreaterOrEqual(previousVersion, recordInfo.Version);
                 if (!recordInfo.Tombstone)
                     Assert.AreEqual(expectedValue, actualOutput.value);
 
                 // Check for end of loop
-                previousVersion = recordInfo.Version;
-                return recordInfo.PreviousAddress >= this.fkv.Log.BeginAddress;
+                return recordInfo.PreviousAddress >= fkv.Log.BeginAddress;
             }
 
             internal static void ProcessNoKeyRecord(Status status, ref Output actualOutput, int keyOrdinal)
@@ -253,7 +251,6 @@ namespace FASTER.test.readaddress
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
                 RecordMetadata recordMetadata = default;
-                int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
@@ -264,7 +261,7 @@ namespace FASTER.test.readaddress
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
                 }
             }
@@ -287,13 +284,12 @@ namespace FASTER.test.readaddress
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
                 RecordMetadata recordMetadata = default;
-                int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
                     var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, default, serialNo: maxLap + 1);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
                 }
             }
@@ -317,7 +313,6 @@ namespace FASTER.test.readaddress
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
                 RecordMetadata recordMetadata = default;
-                int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
@@ -330,7 +325,7 @@ namespace FASTER.test.readaddress
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
 
                     if (readAtAddress >= testStore.fkv.Log.BeginAddress)
@@ -370,7 +365,6 @@ namespace FASTER.test.readaddress
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
                 RecordMetadata recordMetadata = default;
-                int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
@@ -378,7 +372,7 @@ namespace FASTER.test.readaddress
 
                     var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, default, serialNo: maxLap + 1);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
 
                     if (readAtAddress >= testStore.fkv.Log.BeginAddress)
@@ -413,7 +407,6 @@ namespace FASTER.test.readaddress
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
                 RecordMetadata recordMetadata = default;
-                int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
@@ -421,7 +414,7 @@ namespace FASTER.test.readaddress
 
                     var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, default, serialNo: maxLap + 1);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
 
                     if (readAtAddress >= testStore.fkv.Log.BeginAddress)
@@ -456,7 +449,6 @@ namespace FASTER.test.readaddress
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
                 RecordMetadata recordMetadata = default;
-                int version = int.MaxValue;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
@@ -464,7 +456,7 @@ namespace FASTER.test.readaddress
 
                     var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, default, serialNo: maxLap + 1);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
 
                     if (readAtAddress >= testStore.fkv.Log.BeginAddress)

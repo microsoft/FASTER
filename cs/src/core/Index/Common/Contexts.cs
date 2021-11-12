@@ -36,7 +36,7 @@ namespace FASTER.core
 
     internal class SerializedFasterExecutionContext
     {
-        internal int version;
+        internal long version;
         internal long serialNum;
         internal string guid;
 
@@ -56,7 +56,7 @@ namespace FASTER.core
         public void Load(StreamReader reader)
         {
             string value = reader.ReadLine();
-            version = int.Parse(value);
+            version = long.Parse(value);
 
             guid = reader.ReadLine();
             value = reader.ReadLine();
@@ -78,7 +78,7 @@ namespace FASTER.core
 
             // Some additional information about the previous attempt
             internal long id;
-            internal int version;
+            internal long version;
             internal long logicalAddress;
             internal long serialNum;
             internal HashBucketEntry entry;
@@ -229,6 +229,8 @@ namespace FASTER.core
                     await readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
             }
 
+            public bool InNewVersion => phase < Phase.REST;
+
             public FasterExecutionContext<Input, Output, Context> prevCtx;
         }
     }
@@ -254,7 +256,7 @@ namespace FASTER.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        const int CheckpointVersion = 2;
+        const int CheckpointVersion = 3;
 
         /// <summary>
         /// Guid
@@ -267,11 +269,11 @@ namespace FASTER.core
         /// <summary>
         /// Version
         /// </summary>
-        public int version;
+        public long version;
         /// <summary>
         /// Next Version
         /// </summary>
-        public int nextVersion;
+        public long nextVersion;
         /// <summary>
         /// Flushed logical address; indicates the latest immutable address on the main FASTER log at recovery time.
         /// </summary>
@@ -324,7 +326,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token"></param>
         /// <param name="_version"></param>
-        public void Initialize(Guid token, int _version)
+        public void Initialize(Guid token, long _version)
         {
             guid = token;
             useSnapshotFile = 0;
@@ -362,10 +364,10 @@ namespace FASTER.core
             useSnapshotFile = int.Parse(value);
 
             value = reader.ReadLine();
-            version = int.Parse(value);
+            version = long.Parse(value);
 
             value = reader.ReadLine();
-            nextVersion = int.Parse(value);
+            nextVersion = long.Parse(value);
 
             value = reader.ReadLine();
             flushedLogicalAddress = long.Parse(value);
@@ -566,9 +568,9 @@ namespace FASTER.core
         public IDevice deltaFileDevice;
         public DeltaLog deltaLog;
         public SemaphoreSlim flushedSemaphore;
-        public int prevVersion;
+        public long prevVersion;
 
-        public void Initialize(Guid token, int _version, ICheckpointManager checkpointManager)
+        public void Initialize(Guid token, long _version, ICheckpointManager checkpointManager)
         {
             info.Initialize(token, _version);
             checkpointManager.InitializeLogCheckpoint(token);
