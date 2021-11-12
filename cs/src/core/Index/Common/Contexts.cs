@@ -87,10 +87,12 @@ namespace FASTER.core
             internal byte operationFlags;
             internal RecordInfo recordInfo;
             internal long minAddress;
+            internal LockOperation lockOperation;
 
             // Note: Must be kept in sync with corresponding ReadFlags enum values
             internal const byte kSkipReadCache = 0x01;
             internal const byte kMinAddress = 0x02;
+            internal const byte kCopyReadsToTail = 0x04;
 
             internal const byte kNoKey = 0x10;
             internal const byte kSkipCopyReadsToTail = 0x20;
@@ -117,7 +119,7 @@ namespace FASTER.core
             {
                 Debug.Assert((byte)ReadFlags.SkipReadCache == kSkipReadCache);
                 Debug.Assert((byte)ReadFlags.MinAddress == kMinAddress);
-                byte flags = (byte)(readFlags & (ReadFlags.SkipReadCache | ReadFlags.MinAddress));
+                byte flags = (byte)(readFlags & (ReadFlags.SkipReadCache | ReadFlags.MinAddress | ReadFlags.CopyToTail));
                 if (noKey) flags |= kNoKey;
 
                 // This is always set true for the Read overloads (Reads by address) that call this method.
@@ -153,6 +155,12 @@ namespace FASTER.core
             {
                 get => (operationFlags & kMinAddress) != 0;
                 set => operationFlags = value ? (byte)(operationFlags | kMinAddress) : (byte)(operationFlags & ~kMinAddress);
+            }
+
+            internal bool CopyReadsToTail
+            {
+                get => (operationFlags & kCopyReadsToTail) != 0;
+                set => operationFlags = value ? (byte)(operationFlags | kCopyReadsToTail) : (byte)(operationFlags & ~kCopyReadsToTail);
             }
 
             internal bool SkipCopyReadsToTail

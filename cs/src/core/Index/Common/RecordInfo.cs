@@ -3,6 +3,7 @@
 
 #pragma warning disable 1591
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -76,29 +77,17 @@ namespace FASTER.core
         /// Take exclusive (write) lock on RecordInfo
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void LockExclusive()
-        {
-            // Acquire exclusive lock (readers may still be present)
-            while (true)
-            {
-                long expected_word = word;
-                if ((expected_word & kExclusiveLockBitMask) == 0)
-                {
-                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
-                        break;
-                }
-                Thread.Yield();
-            }
-
-            // Wait for readers to drain
-            while ((word & kSharedLockMaskInWord) != 0) Thread.Yield();
-        }
+        public void LockExclusive() => TryLockExclusive(spinCount: -1);
 
         /// <summary>
         /// Unlock RecordInfo that was previously locked for exclusive access, via <see cref="LockExclusive"/>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockExclusive() => word &= ~kExclusiveLockBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point
+        public void UnlockExclusive()
+        {
+            Debug.Assert((word & kExclusiveLockBitMask) != 0);
+            word &= ~kExclusiveLockBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point
+        }
 
         /// <summary>
         /// Try to take an exclusive (write) lock on RecordInfo
@@ -108,7 +97,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockExclusive(int spinCount = 1)
         {
-            // Acquire exclusive lock (readers may still be present)
+            // Acquire exclusive lock (readers may still be present; we'll drain them later)
             while (true)
             {
                 long expected_word = word;
@@ -117,7 +106,7 @@ namespace FASTER.core
                     if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
                         break;
                 }
-                if (--spinCount <= 0) return false;
+                if (spinCount > 0 && --spinCount <= 0) return false;
                 Thread.Yield();
             }
 
@@ -130,27 +119,17 @@ namespace FASTER.core
         /// Take shared (read) lock on RecordInfo
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void LockShared()
-        {
-            // Acquire shared lock
-            while (true)
-            {
-                long expected_word = word;
-                if (((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
-                    && (expected_word & kSharedLockMaskInWord) != kSharedLockMaskInWord) // shared lock is not full
-                {
-                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word + kSharedLockIncrement, expected_word))
-                        break;
-                }
-                Thread.Yield();
-            }
-        }
+        public void LockShared() => TryLockShared(spinCount: -1);
 
         /// <summary>
         /// Unlock RecordInfo that was previously locked for shared access, via <see cref="LockShared"/>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockShared() => Interlocked.Add(ref word, -kSharedLockIncrement);
+        public void UnlockShared()
+        {
+            Debug.Assert((word & kSharedLockMaskInWord) != 0);
+            Interlocked.Add(ref word, -kSharedLockIncrement);
+        }
 
         /// <summary>
         /// Take shared (read) lock on RecordInfo
@@ -170,7 +149,41 @@ namespace FASTER.core
                     if (expected_word == Interlocked.CompareExchange(ref word, expected_word + kSharedLockIncrement, expected_word))
                         break;
                 }
-                if (--spinCount <= 0) return false;
+                if (spinCount > 0 && --spinCount <= 0) return false;
+                Thread.Yield();
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Take shared (read) lock on RecordInfo
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void LockExclusiveFromShared() => TryLockExclusiveFromShared(spinCount: -1);
+
+        /// <summary>
+        /// Promote a shared (read) lock on RecordInfo to exclusive
+        /// </summary>
+        /// <param name="spinCount">Number of attempts before giving up</param>
+        /// <returns>Whether lock was acquired successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryLockExclusiveFromShared(int spinCount = 1)
+        {
+            // Acquire shared lock
+            while (true)
+            {
+                long expected_word = word;
+                if ((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
+                {
+                    var new_word = expected_word | kExclusiveLockBitMask;
+                    if ((expected_word & kSharedLockMaskInWord) != 0) // shared lock is not empty
+                        new_word -= kSharedLockIncrement;
+                    else
+                        Debug.Fail($"SharedLock count should not be 0");
+                    if (expected_word == Interlocked.CompareExchange(ref word, new_word, expected_word))
+                        break;
+                }
+                if (spinCount > 0 && --spinCount <= 0) return false;
                 Thread.Yield();
             }
             return true;
@@ -200,7 +213,7 @@ namespace FASTER.core
 
         public bool Stub
         {
-            get => (word & kTombstoneBitMask) > 0;
+            get => (word & kStubBitMask) > 0;
             set
             {
                 if (value) word |= kStubBitMask;

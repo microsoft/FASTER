@@ -76,5 +76,7 @@ namespace FASTER.core
         public void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) { }
         public bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) => true;
         public bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => true;
+        public void LockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) { }
+        public bool TryLockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => true;
     }
 }

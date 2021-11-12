@@ -20,14 +20,27 @@ namespace FASTER.core
     [Flags]
     public enum ReadFlags
     {
-        /// <summary>Default read operation</summary>
+        /// <summary>
+        /// Default read operation
+        /// </summary>
         None = 0,
 
-        /// <summary>Skip the ReadCache when reading, including not inserting to ReadCache when pending reads are complete</summary>
+        /// <summary>
+        /// Skip the ReadCache when reading, including not inserting to ReadCache when pending reads are complete
+        /// </summary>
         SkipReadCache = 0x00000001,
 
-        /// <summary>The minimum address at which to resolve the Key; return <see cref="Status.NOTFOUND"/> if the key is not found at this address or higher</summary>
+        /// <summary>
+        /// The minimum address at which to resolve the Key; return <see cref="Status.NOTFOUND"/> if the key is not found at this address or higher
+        /// </summary>
         MinAddress = 0x00000002,
+
+        /// <summary>
+        /// Force a copy to tail if we read from immutable or on-disk. If this and ReadCache are both specified, ReadCache wins.
+        /// This avoids log pollution for read-mostly workloads. Used mostly in conjunction with 
+        /// <see cref="ManualFasterOperations{Key, Value, Input, Output, Context, Functions}"/> locking.
+        /// </summary>
+        CopyToTail = 0x00000004,
     }
 
     public partial class FasterKV<Key, Value> : FasterBase,
@@ -88,6 +101,8 @@ namespace FASTER.core
 
         internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
+        internal bool SupportsLocking;
+
         /// <summary>
         /// Create FASTER instance
         /// </summary>
@@ -97,10 +112,11 @@ namespace FASTER.core
         /// <param name="serializerSettings">Serializer settings</param>
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
+        /// <param name="fasterSettings">FASTER settings</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, FasterSettings fasterSettings = null)
         {
             if (comparer != null)
                 this.comparer = comparer;
@@ -108,7 +124,7 @@ namespace FASTER.core
             {
                 if (typeof(IFasterEqualityComparer<Key>).IsAssignableFrom(typeof(Key)))
                 {
-                    if (default(Key) != null)
+                    if (default(Key) is not null)
                     {
                         this.comparer = default(Key) as IFasterEqualityComparer<Key>;
                     }
@@ -123,7 +139,12 @@ namespace FASTER.core
                 }
             }
 
-            if (checkpointSettings == null)
+            if (fasterSettings is not null)
+            {
+                this.SupportsLocking = fasterSettings.SupportsLocking;
+            }
+
+            if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
@@ -146,13 +167,13 @@ namespace FASTER.core
                           new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName), removeOutdated: checkpointSettings.RemoveOutdated);
             }
 
-            if (checkpointSettings.CheckpointManager == null)
+            if (checkpointSettings.CheckpointManager is null)
                 disposeCheckpointManager = true;
 
             UseFoldOverCheckpoint = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
             CopyReadsToTail = logSettings.CopyReadsToTail;
 
-            if (logSettings.ReadCacheSettings != null)
+            if (logSettings.ReadCacheSettings is not null)
             {
                 CopyReadsToTail = CopyReadsToTail.None;
                 UseReadCache = true;
@@ -160,8 +181,8 @@ namespace FASTER.core
 
             UpdateVarLen(ref variableLengthStructSettings);
 
-            if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength == null) ||
-                (!Utility.IsBlittable<Value>() && variableLengthStructSettings?.valueLength == null))
+            if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength is null) ||
+                (!Utility.IsBlittable<Value>() && variableLengthStructSettings?.valueLength is null))
             {
                 WriteDefaultOnDelete = true;
 
@@ -541,8 +562,10 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            var internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+            OperationStatus internalStatus;
+            do 
+                internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+            while (internalStatus == OperationStatus.RETRY_NOW);
 
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -560,24 +583,29 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref RecordMetadata recordMetadata, ReadFlags readFlags, Context context,
+        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref LockOperation lockOp, ref RecordMetadata recordMetadata, ReadFlags readFlags, Context context,
                 FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             pcontext.SetOperationFlags(readFlags, recordMetadata.RecordInfo.PreviousAddress);
-            var internalStatus = InternalRead(ref key, ref input, ref output, recordMetadata.RecordInfo.PreviousAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+            pcontext.lockOperation = lockOp;
+            OperationStatus internalStatus;
+            do
+                internalStatus = InternalRead(ref key, ref input, ref output, recordMetadata.RecordInfo.PreviousAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+            while (internalStatus == OperationStatus.RETRY_NOW);
 
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
+                lockOp.LockContext = pcontext.lockOperation.LockContext;
                 status = (Status)internalStatus;
             }
             else
             {
                 recordMetadata = default;
+                lockOp.LockContext = default;
                 status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
             }
 
@@ -594,8 +622,10 @@ namespace FASTER.core
             var pcontext = default(PendingContext<Input, Output, Context>);
             pcontext.SetOperationFlags(readFlags, address, noKey: true);
             Key key = default;
-            var internalStatus = InternalRead(ref key, ref input, ref output, address, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+            OperationStatus internalStatus;
+            do
+                internalStatus = InternalRead(ref key, ref input, ref output, address, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+            while (internalStatus == OperationStatus.RETRY_NOW);
 
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
@@ -613,7 +643,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, out RecordMetadata recordMetadata,
+        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output,
             Context context, FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -627,12 +657,42 @@ namespace FASTER.core
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
+                status = (Status)internalStatus;
+            }
+            else
+            {
+                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
+            }
+
+            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
+            sessionCtx.serialNum = serialNo;
+            return status;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref LockOperation lockOp, out RecordMetadata recordMetadata,
+            Context context, FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            var pcontext = default(PendingContext<Input, Output, Context>);
+            pcontext.lockOperation = lockOp;
+            OperationStatus internalStatus;
+
+            do
+                internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+            while (internalStatus == OperationStatus.RETRY_NOW);
+
+            Status status;
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            {
                 recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
+                lockOp.LockContext = pcontext.lockOperation.LockContext;
                 status = (Status)internalStatus;
             }
             else
             {
                 recordMetadata = default;
+                lockOp.LockContext = default;
                 status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
             }
 

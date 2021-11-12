@@ -15,18 +15,11 @@ namespace FASTER.core
     {
         #region Optional features supported by this implementation
         /// <summary>
-        /// Whether this Functions instance supports locking. Iff so, FASTER will call <see cref="LockExclusive(ref RecordInfo, ref Key, ref Value, ref long)"/> 
-        /// or <see cref="LockShared(ref RecordInfo, ref Key, ref Value, ref long)"/> to lock the record as appropriate, and 
-        /// <see cref="UnlockExclusive(ref RecordInfo, ref Key, ref Value, long)"/> or <see cref="UnlockShared(ref RecordInfo, ref Key, ref Value, long)"/> to match.
-        /// </summary>
-        bool SupportsLocking { get; }
-
-        /// <summary>
         /// Whether this Functions instance supports operations on records after they have been successfully appended to the log. For example,
         /// after <see cref="CopyUpdater(ref Key, ref Input, ref Value, ref Value, ref Output, ref RecordInfo, long)"/> copies a list,
         /// <see cref="PostCopyUpdater(ref Key, ref Input, ref Value, ref Value, ref Output, ref RecordInfo, long)"/> can add items to it. 
         /// </summary>
-        /// <remarks>Once the record has been appended it is visible to other sessions, so locking will be done per <see cref="SupportsLocking"/></remarks>
+        /// <remarks>Once the record has been appended it is visible to other sessions, so locking will be done per <see cref="FasterKV{Key, Value}.SupportsLocking"/></remarks>
         bool SupportsPostOperations { get; }
         #endregion Optional features supported by this implementation
 
@@ -325,6 +318,34 @@ namespace FASTER.core
         /// True if the lock was acquired, else false.
         /// </returns>
         bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1);
+
+        /// <summary>
+        /// User-provided lock promotion call, converting a shared lock into an exclusive lock, defaulting to no-op. A default implementation is available via <see cref="RecordInfo.LockExclusiveFromShared()"/>.
+        /// </summary>
+        /// <param name="recordInfo">The header for the current record</param>
+        /// <param name="key">The key for the current record</param>
+        /// <param name="value">The value for the current record</param>
+        /// <param name="lockContext">Context-specific information; will be passed to <see cref="UnlockShared(ref RecordInfo, ref Key, ref Value, long)"/></param>
+        /// <remarks>
+        /// This is called only for records guaranteed to be in the mutable range.
+        /// </remarks>
+        void LockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext);
+
+        /// <summary>
+        /// User-provided lock promotion call, converting a shared lock into an exclusive lock, defaulting to no-op. A default implementation is available via <see cref="RecordInfo.TryLockExclusiveFromShared(int)"/>.
+        /// </summary>
+        /// <param name="recordInfo">The header for the current record</param>
+        /// <param name="key">The key for the current record</param>
+        /// <param name="value">The value for the current record</param>
+        /// <param name="lockContext">Context-specific information; will be passed to <see cref="UnlockExclusive(ref RecordInfo, ref Key, ref Value, long)"/></param>
+        /// <param name="spinCount">The number of times to spin in a try/yield loop until giving up; default is once</param>
+        /// <remarks>
+        /// This is called only for records guaranteed to be in the mutable range.
+        /// </remarks>
+        /// <returns>
+        /// True if the lock was acquired, else false.
+        /// </returns>
+        bool TryLockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1);
         #endregion Locking
 
         #region Checkpointing

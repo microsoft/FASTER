@@ -286,6 +286,16 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Thread resumes its epoch entry
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Resume(out int resumeEpoch)
+        {
+            Acquire();
+            resumeEpoch = ProtectAndDrain();
+        }
+
+        /// <summary>
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>

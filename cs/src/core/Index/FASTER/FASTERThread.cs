@@ -364,6 +364,7 @@ namespace FASTER.core
             else
             {
                 internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
+                Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
             }
 
             // Set the record metadata into pendingContext. Note that pendingContext.logicalAddress has been correctly set by the
@@ -371,8 +372,6 @@ namespace FASTER.core
             unsafe { pendingContext.recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
 
             request.Dispose();
-
-            Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
 
             Status status;
             // Handle operation status

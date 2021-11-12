@@ -17,6 +17,7 @@ namespace FASTER.test
         // Various categories used to group tests
         internal const string SmokeTestCategory = "Smoke";
         internal const string FasterKVTestCategory = "FasterKV";
+        internal const string ManualOpsTestCategory = "ManualOps";
 
         /// <summary>
         /// Delete a directory recursively

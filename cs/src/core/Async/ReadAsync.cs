@@ -163,8 +163,10 @@ namespace FASTER.core
             fasterSession.UnsafeResumeThread();
             try
             {
-                OperationStatus internalStatus = InternalRead(ref key, ref input, ref output, startAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
-                Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+                OperationStatus internalStatus;
+                do
+                    internalStatus = InternalRead(ref key, ref input, ref output, startAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
+                while (internalStatus == OperationStatus.RETRY_NOW);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);
 
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
