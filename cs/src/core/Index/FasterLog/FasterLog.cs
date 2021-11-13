@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
-
 using System;
 using System.Buffers;
 using System.Collections.Concurrent;
@@ -19,7 +17,7 @@ namespace FASTER.core
     /// <summary>
     /// FASTER log
     /// </summary>
-    public class FasterLog : IDisposable
+    public sealed class FasterLog : IDisposable
     {
         private readonly BlittableAllocator<Empty, byte> allocator;
         private readonly LightEpoch epoch;
@@ -33,13 +31,11 @@ namespace FASTER.core
         internal readonly bool readOnlyMode;
         internal readonly bool fastCommitMode;
 
-        private TaskCompletionSource<LinkedCommitInfo> commitTcs
-            = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-        private TaskCompletionSource<Empty> refreshUncommittedTcs
-            = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource<LinkedCommitInfo> commitTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource<Empty> refreshUncommittedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Offsets for all currently unprocessed commit records
-        private Queue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
+        private readonly Queue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
         private long commitNum;
 
         /// <summary>
@@ -108,8 +104,7 @@ namespace FASTER.core
         /// <summary>
         /// Table of persisted iterators
         /// </summary>
-        internal readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators
-            = new ConcurrentDictionary<string, FasterLogScanIterator>();
+        internal readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators = new();
 
         /// <summary>
         /// Committed view of commitMetadataVersion
@@ -498,24 +493,23 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Issue commit request for log (until tail) with the given commitNum
+        /// Issue a strong commit request for log (until tail) with the given commitNum
         /// </summary>
-        /// <param name="commitTail"> the tail committed by this call</param>
+        /// <param name="commitTail">The tail committed by this call</param>
         /// <param name="actualCommitNum">
-        /// a unique, monotonically increasing identifier for the commit that can be used to recover to exactly
-        /// his commit
+        /// A unique, monotonically increasing identifier for the commit that can be used to recover to exactly this commit
         /// </param>
-        /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.</param>
+        /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately</param>
         /// <param name="cookie">
-        /// a custom piece of metadata to be associated with this commit. If commit is successful, any recovery from
+        /// A custom piece of metadata to be associated with this commit. If commit is successful, any recovery from
         /// this commit will recover the cookie in RecoveredCookie field. Note that cookies are not stored by FasterLog
         /// itself, so the user is responsible for tracking cookie content and supplying it to every commit call if needed
         /// </param>
-        /// /// <param name="proposedCommitNum">
-        /// proposal for the identifier to use for this commit, or -1 if the system should pick one. If supplied with
+        /// <param name="proposedCommitNum">
+        /// Proposal for the identifier to use for this commit, or -1 if the system should pick one. If supplied with
         /// a non -1 value, commit is guaranteed to have the supplied identifier if commit call is successful
         /// </param>
-        /// <returns> whether commit is successful </returns>
+        /// <returns>Whether commit is successful </returns>
         public bool CommitStrongly(out long commitTail, out long actualCommitNum, bool spinWait = false, byte[] cookie = null, long proposedCommitNum = -1)
         {
             return CommitInternal(out commitTail, out actualCommitNum, spinWait, false, cookie, proposedCommitNum);
@@ -566,32 +560,27 @@ namespace FASTER.core
 
             return prevCommitTask;
         }
-        
+
         /// <summary>
         /// Issue commit request for log (until tail) with the given commitNum
         /// </summary>
-        /// <param name="commitTail"> the tail committed by this call</param>
-        /// <param name="actualCommitNum">
-        /// a unique, monotonically increasing identifier for the commit that can be used to recover to exactly
-        /// his commit
-        /// </param>
-        /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.</param>
         /// <param name="cookie">
-        /// a custom piece of metadata to be associated with this commit. If commit is successful, any recovery from
+        /// A custom piece of metadata to be associated with this commit. If commit is successful, any recovery from
         /// this commit will recover the cookie in RecoveredCookie field. Note that cookies are not stored by FasterLog
         /// itself, so the user is responsible for tracking cookie content and supplying it to every commit call if needed
         /// </param>
-        /// /// <param name="proposedCommitNum">
-        /// proposal for the identifier to use for this commit, or -1 if the system should pick one. If supplied with
+        /// <param name="proposedCommitNum">
+        /// Proposal for the identifier to use for this commit, or -1 if the system should pick one. If supplied with
         /// a non -1 value, commit is guaranteed to have the supplied identifier if commit call is successful
         /// </param>
-        /// <returns> whether commit is successful </returns>
-        public async ValueTask<(bool, long, long)> CommitStronglyAsync(bool spinWait = false, byte[] cookie = null, long proposedCommitNum = -1,  CancellationToken token = default)
+        /// <param name="token">Cancellation token</param>
+        /// <returns>Whether commit is successful, commit tail, and actual commit number</returns>
+        public async ValueTask<(bool success, long commitTail, long actualCommitNum)> CommitStronglyAsync(byte[] cookie = null, long proposedCommitNum = -1, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
             var task = CommitTask;
             if (!CommitInternal(out var commitTail, out var actualCommitNum,  false, false, cookie, proposedCommitNum))
-                return ValueTuple.Create(false, commitTail, actualCommitNum);
+                return (false, commitTail, actualCommitNum);
 
             while (CommittedUntilAddress < commitTail || persistedCommitNum < actualCommitNum)
             {
@@ -599,7 +588,7 @@ namespace FASTER.core
                 task = linkedCommitInfo.NextTask;
             }
 
-            return ValueTuple.Create(true, commitTail, actualCommitNum);
+            return (true, commitTail, actualCommitNum);
         }
 
         /// <summary>
@@ -996,7 +985,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int Align(int length)
+        private static int Align(int length)
         {
             return (length + 3) & ~3;
         }
@@ -1635,9 +1624,11 @@ namespace FASTER.core
             if (allowFastForward && (cookie != null || proposedCommitNum != -1))
                 throw new FasterException(
                     "Fast forwarding a commit is only allowed when no cookie and not commit num is specified");
-            
-            var info = new FasterLogRecoveryInfo();
-            info.FastForwardAllowed = allowFastForward;
+
+            var info = new FasterLogRecoveryInfo
+            {
+                FastForwardAllowed = allowFastForward
+            };
 
             // This critical section serializes commit record creation / commit content generation and ensures that the
             // long address are sorted in outstandingCommitRecords. Ok because we do not expect heavy contention on the
@@ -1665,7 +1656,7 @@ namespace FASTER.core
                 {
                     // Ok to retry in critical section, any concurrently invoked commit would block, but cannot progress
                     // anyways if no record can be enqueued
-                    while (!TryEnqueueCommitRecord(ref info)) {}
+                    while (!TryEnqueueCommitRecord(ref info)) Thread.Yield();
                     commitTail = info.UntilAddress;
                 }
                 else
