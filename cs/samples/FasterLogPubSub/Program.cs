@@ -78,7 +78,7 @@ namespace FasterLogPubSub
 
                     Console.WriteLine("Committing...");
 
-                    await log.CommitAsync(cancellationToken);
+                    await log.CommitAsync(token: cancellationToken);
                 }
             }
             catch (OperationCanceledException) { }

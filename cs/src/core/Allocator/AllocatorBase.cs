@@ -1762,8 +1762,12 @@ namespace FASTER.core
                     }
                     else
                     {
+                        // Because we are invoking the callback away from the usual codepath, need to externally
+                        // ensure that flush address are updated in order
+                        while (FlushedUntilAddress < asyncResult.fromAddress) Thread.Yield();
                         // Could not add to pending flush list, treat as a failed write
-                        AsyncFlushPageCallback(1, 0, asyncResult);
+                        // Use a special errorCode to convey that this is not from a syscall
+                        AsyncFlushPageCallback(16000, 0, asyncResult);
                     }
                 }
                 else

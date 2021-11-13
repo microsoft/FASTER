@@ -30,11 +30,6 @@ namespace FASTER.core
         private bool _disposed;
 
         /// <summary>
-        /// Next commit number
-        /// </summary>
-        private long commitNum;
-
-        /// <summary>
         /// Track historical commits for automatic purging
         /// </summary>
         private readonly Guid[] indexTokenHistory, logTokenHistory;
@@ -52,7 +47,6 @@ namespace FASTER.core
             this.deviceFactory = deviceFactory;
             this.checkpointNamingScheme = checkpointNamingScheme;
 
-            this.commitNum = 0;
             this.semaphore = new SemaphoreSlim(0);
 
             this.overwriteLogCommits = overwriteLogCommits;
@@ -99,9 +93,12 @@ namespace FASTER.core
         #region ILogCommitManager
 
         /// <inheritdoc />
-        public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata)
+        public bool PreciseCommitNumRecoverySupport() => !overwriteLogCommits;
+
+        /// <inheritdoc />
+        public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum)
         {
-            var device = NextCommitDevice();
+            var device = NextCommitDevice(commitNum);
 
             if (device == null) return;
 
@@ -136,6 +133,21 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
+        public void RemoveCommit(long commitNum)
+        {
+            if (overwriteLogCommits)
+                throw new FasterException("removing commit by commit num is not supported when overwriting log commits");
+            deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+        }
+
+        /// <inheritdoc />
+        public void RemoveAllCommits()
+        {
+            foreach (var commitNum in ListCommits())
+                RemoveCommit(commitNum);
+        }
+
+        /// <inheritdoc />
         public byte[] GetCommitMetadata(long commitNum)
         {
             IDevice device;
@@ -156,7 +168,6 @@ namespace FASTER.core
             else
             {
                 device = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
-                this.commitNum = commitNum + 1;
             }
             if (device == null) return null;
             
@@ -176,14 +187,14 @@ namespace FASTER.core
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
         }
 
-        private IDevice NextCommitDevice()
+        private IDevice NextCommitDevice(long commitNum)
         {
             if (overwriteLogCommits)
             {
                 if (_disposed) return null;
                 if (singleLogCommitDevice == null)
                 {
-                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(0));
                     if (_disposed)
                     {
                         singleLogCommitDevice?.Dispose();
@@ -194,11 +205,11 @@ namespace FASTER.core
                 return singleLogCommitDevice;
             }
 
-            return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum++));
+            var result =  deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+            return result;
         }
         #endregion
-
-
+        
         #region ICheckpointManager
         /// <inheritdoc />
         public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
