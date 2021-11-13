@@ -20,7 +20,7 @@ namespace FASTER.test
         public void FasterLogShiftTailStressTest()
         {
             // Get an excruciatingly slow storage device to maximize chance of clogging the flush pipeline
-            device = new LocalMemoryDevice(1L << 32, 1 << 30, 2, sector_size: 512, latencyMs: 50, fileName: "stress.log");
+            device = new LocalMemoryDevice(1L << 30, 1 << 30, 2, sector_size: 512, latencyMs: 50, fileName: "stress.log");
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager};
             log = new FasterLog(logSettings);
 
