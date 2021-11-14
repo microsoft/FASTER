@@ -103,14 +103,14 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async Task FasterLogResumePersistedReader2([Values] LogChecksumType logChecksum, [Values] bool overwriteLogCommits, [Values] bool removeOutdated)
+        public async Task FasterLogResumePersistedReader2([Values] LogChecksumType logChecksum, [Values] bool removeOutdated)
         {
             var input1 = new byte[] { 0, 1, 2, 3 };
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
             var input3 = new byte[] { 11, 12 };
             string readerName = "abc";
 
-            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(path), overwriteLogCommits, removeOutdated))
+            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(path), removeOutdated))
             {
 
                 long originalCompleted;
@@ -147,14 +147,14 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async Task FasterLogResumePersistedReader3([Values] LogChecksumType logChecksum, [Values] bool overwriteLogCommits, [Values] bool removeOutdated)
+        public async Task FasterLogResumePersistedReader3([Values] LogChecksumType logChecksum, [Values] bool removeOutdated)
         {
             var input1 = new byte[] { 0, 1, 2, 3 };
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
             var input3 = new byte[] { 11, 12 };
             string readerName = "abcd";
 
-            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(path), overwriteLogCommits, removeOutdated))
+            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(path), removeOutdated))
             {
                 long originalCompleted;
 

@@ -12,10 +12,6 @@ namespace FASTER.core
     /// </summary>
     public interface ILogCommitManager : IDisposable
     {
-        /// <summary></summary>
-        /// <returns> Whether this log commit manager supports recovering to a specific commit num </returns>
-        bool PreciseCommitNumRecoverySupport();
-        
         /// <summary>
         /// Perform (synchronous) commit with specified metadata
         /// </summary>
@@ -48,5 +44,12 @@ namespace FASTER.core
         /// Remove all log commits from this manager
         /// </summary>
         public void RemoveAllCommits();
+
+        /// <summary>
+        /// Initiatize manager on recovery (e.g., deleting other commits)
+        /// </summary>
+        /// <param name="commitNum">Commit number</param>
+        /// <param name="purgeEarlierCommits">Whether to purge earlier commits, if removeOutdated is false (if removeOutdated is true, all other commits are purged)</param>
+        public void OnRecovery(long commitNum, bool purgeEarlierCommits);
     }
 }

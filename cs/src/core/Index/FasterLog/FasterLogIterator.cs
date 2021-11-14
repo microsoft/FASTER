@@ -464,6 +464,7 @@ namespace FASTER.core
         /// <param name="entryLength"></param>
         /// <param name="currentAddress"></param>
         /// <param name="outNextAddress"></param>
+        /// <param name="commitRecord"></param>
         /// <returns></returns>
         private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress, out bool commitRecord)
         {

@@ -30,7 +30,7 @@ namespace FASTER.test
             IDevice device = TestUtils.CreateTestDevice(deviceType, filename);
             FasterLog fasterLog = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path, LogChecksum = LogChecksumType.PerEntry });
 
-            Assert.IsTrue(fasterLog.TryEnqueue(new byte[100], out long beginAddress));
+            Assert.IsTrue(fasterLog.TryEnqueue(new byte[100], out _));
 
             fasterLog.Commit(spinWait: false);
             fasterLog.Dispose();
@@ -71,14 +71,14 @@ namespace FASTER.test
             public int TotalEntries() => batchSize;
         }
 
-        protected void BaseSetup(bool overwriteCommit = true, bool deleteOnClose = true)
+        protected void BaseSetup(bool deleteOnClose = true)
         {
             path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path, wait: true);
 
-            manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: deleteOnClose), new DefaultCheckpointNamingScheme(path), overwriteLogCommits: overwriteCommit);
+            manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: deleteOnClose), new DefaultCheckpointNamingScheme(path), false);
             this.deleteOnClose = deleteOnClose;
         }
 
@@ -795,7 +795,7 @@ namespace FASTER.test
     internal class FasterLogCustomCommitTests : FasterLogTestBase
     {
         [SetUp]
-        public void Setup() => base.BaseSetup(false, false);
+        public void Setup() => base.BaseSetup(false);
 
         [TearDown]
         public void TearDown() => base.BaseTearDown();

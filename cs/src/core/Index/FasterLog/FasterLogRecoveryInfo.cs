@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
-
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -16,6 +14,11 @@ namespace FASTER.core
     /// </summary>
     internal struct FasterLogRecoveryInfo
     {
+        /// <summary>
+        /// FasterLog recovery version
+        /// </summary>
+        const int FasterLogRecoveryVersion = 1;
+
         /// <summary>
         /// Begin address
         /// </summary>
@@ -66,7 +69,7 @@ namespace FASTER.core
                 checkSum = reader.ReadInt64();
                 BeginAddress = reader.ReadInt64();
                 UntilAddress = reader.ReadInt64();
-                if (version == 1)
+                if (version > 0)
                     CommitNum = reader.ReadInt64();
                 else
                     CommitNum = -1;
@@ -75,39 +78,56 @@ namespace FASTER.core
             {
                 throw new FasterException("Unable to recover from previous commit. Inner exception: " + e.ToString());
             }
-            if (version != 0 && version != 1)
+            if (version < 0 || version > FasterLogRecoveryVersion)
                 throw new FasterException("Invalid version found during commit recovery");
 
-            if (checkSum != (BeginAddress ^ UntilAddress))
-                throw new FasterException("Invalid checksum found during commit recovery");
-
-            var count = 0;
+            var iteratorCount = 0;
             try
             {
-                count = reader.ReadInt32();
+                iteratorCount = reader.ReadInt32();
             }
             catch { }
 
-            if (count > 0)
+            if (iteratorCount > 0)
             {
                 Iterators = new Dictionary<string, long>();
-                for (int i = 0; i < count; i++)
+                for (int i = 0; i < iteratorCount; i++)
                 {
                     Iterators.Add(reader.ReadString(), reader.ReadInt64());
                 }
             }
 
-            if (version == 1)
+            int cookieLength = -1;
+            long cookieChecksum = 0;
+            if (version >= FasterLogRecoveryVersion)
             {
                 try
                 {
-                    count = reader.ReadInt32();
+                    cookieLength = reader.ReadInt32();
                 }
                 catch { }
 
-                if (count > 0)
-                    Cookie = reader.ReadBytes(count);
+                if (cookieLength >= 0)
+                {
+                    Cookie = reader.ReadBytes(cookieLength);
+                    unsafe
+                    {
+                        fixed (byte* ptr = Cookie)
+                            cookieChecksum = (long)Utility.XorBytes(ptr, cookieLength);
+                    }
+                }
             }
+
+            long computedChecksum = BeginAddress ^ UntilAddress;
+            if (version >= FasterLogRecoveryVersion)
+                computedChecksum ^= CommitNum ^ iteratorCount ^ cookieLength ^ cookieChecksum;
+
+            // Handle case where all fields are zero
+            if (version == 0 && BeginAddress == 0 && UntilAddress == 0 && iteratorCount == 0)
+                throw new FasterException("Invalid checksum found during commit recovery");
+
+            if (checkSum != computedChecksum)
+                throw new FasterException("Invalid checksum found during commit recovery");
         }
 
         /// <summary>
@@ -126,34 +146,42 @@ namespace FASTER.core
             using MemoryStream ms = new();
             using (BinaryWriter writer = new(ms))
             {
-                writer.Write(1); // version
-                writer.Write(BeginAddress ^ UntilAddress); // checksum
+                writer.Write(FasterLogRecoveryVersion); // version
+
+                int iteratorCount = 0;
+                if (Iterators != null) iteratorCount = Iterators.Count;
+
+                int cookieLength = -1;
+                long cookieChecksum = 0;
+                if (Cookie != null)
+                {
+                    cookieLength = Cookie.Length;
+                    if (cookieLength > 0)
+                        unsafe
+                        {
+                            fixed (byte *ptr = Cookie)
+                                cookieChecksum = (long)Utility.XorBytes(ptr, cookieLength);
+                        }
+                }
+
+                writer.Write(BeginAddress ^ UntilAddress ^ CommitNum ^ iteratorCount ^ cookieLength ^ cookieChecksum); // checksum
                 writer.Write(BeginAddress);
                 writer.Write(UntilAddress);
                 writer.Write(CommitNum);
-                if (Iterators?.Count > 0)
+
+                writer.Write(iteratorCount);
+                if (iteratorCount > 0)
                 {
-                    writer.Write(Iterators.Count);
                     foreach (var kvp in Iterators)
                     {
                         writer.Write(kvp.Key);
                         writer.Write(kvp.Value);
                     }
                 }
-                else
-                {
-                    writer.Write(0);
-                }
 
-                if (Cookie != null)
-                {
-                    writer.Write(Cookie.Length);
+                writer.Write(cookieLength);
+                if (cookieLength > 0)
                     writer.Write(Cookie);
-                }
-                else
-                {
-                    writer.Write(0);
-                }
             }
             return ms.ToArray();
         }
