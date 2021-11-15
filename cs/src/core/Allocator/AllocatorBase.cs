@@ -1752,22 +1752,12 @@ namespace FASTER.core
                     }
 
                     // Enqueue work in shared queue
-                    if (PendingFlush[index].Add(asyncResult))
+                    PendingFlush[index].Add(asyncResult);
+
+                    // Perform work from shared queue if possible
+                    if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
                     {
-                        // Perform work from shared queue if possible
-                        if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
-                        {
-                            WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
-                        }
-                    }
-                    else
-                    {
-                        // Because we are invoking the callback away from the usual codepath, need to externally
-                        // ensure that flush address are updated in order
-                        while (FlushedUntilAddress < asyncResult.fromAddress) Thread.Yield();
-                        // Could not add to pending flush list, treat as a failed write
-                        // Use a special errorCode to convey that this is not from a syscall
-                        AsyncFlushPageCallback(16000, 0, asyncResult);
+                        WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
                     }
                 }
                 else
