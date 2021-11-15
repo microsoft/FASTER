@@ -61,17 +61,26 @@ namespace FASTER.server
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
         }
 
+        /// <summary>
+        /// GetFunctions() for custom functions provided by the client
+        /// </summary>
+        /// <returns></returns>
+        public virtual IAdvancedFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long> GetFunctions()
+        {
+            return new SpanByteFunctionsForServer<long>();
+        }
+
         /// <inheritdoc />
         public virtual IServerSession GetSession(WireFormat wireFormat, Socket socket)
         {
             switch (wireFormat)
             {
                 case WireFormat.WebSocket:
-                    return new WebsocketServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
-                        (socket, store, new SpanByteFunctionsForServer<long>(), serializer, maxSizeSettings, kvBroker, broker);
+                    return new WebsocketServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, IAdvancedFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>, SpanByteServerSerializer>
+                        (socket, store, GetFunctions(), serializer, maxSizeSettings, kvBroker, broker);
                 default:
-                    return new BinaryServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
-                        (socket, store, new SpanByteFunctionsForServer<long>(), serializer, maxSizeSettings, kvBroker, broker);
+                    return new BinaryServerSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, IAdvancedFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>, SpanByteServerSerializer>
+                        (socket, store, GetFunctions(), serializer, maxSizeSettings, kvBroker, broker);
             }
         }
     }
