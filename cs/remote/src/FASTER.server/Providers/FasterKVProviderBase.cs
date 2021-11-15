@@ -12,7 +12,7 @@ namespace FASTER.server
     /// [K, V, I, O, F, P]
     /// </summary>
     public abstract class FasterKVProviderBase<Key, Value, Input, Output, Functions, ParameterSerializer> : ISessionProvider
-        where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
+        where Functions : IFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         /// <summary>
