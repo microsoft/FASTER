@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 namespace FASTER.core
 {
-    class PendingFlushList
+    sealed class PendingFlushList
     {
         public readonly LinkedList<PageAsyncFlushResult<Empty>> list;
 
