@@ -13,7 +13,7 @@ namespace FASTER.test
     internal class FasterLogFastCommitTests : FasterLogTestBase
     {
         [SetUp]
-        public void Setup() => base.BaseSetup(false, false);
+        public void Setup() => base.BaseSetup(false);
 
         [TearDown]
         public void TearDown() => base.BaseTearDown();

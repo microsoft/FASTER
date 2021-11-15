@@ -35,7 +35,7 @@ namespace FASTER.test
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(path + "Recover", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, RemoveOutdatedCommitFiles = false });
             deviceReadOnly = Devices.CreateLogDevice(path + "RecoverReadOnly");
             logReadOnly = new FasterLog(new FasterLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 });
         }
@@ -128,7 +128,7 @@ namespace FASTER.test
             {
                 // Delay for a while before checking again.
                 await Task.Delay(TimeSpan.FromMilliseconds(restorePeriodMs), cancellationToken);
-                await log.RecoverReadOnlyAsync(cancellationToken);
+                await log.RecoverReadOnlyAsync(true, cancellationToken);
             }
         }
     }
