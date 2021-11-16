@@ -15,9 +15,9 @@ namespace FASTER.core
     /// </summary>
     public class DeviceLogCommitCheckpointManager : ILogCommitManager, ICheckpointManager
     {
-        const int indexTokenCount = 2;
-        const int logTokenCount = 1;
-        const int flogCommitCount = 1;
+        const byte indexTokenCount = 2;
+        const byte logTokenCount = 1;
+        const byte flogCommitCount = 1;
 
         private readonly INamedDeviceFactory deviceFactory;
         private readonly ICheckpointNamingScheme checkpointNamingScheme;
@@ -31,7 +31,7 @@ namespace FASTER.core
         /// </summary>
         private readonly Guid[] indexTokenHistory, logTokenHistory;
         private readonly long[] flogCommitHistory;
-        private int indexTokenHistoryOffset, logTokenHistoryOffset, flogCommitHistoryOffset;
+        private byte indexTokenHistoryOffset, logTokenHistoryOffset, flogCommitHistoryOffset;
 
         /// <summary>
         /// Create new instance of log commit manager
@@ -51,11 +51,11 @@ namespace FASTER.core
             {
                 // We keep two index checkpoints as the latest index might not have a
                 // later log checkpoint to work with
-                indexTokenHistory = new Guid[2];
+                indexTokenHistory = new Guid[indexTokenCount];
                 // We only keep the latest log checkpoint
-                logTokenHistory = new Guid[2];
+                logTokenHistory = new Guid[logTokenCount];
                 // // We only keep the latest FasterLog commit
-                flogCommitHistory = new long[2];
+                flogCommitHistory = new long[flogCommitCount];
             }
             deviceFactory.Initialize(checkpointNamingScheme.BaseName());
         }
@@ -103,7 +103,7 @@ namespace FASTER.core
             {
                 var prior = flogCommitHistory[flogCommitHistoryOffset];
                 flogCommitHistory[flogCommitHistoryOffset] = commitNum;
-                flogCommitHistoryOffset = (flogCommitHistoryOffset + 1) % flogCommitCount;
+                flogCommitHistoryOffset = (byte)((flogCommitHistoryOffset + 1) % flogCommitCount);
                 if (prior != default)
                     deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(prior));
             }
@@ -171,7 +171,7 @@ namespace FASTER.core
             {
                 var prior = indexTokenHistory[indexTokenHistoryOffset];
                 indexTokenHistory[indexTokenHistoryOffset] = indexToken;
-                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenCount;
+                indexTokenHistoryOffset = (byte)((indexTokenHistoryOffset + 1) % indexTokenCount);
                 if (prior != default)
                     deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(prior));
             }
@@ -218,7 +218,7 @@ namespace FASTER.core
             {
                 var prior = logTokenHistory[logTokenHistoryOffset];
                 logTokenHistory[logTokenHistoryOffset] = logToken;
-                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenCount;
+                logTokenHistoryOffset = (byte)((logTokenHistoryOffset + 1) % logTokenCount);
                 if (prior != default)
                     deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(prior));
             }
@@ -349,12 +349,12 @@ namespace FASTER.core
             if (indexToken != default)
             {
                 indexTokenHistory[indexTokenHistoryOffset] = indexToken;
-                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenCount;
+                indexTokenHistoryOffset = (byte)((indexTokenHistoryOffset + 1) % indexTokenCount);
             }
             if (logToken != default)
             {
                 logTokenHistory[logTokenHistoryOffset] = logToken;
-                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenCount;
+                logTokenHistoryOffset = (byte)((logTokenHistoryOffset + 1) % logTokenCount);
             }
 
             // Purge all log checkpoints that were not used for recovery
@@ -384,7 +384,7 @@ namespace FASTER.core
                 if (commitNum != default)
                 {
                     flogCommitHistory[flogCommitHistoryOffset] = commitNum;
-                    flogCommitHistoryOffset = (flogCommitHistoryOffset + 1) % flogCommitCount;
+                    flogCommitHistoryOffset = (byte)((flogCommitHistoryOffset + 1) % flogCommitCount);
                 }
             }
             else if (purgeEarlierCommits)
