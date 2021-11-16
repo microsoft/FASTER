@@ -23,7 +23,7 @@ namespace FASTER.core
             PendingContext<Input, Output, Context> _pendingContext;
             readonly AsyncIOContext<Key, Value> _diskRequest;
             int CompletionComputeStatus;
-            internal RecordInfo _recordInfo;
+            internal RecordMetadata _recordMetadata;
 
             internal ReadAsyncInternal(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession, FasterExecutionContext<Input, Output, Context> currentCtx,
                                        PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
@@ -35,7 +35,7 @@ namespace FASTER.core
                 _pendingContext = pendingContext;
                 _diskRequest = diskRequest;
                 CompletionComputeStatus = Pending;
-                _recordInfo = default;
+                _recordMetadata = default;
             }
 
             internal (Status, Output) Complete()
@@ -57,7 +57,7 @@ namespace FASTER.core
                                 var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _);
                                 Debug.Assert(status != Status.PENDING);
                                 _result = (status, _pendingContext.output);
-                                _recordInfo = _pendingContext.recordInfo;
+                                _recordMetadata = new(_pendingContext.recordInfo, _pendingContext.logicalAddress);
                                 _pendingContext.Dispose();
                             }
                             finally
@@ -83,10 +83,10 @@ namespace FASTER.core
                 return _result;
             }
 
-            internal (Status, Output) Complete(out RecordInfo recordInfo)
+            internal (Status, Output) Complete(out RecordMetadata recordMetadata)
             {
                 var result = this.Complete();
-                recordInfo = _recordInfo;
+                recordMetadata = _recordMetadata;
                 return result;
             }
         }
@@ -96,17 +96,17 @@ namespace FASTER.core
         /// </summary>
         public struct ReadAsyncResult<Input, Output, Context>
         {
-            internal readonly Status status;
-            internal readonly Output output;
-            readonly RecordInfo recordInfo;
+            private readonly Status status;
+            private readonly Output output;
+            readonly RecordMetadata recordMetadata;
 
             internal readonly ReadAsyncInternal<Input, Output, Context> readAsyncInternal;
 
-            internal ReadAsyncResult(Status status, Output output, RecordInfo recordInfo)
+            internal ReadAsyncResult(Status status, Output output, RecordMetadata recordMetadata)
             {
                 this.status = status;
                 this.output = output;
-                this.recordInfo = recordInfo;
+                this.recordMetadata = recordMetadata;
                 this.readAsyncInternal = default;
             }
 
@@ -118,7 +118,7 @@ namespace FASTER.core
             {
                 status = Status.PENDING;
                 output = default;
-                this.recordInfo = default;
+                this.recordMetadata = default;
                 readAsyncInternal = new ReadAsyncInternal<Input, Output, Context>(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
             }
 
@@ -138,15 +138,15 @@ namespace FASTER.core
             /// Complete the read operation, after any I/O is completed.
             /// </summary>
             /// <returns>The read result and the previous address in the Read key's hash chain, or throws an exception if error encountered.</returns>
-            public (Status status, Output output) Complete(out RecordInfo recordInfo)
+            public (Status status, Output output) Complete(out RecordMetadata recordMetadata)
             {
                 if (status != Status.PENDING)
                 {
-                    recordInfo = this.recordInfo;
+                    recordMetadata = this.recordMetadata;
                     return (status, output);
                 }
 
-                return readAsyncInternal.Complete(out recordInfo);
+                return readAsyncInternal.Complete(out recordMetadata);
             }
         }
 
@@ -169,14 +169,14 @@ namespace FASTER.core
 
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
                 {
-                    return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>((Status)internalStatus, output, pcontext.recordInfo));
+                    return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>((Status)internalStatus, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
                 }
                 else
                 {
                     var status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, true, out diskRequest);
 
                     if (status != Status.PENDING)
-                        return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(status, output, pcontext.recordInfo));
+                        return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
                 }
             }
             finally

@@ -153,7 +153,7 @@ namespace FASTER.core
                 #region Previous pending requests
                 if (!RelaxedCPR)
                 {
-                    if (ctx.phase == Phase.IN_PROGRESS || ctx.phase == Phase.WAIT_PENDING)
+                    if (ctx.phase == Phase.IN_PROGRESS)
                     {
                         InternalCompletePendingRequests(ctx.prevCtx, ctx, fasterSession, completedOutputs);
                         InternalCompleteRetryRequests(ctx.prevCtx, ctx, fasterSession);
@@ -216,7 +216,7 @@ namespace FASTER.core
                         internalStatus = InternalRMW(ref key, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.UPSERT:
-                        internalStatus = InternalUpsert(ref key, ref pendingContext.value.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                        internalStatus = InternalUpsert(ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.DELETE:
                         internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
@@ -249,10 +249,12 @@ namespace FASTER.core
                         fasterSession.RMWCompletionCallback(ref key,
                                                 ref pendingContext.input.Get(),
                                                 ref pendingContext.output,
-                                                pendingContext.userContext, status);
+                                                pendingContext.userContext, status,
+                                                new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
                         break;
                     case OperationType.UPSERT:
                         fasterSession.UpsertCompletionCallback(ref key,
+                                                 ref pendingContext.input.Get(),
                                                  ref pendingContext.value.Get(),
                                                  pendingContext.userContext);
                         break;
@@ -363,6 +365,9 @@ namespace FASTER.core
             {
                 internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
             }
+
+            // Set the record metadata into pendingContext. Note that pendingContext.logicalAddress has been correctly set by the
+            // InternalContinuePending operation we just did.
             unsafe { pendingContext.recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
 
             request.Dispose();
@@ -397,15 +402,16 @@ namespace FASTER.core
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
                                                      status,
-                                                     pendingContext.recordInfo);
+                                                     new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
                 }
                 else
                 {
                     fasterSession.RMWCompletionCallback(ref key,
-                                                    ref pendingContext.input.Get(),
-                                                    ref pendingContext.output,
-                                                    pendingContext.userContext,
-                                                    status);
+                                                     ref pendingContext.input.Get(),
+                                                     ref pendingContext.output,
+                                                     pendingContext.userContext,
+                                                     status,
+                                                     new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
                 }
             }
             return status;

@@ -47,7 +47,7 @@ namespace FASTER.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        private byte[] GetByteArray(int i)
+        private static byte[] GetByteArray(int i)
         {
             return BitConverter.GetBytes(i);
         }
@@ -86,7 +86,7 @@ namespace FASTER.test
 
         class MyByteArrayFuncs : SimpleFunctions<byte[], byte[]>
         {
-            public override void ReadCompletionCallback(ref byte[] key, ref byte[] input, ref byte[] output, Empty ctx, Status status)
+            public override void ReadCompletionCallback(ref byte[] key, ref byte[] input, ref byte[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 Assert.IsTrue(output.SequenceEqual(key));
             }

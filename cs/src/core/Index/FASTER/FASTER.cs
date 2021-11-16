@@ -35,11 +35,15 @@ namespace FASTER.core
     {
         internal readonly AllocatorBase<Key, Value> hlog;
         private readonly AllocatorBase<Key, Value> readcache;
-        private readonly IFasterEqualityComparer<Key> comparer;
+
+        /// <summary>
+        /// Compares two keys
+        /// </summary>
+        protected readonly IFasterEqualityComparer<Key> comparer;
 
         internal readonly bool UseReadCache;
         private readonly CopyReadsToTail CopyReadsToTail;
-        private readonly bool FoldOverSnapshot;
+        private readonly bool UseFoldOverCheckpoint;
         internal readonly int sectorSize;
         private readonly bool WriteDefaultOnDelete;
         internal bool RelaxedCPR;
@@ -145,7 +149,7 @@ namespace FASTER.core
             if (checkpointSettings.CheckpointManager == null)
                 disposeCheckpointManager = true;
 
-            FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
+            UseFoldOverCheckpoint = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
             CopyReadsToTail = logSettings.CopyReadsToTail;
 
             if (logSettings.ReadCacheSettings != null)
@@ -224,9 +228,7 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            systemState = default;
-            systemState.Phase = Phase.REST;
-            systemState.Version = 1;
+            systemState = SystemState.Make(Phase.REST, 1);
         }
 
         /// <summary>
@@ -244,7 +246,7 @@ namespace FASTER.core
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
         public bool TakeFullCheckpoint(out Guid token, long targetVersion = -1) 
-            => TakeFullCheckpoint(out token, this.FoldOverSnapshot ? CheckpointType.FoldOver : CheckpointType.Snapshot, targetVersion);
+            => TakeFullCheckpoint(out token, this.UseFoldOverCheckpoint ? CheckpointType.FoldOver : CheckpointType.Snapshot, targetVersion);
 
         /// <summary>
         /// Initiate full checkpoint
@@ -353,17 +355,7 @@ namespace FASTER.core
         /// </param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1)
-        {
-            ISynchronizationTask backend;
-            if (FoldOverSnapshot)
-                backend = new FoldOverCheckpointTask();
-            else
-                backend = new SnapshotCheckpointTask();
-
-            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
-            token = _hybridLogCheckpointToken;
-            return result;
-        }
+            => TakeHybridLogCheckpoint(out token, UseFoldOverCheckpoint ? CheckpointType.FoldOver : CheckpointType.Snapshot, tryIncremental: false, targetVersion);
 
         /// <summary>
         /// Initiate log-only checkpoint
@@ -506,7 +498,7 @@ namespace FASTER.core
         public async ValueTask CompleteCheckpointAsync(CancellationToken token = default)
         {
             if (LightEpoch.AnyInstanceProtected())
-                throw new FasterException("Cannot use CompleteCheckpointAsync when using legacy or non-async sessions");
+                throw new FasterException("Cannot use CompleteCheckpointAsync when using non-async sessions");
 
             token.ThrowIfCancellationRequested();
 
@@ -542,7 +534,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+                FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
@@ -565,24 +557,24 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref RecordMetadata recordMetadata, ReadFlags readFlags, Context context,
+                FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(readFlags, recordInfo.PreviousAddress);
-            var internalStatus = InternalRead(ref key, ref input, ref output, recordInfo.PreviousAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+            pcontext.SetOperationFlags(readFlags, recordMetadata.RecordInfo.PreviousAddress);
+            var internalStatus = InternalRead(ref key, ref input, ref output, recordMetadata.RecordInfo.PreviousAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
 
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                recordInfo = pcontext.recordInfo;
+                recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
                 status = (Status)internalStatus;
             }
             else
             {
-                recordInfo = default;
+                recordMetadata = default;
                 status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
             }
 
@@ -618,25 +610,26 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Value value, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, out RecordMetadata recordMetadata,
+            Context context, FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+                internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             while (internalStatus == OperationStatus.RETRY_NOW);
 
             Status status;
-
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
+                recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
                 status = (Status)internalStatus;
             }
             else
             {
+                recordMetadata = default;
                 status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
             }
 
@@ -648,6 +641,12 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
             FasterExecutionContext<Input, Output, Context> sessionCtx)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context> 
+            => ContextRMW(ref key, ref input, ref output, out _, context, fasterSession, serialNo, sessionCtx);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, out RecordMetadata recordMetadata, 
+            Context context, FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
@@ -660,10 +659,12 @@ namespace FASTER.core
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
+                recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
                 status = (Status)internalStatus;
             }
             else
             {
+                recordMetadata = default;
                 status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
             }
 
@@ -711,7 +712,7 @@ namespace FASTER.core
         public bool GrowIndex()
         {
             if (LightEpoch.AnyInstanceProtected())
-                throw new FasterException("Cannot use GrowIndex when using legacy or non-async sessions");
+                throw new FasterException("Cannot use GrowIndex when using non-async sessions");
 
             if (!StartStateMachine(new IndexResizeStateMachine())) return false;
 

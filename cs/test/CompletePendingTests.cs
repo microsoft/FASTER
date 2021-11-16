@@ -13,18 +13,14 @@ namespace FASTER.test
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
-        private string path;
-
 
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait:true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
 
-            log = Devices.CreateLogDevice(path + "/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
+            log = Devices.CreateLogDevice($"{TestUtils.MethodTestDir}/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>(128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
         }
 
@@ -35,16 +31,16 @@ namespace FASTER.test
             fht = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }
 
         const int numRecords = 1000;
 
-        static KeyStruct NewKeyStruct(int key) => new KeyStruct { kfield1 = key, kfield2 = key + numRecords * 10 };
-        static ValueStruct NewValueStruct(int key) => new ValueStruct { vfield1 = key, vfield2 = key + numRecords * 10 };
+        static KeyStruct NewKeyStruct(int key) => new() { kfield1 = key, kfield2 = key + numRecords * 10 };
+        static ValueStruct NewValueStruct(int key) => new() { vfield1 = key, vfield2 = key + numRecords * 10 };
 
-        static InputStruct NewInputStruct(int key) => new InputStruct { ifield1 = key + numRecords * 30, ifield2 = key + numRecords * 40 };
-        static ContextStruct NewContextStruct(int key) => new ContextStruct { cfield1 = key + numRecords * 50, cfield2 = key + numRecords * 60 };
+        static InputStruct NewInputStruct(int key) => new(){ ifield1 = key + numRecords * 30, ifield2 = key + numRecords * 40 };
+        static ContextStruct NewContextStruct(int key) => new() { cfield1 = key + numRecords * 50, cfield2 = key + numRecords * 60 };
 
         static void VerifyStructs(int key, ref KeyStruct keyStruct, ref InputStruct inputStruct, ref OutputStruct outputStruct, ref ContextStruct contextStruct, bool useRMW)
         {
@@ -60,13 +56,12 @@ namespace FASTER.test
             Assert.AreEqual(key + numRecords * 60, contextStruct.cfield2);
         }
 
-        // This class reduces code duplication due to ClientSession vs. AdvancedClientSession
         class ProcessPending
         {
             // Get the first chunk of outputs as a group, testing realloc.
             private int deferredPendingMax = CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc + 1;
             private int deferredPending = 0;
-            internal Dictionary<int, long> keyAddressDict = new Dictionary<int, long>();
+            internal Dictionary<int, long> keyAddressDict = new();
             private bool isFirst = true;
 
             internal bool IsFirst()
@@ -86,8 +81,9 @@ namespace FASTER.test
                 return false;
             }
 
-            internal void Process(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, bool useRMW)
+            internal void Process(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, List<(KeyStruct, long)> rmwCopyUpdatedAddresses)
             {
+                var useRMW = rmwCopyUpdatedAddresses is not null;
                 Assert.AreEqual(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc *
                                 CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kReallocMultuple, completedOutputs.vector.Length);
                 Assert.AreEqual(deferredPending, completedOutputs.maxIndex);
@@ -98,7 +94,10 @@ namespace FASTER.test
                 {
                     ref var result = ref completedOutputs.Current;
                     VerifyStructs((int)result.Key.kfield1, ref result.Key, ref result.Input, ref result.Output, ref result.Context, useRMW);
-                    Assert.AreEqual(keyAddressDict[(int)result.Key.kfield1], result.Address);
+                    if (!useRMW)
+                        Assert.AreEqual(keyAddressDict[(int)result.Key.kfield1], result.RecordMetadata.Address);
+                    else if (keyAddressDict[(int)result.Key.kfield1] != result.RecordMetadata.Address)
+                        rmwCopyUpdatedAddresses.Add((result.Key, result.RecordMetadata.Address));
                 }
                 completedOutputs.Dispose();
                 Assert.AreEqual(deferredPending + 1, count);
@@ -115,7 +114,7 @@ namespace FASTER.test
                 Assert.AreEqual(0, this.deferredPending);
             }
 
-            internal void VerifyOneNotFound(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, ref KeyStruct keyStruct)
+            internal static void VerifyOneNotFound(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, ref KeyStruct keyStruct)
             {
                 Assert.IsTrue(completedOutputs.Next());
                 Assert.AreEqual(Status.NOTFOUND, completedOutputs.Current.Status);
@@ -142,8 +141,10 @@ namespace FASTER.test
                 session.Upsert(ref keyStruct, ref valueStruct);
             }
 
-            // Flush to make reads go pending.
+            // Flush to make reads or RMWs go pending.
             fht.Log.FlushAndEvict(wait: true);
+
+            List<(KeyStruct key, long address)> rmwCopyUpdatedAddresses = new();
 
             for (var key = 0; key < numRecords; ++key)
             {
@@ -152,18 +153,18 @@ namespace FASTER.test
                 var contextStruct = NewContextStruct(key);
                 OutputStruct outputStruct = default;
 
-                CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
                 if ((key % (numRecords / 10)) == 0)
                 {
                     var ksUnfound = keyStruct;
                     ksUnfound.kfield1 += numRecords * 10;
                     if (session.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct) == Status.PENDING)
                     {
+                        CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
                         if (isAsync)
                             completedOutputs = await session.CompletePendingWithOutputsAsync();
                         else
                             session.CompletePendingWithOutputs(out completedOutputs, wait: true);
-                        processPending.VerifyOneNotFound(completedOutputs, ref ksUnfound);
+                        ProcessPending.VerifyOneNotFound(completedOutputs, ref ksUnfound);
                     }
                 }
 
@@ -182,87 +183,36 @@ namespace FASTER.test
 
                     if (!processPending.DeferPending())
                     {
+                        CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
                         if (isAsync)
                             completedOutputs = await session.CompletePendingWithOutputsAsync();
                         else
                             session.CompletePendingWithOutputs(out completedOutputs, wait: true);
-                        processPending.Process(completedOutputs, useRMW);
+                        processPending.Process(completedOutputs, useRMW ? rmwCopyUpdatedAddresses : null);
                     }
                     continue;
                 }
                 Assert.AreEqual(Status.OK, status);
             }
             processPending.VerifyNoDeferredPending();
-        }
 
-        [Test]
-        [Category("FasterKV")]
-        public async ValueTask AdvReadAndCompleteWithPendingOutput([Values] bool useRMW, [Values]bool isAsync)
-        {
-            using var session = fht.For(new AdvancedFunctionsWithContext<ContextStruct>()).NewSession<AdvancedFunctionsWithContext<ContextStruct>>();
-            Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
+            // If we are using RMW, then all records were pending and updated their addresses, and we skipped the first one in the loop above.
+            if (useRMW)
+                Assert.AreEqual(numRecords - 1, rmwCopyUpdatedAddresses.Count);
 
-            ProcessPending processPending = new ProcessPending();
-
-            for (var key = 0; key < numRecords; ++key)
+            foreach (var (key, address) in rmwCopyUpdatedAddresses)
             {
-                var keyStruct = NewKeyStruct(key);
-                var valueStruct = NewValueStruct(key);
-                processPending.keyAddressDict[key] = fht.Log.TailAddress;
-                session.Upsert(ref keyStruct, ref valueStruct);
-            }
-
-            // Flush to make reads go pending.
-            fht.Log.FlushAndEvict(wait: true);
-
-            for (var key = 0; key < numRecords; ++key)
-            {
-                var keyStruct = NewKeyStruct(key);
-                var inputStruct = NewInputStruct(key);
-                var contextStruct = NewContextStruct(key);
+                // ConcurrentReader does not verify the input struct.
+                InputStruct inputStruct = default;
                 OutputStruct outputStruct = default;
+                RecordMetadata recordMetadata = default;
 
-                CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
-                if ((key % (numRecords / 10)) == 0)
-                {
-                    var ksUnfound = keyStruct;
-                    ksUnfound.kfield1 += numRecords * 10;
-                    if (session.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct) == Status.PENDING)
-                    {
-                        if (isAsync)
-                            completedOutputs = await session.CompletePendingWithOutputsAsync();
-                        else
-                            session.CompletePendingWithOutputs(out completedOutputs, wait: true);
-                        processPending.VerifyOneNotFound(completedOutputs, ref ksUnfound);
-                    }
-                }
-
-                // We don't use context (though we verify it), and Read does not use input.
-                var status = useRMW
-                    ? session.RMW(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct)
-                    : session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
-                if (status == Status.PENDING)
-                {
-                    if (processPending.IsFirst())
-                    {
-                        session.CompletePending(wait: true);        // Test that this does not instantiate CompletedOutputIterator
-                        Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
-                        continue;
-                    }
-
-                    if (!processPending.DeferPending())
-                    {
-                        if (isAsync)
-                            completedOutputs = await session.CompletePendingWithOutputsAsync();
-                        else
-                            session.CompletePendingWithOutputs(out completedOutputs, wait: true);
-                        processPending.Process(completedOutputs, useRMW);
-                    }
-                    continue;
-                }
-                Assert.AreEqual(Status.OK, status);
+                // This should not be pending since we've not flushed.
+                var localKey = key;
+                var status = session.Read(ref localKey, ref inputStruct, ref outputStruct, ref recordMetadata);
+                Assert.AreNotEqual(Status.PENDING, status);
+                Assert.AreEqual(address, recordMetadata.Address);
             }
-            processPending.VerifyNoDeferredPending();
         }
     }
 }

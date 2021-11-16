@@ -82,7 +82,7 @@ namespace CacheStore
     /// </summary>
     public class CacheFunctions : SimpleFunctions<CacheKey, CacheValue, CacheContext>
     {
-        public override void ReadCompletionCallback(ref CacheKey key, ref CacheValue input, ref CacheValue output, CacheContext ctx, Status status)
+        public override void ReadCompletionCallback(ref CacheKey key, ref CacheValue input, ref CacheValue output, CacheContext ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx.type == 0)
             {

@@ -255,7 +255,6 @@ namespace FASTER.client
         /// SubscribeKV operation
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="input">Input</param>
         /// <param name="userContext">User context</param>
         /// <param name="serialNo">Serial number</param>
         /// <returns>Status of operation</returns>
@@ -266,7 +265,6 @@ namespace FASTER.client
         /// PSubscribe operation
         /// </summary>
         /// <param name="prefix">Key</param>
-        /// <param name="input">Input</param>
         /// <param name="userContext">User context</param>
         /// <param name="serialNo">Serial number</param>
         /// <returns>Status of operation</returns>
@@ -891,7 +889,15 @@ namespace FASTER.client
 
             connState.AddBytesRead(e.BytesTransferred);
             var newHead = connState.TryConsumeMessages(e.Buffer);
-            e.SetBuffer(newHead, e.Buffer.Length - newHead);
+            if (newHead == e.Buffer.Length)
+            {
+                // Need to grow input buffer
+                var newBuffer = new byte[e.Buffer.Length * 2];
+                Array.Copy(e.Buffer, newBuffer, e.Buffer.Length);
+                e.SetBuffer(newBuffer, newHead, newBuffer.Length - newHead);
+            }
+            else
+                e.SetBuffer(newHead, e.Buffer.Length - newHead);
             return true;
         }
 

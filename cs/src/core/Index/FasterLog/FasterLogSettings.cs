@@ -89,6 +89,19 @@ namespace FASTER.core
         /// </summary>
         public bool ReadOnlyMode = false;
 
+        /// <summary>
+        /// When FastCommitMode is enabled, FasterLog will reduce commit critical path latency, but may result in slower
+        /// recovery to a commit on restart. Additionally, FastCommitMode is only possible when log checksum is turned
+        /// on.
+        /// </summary>
+        public bool FastCommitMode = false;
+
+        /// <summary>
+        /// When true, we automatically delete commit files that are covered by a successful subsequent commit, and during
+        /// recovery we delete all commit files other than the one we have recovered to.
+        /// </summary>
+        public bool RemoveOutdatedCommitFiles = true;
+
         internal LogSettings GetLogSettings()
         {
             return new LogSettings

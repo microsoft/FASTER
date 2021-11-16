@@ -110,7 +110,7 @@ namespace ReadAddress
             using var s = store.For(new Functions()).NewSession<Functions>();
             Console.WriteLine($"Writing {numKeys} keys to FASTER", numKeys);
 
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
             var prevLap = 0;
             for (int ii = 0; ii < numKeys; ii++)
@@ -151,20 +151,24 @@ namespace ReadAddress
             var output = default(Value);
             var input = default(Value);
             var key = new Key(keyValue);
-            RecordInfo recordInfo = default;
-            var context = new Context();
-            int version = int.MaxValue;
+            RecordMetadata recordMetadata = default;
             for (int lap = 9; /* tested in loop */; --lap)
             {
-                var status = session.Read(ref key, ref input, ref output, ref recordInfo, userContext: context, serialNo: maxLap + 1);
+                var status = session.Read(ref key, ref input, ref output, ref recordMetadata, serialNo: maxLap + 1);
+
+                // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                 if (status == Status.PENDING)
                 {
-                    // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                    session.CompletePending(wait: true);
-                    recordInfo = context.recordInfo;
-                    status = context.status;
+                    session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    using (completedOutputs)
+                    {
+                        completedOutputs.Next();
+                        recordMetadata = completedOutputs.Current.RecordMetadata;
+                        status = completedOutputs.Current.Status;
+                    }
                 }
-                if (!ProcessRecord(store, status, recordInfo, lap, ref output, ref version))
+
+                if (!ProcessRecord(store, status, recordMetadata.RecordInfo, lap, ref output))
                     break;
             }
         }
@@ -178,28 +182,25 @@ namespace ReadAddress
 
             var input = default(Value);
             var key = new Key(keyValue);
-            RecordInfo recordInfo = default;
-            int version = int.MaxValue;
+            RecordMetadata recordMetadata = default;
             for (int lap = 9; /* tested in loop */; --lap)
             {
-                var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1, cancellationToken: cancellationToken);
+                var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, default, serialNo: maxLap + 1, cancellationToken: cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
-                var (status, output) = readAsyncResult.Complete(out recordInfo);
-                if (!ProcessRecord(store, status, recordInfo, lap, ref output, ref version))
+                var (status, output) = readAsyncResult.Complete(out recordMetadata);
+                if (!ProcessRecord(store, status, recordMetadata.RecordInfo, lap, ref output))
                     break;
             }
         }
 
-        private static bool ProcessRecord(FasterKV<Key, Value> store, Status status, RecordInfo recordInfo, int lap, ref Value output, ref int previousVersion)
+        private static bool ProcessRecord(FasterKV<Key, Value> store, Status status, RecordInfo recordInfo, int lap, ref Value output)
         {
             Debug.Assert((status == Status.NOTFOUND) == recordInfo.Tombstone);
             Debug.Assert((lap == deleteLap) == recordInfo.Tombstone);
             var value = recordInfo.Tombstone ? "<deleted>" : output.value.ToString();
-            Debug.Assert(previousVersion >= recordInfo.Version);
-            Console.WriteLine($"  {value}; Version = {recordInfo.Version}; PrevAddress: {recordInfo.PreviousAddress}");
+            Console.WriteLine($"  {value}; PrevAddress: {recordInfo.PreviousAddress}");
 
             // Check for end of loop
-            previousVersion = recordInfo.Version;
             return recordInfo.PreviousAddress >= store.Log.BeginAddress;
         }
     }

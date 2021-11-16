@@ -31,7 +31,7 @@ namespace FasterLogPubSub
             }
 
             var device = Devices.CreateLogDevice(path + "mylog");
-            var log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
+            var log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, RemoveOutdatedCommitFiles = sameInstance });
             using var cts = new CancellationTokenSource();
 
             var producer = ProducerAsync(log, cts.Token);
@@ -78,7 +78,7 @@ namespace FasterLogPubSub
 
                     Console.WriteLine("Committing...");
 
-                    await log.CommitAsync(cancellationToken);
+                    await log.CommitAsync(token: cancellationToken);
                 }
             }
             catch (OperationCanceledException) { }
@@ -165,7 +165,7 @@ namespace FasterLogPubSub
                     Console.WriteLine("Restoring Separate Log...");
 
                     // Recover to the last commit by the primary FasterLog instance.
-                    await log.RecoverReadOnlyAsync(cancellationToken);
+                    await log.RecoverReadOnlyAsync(true, cancellationToken);
                 }
             }
             catch (OperationCanceledException) { }

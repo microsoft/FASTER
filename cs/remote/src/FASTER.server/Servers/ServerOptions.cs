@@ -70,7 +70,11 @@ namespace FASTER.server
         {
         }
 
-        internal int MemorySizeBits()
+        /// <summary>
+        /// Get memory size
+        /// </summary>
+        /// <returns></returns>
+        public int MemorySizeBits()
         {
             long size = ParseSize(MemorySize);
             long adjustedSize = PreviousPowerOf2(size);
@@ -79,7 +83,11 @@ namespace FASTER.server
             return (int)Math.Log(adjustedSize, 2);
         }
 
-        internal int PageSizeBits()
+        /// <summary>
+        /// Get page size
+        /// </summary>
+        /// <returns></returns>
+        public int PageSizeBits()
         {
             long size = ParseSize(PageSize);
             long adjustedSize = PreviousPowerOf2(size);
@@ -88,7 +96,11 @@ namespace FASTER.server
             return (int)Math.Log(adjustedSize, 2);
         }
 
-        internal int SegmentSizeBits()
+        /// <summary>
+        /// Get segment size
+        /// </summary>
+        /// <returns></returns>
+        public int SegmentSizeBits()
         {
             long size = ParseSize(SegmentSize);
             long adjustedSize = PreviousPowerOf2(size);
@@ -97,7 +109,11 @@ namespace FASTER.server
             return (int)Math.Log(adjustedSize, 2);
         }
 
-        internal int IndexSizeCachelines()
+        /// <summary>
+        /// Get index size
+        /// </summary>
+        /// <returns></returns>
+        public int IndexSizeCachelines()
         {
             long size = ParseSize(IndexSize);
             long adjustedSize = PreviousPowerOf2(size);
@@ -107,7 +123,13 @@ namespace FASTER.server
             return (int)(adjustedSize / 64);
         }
 
-        internal void GetSettings(out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
+        /// <summary>
+        /// Get log settings
+        /// </summary>
+        /// <param name="logSettings"></param>
+        /// <param name="checkpointSettings"></param>
+        /// <param name="indexSize"></param>
+        public void GetSettings(out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
         {
             logSettings = new LogSettings { PreallocateLog = false };
 
@@ -139,40 +161,6 @@ namespace FASTER.server
             };
         }
 
-        internal void GetObjectStoreSettings(out LogSettings objLogSettings, out CheckpointSettings objCheckpointSettings, out int objIndexSize)
-        {
-            objLogSettings = new LogSettings { PreallocateLog = false };
-
-            objLogSettings.PageSizeBits = PageSizeBits();
-            Trace.WriteLine($"[Object Store] Using page size of {PrettySize((long)Math.Pow(2, objLogSettings.PageSizeBits))}");
-
-            objLogSettings.MemorySizeBits = MemorySizeBits();
-            Trace.WriteLine($"[Object Store] Using log memory size of {PrettySize((long)Math.Pow(2, objLogSettings.MemorySizeBits))}");
-
-            Trace.WriteLine($"[Object Store] There are {PrettySize(1 << (objLogSettings.MemorySizeBits - objLogSettings.PageSizeBits))} log pages in memory");
-
-            objLogSettings.SegmentSizeBits = SegmentSizeBits();
-            Trace.WriteLine($"[Object Store] Using disk segment size of {PrettySize((long)Math.Pow(2, objLogSettings.SegmentSizeBits))}");
-
-            objIndexSize = IndexSizeCachelines() / 64;
-            Trace.WriteLine($"[Object Store] Using hash index size of {PrettySize(objIndexSize * 64L)} ({PrettySize(objIndexSize)} cache lines)");
-
-            if (LogDir == null)
-                LogDir = Directory.GetCurrentDirectory();
-
-            var device = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "/ObjectStore/hlog");
-            objLogSettings.LogDevice = device;
-            var objdevice = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "/ObjectStore/hlog.obj");
-            objLogSettings.ObjectLogDevice = objdevice;
-
-            objCheckpointSettings = new CheckpointSettings
-            {
-                CheckPointType = CheckpointType.Snapshot,
-                CheckpointDir = CheckpointDir ?? (LogDir + "/ObjectStore/checkpoints"),
-                RemoveOutdated = true,
-            };
-        }
-
         private static long ParseSize(string value)
         {
             char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
@@ -198,7 +186,12 @@ namespace FASTER.server
             return result;
         }
 
-        private static string PrettySize(long value)
+        /// <summary>
+        /// Pretty print value
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        protected static string PrettySize(long value)
         {
             char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
             double v = value;

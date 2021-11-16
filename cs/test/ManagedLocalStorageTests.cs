@@ -163,7 +163,7 @@ namespace FASTER.test
             logFullParams.Commit(true);
 
             // Verify  
-            Assert.IsTrue(File.Exists(path + "/log-commits/commit.0.0"));
+            Assert.IsTrue(File.Exists(path + "/log-commits/commit.1.0"));
             Assert.IsTrue(File.Exists(path + "/ManagedLocalStore.log.0"));
 
             // Read the log just to verify can actually read it

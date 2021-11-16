@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using FASTER.core;
 using NUnit.Framework;
@@ -244,7 +245,12 @@ namespace FASTER.test
         public unsafe void TestShiftHeadAddress([Values] TestUtils.DeviceType deviceType)
         {
             InputStruct input = default;
-            int count = 200;
+            const int RandSeed = 10;
+            const int RandRange = 10000;
+            const int NumRecs = 200;
+
+            Random r = new Random(RandSeed);
+            var sw = Stopwatch.StartNew();
 
             string filename = path + "TestShiftHeadAddress" + deviceType.ToString() + ".log";
             log = TestUtils.CreateTestDevice(deviceType, filename);
@@ -253,20 +259,21 @@ namespace FASTER.test
             session = fht.For(new Functions()).NewSession<Functions>();
 
 
-            Random r = new Random(10);
-            for (int c = 0; c < count; c++)
+            for (int c = 0; c < NumRecs; c++)
             {
-                var i = r.Next(10000);
+                var i = r.Next(RandRange);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
+            Console.WriteLine($"Time to insert {NumRecs} records: {sw.ElapsedMilliseconds} ms");
 
-            r = new Random(10);
+            r = new Random(RandSeed);
+            sw.Restart();
 
-            for (int c = 0; c < count; c++)
+            for (int c = 0; c < NumRecs; c++)
             {
-                var i = r.Next(10000);
+                var i = r.Next(RandRange);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
@@ -279,20 +286,30 @@ namespace FASTER.test
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
+            Console.WriteLine($"Time to read {NumRecs} in-memory records: {sw.ElapsedMilliseconds} ms");
 
             // Shift head and retry - should not find in main memory now
             fht.Log.FlushAndEvict(true);
 
-            r = new Random(10);
-            for (int c = 0; c < count; c++)
+            r = new Random(RandSeed);
+            sw.Restart();
+
+            for (int c = 0; c < NumRecs; c++)
             {
-                var i = r.Next(10000);
+                var i = r.Next(RandRange);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+
                 Status foundStatus = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.AreEqual(Status.PENDING, foundStatus);
-                session.CompletePending(true);
+                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                Assert.IsTrue(outputs.Next());
+                Assert.AreEqual(value.vfield1, outputs.Current.Output.value.vfield1);
+                outputs.Current.Dispose();
+                Assert.IsFalse(outputs.Next());
             }
+            Console.WriteLine($"Time to read {NumRecs} on-disk records: {sw.ElapsedMilliseconds} ms");
         }
 
         [Test]
@@ -599,15 +616,21 @@ namespace FASTER.test
 
         // Test the ReadAtAddress where ReadFlags = ReadFlags.SkipReadCache
 
-        class SkipReadCacheFunctions : AdvancedFunctions    // Must use AdvancedFunctions for the address parameters to the callbacks
+        class SkipReadCacheFunctions : Functions
         {
             internal long expectedReadAddress;
 
-            public override void SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, long address) 
-                => Assign(ref value, ref dst, address);
+            public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address)
+            {
+                Assign(ref value, ref dst, address);
+                return true;
+            }
 
-            public override void ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address) 
-                => Assign(ref value, ref dst, address);
+            public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address)
+            {
+                Assign(ref value, ref dst, address);
+                return true;
+            }
 
             void Assign(ref ValueStruct value, ref OutputStruct dst, long address)
             {
@@ -615,7 +638,7 @@ namespace FASTER.test
                 Assert.AreEqual(expectedReadAddress, address);
                 expectedReadAddress = -1;   // show that the test executed
             }
-            public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordInfo recordInfo)
+            public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 // Do no data verifications here; they're done in the test
             }
@@ -682,16 +705,16 @@ namespace FASTER.test
 
             // Do not put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            RecordInfo recordInfo = new() { PreviousAddress = readAtAddress };
-            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref recordInfo, ReadFlags.SkipReadCache);
+            RecordMetadata recordMetadata = new(new RecordInfo() { PreviousAddress = readAtAddress });
+            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref recordMetadata, ReadFlags.SkipReadCache);
             VerifyResult();
 
             Assert.AreEqual(fht.ReadCache.BeginAddress, fht.ReadCache.TailAddress);
 
             // Put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            recordInfo.PreviousAddress = readAtAddress; // Read*() sets this to the record's PreviousAddress (so caller can follow the chain), so reinitialize it.
-            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref recordInfo);
+            recordMetadata.RecordInfo.PreviousAddress = readAtAddress; // Read*() sets this to the record's PreviousAddress (so caller can follow the chain), so reinitialize it.
+            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref recordMetadata);
             VerifyResult();
 
             Assert.Less(fht.ReadCache.BeginAddress, fht.ReadCache.TailAddress);

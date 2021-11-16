@@ -19,7 +19,7 @@ namespace FASTER.core
             internal RmwAsyncOperation(AsyncIOContext<Key, Value> diskRequest) => this.diskRequest = diskRequest;
 
             /// <inheritdoc/>
-            public RmwAsyncResult<Input, Output, Context> CreateResult(Status status, Output output) => new(status, output);
+            public RmwAsyncResult<Input, Output, Context> CreateResult(Status status, Output output, RecordMetadata recordMetadata) => new(status, output, recordMetadata);
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
@@ -80,10 +80,14 @@ namespace FASTER.core
             /// <summary>Output of the RMW operation if current status is not <see cref="Status.PENDING"/></summary>
             public TOutput Output { get; }
 
-            internal RmwAsyncResult(Status status, TOutput output)
+            /// <summary>Metadata of the updated record</summary>
+            public RecordMetadata RecordMetadata { get; }
+
+            internal RmwAsyncResult(Status status, TOutput output, RecordMetadata recordMetadata)
             {
                 this.Status = status;
                 this.Output = output;
+                this.RecordMetadata = recordMetadata;
                 this.updateAsyncInternal = default;
             }
 
@@ -93,6 +97,7 @@ namespace FASTER.core
             {
                 Status = Status.PENDING;
                 this.Output = default;
+                this.RecordMetadata = default;
                 updateAsyncInternal = new UpdateAsyncInternal<Input, TOutput, Context, RmwAsyncOperation<Input, TOutput, Context>, RmwAsyncResult<Input, TOutput, Context>>(
                                         fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new RmwAsyncOperation<Input, TOutput, Context>(diskRequest));
             }
@@ -101,16 +106,25 @@ namespace FASTER.core
             /// <returns>ValueTask for RMW result. User needs to await again if result status is <see cref="Status.PENDING"/>.</returns>
             public ValueTask<RmwAsyncResult<Input, TOutput, Context>> CompleteAsync(CancellationToken token = default) 
                 => this.Status != Status.PENDING
-                    ? new ValueTask<RmwAsyncResult<Input, TOutput, Context>>(new RmwAsyncResult<Input, TOutput, Context>(this.Status, this.Output))
+                    ? new ValueTask<RmwAsyncResult<Input, TOutput, Context>>(new RmwAsyncResult<Input, TOutput, Context>(this.Status, this.Output, this.RecordMetadata))
                     : updateAsyncInternal.CompleteAsync(token);
 
             /// <summary>Complete the RMW operation, issuing additional (rare) I/O synchronously if needed.</summary>
             /// <returns>Status of RMW operation</returns>
-            public (Status status, TOutput output) Complete()
+            public (Status status, TOutput output) Complete() 
+                => Complete(out _);
+
+            /// <summary>Complete the RMW operation, issuing additional (rare) I/O synchronously if needed.</summary>
+            /// <returns>Status of RMW operation</returns>
+            public (Status status, TOutput output) Complete(out RecordMetadata recordMetadata)
             {
                 if (this.Status != Status.PENDING)
+                {
+                    recordMetadata = this.RecordMetadata;
                     return (this.Status, this.Output);
+                }
                 var rmwAsyncResult = updateAsyncInternal.Complete();
+                recordMetadata = rmwAsyncResult.RecordMetadata;
                 return (rmwAsyncResult.Status, rmwAsyncResult.Output);
             }
         }
@@ -137,7 +151,7 @@ namespace FASTER.core
                 Output output = default;
                 var status = CallInternalRMW(fasterSession, currentCtx, ref pcontext, ref key, ref input, ref output, context, serialNo, asyncOp: true, out flushEvent, out diskRequest);
                 if (status != Status.PENDING)
-                    return new ValueTask<RmwAsyncResult<Input, Output, Context>>(new RmwAsyncResult<Input, Output, Context>(status, output));
+                    return new ValueTask<RmwAsyncResult<Input, Output, Context>>(new RmwAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
             finally
             {

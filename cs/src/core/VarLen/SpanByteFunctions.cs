@@ -14,25 +14,26 @@ namespace FASTER.core
         /// Constructor
         /// </summary>
         /// <param name="locking"></param>
-        public SpanByteFunctions(bool locking = false) : base(locking) { }
+        /// <param name="postOps"></param>
+        public SpanByteFunctions(bool locking = false, bool postOps = false) : base(locking, postOps) { }
 
         /// <inheritdoc />
-        public override void SingleWriter(ref Key key, ref SpanByte src, ref SpanByte dst)
+        public override void SingleWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref RecordInfo recordInfo, long address)
         {
             src.CopyTo(ref dst);
         }
 
         /// <inheritdoc />
-        public override bool ConcurrentWriter(ref Key key, ref SpanByte src, ref SpanByte dst)
+        public override bool ConcurrentWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref RecordInfo recordInfo, long address)
         {
-            if (locking) dst.SpinLock();
-
             // We can write the source (src) data to the existing destination (dst) in-place, 
             // only if there is sufficient space
-            if (dst.Length < src.Length || dst.IsMarkedReadOnly())
+            if (recordInfo.Sealed)
+                return false; 
+            
+            if (dst.Length < src.Length)
             {
-                dst.MarkReadOnly();
-                if (locking) dst.Unlock();
+                recordInfo.Sealed = true;
                 return false;
             }
 
@@ -44,27 +45,26 @@ namespace FASTER.core
             // This method will also zero out the extra space to retain log scan correctness.
             dst.ShrinkSerializedLength(src.Length);
 
-            if (locking) dst.Unlock();
             return true;
         }
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output)
+        public override void InitialUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             input.CopyTo(ref value);
         }
 
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref Output output)
+        public override void CopyUpdater(ref Key key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref Output output, ref RecordInfo recordInfo, long address)
         {
             oldValue.CopyTo(ref newValue);
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output)
+        public override bool InPlaceUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output, ref RecordInfo recordInfo, long address)
         {
             // The default implementation of IPU simply writes input to destination, if there is space
-            return ConcurrentWriter(ref key, ref input, ref value);
+            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref recordInfo, address);
         }
     }
 
@@ -80,39 +80,51 @@ namespace FASTER.core
         /// </summary>
         /// <param name="memoryPool"></param>
         /// <param name="locking"></param>
-        public SpanByteFunctions(MemoryPool<byte> memoryPool = default, bool locking = false) : base(locking)
+        /// <param name="postOps"></param>
+        public SpanByteFunctions(MemoryPool<byte> memoryPool = default, bool locking = false, bool postOps = false) : base(locking, postOps)
         {
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
 
         /// <inheritdoc />
-        public unsafe override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, long address)
         {
             value.CopyTo(ref dst, memoryPool);
+            return true;
         }
 
         /// <inheritdoc />
-        public unsafe override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, long address)
         {
             value.CopyTo(ref dst, memoryPool);
+            return true;
         }
 
         /// <inheritdoc />
         public override bool SupportsLocking => locking;
 
         /// <inheritdoc />
-        public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
+        public override void LockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockExclusive();
+
+        /// <inheritdoc />
+        public override void UnlockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext) => recordInfo.UnlockExclusive();
+
+        /// <inheritdoc />
+        public override bool TryLockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
+
+        /// <inheritdoc />
+        public override void LockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockShared();
+
+        /// <inheritdoc />
+        public override bool UnlockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext)
         {
-            value.SpinLock();
+            recordInfo.UnlockShared();
+            return true;
         }
 
         /// <inheritdoc />
-        public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
-        {
-            value.Unlock();
-            return true;
-        }
-    }
+        public override bool TryLockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
+}
 
     /// <summary>
     /// Callback functions for SpanByte with byte[] output, for SpanByte key, value, input
@@ -126,31 +138,42 @@ namespace FASTER.core
         public SpanByteFunctions_ByteArrayOutput(bool locking = false) : base(locking) { }
 
         /// <inheritdoc />
-        public override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
+        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst, ref RecordInfo recordInfo, long address)
         {
             dst = value.ToByteArray();
+            return true;
         }
 
         /// <inheritdoc />
-        public override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
+        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst, ref RecordInfo recordInfo, long address)
         {
             dst = value.ToByteArray();
+            return true;
         }
 
         /// <inheritdoc />
         public override bool SupportsLocking => locking;
 
         /// <inheritdoc />
-        public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
+        public override void LockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockExclusive();
+
+        /// <inheritdoc />
+        public override void UnlockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext) => recordInfo.UnlockExclusive();
+
+        /// <inheritdoc />
+        public override bool TryLockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
+
+        /// <inheritdoc />
+        public override void LockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockShared();
+
+        /// <inheritdoc />
+        public override bool UnlockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext)
         {
-            value.SpinLock();
+            recordInfo.UnlockShared();
+            return true;
         }
 
         /// <inheritdoc />
-        public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
-        {
-            value.Unlock();
-            return true;
-        }
+        public override bool TryLockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
     }
 }
