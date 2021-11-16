@@ -66,7 +66,7 @@ namespace FASTER.libdpr
         /// <summary>
         /// At the start (restart) of processing, connect to the rest of the DPR cluster. If the worker restarted from
         /// an existing instance, the cluster will detect this and trigger rollback as appropriate across the cluster.
-        /// Must be invoked exactly once before any other roperations. 
+        /// Must be invoked exactly once before any other operations. 
         /// </summary>
         public void ConnectToCluster()
         {
@@ -166,6 +166,8 @@ namespace FASTER.libdpr
         public unsafe bool RequestBatchBegin(ref DprBatchRequestHeader request, ref DprBatchResponseHeader response,
             out DprBatchVersionTracker tracker)
         {
+            // Sanity check
+            Debug.Assert(request.workerId.Equals(Me()));
             // Wait for worker version to catch up to largest in batch (minimum version where all operations
             // can be safely executed), taking checkpoints if necessary.
             while (request.versionLowerBound > stateObject.Version())
@@ -193,6 +195,7 @@ namespace FASTER.libdpr
             if (request.worldLine < wl)
             {
                 response.sessionId = request.sessionId;
+                response.workerId = request.workerId;
                 // Use negative to signal that there was a mismatch, which would prompt error handling on client side
                 response.worldLine = -wl;
                 response.batchId = request.batchId;
@@ -222,7 +225,7 @@ namespace FASTER.libdpr
             // Exit without releasing epoch, as protection is supposed to extend until end of batch.
             return true;
         }
-
+        
         /// <summary>
         ///     Invoke after processing of a batch is complete, and DprBatchVersionTracker has been populated with a
         ///     batch offset -> executed version mapping. This function must be invoked once for every processed batch
@@ -246,6 +249,7 @@ namespace FASTER.libdpr
 
             // Populate response
             dprResponse.sessionId = request.sessionId;
+            dprResponse.workerId = request.workerId;
             dprResponse.worldLine = request.worldLine;
             dprResponse.batchId = request.batchId;
             dprResponse.batchSize = responseSize;
@@ -261,7 +265,7 @@ namespace FASTER.libdpr
         /// be a matching FinishSubscriptionBatch call on the same thread for DPR to make progress.
         /// </summary>
         /// <returns> Tracker to use for batch execution </returns>
-        public DprBatchVersionTracker StartSubscriptionBatch()
+        public DprBatchVersionTracker StarComposeSubscriptionBatch()
         {
             state.worldlineTracker.Enter();
             return trackers.Checkout();
@@ -276,7 +280,7 @@ namespace FASTER.libdpr
         /// <param name="response"> Dpr response message that will be returned to user </param>
         /// <param name="tracker"> Tracker used in batch processing</param>
         /// <returns> size of header if successful, negative size required to hold response if supplied byte span is too small </returns>
-        public int FinishSubscriptionBatch(Guid sessionId, Span<byte> response, DprBatchVersionTracker tracker)
+        public int FinishComposeSubscriptionBatch(Guid sessionId, Span<byte> response, DprBatchVersionTracker tracker)
         {
             ref var dprResponse =
                 ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
@@ -292,6 +296,7 @@ namespace FASTER.libdpr
 
             // Populate response
             dprResponse.sessionId = sessionId;
+            dprResponse.workerId = Me();
             dprResponse.worldLine = wl;
             dprResponse.batchId = ClientBatchTracker.INVALID_BATCH_ID;
             dprResponse.batchSize = responseSize;
@@ -300,7 +305,45 @@ namespace FASTER.libdpr
             trackers.Return(tracker);
             return responseSize;
         }
+        
+        public unsafe bool StartProcessSubscriptionBatch(Span<byte> responseBytes)
+        {
+            fixed (byte* b = responseBytes)
+            {
+                ref var response = ref Unsafe.AsRef<DprBatchResponseHeader>(b);
+                while (response.versionUpperBound > stateObject.Version())
+                {
+                    stateObject.BeginCheckpoint(ComputeDependency, response.versionUpperBound);
+                    core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
+                }
 
+                var wl = state.worldlineTracker.Enter();
+                while (response.worldLine > wl)
+                {
+                    state.worldlineTracker.Leave();
+                    TryAdvanceWorldLineTo(response.worldLine);
+                    wl = state.worldlineTracker.Enter();
+                }
+
+                if (response.worldLine < wl)
+                {
+                    state.worldlineTracker.Leave();
+                    return false;
+                }
+
+                Debug.Assert(response.worldLine == wl);
+
+                var deps = state.versions[stateObject.Version()];
+                deps.Update(response.workerId, response.versionUpperBound);
+
+                return true;
+            }
+        }
+        
+        public void SignalSubscriptionBatchProcessingFinish()
+        {
+            state.worldlineTracker.Leave();
+        }
         /// <summary>
         ///     Force the execution of a checkpoint ahead of the schedule specified at creation time.
         ///     Resets the checkpoint schedule to happen checkpoint_milli after this invocation.

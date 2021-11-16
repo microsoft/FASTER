@@ -77,7 +77,7 @@ namespace FASTER.libdpr
             while (Interlocked.CompareExchange(ref versionChanged, ev, null) != null)
             {
             }
-
+            
             if (targetVersion != -1 && targetVersion <= version)
             {
                 versionChanged.Set();

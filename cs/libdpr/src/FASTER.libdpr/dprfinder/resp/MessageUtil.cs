@@ -31,6 +31,7 @@ namespace FASTER.libdpr
                 numRequests++;
             }
 
+            if (numRequests == 0) return 0;
             head += RespUtil.WriteRedisArrayHeader(2, buf, head);
             head += RespUtil.WriteRedisBulkString("GraphResent", buf, head);
             var committedVersion = new WorkerVersion(worker, minVersion == long.MaxValue ? 0 : minVersion);
@@ -97,7 +98,6 @@ namespace FASTER.libdpr
         {
             var buf = reusableMessageBuffers.Checkout();
             var head = 0;
-            Debug.Assert(head + 1 >= buf.Length);
             buf[head++] = (byte) '$';
 
             var size = RespUtil.LongToDecimalString(sizeof(long) + serializedState.Item2, buf, head);
@@ -124,7 +124,6 @@ namespace FASTER.libdpr
         {
             var buf = reusableMessageBuffers.Checkout();
             var head = 0;
-            Debug.Assert(head + 1 >= buf.Length);
             buf[head++] = (byte) '$';
 
             var size = RespUtil.LongToDecimalString(2 * sizeof(long), buf, head);

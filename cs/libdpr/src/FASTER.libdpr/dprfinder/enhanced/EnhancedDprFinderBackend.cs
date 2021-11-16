@@ -361,7 +361,7 @@ namespace FASTER.libdpr
 
         public void MarkWorkerAccountedFor(Worker worker, long earliestPresentVersion)
         {
-            // Should not be invoked if recovery is underway
+            // Should only be invoked if recovery is underway
             Debug.Assert(!recoveryState.RecoveryComplete());
             // Lock here because can be accessed from multiple threads. No need to lock once all workers are accounted
             // for as then only the graph traversal thread will update current cut
