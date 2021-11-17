@@ -1034,8 +1034,8 @@ namespace FASTER.core
         
         private void CommitMetadataOnly(ref FasterLogRecoveryInfo info, bool spinWait)
         {
-            var fromAddress = CommittedUntilAddress > info.BeginAddress ? CommittedUntilAddress : info.BeginAddress;
-            var untilAddress = CommittedUntilAddress > info.BeginAddress ? CommittedUntilAddress : info.BeginAddress;
+            var fromAddress = FlushedUntilAddress > info.BeginAddress ? FlushedUntilAddress : info.BeginAddress;
+            var untilAddress = FlushedUntilAddress > info.BeginAddress ? FlushedUntilAddress : info.BeginAddress;
             
             CommitCallback(new CommitInfo
             {
@@ -1683,38 +1683,41 @@ namespace FASTER.core
 
                 // Enqueue the commit record's content and offset into the queue so it can be picked up by the next flush
                 // At this point, we expect the commit record to be flushed out as a distinct recovery point
-                ongoingCommitRequests.Enqueue(ValueTuple.Create(commitTail, info));
+                ongoingCommitRequests.Enqueue((commitTail, info));
             }
             
-
-            // Need to check, however, that a concurrent flush hasn't already advanced flushed address past this
-            // commit. If so, need to manually trigger another commit callback in case the one triggered by the flush
-            // already finished execution and missed our commit record
-            if (commitTail < FlushedUntilAddress)
+            // As an optimization, if a concurrent flush has already advanced FlushedUntilAddress
+            // past this commit, we can manually trigger a commit callback for safety, and return.
+            if (commitTail <= FlushedUntilAddress)
             {
                 CommitMetadataOnly(ref info, spinWait);
                 return true;
             }
-             
-            // Otherwise, move to set read-only tail and flush 
-            epoch.Resume();
 
-            if (allocator.ShiftReadOnlyToTail(out _, out _))
+            // Otherwise, move to set read-only tail and flush 
+            try
             {
-                if (spinWait)
+                epoch.Resume();
+                if (allocator.ShiftReadOnlyToTail(out _, out _))
                 {
-                    while (CommittedUntilAddress < commitTail)
+                    if (spinWait)
                     {
-                        epoch.ProtectAndDrain();
-                        Thread.Yield();
+                        while (CommittedUntilAddress < commitTail)
+                        {
+                            epoch.ProtectAndDrain();
+                            Thread.Yield();
+                        }
                     }
                 }
+                else
+                {
+                    CommitMetadataOnly(ref info, spinWait);
+                }
             }
-            else
+            finally
             {
-                CommitMetadataOnly(ref info, spinWait);
+                epoch.Suspend();
             }
-            epoch.Suspend();
             return true;
         }
 
