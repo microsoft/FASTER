@@ -1034,7 +1034,7 @@ namespace FASTER.core
         
         private void CommitMetadataOnly(ref FasterLogRecoveryInfo info, bool spinWait)
         {
-            var fromAddress = FlushedUntilAddress > info.BeginAddress ? FlushedUntilAddress : info.BeginAddress;
+            var fromAddress = CommittedUntilAddress > info.BeginAddress ? CommittedUntilAddress : info.BeginAddress;
             var untilAddress = FlushedUntilAddress > info.BeginAddress ? FlushedUntilAddress : info.BeginAddress;
             
             CommitCallback(new CommitInfo
