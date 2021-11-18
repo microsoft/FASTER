@@ -36,7 +36,10 @@ namespace FASTER.core
 
         // Offsets for all currently unprocessed commit records
         private readonly Queue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
+        private readonly List<FasterLogRecoveryInfo> coveredCommits = new List<FasterLogRecoveryInfo>();
         private long commitNum;
+
+        private IFasterLogCommitStrategy commitStrategy;
 
         /// <summary>
         /// Beginning address of log
@@ -51,10 +54,6 @@ namespace FASTER.core
         /// Tail address of log
         /// </summary>
         public long TailAddress => allocator.GetTailAddress();
-
-        // Used to track the last commit record and commits that have been issued, to stop commits from committing
-        // without any user records
-        private long commitCoveredAddress;
 
         /// <summary>
         /// Log flushed until address
@@ -189,6 +188,8 @@ namespace FASTER.core
             fastCommitMode = logSettings.FastCommitMode;
 
             ongoingCommitRequests = new Queue<(long, FasterLogRecoveryInfo)>();
+            commitStrategy = logSettings.CommitStrategy ?? new DefaultCommitStrategy();
+            commitStrategy.Attach(this);
         }
 
         /// <summary>
@@ -486,7 +487,7 @@ namespace FASTER.core
 
         public void Commit(bool spinWait = false)
         {
-            CommitInternal(out _, out _, spinWait, true, null, -1);
+            CommitInternal(out _, out _, spinWait, true, null, -1, null);
         }
 
         /// <summary>
@@ -507,9 +508,9 @@ namespace FASTER.core
         /// a non -1 value, commit is guaranteed to have the supplied identifier if commit call is successful
         /// </param>
         /// <returns>Whether commit is successful </returns>
-        public bool CommitStrongly(out long commitTail, out long actualCommitNum, bool spinWait = false, byte[] cookie = null, long proposedCommitNum = -1)
+        public bool CommitStrongly(out long commitTail, out long actualCommitNum, bool spinWait = false, byte[] cookie = null, long proposedCommitNum = -1, Action callback = null)
         {
-            return CommitInternal(out commitTail, out actualCommitNum, spinWait, false, cookie, proposedCommitNum);
+            return CommitInternal(out commitTail, out actualCommitNum, spinWait, false, cookie, proposedCommitNum, callback);
         }
 
         /// <summary>
@@ -522,7 +523,7 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             var task = CommitTask;
-            if (!CommitInternal(out var tailAddress, out var actualCommitNum,  false, true, null, -1))
+            if (!CommitInternal(out var tailAddress, out var actualCommitNum,  false, true, null, -1, null))
                 return;
 
             while (CommittedUntilAddress < tailAddress || persistedCommitNum < actualCommitNum)
@@ -543,7 +544,7 @@ namespace FASTER.core
             token.ThrowIfCancellationRequested();
             if (prevCommitTask == null) prevCommitTask = CommitTask;
 
-            if (!CommitInternal(out var tailAddress, out var actualCommitNum, false, true, null, -1))
+            if (!CommitInternal(out var tailAddress, out var actualCommitNum, false, true, null, -1, null))
                 return prevCommitTask;
 
             while (CommittedUntilAddress < tailAddress || persistedCommitNum < actualCommitNum)
@@ -576,7 +577,7 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             var task = CommitTask;
-            if (!CommitInternal(out var commitTail, out var actualCommitNum,  false, false, cookie, proposedCommitNum))
+            if (!CommitInternal(out var commitTail, out var actualCommitNum,  false, false, cookie, proposedCommitNum, null))
                 return (false, commitTail, actualCommitNum);
 
             while (CommittedUntilAddress < commitTail || persistedCommitNum < actualCommitNum)
@@ -1076,10 +1077,10 @@ namespace FASTER.core
         {
             if (commitInfo.ErrorCode == 0)
             {
-                var coveredCommits = new List<FasterLogRecoveryInfo>();
                 // Check for the commit records included in this flush
                 lock (ongoingCommitRequests)
                 {
+                    coveredCommits.Clear();
                     while (ongoingCommitRequests.Count != 0)
                     {
                         var (addr, recoveryInfo) = ongoingCommitRequests.Peek();
@@ -1095,13 +1096,25 @@ namespace FASTER.core
 
                 var latestCommit = coveredCommits[coveredCommits.Count - 1];
                 if (fastCommitMode)
-                    // In fast commit mode, can safely set committed state to the latest flushed
+                {
+                    // In fast commit mode, can safely set committed state to the latest flushed and invoke callbacks early
                     UpdateCommittedState(latestCommit);
+                    foreach (var recoveryInfo in coveredCommits)
+                    {
+                        recoveryInfo.Callback?.Invoke();
+                        commitStrategy.OnCommitFinished(recoveryInfo);
+                    }
+                }
 
                 foreach (var recoveryInfo in coveredCommits)
                 {
                     // Only write out commit metadata if user cares about this as a distinct recoverable point
                     if (!recoveryInfo.FastForwardAllowed) WriteCommitMetadata(recoveryInfo);
+                    if (!fastCommitMode)
+                    {
+                        recoveryInfo.Callback?.Invoke();
+                        commitStrategy.OnCommitFinished(recoveryInfo);
+                    }
                 }
 
                 // We fast-forwarded commits earlier, so write it out if not covered by another commit
@@ -1626,44 +1639,52 @@ namespace FASTER.core
             return length;
         }
 
-        private bool CommitInternal(out long commitTail, out long actualCommitNum, bool spinWait, bool allowFastForward, byte[] cookie, long proposedCommitNum)
+        private bool CommitInternal(out long commitTail, out long actualCommitNum, bool spinWait, bool allowFastForward, byte[] cookie, long proposedCommitNum, Action callback)
         {
             commitTail = actualCommitNum = 0;
             
             if (readOnlyMode)
                 throw new FasterException("Cannot commit in read-only mode");
 
-            if (allowFastForward && (cookie != null || proposedCommitNum != -1))
+            if (allowFastForward && (cookie != null || proposedCommitNum != -1 || callback != null))
                 throw new FasterException(
-                    "Fast forwarding a commit is only allowed when no cookie and not commit num is specified");
-
+                    "Fast forwarding a commit is only allowed when no cookie, commit num, or callback is specified");
+            
             var info = new FasterLogRecoveryInfo
             {
-                FastForwardAllowed = allowFastForward
+                FastForwardAllowed = allowFastForward,
+                Cookie = cookie,
+                Callback = callback
             };
+            // Compute regular information about the commit
+            info.SnapshotIterators(PersistedIterators);
+            var shouldCommitMetadata = ShouldCommmitMetadata(ref info);
 
+            // Make sure we will not be allowed to back out of a commit of AdmitCommit returns true, as the strategy
+            // may need to update internal logic for every true response
+            if (proposedCommitNum != -1)
+            {
+                if (!Utility.MonotonicUpdate(ref commitNum, proposedCommitNum, out _)) return false;
+                info.CommitNum = actualCommitNum = proposedCommitNum;
+            }
+
+
+            // If the strategy chooses to not admit a strong commit for which we already have a commit num -- it is fine
+            // because we will just skip over the wasted commit num, which could happen anyways in normal execution
+            if (!commitStrategy.AdmitCommit(!allowFastForward, TailAddress, shouldCommitMetadata))
+                // Nothing to commit if no metadata update and no new entries
+                return false;
+
+            // Grab a commit num now if we haven't already
+            if (proposedCommitNum == -1)
+                info.CommitNum = actualCommitNum = Interlocked.Increment(ref commitNum);
+            
+            
             // This critical section serializes commit record creation / commit content generation and ensures that the
             // long address are sorted in outstandingCommitRecords. Ok because we do not expect heavy contention on the
             // commit code path
             lock (ongoingCommitRequests)
             {
-                // Compute regular information about the commit
-                info.Cookie = cookie;
-                info.SnapshotIterators(PersistedIterators);
-                
-                if (commitCoveredAddress == TailAddress && !ShouldCommmitMetadata(ref info))
-                    // Nothing to commit if no metadata update and no new entries
-                    return false;
-
-                
-                if (proposedCommitNum == -1)
-                    info.CommitNum = actualCommitNum = ++commitNum;
-                else if (proposedCommitNum > commitNum)
-                    info.CommitNum = actualCommitNum = commitNum = proposedCommitNum;
-                else
-                    // Invalid commit num
-                    return false;
-
                 if (fastCommitMode)
                 {
                     // Ok to retry in critical section, any concurrently invoked commit would block, but cannot progress
@@ -1679,8 +1700,8 @@ namespace FASTER.core
                     info.BeginAddress = BeginAddress;
                     info.UntilAddress = commitTail = TailAddress;
                 }
-                Utility.MonotonicUpdate(ref commitCoveredAddress, commitTail, out _);
 
+                commitStrategy.OnCommitCreated(info);
                 // Enqueue the commit record's content and offset into the queue so it can be picked up by the next flush
                 // At this point, we expect the commit record to be flushed out as a distinct recovery point
                 ongoingCommitRequests.Enqueue((commitTail, info));

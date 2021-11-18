@@ -12,7 +12,7 @@ namespace FASTER.core
     /// <summary>
     /// Recovery info for FASTER Log
     /// </summary>
-    internal struct FasterLogRecoveryInfo
+    public struct FasterLogRecoveryInfo
     {
         /// <summary>
         /// FasterLog recovery version
@@ -42,6 +42,8 @@ namespace FASTER.core
         public long CommitNum;
 
         public bool FastForwardAllowed;
+
+        public Action Callback;
         
         /// <summary>
         /// Initialize

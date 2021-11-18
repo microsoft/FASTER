@@ -102,6 +102,8 @@ namespace FASTER.core
         /// </summary>
         public bool RemoveOutdatedCommitFiles = true;
 
+        public IFasterLogCommitStrategy CommitStrategy = null;
+
         internal LogSettings GetLogSettings()
         {
             return new LogSettings
