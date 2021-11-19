@@ -14,6 +14,47 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    internal class CommitNumOrderedBarrier
+    {
+        private long currentlyServiced;
+        private ManualResetEventSlim resetEventSlim;
+        
+        public CommitNumOrderedBarrier(long lastRecoveredNum)
+        {
+            currentlyServiced = lastRecoveredNum;
+            resetEventSlim = new ManualResetEventSlim();
+        }
+
+        public void WaitForTurn(long prevCommitNum, long commitNum)
+        {
+            Debug.Assert(commitNum > prevCommitNum);
+            // use negative number to indicate in-use
+            while (true)
+            {
+                if (currentlyServiced > prevCommitNum) throw new FasterException("commit critical section out of order!");
+                if (currentlyServiced != prevCommitNum)
+                {
+                    // resetEventSlim.Wait();
+                    continue;
+                }
+                
+                Debug.Assert(currentlyServiced == prevCommitNum);
+                currentlyServiced = -commitNum;
+                // resetEventSlim.Reset();
+                break;
+            }
+        }
+
+        public void SignalFinish()
+        {
+            if (currentlyServiced >= 0)
+                throw new FasterException("trying to release a lock not held");
+            currentlyServiced = -currentlyServiced;
+            // resetEventSlim.Set();
+        }
+        
+        
+    }
     /// <summary>
     /// FASTER log
     /// </summary>
@@ -27,6 +68,7 @@ namespace FASTER.core
         private readonly int headerSize;
         private readonly LogChecksumType logChecksum;
         private readonly WorkQueueLIFO<CommitInfo> commitQueue;
+        private readonly CommitNumOrderedBarrier commitNumBarrier;
 
         internal readonly bool readOnlyMode;
         internal readonly bool fastCommitMode;
@@ -35,7 +77,7 @@ namespace FASTER.core
         private TaskCompletionSource<Empty> refreshUncommittedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Offsets for all currently unprocessed commit records
-        private readonly Queue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
+        private readonly ConcurrentQueue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
         private readonly List<FasterLogRecoveryInfo> coveredCommits = new List<FasterLogRecoveryInfo>();
         private long commitNum;
 
@@ -133,6 +175,7 @@ namespace FASTER.core
                 RestoreSpecificCommit(requestedCommitNum, out it, out RecoveredCookie);
 
             RecoveredIterators = it;
+            commitNumBarrier = new CommitNumOrderedBarrier(commitNum);
         }
 
         /// <summary>
@@ -187,7 +230,7 @@ namespace FASTER.core
 
             fastCommitMode = logSettings.FastCommitMode;
 
-            ongoingCommitRequests = new Queue<(long, FasterLogRecoveryInfo)>();
+            ongoingCommitRequests = new ConcurrentQueue<(long, FasterLogRecoveryInfo)>();
             commitStrategy = logSettings.CommitStrategy ?? new DefaultCommitStrategy();
             commitStrategy.Attach(this);
         }
@@ -1078,16 +1121,13 @@ namespace FASTER.core
             if (commitInfo.ErrorCode == 0)
             {
                 // Check for the commit records included in this flush
-                lock (ongoingCommitRequests)
+                coveredCommits.Clear();
+                while (ongoingCommitRequests.TryPeek(out var entry))
                 {
-                    coveredCommits.Clear();
-                    while (ongoingCommitRequests.Count != 0)
-                    {
-                        var (addr, recoveryInfo) = ongoingCommitRequests.Peek();
-                        if (addr > commitInfo.UntilAddress) break;
-                        coveredCommits.Add(recoveryInfo);
-                        ongoingCommitRequests.Dequeue();
-                    }
+                    var (addr, recoveryInfo) = entry;
+                    if (addr > commitInfo.UntilAddress) break;
+                    coveredCommits.Add(recoveryInfo);
+                    ongoingCommitRequests.TryDequeue(out _);
                 }
 
                 // Nothing was committed --- this was probably au auto-flush. Return now without touching any
@@ -1660,15 +1700,15 @@ namespace FASTER.core
             info.SnapshotIterators(PersistedIterators);
             var shouldCommitMetadata = ShouldCommmitMetadata(ref info);
 
+            long prevCommitNum = 0;
             // Make sure we will not be allowed to back out of a commit of AdmitCommit returns true, as the strategy
             // may need to update internal logic for every true response
             if (proposedCommitNum != -1)
             {
-                if (!Utility.MonotonicUpdate(ref commitNum, proposedCommitNum, out _)) return false;
+                if (!Utility.MonotonicUpdate(ref commitNum, proposedCommitNum, out prevCommitNum)) return false;
                 info.CommitNum = actualCommitNum = proposedCommitNum;
             }
-
-
+            
             // If the strategy chooses to not admit a strong commit for which we already have a commit num -- it is fine
             // because we will just skip over the wasted commit num, which could happen anyways in normal execution
             if (!commitStrategy.AdmitCommit(!allowFastForward, TailAddress, shouldCommitMetadata))
@@ -1677,35 +1717,37 @@ namespace FASTER.core
 
             // Grab a commit num now if we haven't already
             if (proposedCommitNum == -1)
+            {
                 info.CommitNum = actualCommitNum = Interlocked.Increment(ref commitNum);
-            
-            
+                prevCommitNum = actualCommitNum - 1;
+            }
+
+
             // This critical section serializes commit record creation / commit content generation and ensures that the
             // long address are sorted in outstandingCommitRecords. Ok because we do not expect heavy contention on the
             // commit code path
-            lock (ongoingCommitRequests)
+            commitNumBarrier.WaitForTurn(prevCommitNum, actualCommitNum);
+            if (fastCommitMode)
             {
-                if (fastCommitMode)
-                {
-                    // Ok to retry in critical section, any concurrently invoked commit would block, but cannot progress
-                    // anyways if no record can be enqueued
-                    while (!TryEnqueueCommitRecord(ref info)) Thread.Yield();
-                    commitTail = info.UntilAddress;
-                }
-                else
-                {
-                    // If not using fastCommitMode, do not need to allocate a commit record. Instead, set the content
-                    // of this commit to the current tail and base all commit metadata on this address, even though
-                    // perhaps more entries will be flushed as part of this commit
-                    info.BeginAddress = BeginAddress;
-                    info.UntilAddress = commitTail = TailAddress;
-                }
-
-                commitStrategy.OnCommitCreated(info);
-                // Enqueue the commit record's content and offset into the queue so it can be picked up by the next flush
-                // At this point, we expect the commit record to be flushed out as a distinct recovery point
-                ongoingCommitRequests.Enqueue((commitTail, info));
+                // Ok to retry in critical section, any concurrently invoked commit would block, but cannot progress
+                // anyways if no record can be enqueued
+                while (!TryEnqueueCommitRecord(ref info)) Thread.Yield();
+                commitTail = info.UntilAddress;
             }
+            else
+            {
+                // If not using fastCommitMode, do not need to allocate a commit record. Instead, set the content
+                // of this commit to the current tail and base all commit metadata on this address, even though
+                // perhaps more entries will be flushed as part of this commit
+                info.BeginAddress = BeginAddress;
+                info.UntilAddress = commitTail = TailAddress;
+            }
+
+            commitStrategy.OnCommitCreated(info);
+            // Enqueue the commit record's content and offset into the queue so it can be picked up by the next flush
+            // At this point, we expect the commit record to be flushed out as a distinct recovery point
+            ongoingCommitRequests.Enqueue((commitTail, info));
+            commitNumBarrier.SignalFinish();
             
             // As an optimization, if a concurrent flush has already advanced FlushedUntilAddress
             // past this commit, we can manually trigger a commit callback for safety, and return.
