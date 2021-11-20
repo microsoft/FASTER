@@ -1020,21 +1020,23 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Compact the log until specified address using current session, moving active records to the tail of the log. 
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
         /// <param name="compactUntilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <returns>Address until which compaction was done, caller responsible for shifting begin address</returns>
+        /// <returns>Address until which compaction was done</returns>
         public long Compact(long compactUntilAddress, CompactionType compactionType = CompactionType.Scan)
             => Compact(compactUntilAddress, compactionType, default(DefaultCompactionFunctions<Key, Value>));
 
         /// <summary>
-        /// Compact the log until specified address using current session, moving active records to the tail of the log.
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
-        /// <returns>Address until which compaction was done, caller responsible for shifting begin address</returns>
+        /// <returns>Address until which compaction was done</returns>
         public long Compact<CompactionFunctions>(long untilAddress, CompactionType compactionType, CompactionFunctions compactionFunctions)
             where CompactionFunctions : ICompactionFunctions<Key, Value>
             => fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, untilAddress, compactionType,  new SessionVariableLengthStructSettings<Value, Input> { valueLength = variableLengthStruct, inputLength = inputVariableLengthStruct });

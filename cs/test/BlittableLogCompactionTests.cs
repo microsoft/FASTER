@@ -57,7 +57,7 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
-            fht.Log.ShiftBeginAddress(compactUntil);
+            fht.Log.Truncate();
 
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
@@ -116,7 +116,7 @@ namespace FASTER.test
 
             var tail = fht.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, compactionType);
-            fht.Log.ShiftBeginAddress(compactUntil);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
             Assert.AreEqual(tail, fht.Log.TailAddress);
 
@@ -172,7 +172,7 @@ namespace FASTER.test
 
             var tail = fht.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, compactionType);
-            fht.Log.ShiftBeginAddress(compactUntil);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
@@ -232,7 +232,7 @@ namespace FASTER.test
 
             // Only leave records with even vfield1
             compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
-            fht.Log.ShiftBeginAddress(compactUntil);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
@@ -289,7 +289,7 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var compactUntil = session.Compact(fht.Log.TailAddress, compactionType);
-            fht.Log.ShiftBeginAddress(compactUntil);
+            fht.Log.Truncate();
 
             var input = default(InputStruct);
             var output = default(OutputStruct);

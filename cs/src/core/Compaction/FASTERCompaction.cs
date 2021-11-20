@@ -8,14 +8,15 @@ namespace FASTER.core
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log.
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
         /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
-        /// <returns>Address until which compaction was done, caller is responsible for shifting begin address</returns>
+        /// <returns>Address until which compaction was done</returns>
         internal long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
@@ -93,6 +94,7 @@ namespace FASTER.core
                     untilAddress = iter1.NextAddress;
                 }
             }
+            hlog.ShiftBeginAddress(untilAddress, false);
             return untilAddress;
         }
 
@@ -179,7 +181,7 @@ namespace FASTER.core
                     }
                 }
             }
-
+            hlog.ShiftBeginAddress(originalUntilAddress, false);
             return originalUntilAddress;
         }
 

@@ -102,17 +102,27 @@ namespace FASTER.core
         public long AllocatableMemorySizeBytes => ((long)(allocator.BufferSize - allocator.EmptyPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
 
         /// <summary>
-        /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.
+        /// Shift begin address to the provided untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to 
+        /// false. Destructive operation if truncateLog is set to true.
         /// </summary>
         /// <param name="untilAddress">Address to shift begin address until</param>
         /// <param name="snapToPageStart">Whether given address should be snapped to nearest earlier page start address</param>
-        public void ShiftBeginAddress(long untilAddress, bool snapToPageStart = false)
+        /// <param name="truncateLog">If true, we will also truncate the log on disk until the given BeginAddress. Truncate is a destructive operation 
+        /// that can result in data loss. If false, log will be truncated after the next checkpoint.</param>
+        public void ShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
         {
             if (snapToPageStart)
                 untilAddress &= ~allocator.PageSizeMask;
 
-            allocator.ShiftBeginAddress(untilAddress);
+            allocator.ShiftBeginAddress(untilAddress, truncateLog);
         }
+
+        /// <summary>
+        /// Truncate physical log on disk until the current BeginAddress. Use ShiftBeginAddress to shift the begin address.
+        /// Truncate is a destructive operation that can result in data loss. For data safety, take a checkpoint instead of 
+        /// using this call, as a checkpoint truncates the log to the BeginAddress after persisting the data and metadata.
+        /// </summary>
+        public void Truncate() => ShiftBeginAddress(BeginAddress, truncateLog: true);
 
         /// <summary>
         /// Shift log head address to prune memory foorprint of hybrid log
@@ -273,26 +283,28 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log.
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
         /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
-        /// <returns>Address until which compaction was done, caller is responsible for shifting begin address</returns>
+        /// <returns>Address until which compaction was done</returns>
         public long Compact<Input, Output, Context, Functions>(Functions functions, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, compactionType, sessionVariableLengthStructSettings);
 
         /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log.
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
         /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>)</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
-        /// <returns>Address until which compaction was done, caller is responsible for shifting begin address</returns>
+        /// <returns>Address until which compaction was done</returns>
         public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>

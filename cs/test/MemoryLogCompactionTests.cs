@@ -74,7 +74,7 @@ namespace FASTER.test
             // Compact log
             var compactUntil = fht.Log.BeginAddress + (fht.Log.TailAddress - fht.Log.BeginAddress) / 5;
             compactUntil = session.Compact(compactUntil, compactionType);
-            fht.Log.ShiftBeginAddress(compactUntil);
+            fht.Log.Truncate();
 
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 

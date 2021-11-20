@@ -91,7 +91,7 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
-            fht.Log.ShiftBeginAddress(compactUntil);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read all keys - all should be present
@@ -114,51 +114,6 @@ namespace FASTER.test
                 }
                 Assert.AreEqual(Status.OK, status);
                 Assert.AreEqual(value.value, output.value.value);
-            }
-        }
-
-        // Basic test where DO NOT shift begin address to untilAddress after compact 
-        [Test]
-        [Category("FasterKV")]
-        [Category("Compaction")]
-        [Category("Smoke")]
-        public void LogCompactNotShiftBeginAddrTest([Values] CompactionType compactionType)
-        {
-            MyInput input = new MyInput();
-
-            const int totalRecords = 2000;
-            long compactUntil = 0;
-
-            for (int i = 0; i < totalRecords; i++)
-            {
-                if (i == 1000)
-                    compactUntil = fht.Log.TailAddress;
-
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
-            }
-
-            // Do not shift begin to until address ... verify that is the case and verify all the keys
-            compactUntil = session.Compact(compactUntil, compactionType);
-            Assert.IsFalse(fht.Log.BeginAddress == compactUntil);
-
-            // Read 2000 keys - all should be present
-            for (int i = 0; i < totalRecords; i++)
-            {
-                MyOutput output = new MyOutput();
-
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-
-                var status = session.Read(ref key1, ref input, ref output, 0, 0);
-                if (status == Status.PENDING)
-                    session.CompletePending(true);
-                else
-                {
-                    Assert.AreEqual(Status.OK, status);
-                    Assert.AreEqual(value.value, output.value.value);
-                }
             }
         }
 
@@ -194,7 +149,7 @@ namespace FASTER.test
 
             var tail = fht.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, compactionType);
-            fht.Log.ShiftBeginAddress(compactUntil);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
             Assert.AreEqual(tail, fht.Log.TailAddress);
 
@@ -245,7 +200,7 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
-            fht.Log.ShiftBeginAddress(compactUntil);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read keys - all should be present
@@ -297,66 +252,7 @@ namespace FASTER.test
             }
 
             compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
-            fht.Log.ShiftBeginAddress(compactUntil);
-            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
-
-            // Read 2000 keys - all should be present
-            for (var i = 0; i < totalRecords; i++)
-            {
-                var output = new MyOutput();
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-
-                var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
-
-                var status = session.Read(ref key1, ref input, ref output, ctx, 0);
-                if (status == Status.PENDING)
-                {
-                    session.CompletePending(true);
-                }
-                else
-                {
-                    if (ctx == 0)
-                    {
-                        Assert.AreEqual(Status.OK, status);
-                        Assert.AreEqual(value.value, output.value.value);
-                    }
-                    else
-                    {
-                        Assert.AreEqual(Status.NOTFOUND, status);
-                    }
-                }
-            }
-        }
-
-        // Same as basic test of Custom Functions BUT this will NOT shift begin address to untilAddress after compact
-        [Test]
-        [Category("FasterKV")]
-        [Category("Compaction")]
-
-        public void LogCompactCustomFctnNotShiftBeginTest([Values] CompactionType compactionType)
-        {
-            MyInput input = new MyInput();
-
-            const int totalRecords = 2000;
-            var compactUntil = 0L;
-
-            for (var i = 0; i < totalRecords; i++)
-            {
-                if (i == totalRecords / 2)
-                    compactUntil = fht.Log.TailAddress;
-
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
-            }
-
-            compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
-            Assert.AreNotEqual(compactUntil, fht.Log.BeginAddress);
-
-            // Verified that begin address not changed so now compact and change Begin to untilAddress
-            compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
-            fht.Log.ShiftBeginAddress(compactUntil);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
@@ -413,7 +309,7 @@ namespace FASTER.test
 
             var compactionFunctions = new Test2CompactionFunctions();
             var compactUntil = session.Compact(fht.Log.TailAddress, compactionType, compactionFunctions);
-            fht.Log.ShiftBeginAddress(compactUntil);
+            fht.Log.Truncate();
 
             var input = default(MyInput);
             var output = default(MyOutput);

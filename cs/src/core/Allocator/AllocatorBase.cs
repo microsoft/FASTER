@@ -1160,13 +1160,26 @@ namespace FASTER.core
         /// Shift begin address
         /// </summary>
         /// <param name="newBeginAddress"></param>
-        public void ShiftBeginAddress(long newBeginAddress)
+        /// <param name="truncateLog"></param>
+        public void ShiftBeginAddress(long newBeginAddress, bool truncateLog)
         {
             // First update the begin address
             if (!Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress))
+            {
+                if (truncateLog)
+                {
+                    try
+                    {
+                        epoch.Resume();
+                        epoch.BumpCurrentEpoch(() => TruncateUntilAddress(newBeginAddress));
+                    }
+                    finally
+                    {
+                        epoch.Suspend();
+                    }
+                }
                 return;
-
-            var b = oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits;
+            }
 
             // Shift read-only address
             var flushEvent = FlushEvent;
@@ -1198,7 +1211,7 @@ namespace FASTER.core
             // Then shift head address
             var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
 
-            if (h || b)
+            if (h || truncateLog)
             {
                 try
                 {
@@ -1207,7 +1220,7 @@ namespace FASTER.core
                     {
                         if (h)
                             OnPagesClosed(newBeginAddress);
-                        if (b)
+                        if (truncateLog)
                             TruncateUntilAddress(newBeginAddress);
                     });
                 }
