@@ -114,7 +114,18 @@ namespace FASTER.core
             if (snapToPageStart)
                 untilAddress &= ~allocator.PageSizeMask;
 
-            allocator.ShiftBeginAddress(untilAddress, truncateLog);
+            bool epochProtected = fht.epoch.ThisInstanceProtected();
+            try
+            {
+                if (!epochProtected)
+                    fht.epoch.Resume();
+                allocator.ShiftBeginAddress(untilAddress, truncateLog);
+            }
+            finally
+            {
+                if (!epochProtected)
+                    fht.epoch.Suspend();
+            }
         }
 
         /// <summary>

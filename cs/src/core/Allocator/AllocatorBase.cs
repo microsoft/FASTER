@@ -1167,31 +1167,13 @@ namespace FASTER.core
             if (!Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress))
             {
                 if (truncateLog)
-                {
-                    try
-                    {
-                        epoch.Resume();
-                        epoch.BumpCurrentEpoch(() => TruncateUntilAddress(newBeginAddress));
-                    }
-                    finally
-                    {
-                        epoch.Suspend();
-                    }
-                }
+                    epoch.BumpCurrentEpoch(() => TruncateUntilAddress(newBeginAddress));
                 return;
             }
 
             // Shift read-only address
             var flushEvent = FlushEvent;
-            try
-            {
-                epoch.Resume();
-                ShiftReadOnlyAddress(newBeginAddress);
-            }
-            finally
-            {
-                epoch.Suspend();
-            }
+            ShiftReadOnlyAddress(newBeginAddress);
 
             // Wait for flush to complete
             var spins = 0;
@@ -1204,7 +1186,15 @@ namespace FASTER.core
                     Thread.Yield();
                     continue;
                 }
-                flushEvent.Wait();
+                try
+                {
+                    epoch.Suspend();
+                    flushEvent.Wait();
+                }
+                finally
+                {
+                    epoch.Resume();
+                }
                 flushEvent = FlushEvent;
             }
 
@@ -1213,21 +1203,13 @@ namespace FASTER.core
 
             if (h || truncateLog)
             {
-                try
+                epoch.BumpCurrentEpoch(() =>
                 {
-                    epoch.Resume();
-                    epoch.BumpCurrentEpoch(() =>
-                    {
-                        if (h)
-                            OnPagesClosed(newBeginAddress);
-                        if (truncateLog)
-                            TruncateUntilAddress(newBeginAddress);
-                    });
-                }
-                finally
-                {
-                    epoch.Suspend();
-                }
+                    if (h)
+                        OnPagesClosed(newBeginAddress);
+                    if (truncateLog)
+                        TruncateUntilAddress(newBeginAddress);
+                });
             }
         }
 

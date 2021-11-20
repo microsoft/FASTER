@@ -94,7 +94,7 @@ namespace FASTER.core
                     untilAddress = iter1.NextAddress;
                 }
             }
-            hlog.ShiftBeginAddress(untilAddress, false);
+            Log.ShiftBeginAddress(untilAddress, false);
             return untilAddress;
         }
 
@@ -181,7 +181,7 @@ namespace FASTER.core
                     }
                 }
             }
-            hlog.ShiftBeginAddress(originalUntilAddress, false);
+            Log.ShiftBeginAddress(originalUntilAddress, false);
             return originalUntilAddress;
         }
 
