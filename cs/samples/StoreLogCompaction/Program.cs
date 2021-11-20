@@ -99,7 +99,7 @@ namespace StoreLogCompaction
                 s.CompletePending(true);
 
                 Console.WriteLine("Compacting log");
-                s.Compact(h.Log.HeadAddress, true);
+                s.Compact(h.Log.HeadAddress, CompactionType.Scan);
 
                 Console.WriteLine("Log begin address: {0}", h.Log.BeginAddress);
                 Console.WriteLine("Log tail address: {0}", h.Log.TailAddress);
