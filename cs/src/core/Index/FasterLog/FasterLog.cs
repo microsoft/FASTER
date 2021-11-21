@@ -17,12 +17,10 @@ namespace FASTER.core
     internal class CommitNumOrderedBarrier
     {
         private long currentlyServiced;
-        private ManualResetEventSlim resetEventSlim;
         
         public CommitNumOrderedBarrier(long lastRecoveredNum)
         {
             currentlyServiced = lastRecoveredNum;
-            resetEventSlim = new ManualResetEventSlim();
         }
 
         public void WaitForTurn(long prevCommitNum, long commitNum)
@@ -34,13 +32,12 @@ namespace FASTER.core
                 if (currentlyServiced > prevCommitNum) throw new FasterException("commit critical section out of order!");
                 if (currentlyServiced != prevCommitNum)
                 {
-                    // resetEventSlim.Wait();
+                    Thread.Yield();
                     continue;
                 }
                 
                 Debug.Assert(currentlyServiced == prevCommitNum);
                 currentlyServiced = -commitNum;
-                // resetEventSlim.Reset();
                 break;
             }
         }
@@ -50,10 +47,7 @@ namespace FASTER.core
             if (currentlyServiced >= 0)
                 throw new FasterException("trying to release a lock not held");
             currentlyServiced = -currentlyServiced;
-            // resetEventSlim.Set();
         }
-        
-        
     }
     /// <summary>
     /// FASTER log
@@ -232,7 +226,7 @@ namespace FASTER.core
 
             ongoingCommitRequests = new ConcurrentQueue<(long, FasterLogRecoveryInfo)>();
             commitStrategy = logSettings.CommitStrategy ?? new DefaultCommitStrategy();
-            commitStrategy.Attach(this);
+            commitStrategy.OnAttached(this);
         }
 
         /// <summary>
