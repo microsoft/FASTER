@@ -25,11 +25,20 @@ namespace FASTER.test
         /// <param name="wait">If true, loop on exceptions that are retryable, and verify the directory no longer exists. Generally true on SetUp, false on TearDown</param>
         internal static void DeleteDirectory(string path, bool wait = false)
         {
-            if (!Directory.Exists(path))
-                return;
-
-            foreach (string directory in Directory.GetDirectories(path))
-                DeleteDirectory(directory, wait);
+            while (true)
+            {
+                try
+                {
+                    if (!Directory.Exists(path))
+                        return;
+                    foreach (string directory in Directory.GetDirectories(path))
+                        DeleteDirectory(directory, wait);
+                    break;
+                }
+                catch
+                {
+                }
+            }
 
             bool retry = true;
             while (retry)
