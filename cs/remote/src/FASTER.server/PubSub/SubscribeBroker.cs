@@ -28,6 +28,7 @@ namespace FASTER.server
         private AsyncQueue<(byte[], byte[])> publishQueue;
         readonly IKeySerializer<Key> keySerializer;
         readonly FasterLog log;
+        readonly IDevice device;
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(true);
         bool disposed = false;
@@ -41,7 +42,7 @@ namespace FASTER.server
         public SubscribeBroker(IKeySerializer<Key> keySerializer, string logDir, bool startFresh = true)
         {
             this.keySerializer = keySerializer;
-            var device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
+            device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
             if (startFresh)
@@ -91,7 +92,8 @@ namespace FASTER.server
                         {
                             byte* keyBytePtr = ptr;
                             byte* nullBytePtr = null;
-                            sub.Value.Publish(ref keyBytePtr, key.Length, ref valPtr, valLength, ref nullBytePtr, sub.Key);
+                            byte* valBytePtr = valPtr;
+                            sub.Value.Publish(ref keyBytePtr, key.Length, ref valBytePtr, valLength, ref nullBytePtr, sub.Key);
                             numSubscribers++;
                         }
                     }
@@ -127,8 +129,6 @@ namespace FASTER.server
 
         private async Task Start(CancellationToken cancellationToken = default)
         {
-            done.Reset();
-
             try
             {
                 var uniqueKeys = new Dictionary<byte[], (byte[], byte[])>(new ByteArrayComparer());
@@ -139,20 +139,39 @@ namespace FASTER.server
                     if (disposed)
                         break;
 
-                    var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
-                    await iter.WaitAsync(cts.Token);
-                    while (iter.GetNext(out byte[] subscriptionKey, out _, out _, out _))
+                    using var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                    await iter.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    while (iter.GetNext(out byte[] subscriptionKeyValueAscii, out _, out long currentAddress, out long nextAddress))
                     {
-                        if (!iter.GetNext(out byte[] subscriptionValue, out _, out long currentAddress, out long nextAddress))
+                        if (currentAddress >= long.MaxValue) return;
+
+                        byte[] subscriptionKey;
+                        byte[] subscriptionValue;
+                        byte[] ascii;
+
+                        unsafe
                         {
-                            if (currentAddress >= long.MaxValue) return;
-                        }
-                        if (!iter.GetNext(out byte[] ascii, out _, out currentAddress, out nextAddress))
-                        {
-                            if (currentAddress >= long.MaxValue) return;
+                            fixed (byte* subscriptionKeyValueAsciiPtr = &subscriptionKeyValueAscii[0])
+                            {
+                                var keyPtr = subscriptionKeyValueAsciiPtr;
+                                keySerializer.ReadKeyByRef(ref keyPtr);
+                                int subscriptionKeyLength = (int)(keyPtr - subscriptionKeyValueAsciiPtr);
+                                int subscriptionValueLength = subscriptionKeyValueAscii.Length - (subscriptionKeyLength + sizeof(bool));
+                                subscriptionKey = new byte[subscriptionKeyLength];
+                                subscriptionValue = new byte[subscriptionValueLength];
+                                ascii = new byte[sizeof(bool)];
+
+                                fixed (byte* subscriptionKeyPtr = &subscriptionKey[0], subscriptionValuePtr = &subscriptionValue[0], asciiPtr = &ascii[0])
+                                {
+                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr, subscriptionKeyPtr, subscriptionKeyLength, subscriptionKeyLength);
+                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr + subscriptionKeyLength, subscriptionValuePtr, subscriptionValueLength, subscriptionValueLength);
+                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr + subscriptionKeyLength + subscriptionValueLength, asciiPtr, sizeof(bool), sizeof(bool));
+                                }
+                            }
                         }
                         truncateUntilAddress = nextAddress;
-                        uniqueKeys.Add(subscriptionKey, (subscriptionValue, ascii));
+                        if (!uniqueKeys.ContainsKey(subscriptionKey))
+                            uniqueKeys.Add(subscriptionKey, (subscriptionValue, ascii));
                     }
 
                     if (truncateUntilAddress > log.BeginAddress)
@@ -194,6 +213,7 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
+                done.Reset();
                 subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
                 prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(new ByteArrayComparer());
                 Task.Run(() => Start(cts.Token));
@@ -223,9 +243,14 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
+                done.Reset();
                 subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
                 prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(new ByteArrayComparer());
                 Task.Run(() => Start(cts.Token));
+            }
+            else
+            {
+                while (prefixSubscriptions == null) Thread.Yield();
             }
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
             prefixSubscriptions.TryAdd(subscriptionPrefix, (ascii, new ConcurrentDictionary<int, ServerSessionBase>()));
@@ -361,9 +386,19 @@ namespace FASTER.server
             var start = key;
             ref Key k = ref keySerializer.ReadKeyByRef(ref key);
             // TODO: this needs to be a single atomic enqueue
-            log.Enqueue(new Span<byte>(start, (int)(key - start)));
-            log.Enqueue(new Span<byte>(value, valueLength));
-            log.Enqueue(new Span<byte>(Unsafe.AsPointer(ref ascii), sizeof(bool)));
+            byte[] logEntryBytes = new byte[(key - start) + valueLength + sizeof(bool)];
+            fixed (byte* logEntryBytePtr = &logEntryBytes[0])
+            {
+                byte* dst = logEntryBytePtr;
+                Buffer.MemoryCopy(start, dst, (key - start), (key - start));
+                dst += (key - start);
+                Buffer.MemoryCopy(value, dst, valueLength, valueLength);
+                dst += valueLength;
+                byte* asciiPtr = (byte*)&ascii;
+                Buffer.MemoryCopy(asciiPtr, dst, sizeof(bool), sizeof(bool));
+            }
+
+            log.Enqueue(logEntryBytes);
             log.RefreshUncommitted();
         }
 
@@ -376,6 +411,7 @@ namespace FASTER.server
             subscriptions?.Clear();
             prefixSubscriptions?.Clear();
             log.Dispose();
+            device.Dispose();
         }
     }
 }

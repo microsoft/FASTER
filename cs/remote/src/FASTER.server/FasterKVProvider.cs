@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Net.Sockets;
 using FASTER.common;
 using FASTER.core;
@@ -17,7 +15,7 @@ namespace FASTER.server
     /// <typeparam name="Functions"></typeparam>
     /// <typeparam name="ParameterSerializer"></typeparam>
     public sealed class FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer> : ISessionProvider
-            where Functions : IFunctions<Key, Value, Input, Output, long>
+            where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
             where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly FasterKV<Key, Value> store;

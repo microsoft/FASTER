@@ -24,7 +24,7 @@ namespace FASTER.server
 
     internal unsafe sealed class WebsocketServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
         : FasterKVServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer>
-        where Functions : IFunctions<Key, Value, Input, Output, long>
+        where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly HeaderReaderWriter hrw;
@@ -32,7 +32,7 @@ namespace FASTER.server
         byte* recvBufferPtr;
         int readHead;
 
-        int seqNo, pendingSeqNo, msgnum, start;
+        int pendingSeqNo, msgnum, start;
         byte* dcurr;
 
         readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker;
@@ -81,8 +81,8 @@ namespace FASTER.server
 
         public override void CompleteRead(ref Output output, long ctx, core.Status status)
         {
-            byte* d = responseObject.obj.bufferPtr;
-            var dend = d + responseObject.obj.buffer.Length;
+            byte* d = responseObject.bufferPtr;
+            var dend = d + responseObject.buffer.Length;
 
             if ((int)(dend - dcurr) < 7 + maxSizeSettings.MaxOutputSize)
                 SendAndReset(ref d, ref dend);
@@ -98,8 +98,8 @@ namespace FASTER.server
 
         public override void CompleteRMW(ref Output output, long ctx, Status status)
         {
-            byte* d = responseObject.obj.bufferPtr;
-            var dend = d + responseObject.obj.buffer.Length;
+            byte* d = responseObject.bufferPtr;
+            var dend = d + responseObject.buffer.Length;
 
             if ((int)(dend - dcurr) < 7 + maxSizeSettings.MaxOutputSize)
                 SendAndReset(ref d, ref dend);
@@ -185,8 +185,8 @@ namespace FASTER.server
 
             fixed (byte* b = &buf[offset])
             {
-                byte* d = responseObject.obj.bufferPtr;
-                var dend = d + responseObject.obj.buffer.Length;
+                byte* d = responseObject.bufferPtr;
+                var dend = d + responseObject.buffer.Length;
                 dcurr = d; // reserve space for size
                 var bytesAvailable = bytesRead - readHead;
                 var _origReadHead = readHead;
@@ -220,8 +220,7 @@ namespace FASTER.server
 
                     dcurr += response.Length;
 
-                    SendResponse((int)(d - responseObject.obj.bufferPtr), (int)(dcurr - d));
-                    responseObject.obj = null;
+                    SendResponse((int)(d - responseObject.bufferPtr), (int)(dcurr - d));
                     readHead = bytesRead;
                     return completeWSCommand;
 
@@ -535,6 +534,11 @@ namespace FASTER.server
                 // Send replies
                 if (msgnum - start > 0)
                     Send(d);
+                else
+                {
+                    messageManager.Return(responseObject);
+                    responseObject = null;
+                }
             }
 
             return completeWSCommand;
@@ -569,8 +573,8 @@ namespace FASTER.server
 
             ref Key key = ref serializer.ReadKeyByRef(ref keyPtr);
 
-            byte* d = respObj.obj.bufferPtr;
-            var dend = d + respObj.obj.buffer.Length;
+            byte* d = respObj.bufferPtr;
+            var dend = d + respObj.buffer.Length;
             var dcurr = d + sizeof(int); // reserve space for size
             byte* outputDcurr;
 
@@ -614,14 +618,14 @@ namespace FASTER.server
             Unsafe.AsRef<BatchHeader>(dstart).SeqNo = 0;
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header
-            *(int*)respObj.obj.bufferPtr = -(payloadSize - sizeof(int));
+            *(int*)respObj.bufferPtr = -(payloadSize - sizeof(int));
             try
             {
                 messageManager.Send(socket, respObj, 0, payloadSize);
             }
             catch
             {
-                respObj.Dispose();
+                messageManager.Return(respObj);
             }
         }
 
@@ -658,8 +662,8 @@ namespace FASTER.server
         {
             Send(d);
             GetResponseObject();
-            d = responseObject.obj.bufferPtr;
-            dend = d + responseObject.obj.buffer.Length;
+            d = responseObject.bufferPtr;
+            dend = d + responseObject.buffer.Length;
             dcurr = d;
             dcurr += 10;
             dcurr += sizeof(int); // reserve space for size
@@ -680,8 +684,7 @@ namespace FASTER.server
                 *(int*)dtemp = (packetLen - sizeof(int));
                 *(int*)dstart = 0;
                 *(int*)(dstart + sizeof(int)) = (msgnum - start);
-                SendResponse((int)(d - responseObject.obj.bufferPtr), (int)(dcurr - d));
-                responseObject.obj = null;
+                SendResponse((int)(d - responseObject.bufferPtr), (int)(dcurr - d));
             }
         }
     }

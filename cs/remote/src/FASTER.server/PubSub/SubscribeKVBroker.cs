@@ -28,6 +28,7 @@ namespace FASTER.server
         private AsyncQueue<byte[]> publishQueue;
         readonly IKeyInputSerializer<Key, Input> keyInputSerializer;
         readonly FasterLog log;
+        readonly IDevice device;
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(true);
         bool disposed = false;
@@ -41,7 +42,7 @@ namespace FASTER.server
         public SubscribeKVBroker(IKeyInputSerializer<Key, Input> keyInputSerializer, string logDir, bool startFresh = true)
         {
             this.keyInputSerializer = keyInputSerializer;
-            var device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
+            device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
             log = new FasterLog(new FasterLogSettings { LogDevice = device });
             if (startFresh)
@@ -88,8 +89,6 @@ namespace FASTER.server
 
         internal async Task Start(CancellationToken cancellationToken = default)
         {
-            done.Reset();
-
             try
             {
                 var uniqueKeys = new HashSet<byte[]>(new ByteArrayComparer());
@@ -101,8 +100,8 @@ namespace FASTER.server
                     if (disposed)
                         break;
 
-                    var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
-                    await iter.WaitAsync(cancellationToken);
+                    using var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                    await iter.WaitAsync(cancellationToken).ConfigureAwait(false);
                     while (iter.GetNext(out byte[] subscriptionKey, out int entryLength, out long currentAddress, out long nextAddress))
                     {
                         if (currentAddress >= long.MaxValue) return;
@@ -159,7 +158,7 @@ namespace FASTER.server
                                                 fixed (byte* inputPtr = &sub.Value.Item2[0])
                                                 {
                                                     byte* inputBytePtr = inputPtr;
-                                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, 0, ref inputBytePtr, sub.Key);
+                                                    serverSession.PrefixPublish(subPrefixPtr, kvp.Key.Length, ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, 0, ref inputBytePtr, sub.Key);
                                                 }
                                             }
                                         }
@@ -194,14 +193,20 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
+                done.Reset();
                 subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
                 prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
                 Task.Run(() => Start(cts.Token));
             }
+            else
+            {
+                while (prefixSubscriptions == null) Thread.Yield();
+            }
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             var subscriptionInput = new Span<byte>(inputStart, (int)(input - inputStart)).ToArray();
-            bool added = subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, (ServerSessionBase, byte[])>());
-            subscriptions[subscriptionKey].TryAdd(sid, (session, subscriptionInput));
+            subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, (ServerSessionBase, byte[])>());
+            if (subscriptions.TryGetValue(subscriptionKey, out var val))
+                val.TryAdd(sid, (session, subscriptionInput));
             return id;
         }
 
@@ -221,14 +226,20 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<byte[]>(), null) == null)
             {
+                done.Reset();
                 subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
                 prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, (ServerSessionBase, byte[])>>(new ByteArrayComparer());
                 Task.Run(() => Start(cts.Token));
             }
+            else
+            {
+                while (prefixSubscriptions == null) Thread.Yield();
+            }
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
             var subscriptionInput = new Span<byte>(inputStart, (int)(input - inputStart)).ToArray();
             prefixSubscriptions.TryAdd(subscriptionPrefix, new ConcurrentDictionary<int, (ServerSessionBase, byte[])>());
-            prefixSubscriptions[subscriptionPrefix].TryAdd(sid, (session, subscriptionInput));
+            if (prefixSubscriptions.TryGetValue(subscriptionPrefix, out var val))
+                val.TryAdd(sid, (session, subscriptionInput));
             return id;
         }
 
@@ -255,6 +266,7 @@ namespace FASTER.server
             subscriptions?.Clear();
             prefixSubscriptions?.Clear();
             log.Dispose();
+            device.Dispose();
         }
     }
 }

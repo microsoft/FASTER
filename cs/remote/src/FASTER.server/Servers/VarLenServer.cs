@@ -19,6 +19,7 @@ namespace FASTER.server
         readonly SpanByteFasterKVProvider provider;
         readonly SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
         readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
+        readonly LogSettings logSettings;
 
         /// <summary>
         /// Create server instance; use Start to start the server.
@@ -34,7 +35,7 @@ namespace FASTER.server
             if (opts.CheckpointDir != null && !Directory.Exists(opts.CheckpointDir))
                 Directory.CreateDirectory(opts.CheckpointDir);
 
-            opts.GetSettings(out var logSettings, out var checkpointSettings, out var indexSize);
+            opts.GetSettings(out logSettings, out var checkpointSettings, out var indexSize);
             store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
 
             if (opts.EnablePubSub)
@@ -48,6 +49,7 @@ namespace FASTER.server
 
             server = new FasterServer(opts.Address, opts.Port);
             server.Register(WireFormat.DefaultVarLenKV, provider);
+            server.Register(WireFormat.WebSocket, provider);
         }
 
         /// <summary>
@@ -82,6 +84,7 @@ namespace FASTER.server
             broker?.Dispose();
             kvBroker?.Dispose();
             store.Dispose();
+            logSettings.LogDevice.Dispose();
         }
 
         private static void DeleteDirectory(string path)

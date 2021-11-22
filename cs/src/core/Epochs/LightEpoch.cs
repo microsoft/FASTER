@@ -309,7 +309,7 @@ namespace FASTER.core
         {
             int PriorEpoch = BumpCurrentEpoch() - 1;
 
-            int i = 0, j = 0;
+            int i = 0;
             while (true)
             {
                 if (drainList[i].epoch == int.MaxValue)
@@ -343,11 +343,7 @@ namespace FASTER.core
                 {
                     ProtectAndDrain();
                     i = 0;
-                    if (++j == 500)
-                    {
-                        j = 0;
-                        Debug.WriteLine("Delay finding a free entry in the drain list");
-                    }
+                    Thread.Yield();
                 }
             }
 
