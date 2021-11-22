@@ -62,7 +62,7 @@ namespace FASTER.core
         private readonly int headerSize;
         private readonly LogChecksumType logChecksum;
         private readonly WorkQueueLIFO<CommitInfo> commitQueue;
-        private readonly CommitNumOrderedBarrier commitNumBarrier;
+        private CommitNumOrderedBarrier commitNumBarrier;
 
         internal readonly bool readOnlyMode;
         internal readonly bool fastCommitMode;
@@ -183,6 +183,8 @@ namespace FASTER.core
             var (it, cookie) = await fasterLog.RestoreLatestAsync(false, cancellationToken).ConfigureAwait(false);
             fasterLog.RecoveredIterators = it;
             fasterLog.RecoveredCookie = cookie;
+            fasterLog.commitNumBarrier = new CommitNumOrderedBarrier(fasterLog.commitNum);
+
             return fasterLog;
         }
 
