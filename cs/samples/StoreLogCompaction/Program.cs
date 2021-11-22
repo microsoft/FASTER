@@ -92,14 +92,18 @@ namespace StoreLogCompaction
                         }
                     }
                     sw.Stop();
-                    Console.WriteLine("Total time to delete/upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds / 1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
+                    Console.WriteLine("Time to delete/upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds / 1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
+                    Console.WriteLine("Log begin address: {0}", h.Log.BeginAddress);
                     Console.WriteLine("Log tail address: {0}", h.Log.TailAddress);
                 }
 
                 s.CompletePending(true);
 
-                Console.WriteLine("Compacting log");
+                sw.Restart();
                 s.Compact(h.Log.HeadAddress, CompactionType.Scan);
+                sw.Stop();
+                Console.WriteLine("Time to compact: {0:0.000} secs", sw.ElapsedMilliseconds / 1000.0);
+                h.Log.Truncate();
 
                 Console.WriteLine("Log begin address: {0}", h.Log.BeginAddress);
                 Console.WriteLine("Log tail address: {0}", h.Log.TailAddress);
