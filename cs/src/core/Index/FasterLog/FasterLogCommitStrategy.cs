@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.Threading;
 
@@ -41,12 +42,8 @@ namespace FASTER.core
         public void OnCommitFinished(FasterLogRecoveryInfo info);
 
     }
-
-    /// <summary>
-    /// The default commit strategy ensures that each record is covered by at most one commit request (except when the
-    /// metadata has changed). Redundant commit calls are dropped.
-    /// </summary>
-    public class DefaultCommitStrategy : IFasterLogCommitStrategy
+    
+    internal class DefaultCommitStrategy : IFasterLogCommitStrategy
     {
         private long coveredUntilAddress = 0;        
         private FasterLog log;
@@ -77,7 +74,7 @@ namespace FASTER.core
     /// to be non-overlapping with the exception to metadata changes. Additional commit requests will fail and the users
     /// need to try again at a later time.
     /// </summary>
-    public class MaxParallelCommitStrategy : IFasterLogCommitStrategy
+    internal class MaxParallelCommitStrategy : IFasterLogCommitStrategy
     {
         private FasterLog log;
         private int commitInProgress, maxCommitInProgress;
@@ -86,7 +83,7 @@ namespace FASTER.core
         /// Constructs a new MaxParallelCommitStrategy
         /// </summary>
         /// <param name="maxCommitInProgress"> maximum number of commits that can be outstanding at a time </param>
-        public MaxParallelCommitStrategy(int maxCommitInProgress)
+        internal MaxParallelCommitStrategy(int maxCommitInProgress)
         {
             this.maxCommitInProgress = maxCommitInProgress;
         }
@@ -97,8 +94,8 @@ namespace FASTER.core
         /// <inheritdoc/>
         public bool AdmitCommit(bool strongCommit, long currentTail, bool metadataChanged)
         {
-            if (strongCommit) return true;
             if (currentTail <= log.CommittedUntilAddress && !metadataChanged) return false;
+            if (strongCommit) return true;
 
             while (true)
             {
@@ -119,24 +116,14 @@ namespace FASTER.core
             Interlocked.Decrement(ref commitInProgress);
         }
     }
-
-    /// <summary>
-    /// MaxParallelCommitStrategyWithRetry allows k commits to be outstanding at any giving time. The k commits are
-    /// guaranteed to be non-overlapping with the exception to metadata changes. Additional commit requests will fail,
-    /// but the system will automatically retry commits to cover up to at least the address range requested of the
-    /// failed requests.
-    /// </summary>
-    public class MaxParallelCommitStrategyWithRetry : IFasterLogCommitStrategy
+    
+    internal class MaxParallelCommitStrategyWithRetry : IFasterLogCommitStrategy
     {
         private FasterLog log;
         private int commitInProgress, maxCommitInProgress;
         private bool shouldRetry;
-
-        /// <summary>
-        /// Constructs a new MaxParallelCommitStrategyWithRetry
-        /// </summary>
-        /// <param name="maxCommitInProgress"> maximum number of commits that can be outstanding at a time </param>
-        public MaxParallelCommitStrategyWithRetry(int maxCommitInProgress)
+        
+        internal MaxParallelCommitStrategyWithRetry(int maxCommitInProgress)
         {
             this.maxCommitInProgress = maxCommitInProgress;
         }
@@ -147,8 +134,8 @@ namespace FASTER.core
         /// <inheritdoc/>
         public bool AdmitCommit(bool strongCommit, long currentTail, bool metadataChanged)
         {
-            if (strongCommit) return true;
             if (currentTail <= log.CommittedUntilAddress && !metadataChanged) return false;
+            if (strongCommit) return true;
 
             while (true)
             {
@@ -179,23 +166,13 @@ namespace FASTER.core
         }
     }
 
-    /// <summary>
-    /// RateLimitCommitStrategy will only issue a request if it covers at least m bytes or if there has not been a
-    /// commit request in n milliseconds. Additional commit requests will fail and the users
-    /// need to try again at a later time.
-    /// </summary>
-    public class RateLimitCommitStrategy : IFasterLogCommitStrategy
+    internal class RateLimitCommitStrategy : IFasterLogCommitStrategy
     {
         private FasterLog log;
         private Stopwatch stopwatch;
         private long lastAdmittedMilli, lastAdmittedAddress, thresholdMilli, thresholdRange;
-
-        /// <summary>
-        /// Constructs a new RateLimitCommitStrategy
-        /// </summary>
-        /// <param name="thresholdMilli"> minimum time, in milliseconds, to be allowed between two commits, unless thresholdRange bytes will be committed</param>
-        /// <param name="thresholdRange"> minimum range, in bytes, to be allowed between two commits, unless it has been thresholdMilli milliseconds</param>
-        public RateLimitCommitStrategy(long thresholdMilli, long thresholdRange)
+        
+        internal RateLimitCommitStrategy(long thresholdMilli, long thresholdRange)
         {
             this.thresholdMilli = thresholdMilli;
             this.thresholdRange = thresholdRange;
@@ -236,5 +213,44 @@ namespace FASTER.core
         public void OnCommitFinished(FasterLogRecoveryInfo info)
         {
         }
+    }
+
+    public sealed partial class FasterLog : IDisposable
+    {
+        /// <summary>
+        /// The default commit strategy ensures that each record is covered by at most one commit request (except when
+        /// the metadata has changed). Redundant commit calls are dropped and corresponding commit invocation will
+        /// return false.
+        /// </summary>
+        /// <returns> strategy object </returns>
+        public static IFasterLogCommitStrategy DefaultStrategy() => new DefaultCommitStrategy();
+
+        /// <summary>
+        /// Allows k (non-strong) commit requests to be in progress at any giving time. The k commits are guaranteed
+        /// to be non-overlapping unless there are metadata changes. Additional commit requests will fail and depending
+        /// on the value of autoRetry, commits are either automatically called again later in the background or dropped.
+        /// Strong commits bypass this requirement.
+        /// </summary>
+        /// <param name="k"> maximum number of commits that can be outstanding at a time </param>
+        /// <param name="autoRetry">
+        /// whether to automatically retry rejected commit requests later. If set to true, even when
+        /// a commit() returns false due to being limited, the tail as of that commit will eventually be committed
+        /// without the need to invoke commit() again.
+        /// </param>
+        /// <returns> strategy object </returns>
+        public static IFasterLogCommitStrategy MaxParallelCommitStrategy(int k, bool autoRetry) =>
+            autoRetry ? new MaxParallelCommitStrategy(k) : new MaxParallelCommitStrategyWithRetry(k);
+
+        
+        /// <summary>
+        /// RateLimitCommitStrategy will only issue a request if it covers at least m bytes or if there has not been a
+        /// commit request in n milliseconds. Additional commit requests will fail and the users
+        /// need to try again at a later time.
+        /// </summary>
+        /// <param name="thresholdMilli"> minimum time, in milliseconds, to be allowed between two commits, unless thresholdRange bytes will be committed</param>
+        /// <param name="thresholdBytes"> minimum range, in bytes, to be allowed between two commits, unless it has been thresholdMilli milliseconds</param>
+        /// <returns> strategy object </returns>
+        public static IFasterLogCommitStrategy RateLimitCommitStrategy(long thresholdMilli, long thresholdBytes) =>
+            new RateLimitCommitStrategy(thresholdMilli, thresholdBytes);
     }
 }
