@@ -53,9 +53,11 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public bool AdmitCommit(bool strongCommit, long currentTail, bool metadataChanged)
-        {            
+        {   
             if (currentTail <= log.CommittedUntilAddress && !metadataChanged) return false;
-            return Utility.MonotonicUpdate(ref coveredUntilAddress, currentTail, out _) || metadataChanged;
+            if (coveredUntilAddress >= currentTail && !metadataChanged) return false;
+            coveredUntilAddress = currentTail;
+            return true;
         }
         
         /// <inheritdoc/>
@@ -97,12 +99,10 @@ namespace FASTER.core
             if (currentTail <= log.CommittedUntilAddress && !metadataChanged) return false;
             if (strongCommit) return true;
 
-            while (true)
-            {
-                var cip = commitInProgress;
-                if (cip == maxCommitInProgress) return false;
-                if (Interlocked.CompareExchange(ref commitInProgress, cip, cip + 1) == cip) return true;
-            }
+            if (commitInProgress == maxCommitInProgress) return false;
+
+            Interlocked.Increment(ref commitInProgress);
+            return true;
         }
         
         /// <inheritdoc/>
@@ -137,16 +137,14 @@ namespace FASTER.core
             if (currentTail <= log.CommittedUntilAddress && !metadataChanged) return false;
             if (strongCommit) return true;
 
-            while (true)
+            if (commitInProgress == maxCommitInProgress)
             {
-                var cip = commitInProgress;
-                if (cip == maxCommitInProgress)
-                {
-                    shouldRetry = true;
-                    return false;
-                }
-                if (Interlocked.CompareExchange(ref commitInProgress, cip, cip + 1) == cip) return true;
+                shouldRetry = true;
+                return false;
             }
+
+            Interlocked.Increment(ref commitInProgress);
+            return true;
         }
         
         /// <inheritdoc/>
@@ -189,24 +187,16 @@ namespace FASTER.core
         {
             if (currentTail <= log.CommittedUntilAddress && !metadataChanged) return false;
             var now = stopwatch.ElapsedMilliseconds;
-
-            while (true)
-            {
-                var lastSeenMilli = lastAdmittedMilli;
-                var lastSeenAddress = lastAdmittedAddress;
-                if (now - lastSeenMilli < thresholdMilli && currentTail - lastSeenAddress < thresholdRange)
-                    return false;
-                // Can live lock?
-                if (Interlocked.CompareExchange(ref lastAdmittedMilli, now, lastSeenMilli) == lastSeenMilli
-                    && Interlocked.CompareExchange(ref lastAdmittedAddress, currentTail, lastSeenAddress) == lastSeenAddress)
-                    return true;
-            }
+            if (now - lastAdmittedMilli < thresholdMilli && currentTail - lastAdmittedAddress < thresholdRange)
+                return false;
+            lastAdmittedMilli = now;
+            lastAdmittedAddress = currentTail;
+            return true;
         }
         
         /// <inheritdoc/>
         public void OnCommitCreated(FasterLogRecoveryInfo info)
         {
-            Utility.MonotonicUpdate(ref lastAdmittedAddress, info.UntilAddress, out _);
         }
 
         /// <inheritdoc/>
@@ -239,7 +229,7 @@ namespace FASTER.core
         /// </param>
         /// <returns> strategy object </returns>
         public static IFasterLogCommitStrategy MaxParallelCommitStrategy(int k, bool autoRetry) =>
-            autoRetry ? new MaxParallelCommitStrategy(k) : new MaxParallelCommitStrategyWithRetry(k);
+            autoRetry ? new MaxParallelCommitStrategyWithRetry(k) : new MaxParallelCommitStrategy(k);
 
         
         /// <summary>
