@@ -227,7 +227,7 @@ namespace FASTER.test
             }
 
             // Clean up and retry - should not find now
-            fht.Log.ShiftBeginAddress(fht.Log.TailAddress);
+            fht.Log.ShiftBeginAddress(fht.Log.TailAddress, truncateLog: true);
 
             r = new Random(10);
             for (int c = 0; c < count; c++)

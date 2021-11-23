@@ -1069,7 +1069,15 @@ namespace FASTER.core
             if (!fastCommitMode)
                 UpdateCommittedState(recoveryInfo);
             // Issue any potential physical deletes due to shifts in begin address
-            allocator.ShiftBeginAddress(recoveryInfo.BeginAddress);
+            try
+            {
+                epoch.Resume();
+                allocator.ShiftBeginAddress(recoveryInfo.BeginAddress, true);
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
         }
 
         private void SerialCommitCallbackWorker(CommitInfo commitInfo)

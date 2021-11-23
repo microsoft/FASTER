@@ -1160,25 +1160,20 @@ namespace FASTER.core
         /// Shift begin address
         /// </summary>
         /// <param name="newBeginAddress"></param>
-        public void ShiftBeginAddress(long newBeginAddress)
+        /// <param name="truncateLog"></param>
+        public void ShiftBeginAddress(long newBeginAddress, bool truncateLog)
         {
             // First update the begin address
             if (!Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress))
+            {
+                if (truncateLog)
+                    epoch.BumpCurrentEpoch(() => TruncateUntilAddress(newBeginAddress));
                 return;
-
-            var b = oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits;
+            }
 
             // Shift read-only address
             var flushEvent = FlushEvent;
-            try
-            {
-                epoch.Resume();
-                ShiftReadOnlyAddress(newBeginAddress);
-            }
-            finally
-            {
-                epoch.Suspend();
-            }
+            ShiftReadOnlyAddress(newBeginAddress);
 
             // Wait for flush to complete
             var spins = 0;
@@ -1191,30 +1186,30 @@ namespace FASTER.core
                     Thread.Yield();
                     continue;
                 }
-                flushEvent.Wait();
+                try
+                {
+                    epoch.Suspend();
+                    flushEvent.Wait();
+                }
+                finally
+                {
+                    epoch.Resume();
+                }
                 flushEvent = FlushEvent;
             }
 
             // Then shift head address
             var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
 
-            if (h || b)
+            if (h || truncateLog)
             {
-                try
+                epoch.BumpCurrentEpoch(() =>
                 {
-                    epoch.Resume();
-                    epoch.BumpCurrentEpoch(() =>
-                    {
-                        if (h)
-                            OnPagesClosed(newBeginAddress);
-                        if (b)
-                            TruncateUntilAddress(newBeginAddress);
-                    });
-                }
-                finally
-                {
-                    epoch.Suspend();
-                }
+                    if (h)
+                        OnPagesClosed(newBeginAddress);
+                    if (truncateLog)
+                        TruncateUntilAddress(newBeginAddress);
+                });
             }
         }
 

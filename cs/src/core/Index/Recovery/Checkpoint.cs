@@ -63,6 +63,7 @@ namespace FASTER.core
                 metadata = metadata.Concat(Encoding.Default.GetBytes(convertedCookie)).ToArray();
             }
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, metadata);
+            Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
         }
 
         internal void WriteHybridLogIncrementalMetaInfo(DeltaLog deltaLog)
@@ -74,6 +75,7 @@ namespace FASTER.core
                 metadata = metadata.Concat(Encoding.Default.GetBytes(convertedCookie)).ToArray();
             }
             checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, metadata, deltaLog);
+            Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
         }
 
         internal void WriteIndexMetaInfo()

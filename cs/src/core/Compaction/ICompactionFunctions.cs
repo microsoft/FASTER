@@ -22,11 +22,11 @@
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        bool IsDeleted(in Key key, in Value value);
+        bool IsDeleted(ref Key key, ref Value value);
     }
 
     internal struct DefaultCompactionFunctions<Key, Value> : ICompactionFunctions<Key, Value>
     {
-        public bool IsDeleted(in Key key, in Value value) => false;
+        public bool IsDeleted(ref Key key, ref Value value) => false;
     }
 }
