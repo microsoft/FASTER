@@ -522,7 +522,11 @@ namespace FASTER.core
         /// <returns>Whether commit is successful </returns>
         public bool CommitStrongly(out long commitTail, out long actualCommitNum, bool spinWait = false, byte[] cookie = null, long proposedCommitNum = -1, Action callback = null)
         {
-            return CommitInternal(out commitTail, out actualCommitNum, false, cookie, proposedCommitNum, callback);
+            if (!CommitInternal(out commitTail, out actualCommitNum, false, cookie, proposedCommitNum, callback))
+                return false;
+            if (spinWait)
+                SpinWaitForCommit(commitTail, actualCommitNum);
+            return true;
         }
 
         /// <summary>
