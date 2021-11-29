@@ -29,8 +29,10 @@ namespace FASTER.server
         /// <param name="functionsGen"></param>
         /// <param name="serializer"></param>
         /// <param name="keyInputSerializer"></param>
+        /// <param name="supportsLocking"></param>
         /// <param name="maxSizeSettings"></param>
-        public GenericServer(ServerOptions opts, Func<WireFormat, Functions> functionsGen, ParameterSerializer serializer, IKeyInputSerializer<Key, Input> keyInputSerializer, MaxSizeSettings maxSizeSettings = default)
+        public GenericServer(ServerOptions opts, Func<WireFormat, Functions> functionsGen, ParameterSerializer serializer, IKeyInputSerializer<Key, Input> keyInputSerializer, 
+                             bool supportsLocking, MaxSizeSettings maxSizeSettings = default)
         {
             this.opts = opts;
 
@@ -41,7 +43,7 @@ namespace FASTER.server
                 Directory.CreateDirectory(opts.CheckpointDir);
 
             opts.GetSettings(out var logSettings, out var checkpointSettings, out var indexSize);
-            store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
+            store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings, fasterSettings: new FasterSettings { SupportsLocking = supportsLocking });
 
             if (opts.Recover)
             {

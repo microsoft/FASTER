@@ -11,8 +11,6 @@ namespace FASTER.server
         private readonly Functions functions;
         private readonly FasterKVServerSessionBase<Output> serverNetworkSession;
 
-        public bool SupportsLocking => functions.SupportsLocking;
-
         public bool SupportsPostOperations => true;
 
         public ServerKVFunctions(Functions functions, FasterKVServerSessionBase<Output> serverNetworkSession)
@@ -80,28 +78,5 @@ namespace FASTER.server
 
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, long ctx)
             => functions.UpsertCompletionCallback(ref key, ref input, ref value, ctx);
-
-        public void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext)
-            => functions.LockExclusive(ref recordInfo, ref key, ref value, ref lockContext);
-
-        /// <inheritdoc />
-        public void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext)
-            => functions.UnlockExclusive(ref recordInfo, ref key, ref value, lockContext);
-
-        /// <inheritdoc />
-        public bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1)
-            => functions.TryLockExclusive(ref recordInfo, ref key, ref value, ref lockContext, spinCount);
-
-        /// <inheritdoc />
-        public void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext)
-            => functions.LockShared(ref recordInfo, ref key, ref value, ref lockContext);
-
-        /// <inheritdoc />
-        public bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) 
-            => functions.UnlockShared(ref recordInfo, ref key, ref value, lockContext);
-
-        /// <inheritdoc />
-        public bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1)
-            => functions.TryLockShared(ref recordInfo, ref key, ref value, ref lockContext, spinCount);
     }
 }

@@ -18,6 +18,17 @@ namespace FASTER.core
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
 
         internal readonly InternalFasterSession FasterSession;
+        bool isAcquired;
+
+        ulong TotalLockCount => sharedLockCount + exclusiveLockCount;
+        internal ulong sharedLockCount;
+        internal ulong exclusiveLockCount;
+
+        void CheckAcquired()
+        {
+            if (!isAcquired)
+                throw new FasterException("Method call on not-acquired ManualFasterOperations");
+        }
 
         internal ManualFasterOperations(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
@@ -45,12 +56,45 @@ namespace FASTER.core
         public void UnsafeSuspendThread() => clientSession.UnsafeSuspendThread();
 
         /// <summary>
+        /// Synchronously complete outstanding pending synchronous operations.
+        /// Async operations must be completed individually.
+        /// </summary>
+        /// <param name="wait">Wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        public bool UnsafeCompletePending(bool wait = false, bool spinWaitForCommit = false)
+            => this.clientSession.UnsafeCompletePending(this.FasterSession, false, wait, spinWaitForCommit);
+
+        /// <summary>
+        /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
+        /// Assumes epoch protection is managed by user. Async operations must be completed individually.
+        /// </summary>
+        /// <param name="completedOutputs">Outputs completed by this operation</param>
+        /// <param name="wait">Wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        public bool UnsafeCompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+            => this.clientSession.UnsafeCompletePendingWithOutputs(this.FasterSession, out completedOutputs, wait, spinWaitForCommit);
+
+        #region Acquire and Dispose
+        internal void Acquire()
+        {
+            if (this.isAcquired)
+                throw new FasterException("Trying to acquire an already-acquired ManualFasterOperations");
+            this.isAcquired = true;
+        }
+
+        /// <summary>
         /// Does not actually dispose of anything; asserts the epoch has been suspended
         /// </summary>
         public void Dispose()
         {
-            Debug.Assert(!LightEpoch.AnyInstanceProtected());
+            if (LightEpoch.AnyInstanceProtected())
+                throw new FasterException("Disposing ManualFasterOperations with a protected epoch; must call UnsafeSuspendThread");
+            if (TotalLockCount > 0)
+                throw new FasterException($"Disposing ManualFasterOperations with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
         }
+        #endregion Acquire and Dispose
 
         #region Key Locking
 
@@ -60,13 +104,12 @@ namespace FASTER.core
         /// <param name="key">The key to lock</param>
         /// <param name="lockType">The type of lock to take</param>
         /// <param name="retrieveData">Whether to retrieve data (and copy to the tail of the log) if the key is not in the mutable region</param>
-        /// <param name="lockContext">Context-specific information; will be passed to <see cref=" Unlock(ref Key, LockType, long)"/></param>
-        /// <param name="address">The address of the record. May be checked against <see cref="MinimumValidLockAddress"/> to check if the lock remains valid</param>
-        public unsafe void Lock(ref Key key, LockType lockType, bool retrieveData, out long lockContext, out long address)
+        /// <param name="lockInfo">Information about the acquired lock</param>
+        public unsafe void Lock(ref Key key, LockType lockType, bool retrieveData, ref LockInfo lockInfo)
         {
-            LockOperation lockOp = new(LockOperationType.Lock, lockType);
+            CheckAcquired();
+            LockOperation lockOp = new(LockOperationType.LockRead, lockType);
 
-            lockContext = default;
             Input input = default;
             Output output = default;
             RecordMetadata recordMetadata = default;
@@ -81,30 +124,65 @@ namespace FASTER.core
             {
                 var status = clientSession.fht.ContextRead(ref key, ref input, ref output, ref lockOp, ref recordMetadata, ReadFlags.CopyToTail, context: default, FasterSession, serialNo: 0, clientSession.ctx);
                 success = status == Status.OK;
-                if (success)
+                if (status == Status.PENDING)
                 {
-                    lockContext = lockOp.LockContext;
-                }
-                else if (status == Status.PENDING)
-                {
-                    UnsafeSuspendThread();
-                    clientSession.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    // This bottoms out in WaitPending which assumes the epoch is protected, and releases it. So we don't release it here.
+                    this.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    completedOutputs.Next();
                     recordMetadata = completedOutputs.Current.RecordMetadata;
-                    lockContext = completedOutputs.Current.LockContext;
                     completedOutputs.Dispose();
                     success = true;
-                    UnsafeResumeThread();
                 }
             }
 
             if (!success)
             {
+                lockOp.LockOperationType = LockOperationType.LockUpsert;
                 Value value = default;
                 var status = clientSession.fht.ContextUpsert(ref key, ref input, ref value, ref output, ref lockOp, out recordMetadata, context: default, FasterSession, serialNo: 0, clientSession.ctx);
                 Debug.Assert(status == Status.OK);
             }
 
-            address = recordMetadata.Address;
+            lockInfo.LockType = lockType == LockType.ExclusiveFromShared ? LockType.Exclusive : lockType;
+            lockInfo.Address = recordMetadata.Address;
+            if (lockInfo.LockType == LockType.Exclusive)
+                ++this.exclusiveLockCount;
+            else
+                ++this.sharedLockCount;
+        }
+
+        /// <summary>
+        /// Lock the key with the specified <paramref name="lockType"/>, waiting until it is acquired
+        /// </summary>
+        /// <param name="key">The key to lock</param>
+        /// <param name="lockType">The type of lock to take</param>
+        /// <param name="retrieveData">Whether to retrieve data (and copy to the tail of the log) if the key is not in the mutable region</param>
+        /// <param name="lockInfo">Information about the acquired lock</param>
+        public unsafe void Lock(Key key, LockType lockType, bool retrieveData, ref LockInfo lockInfo) 
+            => Lock(ref key, lockType, retrieveData, ref lockInfo);
+
+        /// <summary>
+        /// Lock the key with the specified <paramref name="lockType"/>, waiting until it is acquired
+        /// </summary>
+        /// <param name="key">The key to lock</param>
+        /// <param name="lockType">The type of lock to take</param>
+        /// <param name="retrieveData">Whether to retrieve data (and copy to the tail of the log) if the key is not in the mutable region</param>
+        public unsafe void Lock(ref Key key, LockType lockType, bool retrieveData)
+        {
+            LockInfo lockInfo = default;
+            Lock(ref key, lockType, retrieveData, ref lockInfo);
+        }
+
+        /// <summary>
+        /// Lock the key with the specified <paramref name="lockType"/>, waiting until it is acquired
+        /// </summary>
+        /// <param name="key">The key to lock</param>
+        /// <param name="lockType">The type of lock to take</param>
+        /// <param name="retrieveData">Whether to retrieve data (and copy to the tail of the log) if the key is not in the mutable region</param>
+        public unsafe void Lock(Key key, LockType lockType, bool retrieveData)
+        {
+            LockInfo lockInfo = default;
+            Lock(ref key, lockType, retrieveData, ref lockInfo);
         }
 
         /// <summary>
@@ -112,9 +190,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key">The key to lock</param>
         /// <param name="lockType">The type of lock to take</param>
-        /// <param name="lockContext">Context-specific information; was returned by <see cref=" Lock(ref Key, LockType, bool, out long, out long)"/></param>
-        public void Unlock(ref Key key, LockType lockType, long lockContext)
+        /// <param name="lockInfo">Information about the acquired lock</param>
+        public void Unlock(ref Key key, LockType lockType, ref LockInfo lockInfo)
         {
+            CheckAcquired();
             LockOperation lockOp = new(LockOperationType.Unlock, lockType);
 
             Input input = default;
@@ -124,17 +203,35 @@ namespace FASTER.core
             var status = clientSession.fht.ContextRead(ref key, ref input, ref output, ref lockOp, ref recordMetadata, ReadFlags.None, context: default, FasterSession, serialNo: 0, clientSession.ctx);
             if (status == Status.PENDING)
             {
-                // Do nothing here, as a lock that goes into the immutable region is considered unlocked.
-                UnsafeSuspendThread();
-                clientSession.CompletePending(wait: true);
-                UnsafeResumeThread();
+                // Do nothing here, as a lock that goes into the on-disk region is considered unlocked--we will not allow that anyway.
+                // This bottoms out in WaitPending which assumes the epoch is protected, and releases it. So we don't release it here.
+                this.UnsafeCompletePending(wait: true);
             }
+
+            if (lockInfo.LockType == LockType.Exclusive)
+                --this.exclusiveLockCount;
+            else
+                --this.sharedLockCount;
         }
 
         /// <summary>
-        /// The minimum valid address for a locked record (includes copies to tail).
+        /// Lock the key with the specified <paramref name="lockInfo"/> lock type.
         /// </summary>
-        public long MinimumValidLockAddress => clientSession.fht.Log.ReadOnlyAddress;
+        /// <param name="key">The key to lock</param>
+        /// <param name="lockInfo">Information about the acquired lock</param>
+        public void Unlock(Key key, ref LockInfo lockInfo)
+            => Unlock(ref key, lockInfo.LockType, ref lockInfo);
+
+        /// <summary>
+        /// Lock the key with the specified <paramref name="lockType"/>
+        /// </summary>
+        /// <param name="key">The key to lock</param>
+        /// <param name="lockType">The type of lock to take</param>
+        public void Unlock(Key key, LockType lockType)
+        {
+            LockInfo lockInfo = default;
+            Unlock(ref key, lockType, ref lockInfo);
+        }
 
         #endregion Key Locking
 
@@ -415,13 +512,15 @@ namespace FASTER.core
             }
 
             #region IFunctions - Optional features supported
-            public bool SupportsLocking => true;        // Check user's setting in FasterKV to know whose lock scheme to use
+            public bool SupportsLocking => false;       // We only lock explicitly in Lock/Unlock, which are longer-duration locks.
 
             public bool SupportsPostOperations => true; // We need this for user record locking, but check for user's setting before calling user code
+
+            public bool IsManualOperations => true;
             #endregion IFunctions - Optional features supported
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            void HandleLockOperation(ref RecordInfo recordInfo, ref Key key, ref Value value, ref LockOperation lockOp, out bool isLock)
+            void HandleLockOperation(ref RecordInfo recordInfo, ref LockOperation lockOp, out bool isLock)
             {
                 isLock = false;
                 if (lockOp.LockOperationType == LockOperationType.Unlock)
@@ -432,20 +531,20 @@ namespace FASTER.core
                         recordInfo.SetInvalid();
                     }
                     if (lockOp.LockType == LockType.Shared)
-                        this.UnlockShared(ref recordInfo, ref key, ref value, lockOp.LockContext);
+                        this.UnlockShared(ref recordInfo);
                     else if (lockOp.LockType == LockType.Exclusive)
-                        this.UnlockExclusive(ref recordInfo, ref key, ref value, lockOp.LockContext);
+                        this.UnlockExclusive(ref recordInfo);
                     else
                         Debug.Fail($"Unexpected LockType: {lockOp.LockType}");
                     return;
                 }
                 isLock = true;
                 if (lockOp.LockType == LockType.Shared)
-                    this.LockShared(ref recordInfo, ref key, ref value, ref lockOp.LockContext);
+                    this.LockShared(ref recordInfo);
                 else if (lockOp.LockType == LockType.Exclusive)
-                    this.LockExclusive(ref recordInfo, ref key, ref value, ref lockOp.LockContext);
+                    this.LockExclusive(ref recordInfo);
                 else if (lockOp.LockType == LockType.ExclusiveFromShared)
-                    this.LockExclusiveFromShared(ref recordInfo, ref key, ref value, ref lockOp.LockContext);
+                    this.LockExclusiveFromShared(ref recordInfo);
                 else
                     Debug.Fail($"Unexpected LockType: {lockOp.LockType}");
             }
@@ -457,7 +556,7 @@ namespace FASTER.core
                 if (lockOp.IsSet)
                 {
                     // No value is returned to the client through the lock sequence; for consistency all key locks must be acquired before their values are read.
-                    HandleLockOperation(ref recordInfo, ref key, ref value, ref lockOp, out _);
+                    HandleLockOperation(ref recordInfo, ref lockOp, out _);
                     return true;
                 }
                 return _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
@@ -469,7 +568,7 @@ namespace FASTER.core
                 if (lockOp.IsSet)
                 {
                     // No value is returned to the client through the lock sequence; for consistency all key locks must be acquired before their values are read.
-                    HandleLockOperation(ref recordInfo, ref key, ref value, ref lockOp, out _);
+                    HandleLockOperation(ref recordInfo, ref lockOp, out _);
                     return true;
                 }
                 return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
@@ -490,9 +589,20 @@ namespace FASTER.core
             {
                 _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
-                // Lock (or unlock) here, and do not unlock in PostSingleWriter; wait for the user to explicitly unlock
+                // Lock here, and do not unlock in PostSingleWriter; wait for the user to explicitly unlock
                 if (lockOp.IsSet)
-                    HandleLockOperation(ref recordInfo, ref key, ref dst, ref lockOp, out _);
+                {
+                    Debug.Assert(lockOp.LockOperationType != LockOperationType.Unlock); // Should have caught this in InternalUpsert
+                    HandleLockOperation(ref recordInfo, ref lockOp, out _);
+
+                    // If this is a lock for upsert, then we've failed to find an in-memory record for this key, and we're creating a stub with a default value.
+                    if (lockOp.LockOperationType == LockOperationType.LockUpsert)
+                        recordInfo.Stub = true;
+                }
+                else if (lockOp.IsStubPromotion)
+                {
+                    this.LockExclusive(ref recordInfo);
+                }
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -508,7 +618,7 @@ namespace FASTER.core
                 if (lockOp.IsSet)
                 {
                     // All lock operations in ConcurrentWriter can return immediately.
-                    HandleLockOperation(ref recordInfo, ref key, ref dst, ref lockOp, out _);
+                    HandleLockOperation(ref recordInfo, ref lockOp, out _);
                     return true;
                 }
 
@@ -520,48 +630,48 @@ namespace FASTER.core
                 => _clientSession.functions.UpsertCompletionCallback(ref key, ref input, ref value, ctx);
 #endregion IFunctions - Upserts
 
-#region IFunctions - RMWs
-#region InitialUpdater
+            #region IFunctions - RMWs
+            #region InitialUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output)
                 => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
             {
-                lockContext = default;
                 _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+                if (lockOp.IsStubPromotion)
+                {
+                    this.LockExclusive(ref recordInfo);
+                }
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, long lockContext)
+            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 if (_clientSession.functions.SupportsPostOperations)
                     _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
-#endregion InitialUpdater
+            #endregion InitialUpdater
 
-#region CopyUpdater
+            #region CopyUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
                 => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext)
-            {
-                lockContext = 0;
-                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
-            }
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, long lockContext)
+            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 return !_clientSession.functions.SupportsPostOperations
                     || _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
             }
-#endregion CopyUpdater
+            #endregion CopyUpdater
 
-#region InPlaceUpdater
+            #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
@@ -572,14 +682,13 @@ namespace FASTER.core
             public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
                 => _clientSession.functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
 
-#endregion InPlaceUpdater
-#endregion IFunctions - RMWs
+            #endregion InPlaceUpdater
+            #endregion IFunctions - RMWs
 
-#region IFunctions - Deletes
+            #region IFunctions - Deletes
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address)
             {
-                // There is no value to lock here, so we take a RecordInfo lock in InternalDelete and release it here.
                 if (_clientSession.functions.SupportsPostOperations)
                     _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
             }
@@ -593,64 +702,33 @@ namespace FASTER.core
 
             public void DeleteCompletionCallback(ref Key key, Context ctx)
                 => _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
-#endregion IFunctions - Deletes
+            #endregion IFunctions - Deletes
 
-#region IFunctions - Locking
+            #region IFunctions - Locking
 
-            public void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext)
-            {
-                if (_clientSession.fht.SupportsLocking)
-                    _clientSession.functions.LockExclusive(ref recordInfo, ref key, ref value, ref lockContext);
-                else
-                    recordInfo.LockExclusive();
-            }
+            public void LockExclusive(ref RecordInfo recordInfo) => recordInfo.LockExclusive();
 
-            public void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext)
-            {
-                if (_clientSession.fht.SupportsLocking)
-                    _clientSession.functions.UnlockExclusive(ref recordInfo, ref key, ref value, lockContext);
-                else
-                    recordInfo.UnlockExclusive();
-            }
+            public void UnlockExclusive(ref RecordInfo recordInfo) => recordInfo.UnlockExclusive();
 
-            public bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1)
-                => _clientSession.fht.SupportsLocking
-                    ? _clientSession.functions.TryLockExclusive(ref recordInfo, ref key, ref value, ref lockContext, spinCount)
-                    : recordInfo.TryLockExclusive(spinCount);
+            public bool TryLockExclusive(ref RecordInfo recordInfo, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
 
-            public void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext)
-            {
-                if (_clientSession.fht.SupportsLocking)
-                    _clientSession.functions.LockShared(ref recordInfo, ref key, ref value, ref lockContext);
-                else
-                    recordInfo.LockShared();
-            }
+            public void LockShared(ref RecordInfo recordInfo) => recordInfo.LockShared();
 
-            public bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext)
-            {
-                if (_clientSession.fht.SupportsLocking)
-                    return _clientSession.functions.UnlockShared(ref recordInfo, ref key, ref value, lockContext);
-                recordInfo.UnlockShared();
-                return true;
-            }
+            public void UnlockShared(ref RecordInfo recordInfo) => recordInfo.UnlockShared();
 
-            public bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1)
-                => _clientSession.fht.SupportsLocking
-                    ? _clientSession.functions.TryLockShared(ref recordInfo, ref key, ref value, ref lockContext, spinCount)
-                    : recordInfo.TryLockShared(spinCount);
+            public bool TryLockShared(ref RecordInfo recordInfo, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
 
-            public void LockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext)
-            {
-                if (_clientSession.fht.SupportsLocking)
-                    _clientSession.functions.LockExclusiveFromShared(ref recordInfo, ref key, ref value, ref lockContext);
-                else
-                    recordInfo.LockExclusiveFromShared();
-            }
+            public void LockExclusiveFromShared(ref RecordInfo recordInfo) => recordInfo.LockExclusiveFromShared();
 
-            public bool TryLockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1)
-                => _clientSession.fht.SupportsLocking
-                    ? _clientSession.functions.TryLockExclusiveFromShared(ref recordInfo, ref key, ref value, ref lockContext, spinCount)
-                    : recordInfo.TryLockExclusiveFromShared(spinCount);
+            public bool TryLockExclusiveFromShared(ref RecordInfo recordInfo, int spinCount = 1) => recordInfo.TryLockExclusiveFromShared(spinCount);
+
+            public bool IsLocked(ref RecordInfo recordInfo) => recordInfo.IsLocked;
+
+            public bool IsLockedExclusive(ref RecordInfo recordInfo) => recordInfo.IsLockedExclusive;
+
+            public bool IsLockedShared(ref RecordInfo recordInfo) => recordInfo.IsLockedShared;
+
+            public void TransferLocks(ref RecordInfo oldRecordInfo, ref RecordInfo newRecordInfo) => newRecordInfo.TransferLocksFrom(ref oldRecordInfo);
             #endregion IFunctions - Locking
 
             #region IFunctions - Checkpointing
@@ -661,7 +739,7 @@ namespace FASTER.core
             }
 #endregion IFunctions - Checkpointing
 
-#region Internal utilities
+            #region Internal utilities
             public int GetInitialLength(ref Input input)
                 => _clientSession.variableLengthStruct.GetInitialLength(ref input);
 
@@ -681,9 +759,8 @@ namespace FASTER.core
 
             public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
                 => _clientSession.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
-#endregion Internal utilities
+            #endregion Internal utilities
         }
-
 #endregion IFasterSession
     }
 }

@@ -70,35 +70,6 @@ namespace FASTER.core
         public virtual void DeleteCompletionCallback(ref Key key, Context ctx) { }
         /// <inheritdoc/>
         public virtual void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
-
-        /// <inheritdoc/>
-        public virtual bool SupportsLocking => locking;
-
-        /// <inheritdoc/>
-        public virtual void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) => recordInfo.LockExclusive();
-
-        /// <inheritdoc/>
-        public virtual void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) => recordInfo.UnlockExclusive();
-
-        /// <inheritdoc/>
-        public virtual bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
-
-        /// <inheritdoc/>
-        public virtual void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) => recordInfo.LockShared();
-
-        /// <inheritdoc/>
-        public virtual bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext)
-        {
-            recordInfo.UnlockShared();
-            return true;
-        }
-
-        /// <inheritdoc/>
-        public virtual bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
-
-        public virtual void LockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) => recordInfo.LockExclusiveFromShared();
-
-        public virtual bool TryLockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusiveFromShared(spinCount);
     }
 
     /// <summary>

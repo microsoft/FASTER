@@ -29,6 +29,8 @@ namespace FASTER.core
         bool SupportsLocking { get; }
 
         bool SupportsPostOperations { get; }
+
+        bool IsManualOperations { get; }
         #endregion Optional features supported by this implementation
 
         #region Reads
@@ -47,14 +49,14 @@ namespace FASTER.core
         #region RMWs
         #region InitialUpdater
         bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output);
-        void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext);
-        void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, long lockContext);
+        void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address);
+        void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address);
         #endregion InitialUpdater
 
         #region CopyUpdater
         bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output);
-        void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, out long lockContext);
-        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address, long lockContext);
+        void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address);
+        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address);
         #endregion CopyUpdater
 
         #region InPlaceUpdater
@@ -71,14 +73,18 @@ namespace FASTER.core
         #endregion Deletes
 
         #region Locking
-        void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext);
-        void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext);
-        bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1);
-        void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext);
-        bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext);
-        bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1);
-        void LockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext);
-        bool TryLockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1);
+        void LockExclusive(ref RecordInfo recordInfo);
+        void UnlockExclusive(ref RecordInfo recordInfo);
+        bool TryLockExclusive(ref RecordInfo recordInfo, int spinCount = 1);
+        void LockShared(ref RecordInfo recordInfo);
+        void UnlockShared(ref RecordInfo recordInfo);
+        bool TryLockShared(ref RecordInfo recordInfo, int spinCount = 1);
+        void LockExclusiveFromShared(ref RecordInfo recordInfo);
+        bool TryLockExclusiveFromShared(ref RecordInfo recordInfo, int spinCount = 1);
+        bool IsLocked(ref RecordInfo recordInfo);
+        bool IsLockedExclusive(ref RecordInfo recordInfo);
+        bool IsLockedShared(ref RecordInfo recordInfo);
+        void TransferLocks(ref RecordInfo fromRecordInfo, ref RecordInfo toRecordInfo);
         #endregion Locking
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);

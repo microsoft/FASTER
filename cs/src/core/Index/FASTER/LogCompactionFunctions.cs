@@ -68,15 +68,5 @@ namespace FASTER.core
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
 
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx) { }
-
-        public bool SupportsLocking => false;
-        public void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) { }
-        public void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) { }
-        public bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => true;
-        public void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) { }
-        public bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) => true;
-        public bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => true;
-        public void LockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) { }
-        public bool TryLockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => true;
     }
 }

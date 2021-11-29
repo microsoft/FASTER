@@ -99,32 +99,7 @@ namespace FASTER.core
             value.CopyTo(ref dst, memoryPool);
             return true;
         }
-
-        /// <inheritdoc />
-        public override bool SupportsLocking => locking;
-
-        /// <inheritdoc />
-        public override void LockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockExclusive();
-
-        /// <inheritdoc />
-        public override void UnlockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext) => recordInfo.UnlockExclusive();
-
-        /// <inheritdoc />
-        public override bool TryLockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
-
-        /// <inheritdoc />
-        public override void LockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockShared();
-
-        /// <inheritdoc />
-        public override bool UnlockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext)
-        {
-            recordInfo.UnlockShared();
-            return true;
-        }
-
-        /// <inheritdoc />
-        public override bool TryLockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
-}
+    }
 
     /// <summary>
     /// Callback functions for SpanByte with byte[] output, for SpanByte key, value, input
@@ -150,30 +125,5 @@ namespace FASTER.core
             dst = value.ToByteArray();
             return true;
         }
-
-        /// <inheritdoc />
-        public override bool SupportsLocking => locking;
-
-        /// <inheritdoc />
-        public override void LockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockExclusive();
-
-        /// <inheritdoc />
-        public override void UnlockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext) => recordInfo.UnlockExclusive();
-
-        /// <inheritdoc />
-        public override bool TryLockExclusive(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
-
-        /// <inheritdoc />
-        public override void LockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext) => recordInfo.LockShared();
-
-        /// <inheritdoc />
-        public override bool UnlockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, long lockContext)
-        {
-            recordInfo.UnlockShared();
-            return true;
-        }
-
-        /// <inheritdoc />
-        public override bool TryLockShared(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
     }
 }

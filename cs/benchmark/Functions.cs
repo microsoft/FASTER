@@ -103,27 +103,5 @@ namespace FASTER.benchmark
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
-
-        public bool SupportsLocking => locking;
-
-        public void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) => recordInfo.LockExclusive();
-
-        public void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) => recordInfo.UnlockExclusive();
-
-        public bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
-
-        public void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) => recordInfo.LockShared();
-
-        public bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext)
-        {
-            recordInfo.UnlockShared();
-            return true;
-        }
-
-        public bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
-
-        public void LockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) => recordInfo.LockExclusiveFromShared();
-
-        public bool TryLockExclusiveFromShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusiveFromShared(spinCount);
     }
 }

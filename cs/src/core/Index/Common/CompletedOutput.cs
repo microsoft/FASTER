@@ -112,11 +112,6 @@ namespace FASTER.core
         /// </summary>
         public Status Status;
 
-        /// <summary>
-        /// The lock context for <see cref="ManualFasterOperations{Key, Value, Input, Output, Context, Functions}"/>
-        /// </summary>
-        public long LockContext;
-
         internal void Set(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
         {
             this.keyContainer = pendingContext.key;

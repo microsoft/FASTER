@@ -153,7 +153,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<ReadAsyncResult<Input, Output, Context>> ReadAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx,
-            ref Key key, ref Input input, long startAddress, Context context, long serialNo, CancellationToken token, byte operationFlags = 0)
+            ref Key key, ref Input input, long startAddress, Context context, long serialNo, CancellationToken token, ushort operationFlags = 0)
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             pcontext.SetOperationFlags(operationFlags, startAddress);

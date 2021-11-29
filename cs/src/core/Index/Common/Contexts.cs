@@ -84,19 +84,20 @@ namespace FASTER.core
             internal HashBucketEntry entry;
             internal LatchOperation heldLatch;
 
-            internal byte operationFlags;
+            internal ushort operationFlags;
             internal RecordInfo recordInfo;
             internal long minAddress;
             internal LockOperation lockOperation;
 
             // Note: Must be kept in sync with corresponding ReadFlags enum values
-            internal const byte kSkipReadCache = 0x01;
-            internal const byte kMinAddress = 0x02;
-            internal const byte kCopyReadsToTail = 0x04;
+            internal const ushort kSkipReadCache = 0x0001;
+            internal const ushort kMinAddress = 0x0002;
+            internal const ushort kCopyReadsToTail = 0x0004;
+            internal const ushort kSkipCopyReadsToTail = 0x0008;
 
-            internal const byte kNoKey = 0x10;
-            internal const byte kSkipCopyReadsToTail = 0x20;
-            internal const byte kIsAsync = 0x40;
+            internal const ushort kNoKey = 0x0100;
+            internal const ushort kIsAsync = 0x0200;
+            internal const ushort kIsReadingAtAddress = 0x0400;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal IHeapContainer<Key> DetachKey()
@@ -115,11 +116,11 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static byte GetOperationFlags(ReadFlags readFlags, bool noKey = false)
+            internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey = false)
             {
-                Debug.Assert((byte)ReadFlags.SkipReadCache == kSkipReadCache);
-                Debug.Assert((byte)ReadFlags.MinAddress == kMinAddress);
-                byte flags = (byte)(readFlags & (ReadFlags.SkipReadCache | ReadFlags.MinAddress | ReadFlags.CopyToTail));
+                Debug.Assert((ushort)ReadFlags.SkipReadCache == kSkipReadCache);
+                Debug.Assert((ushort)ReadFlags.MinAddress == kMinAddress);
+                ushort flags = (ushort)(readFlags & (ReadFlags.SkipReadCache | ReadFlags.MinAddress | ReadFlags.CopyToTail | ReadFlags.SkipCopyToTail));
                 if (noKey) flags |= kNoKey;
 
                 // This is always set true for the Read overloads (Reads by address) that call this method.
@@ -132,7 +133,7 @@ namespace FASTER.core
                 => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(byte flags, long address)
+            internal void SetOperationFlags(ushort flags, long address)
             {
                 this.operationFlags = flags;
                 if (this.HasMinAddress)
@@ -173,6 +174,12 @@ namespace FASTER.core
             {
                 get => (operationFlags & kIsAsync) != 0;
                 set => operationFlags = value ? (byte)(operationFlags | kIsAsync) : (byte)(operationFlags & ~kIsAsync);
+            }
+
+            internal bool IsReadingAtAddress
+            {
+                get => (operationFlags & kIsReadingAtAddress) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kIsReadingAtAddress) : (ushort)(operationFlags & ~kIsReadingAtAddress);
             }
 
             public void Dispose()

@@ -26,7 +26,8 @@ namespace FASTER.core
         None = 0,
 
         /// <summary>
-        /// Skip the ReadCache when reading, including not inserting to ReadCache when pending reads are complete
+        /// Skip the ReadCache when reading, including not inserting to ReadCache when pending reads are complete.
+        /// May be used with ReadAtAddress, to avoid copying earlier versions.
         /// </summary>
         SkipReadCache = 0x00000001,
 
@@ -41,6 +42,16 @@ namespace FASTER.core
         /// <see cref="ManualFasterOperations{Key, Value, Input, Output, Context, Functions}"/> locking.
         /// </summary>
         CopyToTail = 0x00000004,
+
+        /// <summary>
+        /// Skip copying to tail even if the FasterKV constructore specifed it. May be used with ReadAtAddress, to avoid copying earlier versions.
+        /// </summary>
+        SkipCopyToTail = 0x00000008,
+
+        /// <summary>
+        /// Utility to combine these flags. May be used with ReadAtAddress, to avoid copying earlier versions.
+        /// </summary>
+        SkipCopyReads = SkipReadCache | SkipCopyToTail,
     }
 
     public partial class FasterKV<Key, Value> : FasterBase,
@@ -597,13 +608,11 @@ namespace FASTER.core
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
-                lockOp.LockContext = pcontext.lockOperation.LockContext;
                 status = (Status)internalStatus;
             }
             else
             {
                 recordMetadata = default;
-                lockOp.LockContext = default;
                 status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
             }
 
@@ -684,13 +693,11 @@ namespace FASTER.core
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
-                lockOp.LockContext = pcontext.lockOperation.LockContext;
                 status = (Status)internalStatus;
             }
             else
             {
                 recordMetadata = default;
-                lockOp.LockContext = default;
                 status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
             }
 

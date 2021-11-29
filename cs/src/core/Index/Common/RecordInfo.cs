@@ -68,6 +68,14 @@ namespace FASTER.core
             info.InNewVersion = inNewVersion;
         }
 
+        public bool IsLocked => (word & (kExclusiveLockBitMask | kSharedLockMaskInWord)) != 0;
+
+        public bool IsLockedExclusive => (word & kExclusiveLockBitMask) != 0;
+
+        public bool IsLockedShared => (word & kSharedLockMaskInWord) != 0;
+
+        public bool IsIntermediate => (word & (kStubBitMask | kSealedBitMask)) != 0;
+
         /// <summary>
         /// Take exclusive (write) lock on RecordInfo
         /// </summary>
@@ -80,7 +88,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockExclusive()
         {
-            Debug.Assert((word & kExclusiveLockBitMask) != 0);
+            Debug.Assert(IsLockedExclusive);
             word &= ~kExclusiveLockBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point
         }
 
@@ -184,6 +192,14 @@ namespace FASTER.core
             return true;
         }
 
+        public void TransferLocksFrom(ref RecordInfo other)
+        {
+            // We should only be calling this when the record is sealed, to avoid an attempt to do a lock operation on the old record during this.
+            Debug.Assert(other.Sealed);
+            word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
+            word |= (other.word & (kExclusiveLockBitMask | kSharedLockMaskInWord));
+        }
+
         public bool IsNull() => word == 0;
 
         public bool Tombstone
@@ -277,6 +293,8 @@ namespace FASTER.core
         public void SetInvalid() => word &= ~kValidBitMask;
 
         public bool Invalid => (word & kValidBitMask) == 0;
+
+        public bool SkipOnScan => Invalid || (word & (kSealedBitMask | kStubBitMask)) != 0;
 
         public long PreviousAddress
         {
