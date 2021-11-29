@@ -675,6 +675,50 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
+        /// </summary>
+        /// <param name="compactUntilAddress">Compact log until this address</param>
+        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
+        /// <returns>Address until which compaction was done</returns>
+        public long Compact(long compactUntilAddress, CompactionType compactionType = CompactionType.Scan)
+            => Compact(compactUntilAddress, compactionType, default(DefaultCompactionFunctions<Key, Value>));
+
+        /// <summary>
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
+        /// </summary>
+        /// <param name="untilAddress">Compact log until this address</param>
+        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
+        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
+        /// <returns>Address until which compaction was done</returns>
+        public long Compact<CompactionFunctions>(long untilAddress, CompactionType compactionType, CompactionFunctions compactionFunctions)
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
+            => fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, untilAddress, compactionType,  new SessionVariableLengthStructSettings<Value, Input> { valueLength = variableLengthStruct, inputLength = inputVariableLengthStruct });
+
+        /// <summary>
+        /// Copy key and value to tail, succeed only if key is known to not exist in between expectedLogicalAddress and tail.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="expectedLogicalAddress">Address of existing key (or upper bound)</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OperationStatus CopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long expectedLogicalAddress)
+        {
+            if (SupportAsync) UnsafeResumeThread();
+            try
+            {
+                return fht.InternalCopyToTail(ref key, ref input, ref desiredValue, ref output, expectedLogicalAddress, FasterSession, ctx, noReadCache: true);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
+        }
+
+        /// <summary>
         /// Experimental feature
         /// Checks whether specified record is present in memory
         /// (between HeadAddress and tail, or between fromAddress
@@ -690,59 +734,6 @@ namespace FASTER.core
             try
             {
                 return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, out logicalAddress, fromAddress);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
-        }
-
-        /// <summary>
-        /// Compact the log until specified address using current session, moving active records to the tail of the log. 
-        /// </summary>
-        /// <param name="untilAddress">Compact log until this address</param>
-        /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
-        /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
-        /// ensures that records written to the tail during compaction are first made stable.</param>
-        /// <returns>Address until which compaction was done</returns>
-        public long Compact(long untilAddress, bool shiftBeginAddress)
-        {
-            return Compact(untilAddress, shiftBeginAddress, default(DefaultCompactionFunctions<Key, Value>));
-        }
-
-        /// <summary>
-        /// Compact the log until specified address using current session, moving active records to the tail of the log.
-        /// </summary>
-        /// <param name="untilAddress">Compact log until this address</param>
-        /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
-        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
-        /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
-        /// ensures that records written to the tail during compaction are first made stable.</param>
-        /// <returns>Address until which compaction was done</returns>
-        public long Compact<CompactionFunctions>(long untilAddress, bool shiftBeginAddress, CompactionFunctions compactionFunctions)
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
-        {
-            if (!SupportAsync)
-                throw new FasterException("Do not perform compaction using a threadAffinitized session");
-            return fht.Log.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, untilAddress, shiftBeginAddress);
-        }
-
-        /// <summary>
-        /// Insert key and value with the record info preserved.
-        /// Succeed only if logical address of the key isn't greater than foundLogicalAddress; otherwise give up and return.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="foundLogicalAddress"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long foundLogicalAddress)
-        {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                fht.InternalCopyToTail(ref key, ref input, ref desiredValue, ref output, foundLogicalAddress, FasterSession, ctx, noReadCache: true);
             }
             finally
             {

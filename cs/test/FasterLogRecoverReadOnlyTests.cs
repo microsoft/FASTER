@@ -3,7 +3,6 @@
 
 using System.Threading.Tasks;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 using System.Threading;
 using System.Text;
@@ -52,7 +51,7 @@ namespace FASTER.test.recovery
         public async Task RecoverReadOnlyCheck1([Values] bool isAsync)
         {
             using var device = Devices.CreateLogDevice(deviceName);
-            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 };
+            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, RemoveOutdatedCommitFiles = false };
             using var log = isAsync ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             await Task.WhenAll(ProducerAsync(log, cts),
@@ -80,7 +79,7 @@ namespace FASTER.test.recovery
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(CommitPeriodMs), cancellationToken);
-                    await log.CommitAsync(cancellationToken);
+                    await log.CommitAsync(token: cancellationToken);
                 }
             } catch (OperationCanceledException) { }
         }
@@ -122,9 +121,9 @@ namespace FASTER.test.recovery
                     if (cancellationToken.IsCancellationRequested)
                         break;
                     if (isAsync)
-                        await log.RecoverReadOnlyAsync();
+                        await log.RecoverReadOnlyAsync(true);
                     else
-                        log.RecoverReadOnly();
+                        log.RecoverReadOnly(true);
                 }
             }
         }

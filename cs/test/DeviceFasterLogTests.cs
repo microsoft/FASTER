@@ -111,7 +111,10 @@ namespace FASTER.test
             }
             log.Commit(true);
 
-            using (var iter = log.Scan(0, long.MaxValue))
+            // MoveNextAsync() would hang at TailAddress, waiting for more entries (that we don't add).
+            // Note: If this happens and the test has to be canceled, there may be a leftover blob from the log.Commit(), because
+            // the log device isn't Dispose()d; the symptom is currently a numeric string format error in DefaultCheckpointNamingScheme.
+            using (var iter = log.Scan(0, log.TailAddress))
             {
                 var counter = new FasterLogTestBase.Counter(log);
 
@@ -122,12 +125,6 @@ namespace FASTER.test
                         {
                             Assert.IsTrue(result.SequenceEqual(entry));
                             counter.IncrementAndMaybeTruncateUntil(nextAddress);
-
-                            // MoveNextAsync() would hang at TailAddress, waiting for more entries (that we don't add).
-                            // Note: If this happens and the test has to be canceled, there may be a leftover blob from the log.Commit(), because
-                            // the log device isn't Dispose()d; the symptom is currently a numeric string format error in DefaultCheckpointNamingScheme.
-                            if (nextAddress == log.TailAddress)
-                                break;
                         }
                         break;
                     case FasterLogTestBase.IteratorType.AsyncMemoryOwner:
@@ -136,12 +133,6 @@ namespace FASTER.test
                             Assert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                             result.Dispose();
                             counter.IncrementAndMaybeTruncateUntil(nextAddress);
-
-                            // MoveNextAsync() would hang at TailAddress, waiting for more entries (that we don't add).
-                            // Note: If this happens and the test has to be canceled, there may be a leftover blob from the log.Commit(), because
-                            // the log device isn't Dispose()d; the symptom is currently a numeric string format error in DefaultCheckpointNamingScheme.
-                            if (nextAddress == log.TailAddress)
-                                break;
                         }
                         break;
                     case FasterLogTestBase.IteratorType.Sync:

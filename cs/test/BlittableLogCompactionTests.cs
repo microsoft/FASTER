@@ -36,7 +36,7 @@ namespace FASTER.test
         [Category("Compaction")]
         [Category("Smoke")]
 
-        public void BlittableLogCompactionTest1()
+        public void BlittableLogCompactionTest1([Values] CompactionType compactionType)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -56,7 +56,9 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0, 0);
             }
 
-            compactUntil = session.Compact(compactUntil, true);
+            compactUntil = session.Compact(compactUntil, compactionType);
+            fht.Log.Truncate();
+
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
@@ -82,7 +84,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
-        public void BlittableLogCompactionTest2()
+        public void BlittableLogCompactionTest2([Values] CompactionType compactionType)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -113,7 +115,8 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var tail = fht.Log.TailAddress;
-            compactUntil = session.Compact(compactUntil, true);
+            compactUntil = session.Compact(compactUntil, compactionType);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
             Assert.AreEqual(tail, fht.Log.TailAddress);
 
@@ -140,7 +143,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
-        public void BlittableLogCompactionTest3()
+        public void BlittableLogCompactionTest3([Values] CompactionType compactionType)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -168,7 +171,8 @@ namespace FASTER.test
             }
 
             var tail = fht.Log.TailAddress;
-            compactUntil = session.Compact(compactUntil, true);
+            compactUntil = session.Compact(compactUntil, compactionType);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
@@ -204,7 +208,7 @@ namespace FASTER.test
         [Category("Compaction")]
         [Category("Smoke")]
 
-        public void BlittableLogCompactionCustomFunctionsTest1()
+        public void BlittableLogCompactionCustomFunctionsTest1([Values] CompactionType compactionType)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -227,7 +231,8 @@ namespace FASTER.test
             var tail = fht.Log.TailAddress;
 
             // Only leave records with even vfield1
-            compactUntil = session.Compact(compactUntil, true, default(EvenCompactionFunctions));
+            compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
@@ -264,7 +269,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         [Category("Compaction")]
 
-        public void BlittableLogCompactionCustomFunctionsTest2()
+        public void BlittableLogCompactionCustomFunctionsTest2([Values] CompactionType compactionType)
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy
@@ -283,7 +288,8 @@ namespace FASTER.test
 
             fht.Log.Flush(true);
 
-            session.Compact(fht.Log.TailAddress, true);
+            var compactUntil = session.Compact(fht.Log.TailAddress, compactionType);
+            fht.Log.Truncate();
 
             var input = default(InputStruct);
             var output = default(OutputStruct);
@@ -302,7 +308,7 @@ namespace FASTER.test
 
         private struct EvenCompactionFunctions : ICompactionFunctions<KeyStruct, ValueStruct>
         {
-            public bool IsDeleted(in KeyStruct key, in ValueStruct value) => value.vfield1 % 2 != 0;
+            public bool IsDeleted(ref KeyStruct key, ref ValueStruct value) => value.vfield1 % 2 != 0;
         }
     }
 }

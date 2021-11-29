@@ -229,6 +229,9 @@ namespace FASTER.core
         /// <param name="result"></param>
         public virtual void TruncateUntilAddressAsync(long toAddress, AsyncCallback callback, IAsyncResult result)
         {
+            if ((int)(toAddress >> segmentSizeBits) <= startSegment)
+                return;
+
             // Truncate only up to segment boundary if address is not aligned
             TruncateUntilSegmentAsync((int)(toAddress >> segmentSizeBits), callback, result);
         }
@@ -239,6 +242,9 @@ namespace FASTER.core
         /// <param name="toAddress"></param>
         public virtual void TruncateUntilAddress(long toAddress)
         {
+            if ((int)(toAddress >> segmentSizeBits) <= startSegment)
+                return;
+
             using (ManualResetEventSlim completionEvent = new(false))
             {
                 TruncateUntilAddressAsync(toAddress, r => completionEvent.Set(), null);

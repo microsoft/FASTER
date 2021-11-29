@@ -73,7 +73,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void LogCompactBasicTest([Values] TestUtils.DeviceType deviceType)
+        public void LogCompactBasicTest([Values] TestUtils.DeviceType deviceType, [Values] CompactionType compactionType)
         {
             MyInput input = new MyInput();
 
@@ -90,7 +90,8 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0, 0);
             }
 
-            compactUntil = session.Compact(compactUntil, true);
+            compactUntil = session.Compact(compactUntil, compactionType);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read all keys - all should be present
@@ -116,55 +117,10 @@ namespace FASTER.test
             }
         }
 
-        // Basic test where DO NOT shift begin address to untilAddress after compact 
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
-        [Category("Smoke")]
-        public void LogCompactNotShiftBeginAddrTest()
-        {
-            MyInput input = new MyInput();
-
-            const int totalRecords = 2000;
-            long compactUntil = 0;
-
-            for (int i = 0; i < totalRecords; i++)
-            {
-                if (i == 1000)
-                    compactUntil = fht.Log.TailAddress;
-
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
-            }
-
-            // Do not shift begin to until address ... verify that is the case and verify all the keys
-            compactUntil = session.Compact(compactUntil, false);
-            Assert.IsFalse(fht.Log.BeginAddress == compactUntil);
-
-            // Read 2000 keys - all should be present
-            for (int i = 0; i < totalRecords; i++)
-            {
-                MyOutput output = new MyOutput();
-
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-
-                var status = session.Read(ref key1, ref input, ref output, 0, 0);
-                if (status == Status.PENDING)
-                    session.CompletePending(true);
-                else
-                {
-                    Assert.AreEqual(Status.OK, status);
-                    Assert.AreEqual(value.value, output.value.value);
-                }
-            }
-        }
-
-        [Test]
-        [Category("FasterKV")]
-        [Category("Compaction")]
-        public void LogCompactTestNewEntries()
+        public void LogCompactTestNewEntries([Values] CompactionType compactionType)
         {
             MyInput input = new MyInput();
 
@@ -192,7 +148,8 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var tail = fht.Log.TailAddress;
-            compactUntil = session.Compact(compactUntil, true);
+            compactUntil = session.Compact(compactUntil, compactionType);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
             Assert.AreEqual(tail, fht.Log.TailAddress);
 
@@ -218,7 +175,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         [Category("Compaction")]
         [Category("Smoke")]
-        public void LogCompactAfterDeleteTest()
+        public void LogCompactAfterDeleteTest([Values] CompactionType compactionType)
         {
             MyInput input = new MyInput();
 
@@ -242,7 +199,8 @@ namespace FASTER.test
                 }
             }
 
-            compactUntil = session.Compact(compactUntil, true);
+            compactUntil = session.Compact(compactUntil, compactionType);
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read keys - all should be present
@@ -276,7 +234,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         [Category("Compaction")]
 
-        public void LogCompactBasicCustomFctnTest()
+        public void LogCompactBasicCustomFctnTest([Values] CompactionType compactionType)
         {
             MyInput input = new MyInput();
 
@@ -293,65 +251,8 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0, 0);
             }
 
-            compactUntil = session.Compact(compactUntil, true, default(EvenCompactionFunctions));
-            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
-
-            // Read 2000 keys - all should be present
-            for (var i = 0; i < totalRecords; i++)
-            {
-                var output = new MyOutput();
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-
-                var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
-
-                var status = session.Read(ref key1, ref input, ref output, ctx, 0);
-                if (status == Status.PENDING)
-                {
-                    session.CompletePending(true);
-                }
-                else
-                {
-                    if (ctx == 0)
-                    {
-                        Assert.AreEqual(Status.OK, status);
-                        Assert.AreEqual(value.value, output.value.value);
-                    }
-                    else
-                    {
-                        Assert.AreEqual(Status.NOTFOUND, status);
-                    }
-                }
-            }
-        }
-
-        // Same as basic test of Custom Functions BUT this will NOT shift begin address to untilAddress after compact
-        [Test]
-        [Category("FasterKV")]
-        [Category("Compaction")]
-
-        public void LogCompactCustomFctnNotShiftBeginTest()
-        {
-            MyInput input = new MyInput();
-
-            const int totalRecords = 2000;
-            var compactUntil = 0L;
-
-            for (var i = 0; i < totalRecords; i++)
-            {
-                if (i == totalRecords / 2)
-                    compactUntil = fht.Log.TailAddress;
-
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
-            }
-
-            compactUntil = session.Compact(compactUntil, false, default(EvenCompactionFunctions));
-            Assert.AreNotEqual(compactUntil, fht.Log.BeginAddress);
-
-            // Verified that begin address not changed so now compact and change Begin to untilAddress
-            compactUntil = session.Compact(compactUntil, true, default(EvenCompactionFunctions));
+            compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
+            fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
@@ -387,7 +288,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         [Category("Compaction")]
 
-        public void LogCompactCopyInPlaceCustomFctnTest()
+        public void LogCompactCopyInPlaceCustomFctnTest([Values] CompactionType compactionType)
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy
@@ -407,9 +308,8 @@ namespace FASTER.test
             fht.Log.Flush(true);
 
             var compactionFunctions = new Test2CompactionFunctions();
-            session.Compact(fht.Log.TailAddress, true, compactionFunctions);
-
-            Assert.IsFalse(compactionFunctions.CopyCalled);
+            var compactUntil = session.Compact(fht.Log.TailAddress, compactionType, compactionFunctions);
+            fht.Log.Truncate();
 
             var input = default(MyInput);
             var output = default(MyOutput);
@@ -427,43 +327,12 @@ namespace FASTER.test
 
         private class Test2CompactionFunctions : ICompactionFunctions<MyKey, MyValue>
         {
-            public bool CopyCalled;
-
-            public void Copy(ref MyValue src, ref MyValue dst, IVariableLengthStruct<MyValue> valueLength)
-            {
-                if (src.value == 21)
-                    CopyCalled = true;
-                dst = src;
-            }
-
-            public bool CopyInPlace(ref MyValue src, ref MyValue dst, IVariableLengthStruct<MyValue> valueLength)
-            {
-                return false;
-            }
-
-            public bool IsDeleted(in MyKey key, in MyValue value)
-            {
-                return false;
-            }
+            public bool IsDeleted(ref MyKey key, ref MyValue value) => false;
         }
 
         private struct EvenCompactionFunctions : ICompactionFunctions<MyKey, MyValue>
         {
-            public void Copy(ref MyValue src, ref MyValue dst, IVariableLengthStruct<MyValue> valueLength)
-            {
-                dst = src;
-            }
-
-            public bool CopyInPlace(ref MyValue src, ref MyValue dst, IVariableLengthStruct<MyValue> valueLength)
-            {
-                dst = src;
-                return true;
-            }
-
-            public bool IsDeleted(in MyKey key, in MyValue value)
-            {
-                return value.value % 2 != 0;
-            }
+            public bool IsDeleted(ref MyKey key, ref MyValue value) => value.value % 2 != 0;
         }
 
     }

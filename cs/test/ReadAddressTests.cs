@@ -5,7 +5,6 @@ using System;
 using FASTER.core;
 using NUnit.Framework;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 
 namespace FASTER.test.readaddress
 {

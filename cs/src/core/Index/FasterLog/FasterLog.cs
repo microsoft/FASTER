@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
-
 using System;
 using System.Buffers;
 using System.Collections.Concurrent;
@@ -19,7 +17,7 @@ namespace FASTER.core
     /// <summary>
     /// FASTER log
     /// </summary>
-    public class FasterLog : IDisposable
+    public sealed class FasterLog : IDisposable
     {
         private readonly BlittableAllocator<Empty, byte> allocator;
         private readonly LightEpoch epoch;
@@ -31,21 +29,32 @@ namespace FASTER.core
         private readonly WorkQueueLIFO<CommitInfo> commitQueue;
 
         internal readonly bool readOnlyMode;
+        internal readonly bool fastCommitMode;
 
-        private TaskCompletionSource<LinkedCommitInfo> commitTcs
-            = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-        private TaskCompletionSource<Empty> refreshUncommittedTcs
-            = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource<LinkedCommitInfo> commitTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource<Empty> refreshUncommittedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Offsets for all currently unprocessed commit records
+        private readonly Queue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
+        private long commitNum;
 
         /// <summary>
         /// Beginning address of log
         /// </summary>
-        public long BeginAddress => allocator.BeginAddress;
+        public long BeginAddress => beginAddress;
+
+        // Here's a soft begin address that is observed by all access at the FasterLog level but not actually on the
+        // allocator. This is to make sure that any potential physical deletes only happen after commit.
+        private long beginAddress;
 
         /// <summary>
         /// Tail address of log
         /// </summary>
         public long TailAddress => allocator.GetTailAddress();
+
+        // Used to track the last commit record and commits that have been issued, to stop commits from committing
+        // without any user records
+        private long commitCoveredAddress;
 
         /// <summary>
         /// Log flushed until address
@@ -73,6 +82,11 @@ namespace FASTER.core
         public long CommittedBeginAddress;
 
         /// <summary>
+        /// Recovered Commit Cookie
+        /// </summary>
+        public byte[] RecoveredCookie;
+
+        /// <summary>
         /// Task notifying commit completions
         /// </summary>
         internal Task<LinkedCommitInfo> CommitTask => commitTcs.Task;
@@ -90,18 +104,12 @@ namespace FASTER.core
         /// <summary>
         /// Table of persisted iterators
         /// </summary>
-        internal readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators
-            = new ConcurrentDictionary<string, FasterLogScanIterator>();
-
-        /// <summary>
-        /// Version number to track changes to commit metadata (begin address and persisted iterators)
-        /// </summary>
-        private long commitMetadataVersion;
+        internal readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators = new();
 
         /// <summary>
         /// Committed view of commitMetadataVersion
         /// </summary>
-        private long persistedCommitMetadataVersion;
+        private long persistedCommitNum;
 
         internal Dictionary<string, long> LastPersistedIterators;
 
@@ -114,11 +122,18 @@ namespace FASTER.core
         /// <summary>
         /// Create new log instance
         /// </summary>
-        /// <param name="logSettings"></param>
-        public FasterLog(FasterLogSettings logSettings)
+        /// <param name="logSettings">Log settings</param>
+        /// <param name="requestedCommitNum">Specific commit number to recover from (or -1 for latest) </param>
+        public FasterLog(FasterLogSettings logSettings, long requestedCommitNum = -1)
             : this(logSettings, false)
         {
-            this.RecoveredIterators = Restore();
+            Dictionary<string, long> it;
+            if (requestedCommitNum == -1)
+                RestoreLatest(false, out it, out RecoveredCookie);
+            else
+                RestoreSpecificCommit(requestedCommitNum, out it, out RecoveredCookie);
+
+            RecoveredIterators = it;
         }
 
         /// <summary>
@@ -129,7 +144,9 @@ namespace FASTER.core
         public static async ValueTask<FasterLog> CreateAsync(FasterLogSettings logSettings, CancellationToken cancellationToken = default)
         {
             var fasterLog = new FasterLog(logSettings, false);
-            fasterLog.RecoveredIterators = await fasterLog.RestoreAsync(cancellationToken).ConfigureAwait(false);
+            var (it, cookie) = await fasterLog.RestoreLatestAsync(false, cancellationToken).ConfigureAwait(false);
+            fasterLog.RecoveredIterators = it;
+            fasterLog.RecoveredCookie = cookie;
             return fasterLog;
         }
 
@@ -141,7 +158,8 @@ namespace FASTER.core
                 (new LocalStorageNamedDeviceFactory(),
                     new DefaultCheckpointNamingScheme(
                         logSettings.LogCommitDir ??
-                        new FileInfo(logSettings.LogDevice.FileName).Directory.FullName));
+                        new FileInfo(logSettings.LogDevice.FileName).Directory.FullName), 
+                    logSettings.ReadOnlyMode ? false : logSettings.RemoveOutdatedCommitFiles);
 
             if (logSettings.LogCommitManager == null)
                 disposeLogCommitManager = true;
@@ -159,6 +177,7 @@ namespace FASTER.core
                 logSettings.GetLogSettings(), null,
                 null, epoch, CommitCallback);
             allocator.Initialize();
+            beginAddress = allocator.BeginAddress;
 
             // FasterLog is used as a read-only iterator
             if (logSettings.ReadOnlyMode)
@@ -167,6 +186,9 @@ namespace FASTER.core
                 allocator.HeadAddress = long.MaxValue;
             }
 
+            fastCommitMode = logSettings.FastCommitMode;
+
+            ongoingCommitRequests = new Queue<(long, FasterLogRecoveryInfo)>();
         }
 
         /// <summary>
@@ -180,6 +202,7 @@ namespace FASTER.core
 
         internal void TrueDispose()
         {
+            commitQueue.Dispose();
             commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();
             epoch.Dispose();
@@ -251,7 +274,7 @@ namespace FASTER.core
                 epoch.Suspend();
                 return false;
             }
-
+            
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             fixed (byte* bp = entry)
                 Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
@@ -282,7 +305,7 @@ namespace FASTER.core
                 epoch.Suspend();
                 return false;
             }
-
+            
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             fixed (byte* bp = &entry.GetPinnableReference())
                 Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
@@ -425,7 +448,8 @@ namespace FASTER.core
             var tailAddress = untilAddress;
             if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
 
-            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion) Thread.Yield();
+            var observedCommitNum = commitNum;
+            while (CommittedUntilAddress < tailAddress || persistedCommitNum < observedCommitNum) Thread.Yield();
         }
 
         /// <summary>
@@ -443,13 +467,11 @@ namespace FASTER.core
             var tailAddress = untilAddress;
             if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
 
-            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
+            var observedCommitNum = commitNum;
+            while (CommittedUntilAddress < tailAddress || persistedCommitNum < observedCommitNum)
             {
                 var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
-                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
-                    task = linkedCommitInfo.NextTask;
-                else
-                    break;
+                task = linkedCommitInfo.NextTask;
             }
         }
         #endregion
@@ -460,10 +482,34 @@ namespace FASTER.core
         /// Issue commit request for log (until tail)
         /// </summary>
         /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.</param>
-        /// <returns></returns>
+        /// <returns> whether there is anything to commit. </returns>
+
         public void Commit(bool spinWait = false)
         {
-            CommitInternal(spinWait);
+            CommitInternal(out _, out _, spinWait, true, null, -1);
+        }
+
+        /// <summary>
+        /// Issue a strong commit request for log (until tail) with the given commitNum
+        /// </summary>
+        /// <param name="commitTail">The tail committed by this call</param>
+        /// <param name="actualCommitNum">
+        /// A unique, monotonically increasing identifier for the commit that can be used to recover to exactly this commit
+        /// </param>
+        /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately</param>
+        /// <param name="cookie">
+        /// A custom piece of metadata to be associated with this commit. If commit is successful, any recovery from
+        /// this commit will recover the cookie in RecoveredCookie field. Note that cookies are not stored by FasterLog
+        /// itself, so the user is responsible for tracking cookie content and supplying it to every commit call if needed
+        /// </param>
+        /// <param name="proposedCommitNum">
+        /// Proposal for the identifier to use for this commit, or -1 if the system should pick one. If supplied with
+        /// a non -1 value, commit is guaranteed to have the supplied identifier if commit call is successful
+        /// </param>
+        /// <returns>Whether commit is successful </returns>
+        public bool CommitStrongly(out long commitTail, out long actualCommitNum, bool spinWait = false, byte[] cookie = null, long proposedCommitNum = -1)
+        {
+            return CommitInternal(out commitTail, out actualCommitNum, spinWait, false, cookie, proposedCommitNum);
         }
 
         /// <summary>
@@ -476,15 +522,13 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             var task = CommitTask;
-            var tailAddress = CommitInternal();
+            if (!CommitInternal(out var tailAddress, out var actualCommitNum,  false, true, null, -1))
+                return;
 
-            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
+            while (CommittedUntilAddress < tailAddress || persistedCommitNum < actualCommitNum)
             {
                 var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
-                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
-                    task = linkedCommitInfo.NextTask;
-                else
-                    break;
+                task = linkedCommitInfo.NextTask;
             }
         }
 
@@ -498,18 +542,50 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             if (prevCommitTask == null) prevCommitTask = CommitTask;
-            var tailAddress = CommitInternal();
 
-            while (CommittedUntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
+            if (!CommitInternal(out var tailAddress, out var actualCommitNum, false, true, null, -1))
+                return prevCommitTask;
+
+            while (CommittedUntilAddress < tailAddress || persistedCommitNum < actualCommitNum)
             {
                 var linkedCommitInfo = await prevCommitTask.WithCancellationAsync(token).ConfigureAwait(false);
-                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitMetadataVersion < commitMetadataVersion)
+                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitNum < actualCommitNum)
                     prevCommitTask = linkedCommitInfo.NextTask;
                 else
                     return linkedCommitInfo.NextTask;
             }
 
             return prevCommitTask;
+        }
+
+        /// <summary>
+        /// Issue commit request for log (until tail) with the given commitNum
+        /// </summary>
+        /// <param name="cookie">
+        /// A custom piece of metadata to be associated with this commit. If commit is successful, any recovery from
+        /// this commit will recover the cookie in RecoveredCookie field. Note that cookies are not stored by FasterLog
+        /// itself, so the user is responsible for tracking cookie content and supplying it to every commit call if needed
+        /// </param>
+        /// <param name="proposedCommitNum">
+        /// Proposal for the identifier to use for this commit, or -1 if the system should pick one. If supplied with
+        /// a non -1 value, commit is guaranteed to have the supplied identifier if commit call is successful
+        /// </param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>Whether commit is successful, commit tail, and actual commit number</returns>
+        public async ValueTask<(bool success, long commitTail, long actualCommitNum)> CommitStronglyAsync(byte[] cookie = null, long proposedCommitNum = -1, CancellationToken token = default)
+        {
+            token.ThrowIfCancellationRequested();
+            var task = CommitTask;
+            if (!CommitInternal(out var commitTail, out var actualCommitNum,  false, false, cookie, proposedCommitNum))
+                return (false, commitTail, actualCommitNum);
+
+            while (CommittedUntilAddress < commitTail || persistedCommitNum < actualCommitNum)
+            {
+                var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
+                task = linkedCommitInfo.NextTask;
+            }
+
+            return (true, commitTail, actualCommitNum);
         }
 
         /// <summary>
@@ -758,7 +834,7 @@ namespace FASTER.core
         /// <param name="untilAddress">Until address</param>
         public void TruncateUntil(long untilAddress)
         {
-            allocator.ShiftBeginAddress(untilAddress);
+            Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _);
         }
 
         /// <summary>
@@ -769,7 +845,7 @@ namespace FASTER.core
         /// <param name="untilAddress">Until address</param>
         public void TruncateUntilPageStart(long untilAddress)
         {
-            allocator.ShiftBeginAddress(untilAddress & ~allocator.PageSizeMask);
+            Utility.MonotonicUpdate(ref beginAddress, untilAddress & ~allocator.PageSizeMask, out _);
         }
 
         /// <summary>
@@ -900,13 +976,12 @@ namespace FASTER.core
                 allocator.AsyncReadRecordToMemory(address, headerSize, AsyncGetHeaderOnlyFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
-            await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
-            
+            await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);          
             return GetRecordLengthAndFree(ctx.record);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int Align(int length)
+        private static int Align(int length)
         {
             return (length + 3) & ~3;
         }
@@ -916,49 +991,131 @@ namespace FASTER.core
         /// </summary>
         private void CommitCallback(CommitInfo commitInfo)
         {
+            // Using count is safe as a fast filtering mechanism to reduce number of invocations despite concurrency
+            if (ongoingCommitRequests.Count == 0) return;
             commitQueue.EnqueueAndTryWork(commitInfo, asTask: true);
+        }
+
+        private unsafe bool TryEnqueueCommitRecord(ref FasterLogRecoveryInfo info)
+        {
+            var entryBodySize = info.SerializedSize();
+            
+            int allocatedLength = headerSize + Align(entryBodySize);
+            ValidateAllocatedLength(allocatedLength);
+            
+            epoch.Resume();
+            
+            var logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                return false;
+            }
+            // Finish filling in all fields
+            info.BeginAddress = BeginAddress;
+            info.UntilAddress = logicalAddress + allocatedLength;
+
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+
+            var entryBody = info.ToByteArray();
+            fixed (byte* bp = entryBody)
+                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryBody.Length, entryBody.Length);
+            SetCommitRecordHeader(entryBody.Length, (byte*)physicalAddress);
+            epoch.Suspend();
+            // Return the commit tail
+            return true;
+        }
+
+        private bool ShouldCommmitMetadata(ref FasterLogRecoveryInfo info)
+        {
+            return beginAddress > CommittedBeginAddress || IteratorsChanged(ref info) || info.Cookie != null;
+        }
+        
+        private void CommitMetadataOnly(ref FasterLogRecoveryInfo info, bool spinWait)
+        {
+            var fromAddress = CommittedUntilAddress > info.BeginAddress ? CommittedUntilAddress : info.BeginAddress;
+            var untilAddress = FlushedUntilAddress > info.BeginAddress ? FlushedUntilAddress : info.BeginAddress;
+            
+            CommitCallback(new CommitInfo
+            {
+                FromAddress = fromAddress,
+                UntilAddress = untilAddress,
+                ErrorCode = 0,
+            });
+
+            if (spinWait)
+            {
+                while (info.CommitNum < persistedCommitNum)
+                    Thread.Yield();
+            }
+        }
+
+        private void UpdateCommittedState(FasterLogRecoveryInfo recoveryInfo)
+        {
+            LastPersistedIterators = recoveryInfo.Iterators;
+            CommittedBeginAddress = recoveryInfo.BeginAddress;
+            CommittedUntilAddress = recoveryInfo.UntilAddress;
+            recoveryInfo.CommitIterators(PersistedIterators);
+            Utility.MonotonicUpdate(ref persistedCommitNum, recoveryInfo.CommitNum, out _);
+        }
+
+        private void WriteCommitMetadata(FasterLogRecoveryInfo recoveryInfo)
+        {
+            // TODO(Tianyu): If fast commit, write this in separate thread?
+            logCommitManager.Commit(recoveryInfo.BeginAddress, recoveryInfo.UntilAddress,
+                recoveryInfo.ToByteArray(), recoveryInfo.CommitNum);
+            // If not fast committing, set committed state as we commit metadata explicitly only after metadata commit
+            if (!fastCommitMode)
+                UpdateCommittedState(recoveryInfo);
+            // Issue any potential physical deletes due to shifts in begin address
+            try
+            {
+                epoch.Resume();
+                allocator.ShiftBeginAddress(recoveryInfo.BeginAddress, true);
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
         }
 
         private void SerialCommitCallbackWorker(CommitInfo commitInfo)
         {
-            // Check if commit is already covered
-            if (CommittedBeginAddress >= BeginAddress &&
-                CommittedUntilAddress >= commitInfo.UntilAddress &&
-                persistedCommitMetadataVersion >= commitMetadataVersion &&
-                commitInfo.ErrorCode == 0)
-                return;
-
             if (commitInfo.ErrorCode == 0)
             {
-                // Capture CMV first, so metadata prior to CMV update is visible to commit
-                long _localCMV = commitMetadataVersion;
-
-                if (CommittedUntilAddress > commitInfo.FromAddress)
-                    commitInfo.FromAddress = CommittedUntilAddress;
-                if (CommittedUntilAddress > commitInfo.UntilAddress)
-                    commitInfo.UntilAddress = CommittedUntilAddress;
-
-                FasterLogRecoveryInfo info = new FasterLogRecoveryInfo
+                var coveredCommits = new List<FasterLogRecoveryInfo>();
+                // Check for the commit records included in this flush
+                lock (ongoingCommitRequests)
                 {
-                    BeginAddress = BeginAddress,
-                    FlushedUntilAddress = commitInfo.UntilAddress
-                };
+                    while (ongoingCommitRequests.Count != 0)
+                    {
+                        var (addr, recoveryInfo) = ongoingCommitRequests.Peek();
+                        if (addr > commitInfo.UntilAddress) break;
+                        coveredCommits.Add(recoveryInfo);
+                        ongoingCommitRequests.Dequeue();
+                    }
+                }
 
-                // Take snapshot of persisted iterators
-                info.SnapshotIterators(PersistedIterators);
+                // Nothing was committed --- this was probably au auto-flush. Return now without touching any
+                // commit task tracking.
+                if (coveredCommits.Count == 0) return;
 
-                logCommitManager.Commit(info.BeginAddress, info.FlushedUntilAddress, info.ToByteArray());
+                var latestCommit = coveredCommits[coveredCommits.Count - 1];
+                if (fastCommitMode)
+                    // In fast commit mode, can safely set committed state to the latest flushed
+                    UpdateCommittedState(latestCommit);
 
-                LastPersistedIterators = info.Iterators;
-                CommittedBeginAddress = info.BeginAddress;
-                CommittedUntilAddress = info.FlushedUntilAddress;
-                if (_localCMV > persistedCommitMetadataVersion)
-                    persistedCommitMetadataVersion = _localCMV;
+                foreach (var recoveryInfo in coveredCommits)
+                {
+                    // Only write out commit metadata if user cares about this as a distinct recoverable point
+                    if (!recoveryInfo.FastForwardAllowed) WriteCommitMetadata(recoveryInfo);
+                }
 
-                // Update completed address for persisted iterators
-                info.CommitIterators(PersistedIterators);
+                // We fast-forwarded commits earlier, so write it out if not covered by another commit
+                if (latestCommit.FastForwardAllowed) WriteCommitMetadata(latestCommit);
             }
 
+            // TODO(Tianyu): Can invoke earlier in the case of fast commit
             var _commitTcs = commitTcs;
             commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
             var lci = new LinkedCommitInfo
@@ -973,22 +1130,20 @@ namespace FASTER.core
                 _commitTcs.TrySetException(new CommitFailureException(lci, $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}"));
         }
 
-        private bool IteratorsChanged()
+        private bool IteratorsChanged(ref FasterLogRecoveryInfo info)
         {
             var _lastPersistedIterators = LastPersistedIterators;
             if (_lastPersistedIterators == null)
             {
-                if (PersistedIterators.Count == 0)
-                    return false;
-                return true;
+                return info.Iterators != null &&  info.Iterators.Count != 0;
             }
-            if (_lastPersistedIterators.Count != PersistedIterators.Count)
+            if (_lastPersistedIterators.Count != info.Iterators.Count)
                 return true;
             foreach (var item in _lastPersistedIterators)
             {
-                if (PersistedIterators.TryGetValue(item.Key, out var other))
+                if (info.Iterators.TryGetValue(item.Key, out var other))
                 {
-                    if (item.Value != other.requestedCompletedUntilAddress) return true;
+                    if (item.Value != other) return true;
                 }
                 else
                     return true;
@@ -1014,27 +1169,28 @@ namespace FASTER.core
             }
         }
 
+        
         /// <summary>
-        /// Synchronously recover instance to FasterLog's latest commit, when being used as a readonly log iterator
+        /// Synchronously recover instance to FasterLog's latest valid commit, when being used as a readonly log iterator
         /// </summary>
-        public void RecoverReadOnly()
+        public void RecoverReadOnly(bool purgeEarlierCommits = false)
         {
             if (!readOnlyMode)
                 throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            this.Restore();
+            RestoreLatest(purgeEarlierCommits, out _, out _);
             SignalWaitingROIterators();
         }
 
         /// <summary>
         /// Asynchronously recover instance to FasterLog's latest commit, when being used as a readonly log iterator
         /// </summary>
-        public async ValueTask RecoverReadOnlyAsync(CancellationToken cancellationToken = default)
+        public async ValueTask RecoverReadOnlyAsync(bool purgeEarlierCommits = false, CancellationToken cancellationToken = default)
         {
             if (!readOnlyMode)
                 throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            await this.RestoreAsync(cancellationToken).ConfigureAwait(false);
+            await RestoreLatestAsync(purgeEarlierCommits, cancellationToken).ConfigureAwait(false);
             SignalWaitingROIterators();
         }
 
@@ -1058,55 +1214,8 @@ namespace FASTER.core
             _commitTcs?.TrySetResult(lci);
         }
 
-        /// <summary>
-        /// Restore log synchronously
-        /// </summary>
-        private Dictionary<string, long> Restore()
+        private bool LoadCommitMetadata(long commitNum, out FasterLogRecoveryInfo info)
         {
-            foreach (var commitNum in logCommitManager.ListCommits())
-            {
-                try
-                {
-                    if (!PrepareToRestoreFromCommit(commitNum, out FasterLogRecoveryInfo info, out long headAddress))
-                        return default;
-
-                    if (headAddress > 0)
-                        allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress);
-
-                    return CompleteRestoreFromCommit(info);
-                }
-                catch { }
-            }
-            Debug.WriteLine("Unable to recover using any available commit");
-            return null;
-        }
-
-        /// <summary>
-        /// Restore log asynchronously
-        /// </summary>
-        private async ValueTask<Dictionary<string, long>> RestoreAsync(CancellationToken cancellationToken)
-        {
-            foreach (var commitNum in logCommitManager.ListCommits())
-            {
-                try
-                {
-                    if (!PrepareToRestoreFromCommit(commitNum, out FasterLogRecoveryInfo info, out long headAddress))
-                        return default;
-
-                    if (headAddress > 0)
-                        await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.FlushedUntilAddress, info.FlushedUntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-                    return CompleteRestoreFromCommit(info);
-                }
-                catch { }
-            }
-            Debug.WriteLine("Unable to recover using any available commit");
-            return null;
-        }
-
-        private bool PrepareToRestoreFromCommit(long commitNum, out FasterLogRecoveryInfo info, out long headAddress)
-        {
-            headAddress = 0;
             var commitInfo = logCommitManager.GetCommitMetadata(commitNum);
             if (commitInfo is null)
             {
@@ -1120,24 +1229,217 @@ namespace FASTER.core
                 info.Initialize(r);
             }
 
+            if (info.CommitNum == -1)
+                info.CommitNum = commitNum;
+
+            return true;
+        }
+
+        private void RestoreLatest(bool purgeEarlierCommits, out Dictionary<string, long> iterators, out byte[] cookie)
+        {
+            iterators = null;
+            cookie = null;
+            FasterLogRecoveryInfo info = new();
+
+            long scanStart = 0;
+            foreach (var metadataCommit in logCommitManager.ListCommits())
+            {
+                try
+                {
+                    if (LoadCommitMetadata(metadataCommit, out info))
+                    {
+                        scanStart = metadataCommit;
+                        break;
+                    }
+                }
+                catch { }
+            }
+
+            // Only in fast commit mode will we potentially need to recover from an entry in the log
+            if (fastCommitMode)
+            {
+                // Disable safe guards temporarily
+                CommittedUntilAddress = long.MaxValue;
+                beginAddress = info.BeginAddress;
+                allocator.HeadAddress = long.MaxValue;
+                using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                scanIterator.ScanForwardForCommit(ref info);
+            }
+
+            // If until address is 0, that means info is still its default value and we haven't been able to recover
+            // from any any commit. Set the log to its start position and return
+            if (info.UntilAddress == 0)
+            {
+                Trace.WriteLine("Unable to recover using any available commit");
+
+                // Reset variables to normal
+                allocator.Initialize();
+                CommittedUntilAddress = Constants.kFirstValidAddress;
+                beginAddress = allocator.BeginAddress;
+                if (readOnlyMode)
+                    allocator.HeadAddress = long.MaxValue;
+                return;
+            }
+
             if (!readOnlyMode)
             {
-                headAddress = info.FlushedUntilAddress - allocator.GetOffsetInPage(info.FlushedUntilAddress);
+                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
                 if (info.BeginAddress > headAddress)
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
                     headAddress = Constants.kFirstValidAddress;
+                
+                allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
             }
 
-            return true;
+            iterators = CompleteRestoreFromCommit(info);
+            cookie = info.Cookie;
+            commitNum = info.CommitNum;
+            beginAddress = allocator.BeginAddress;
+            if (readOnlyMode)
+                allocator.HeadAddress = long.MaxValue;
+
+            if (scanStart > 0) logCommitManager.OnRecovery(scanStart, purgeEarlierCommits);
+        }
+
+        private void RestoreSpecificCommit(long requestedCommitNum, out Dictionary<string, long> iterators, out byte[] cookie)
+        {
+            iterators = null;
+            cookie = null;
+            FasterLogRecoveryInfo info = new();
+
+            // Find the closest commit metadata with commit num smaller than requested
+            long scanStart = 0;
+            foreach (var metadataCommit in logCommitManager.ListCommits())
+            {
+                if (metadataCommit > requestedCommitNum) continue;
+                try
+                {
+                    if (LoadCommitMetadata(metadataCommit, out info))
+                    {
+                        scanStart = metadataCommit;
+                        break;
+                    }
+                }
+                catch { }
+            }
+            
+            // Need to potentially scan log for the entry 
+            if (scanStart < requestedCommitNum)
+            {
+                // If not in fast commit mode, do not scan log
+                if (!fastCommitMode)
+                    // In the case where precisely requested commit num is not available, can just throw exception
+                    throw new FasterException("requested commit num is not available");
+                
+                // If no exact metadata is found, scan forward to see if we able to find a commit entry
+                // Shut up safe guards, I know what I am doing
+                CommittedUntilAddress = long.MaxValue;
+                beginAddress = info.BeginAddress;
+                allocator.HeadAddress = long.MaxValue;
+                using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                if (!scanIterator.ScanForwardForCommit(ref info, requestedCommitNum))
+                    throw new FasterException("requested commit num is not available");
+            }
+
+            // At this point, we should have found the exact commit num requested
+            Debug.Assert(info.CommitNum == requestedCommitNum);
+            if (!readOnlyMode)
+            {
+                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                if (info.BeginAddress > headAddress)
+                    headAddress = info.BeginAddress;
+
+                if (headAddress == 0)
+                    headAddress = Constants.kFirstValidAddress;
+                allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
+            }
+
+            iterators = CompleteRestoreFromCommit(info);
+            cookie = info.Cookie;
+            commitNum = info.CommitNum;
+            beginAddress = allocator.BeginAddress;
+            if (readOnlyMode)
+                allocator.HeadAddress = long.MaxValue;
+
+            if (scanStart > 0) logCommitManager.OnRecovery(scanStart, false);
+        }
+
+        /// <summary>
+        /// Restore log asynchronously
+        /// </summary>
+        private async ValueTask<(Dictionary<string, long>, byte[])> RestoreLatestAsync(bool purgeEarlierCommits, CancellationToken cancellationToken)
+        {
+            FasterLogRecoveryInfo info = new();
+
+            long scanStart = 0;
+            foreach (var metadataCommit in logCommitManager.ListCommits())
+            {
+                try
+                {
+                    if (LoadCommitMetadata(metadataCommit, out info))
+                    {
+                        scanStart = metadataCommit;
+                        break;
+                    }
+                }
+                catch { }
+            }
+
+            // Only in fast commit mode will we potentially need to recover from an entry in the log
+            if (fastCommitMode)
+            {
+                // Shut up safe guards, I know what I am doing
+                CommittedUntilAddress = long.MaxValue;
+                beginAddress = info.BeginAddress;
+                allocator.HeadAddress = long.MaxValue;
+                using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                scanIterator.ScanForwardForCommit(ref info);
+            }
+
+            // if until address is 0, that means info is still its default value and we haven't been able to recover
+            // from any any commit. Set the log to its start position and return
+            if (info.UntilAddress == 0)
+            {
+                Debug.WriteLine("Unable to recover using any available commit");
+                // Reset things to be something normal lol
+                allocator.Initialize();
+                CommittedUntilAddress = Constants.kFirstValidAddress;
+                beginAddress = allocator.BeginAddress;
+                if (readOnlyMode)
+                    allocator.HeadAddress = long.MaxValue;
+                return (new Dictionary<string, long>(), null);
+            }
+            
+            if (!readOnlyMode)
+            {
+                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                if (info.BeginAddress > headAddress)
+                    headAddress = info.BeginAddress;
+
+                if (headAddress == 0)
+                    headAddress = Constants.kFirstValidAddress;
+                await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken : cancellationToken).ConfigureAwait(false);
+            }
+
+            var iterators = CompleteRestoreFromCommit(info);
+            var cookie = info.Cookie;
+            commitNum = info.CommitNum;
+            beginAddress = allocator.BeginAddress;
+            if (readOnlyMode)
+                allocator.HeadAddress = long.MaxValue;
+
+            if (scanStart > 0) logCommitManager.OnRecovery(scanStart, purgeEarlierCommits);
+
+            return (iterators, cookie);
         }
 
         private Dictionary<string, long> CompleteRestoreFromCommit(FasterLogRecoveryInfo info)
         {
-            CommittedUntilAddress = info.FlushedUntilAddress;
+            CommittedUntilAddress = info.UntilAddress;
             CommittedBeginAddress = info.BeginAddress;
-            SafeTailAddress = info.FlushedUntilAddress;
+            SafeTailAddress = info.UntilAddress;
 
             // Fix uncommitted addresses in iterators
             var recoveredIterators = info.Iterators;
@@ -1174,6 +1476,7 @@ namespace FASTER.core
 
             epoch.Resume();
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
@@ -1320,52 +1623,106 @@ namespace FASTER.core
                 var ptr = record.GetValidPointer();
                 length = GetLength(ptr);
 
-                if (!VerifyChecksum(ptr, length))
-                {
-                    throw new FasterException("Checksum failed for read");
-                }
+                // forego checksum verification since record may not be read in full by AsyncGetHeaderOnlyFromDiskCallback()
             }
 
             record.Return();
             return length;
         }
 
-        private long CommitInternal(bool spinWait = false)
+        private bool CommitInternal(out long commitTail, out long actualCommitNum, bool spinWait, bool allowFastForward, byte[] cookie, long proposedCommitNum)
         {
+            commitTail = actualCommitNum = 0;
+            
             if (readOnlyMode)
                 throw new FasterException("Cannot commit in read-only mode");
 
-            epoch.Resume();
-            if (allocator.ShiftReadOnlyToTail(out long tailAddress, out _))
+            if (allowFastForward && (cookie != null || proposedCommitNum != -1))
+                throw new FasterException(
+                    "Fast forwarding a commit is only allowed when no cookie and not commit num is specified");
+
+            var info = new FasterLogRecoveryInfo
             {
-                if (spinWait)
+                FastForwardAllowed = allowFastForward
+            };
+
+            // This critical section serializes commit record creation / commit content generation and ensures that the
+            // long address are sorted in outstandingCommitRecords. Ok because we do not expect heavy contention on the
+            // commit code path
+            lock (ongoingCommitRequests)
+            {
+                // Compute regular information about the commit
+                info.Cookie = cookie;
+                info.SnapshotIterators(PersistedIterators);
+                
+                if (commitCoveredAddress == TailAddress && !ShouldCommmitMetadata(ref info))
+                    // Nothing to commit if no metadata update and no new entries
+                    return false;
+
+                
+                if (proposedCommitNum == -1)
+                    info.CommitNum = actualCommitNum = ++commitNum;
+                else if (proposedCommitNum > commitNum)
+                    info.CommitNum = actualCommitNum = commitNum = proposedCommitNum;
+                else
+                    // Invalid commit num
+                    return false;
+
+                if (fastCommitMode)
                 {
-                    while (CommittedUntilAddress < tailAddress)
-                    {
-                        epoch.ProtectAndDrain();
-                        Thread.Yield();
-                    }
+                    // Ok to retry in critical section, any concurrently invoked commit would block, but cannot progress
+                    // anyways if no record can be enqueued
+                    while (!TryEnqueueCommitRecord(ref info)) Thread.Yield();
+                    commitTail = info.UntilAddress;
                 }
-                epoch.Suspend();
+                else
+                {
+                    // If not using fastCommitMode, do not need to allocate a commit record. Instead, set the content
+                    // of this commit to the current tail and base all commit metadata on this address, even though
+                    // perhaps more entries will be flushed as part of this commit
+                    info.BeginAddress = BeginAddress;
+                    info.UntilAddress = commitTail = TailAddress;
+                }
+                Utility.MonotonicUpdate(ref commitCoveredAddress, commitTail, out _);
+
+                // Enqueue the commit record's content and offset into the queue so it can be picked up by the next flush
+                // At this point, we expect the commit record to be flushed out as a distinct recovery point
+                ongoingCommitRequests.Enqueue((commitTail, info));
             }
-            else
+            
+            // As an optimization, if a concurrent flush has already advanced FlushedUntilAddress
+            // past this commit, we can manually trigger a commit callback for safety, and return.
+            if (commitTail <= FlushedUntilAddress)
             {
-                // May need to commit begin address and/or iterators
-                epoch.Suspend();
-                var beginAddress = allocator.BeginAddress;
-                if (beginAddress > CommittedBeginAddress || IteratorsChanged())
-                {
-                    Interlocked.Increment(ref commitMetadataVersion);
-                    CommitCallback(new CommitInfo
-                    {
-                        FromAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
-                        UntilAddress = CommittedUntilAddress > beginAddress ? CommittedUntilAddress : beginAddress,
-                        ErrorCode = 0
-                    });
-                }
+                CommitMetadataOnly(ref info, spinWait);
+                return true;
             }
 
-            return tailAddress;
+            // Otherwise, move to set read-only tail and flush 
+            try
+            {
+                epoch.Resume();
+                if (allocator.ShiftReadOnlyToTail(out _, out _))
+                {
+                    if (spinWait)
+                    {
+                        while (CommittedUntilAddress < commitTail)
+                        {
+                            epoch.ProtectAndDrain();
+                            Thread.Yield();
+                        }
+                    }
+                }
+                else
+                {
+                    CommitMetadataOnly(ref info, spinWait);
+                }
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
+            return true;
         }
 
         private long RefreshUncommittedInternal(bool spinWait = false)
@@ -1431,6 +1788,22 @@ namespace FASTER.core
             else if (logChecksum == LogChecksumType.PerEntry)
             {
                 *(int*)(dest + 8) = length;
+                *(ulong*)dest = Utility.XorBytes(dest + 8, length + 4);
+            }
+        }
+        
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe void SetCommitRecordHeader(int length, byte* dest)
+        {
+            // commit record has negative length field to differentiate from normal records
+            if (logChecksum == LogChecksumType.None)
+            {
+                *(int*)dest = -length;
+                return;
+            }
+            else if (logChecksum == LogChecksumType.PerEntry)
+            {
+                *(int*)(dest + 8) = -length;
                 *(ulong*)dest = Utility.XorBytes(dest + 8, length + 4);
             }
         }

@@ -697,6 +697,7 @@ namespace FASTER.core
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 recordInfo.Tombstone = true;
+                recordInfo.Stub = false;
                 return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
             }
 

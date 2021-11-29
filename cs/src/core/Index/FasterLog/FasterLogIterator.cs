@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -201,16 +202,42 @@ namespace FASTER.core
                 nextAddress = default;
                 return false;
             }
-
             epoch.Resume();
-            if (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress, out nextAddress))
+            // Continue looping until we find a record that is not a commit record
+            while (true)
             {
+                long physicalAddress;
+                bool isCommitRecord;
+                try
+                {
+                    var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
+                        out nextAddress,
+                        out isCommitRecord);
+                    if (!hasNext)
+                    {
+                        entry = default;
+                        epoch.Suspend();
+                        return false;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Throw upwards, but first, suspend the epoch we are in 
+                    epoch.Suspend();
+                    throw;
+                }
+
+                if (isCommitRecord) continue;
+
                 if (getMemory != null)
                 {
                     // Use user delegate to allocate memory
                     entry = getMemory(entryLength);
                     if (entry.Length < entryLength)
+                    {
+                        epoch.Suspend();
                         throw new FasterException("Byte array provided has invalid length");
+                    }
                 }
                 else
                 {
@@ -219,15 +246,11 @@ namespace FASTER.core
                 }
 
                 fixed (byte* bp = entry)
-                    Buffer.MemoryCopy((void*)(headerSize + physicalAddress), bp, entryLength, entryLength);
+                    Buffer.MemoryCopy((void*) (headerSize + physicalAddress), bp, entryLength, entryLength);
 
                 epoch.Suspend();
                 return true;
             }
-
-            entry = default;
-            epoch.Suspend();
-            return false;
         }
 
         /// <summary>
@@ -264,8 +287,33 @@ namespace FASTER.core
             }
 
             epoch.Resume();
-            if (GetNextInternal(out long physicalAddress, out entryLength, out currentAddress, out nextAddress))
+            // Continue looping until we find a record that is not a commit record
+            while (true)
             {
+                long physicalAddress;
+                bool isCommitRecord;
+                try
+                {
+                    var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
+                        out nextAddress,
+                        out isCommitRecord);
+                    if (!hasNext)
+                    {
+                        entry = default;
+                        entryLength = default;
+                        epoch.Suspend();
+                        return false;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Throw upwards, but first, suspend the epoch we are in 
+                    epoch.Suspend();
+                    throw;
+                }
+
+                if (isCommitRecord) continue;
+
                 entry = pool.Rent(entryLength);
 
                 fixed (byte* bp = &entry.Memory.Span.GetPinnableReference())
@@ -274,11 +322,6 @@ namespace FASTER.core
                 epoch.Suspend();
                 return true;
             }
-
-            entry = default;
-            entryLength = default;
-            epoch.Suspend();
-            return false;
         }
 
         /// <summary>
@@ -299,10 +342,13 @@ namespace FASTER.core
         /// </summary>
         /// <param name="recordStartAddress"></param>
         /// <param name="token"></param>
-        public async ValueTask CompleteUntilRecordAtAsync(long recordStartAddress, CancellationToken token = default)
+        /// <returns>The actual completion address (end address of the record)</returns>
+        public async ValueTask<long> CompleteUntilRecordAtAsync(long recordStartAddress, CancellationToken token = default)
         {
             int len = await fasterLog.ReadRecordLengthAsync(recordStartAddress, token: token);
-            CompleteUntil(recordStartAddress + headerSize + len);
+            long endAddress = recordStartAddress + headerSize + Align(len);
+            CompleteUntil(endAddress);
+            return endAddress;
         }
 
         internal void UpdateCompletedUntilAddress(long address)
@@ -368,6 +414,51 @@ namespace FASTER.core
             return (length + 3) & ~3;
         }
 
+        internal unsafe bool ScanForwardForCommit(ref FasterLogRecoveryInfo info, long commitNum = -1)
+        {
+            epoch.Resume();
+            var foundCommit = false;
+            try
+            {
+                // Continue looping until we find a record that is a commit record
+                while (GetNextInternal(out long physicalAddress, out var entryLength, out currentAddress,
+                    out nextAddress,
+                    out var isCommitRecord))
+                {
+                    if (!isCommitRecord) continue;
+
+                    foundCommit = true;
+                    byte[] entry;
+                    // We allocate a byte array from heap
+                    entry = new byte[entryLength];
+                    fixed (byte* bp = entry)
+                        Buffer.MemoryCopy((void*) (headerSize + physicalAddress), bp, entryLength, entryLength);
+                    info.Initialize(new BinaryReader(new MemoryStream(entry)));
+                    
+                    Debug.Assert(info.CommitNum != -1);
+
+                    // If we have already found the commit number we are looking for, can stop early
+                    if (info.CommitNum == commitNum) break;
+                }
+            }
+            catch (FasterException)
+            {
+                // If we are here --- simply stop scanning because we ran into an incomplete entry
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
+            
+            if (info.CommitNum == commitNum)
+                return true;
+            // User wants any commie
+            if (commitNum == -1)
+                return foundCommit;
+            // requested commit not found
+            return false;
+        }
+
         /// <summary>
         /// Retrieve physical address of next iterator value
         /// (under epoch protection if it is from main page buffer)
@@ -376,8 +467,9 @@ namespace FASTER.core
         /// <param name="entryLength"></param>
         /// <param name="currentAddress"></param>
         /// <param name="outNextAddress"></param>
+        /// <param name="commitRecord"></param>
         /// <returns></returns>
-        private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress)
+        private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress, out bool commitRecord)
         {
             while (true)
             {
@@ -385,6 +477,7 @@ namespace FASTER.core
                 entryLength = 0;
                 currentAddress = nextAddress;
                 outNextAddress = nextAddress;
+                commitRecord = false;
 
                 // Check for boundary conditions
                 if (currentAddress < allocator.BeginAddress)
@@ -428,34 +521,42 @@ namespace FASTER.core
 
                 // Get and check entry length
                 entryLength = fasterLog.GetLength((byte*)physicalAddress);
+                // We may encounter zeroed out bits at the end of page in a normal log, therefore, we need to check
+                // whether that is the case
                 if (entryLength == 0)
                 {
-                    // We are likely at end of page, skip to next
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
-
-                    Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _);
-
-                    if (0 != fasterLog.GetChecksum((byte*)physicalAddress))
+                    // If zeroed out field is at page start, we encountered an uninitialized page and should signal up
+                    var pageOffset = currentAddress & ((1 << allocator.LogPageSizeBits) - 1);
+                    if (pageOffset == 0)
                     {
-                        epoch.Suspend();
                         var curPage = currentAddress >> allocator.LogPageSizeBits;
-                        throw new FasterException("Invalid checksum found during scan, skipping page " + curPage);
+                        throw new FasterException("Uninitialized page found during scan at page " + curPage);
                     }
-                    else
-                        continue;
+
+                    // Otherwise, we must assume that zeroed out bits are due to page end and skip forward to the next
+                    // page. If that's not the case, next iteration of the loop will either hit EOF exception or a
+                    // blank page, and propagate failure upwards appropriately
+                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _);
+                    continue;
+                }
+
+                // commit records have negative length fields
+                if (entryLength < 0)
+                {
+                    commitRecord = true;
+                    entryLength = -entryLength;
                 }
 
                 int recordSize = headerSize + Align(entryLength);
-                if (entryLength < 0 || (_currentOffset + recordSize > allocator.PageSize))
+                if (_currentOffset + recordSize > allocator.PageSize)
                 {
                     currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
                     if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                     {
-                        epoch.Suspend();
                         throw new FasterException("Invalid length of record found: " + entryLength + " at address " + currentAddress + ", skipping page");
                     }
-                    else
-                        continue;
+                    continue;
                 }
 
                 // Verify checksum if needed
@@ -467,11 +568,9 @@ namespace FASTER.core
                         currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
                         if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         {
-                            epoch.Suspend();
                             throw new FasterException("Invalid checksum found during scan, skipping page " + curPage);
                         }
-                        else
-                            continue;
+                        continue;
                     }
                 }
 
