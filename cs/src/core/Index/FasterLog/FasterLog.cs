@@ -900,8 +900,7 @@ namespace FASTER.core
                 allocator.AsyncReadRecordToMemory(address, headerSize, AsyncGetHeaderOnlyFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
-            await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
-            
+            await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);          
             return GetRecordLengthAndFree(ctx.record);
         }
 
@@ -1320,10 +1319,7 @@ namespace FASTER.core
                 var ptr = record.GetValidPointer();
                 length = GetLength(ptr);
 
-                if (!VerifyChecksum(ptr, length))
-                {
-                    throw new FasterException("Checksum failed for read");
-                }
+                // forego checksum verification since record may not be read in full by AsyncGetHeaderOnlyFromDiskCallback()
             }
 
             record.Return();

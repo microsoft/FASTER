@@ -299,10 +299,13 @@ namespace FASTER.core
         /// </summary>
         /// <param name="recordStartAddress"></param>
         /// <param name="token"></param>
-        public async ValueTask CompleteUntilRecordAtAsync(long recordStartAddress, CancellationToken token = default)
+        /// <returns>The actual completion address (end address of the record)</returns>
+        public async ValueTask<long> CompleteUntilRecordAtAsync(long recordStartAddress, CancellationToken token = default)
         {
             int len = await fasterLog.ReadRecordLengthAsync(recordStartAddress, token: token);
-            CompleteUntil(recordStartAddress + headerSize + len);
+            long endAddress = recordStartAddress + headerSize + Align(len);
+            CompleteUntil(endAddress);
+            return endAddress;
         }
 
         internal void UpdateCompletedUntilAddress(long address)
