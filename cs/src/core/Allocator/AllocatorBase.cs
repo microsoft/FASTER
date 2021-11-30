@@ -745,8 +745,8 @@ namespace FASTER.core
             if (SegmentSize < PageSize)
                 throw new FasterException($"Segment ({SegmentSize}) must be at least of page size ({PageSize})");
 
-            if (LogTotalSizeBytes < PageSize)
-                throw new FasterException($"Memory size ({LogTotalSizeBytes}) must be at least of page size ({PageSize})");
+            if ((LogTotalSizeBits != 0) && (LogTotalSizeBytes < PageSize))
+                throw new FasterException($"Memory size ({LogTotalSizeBytes}) must be configured to be either 1 (i.e., 0 bits) or at least page size ({PageSize})");
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
 
