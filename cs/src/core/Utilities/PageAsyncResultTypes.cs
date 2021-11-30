@@ -67,30 +67,62 @@ namespace FASTER.core
         /// Count
         /// </summary>
         public int count;
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public bool freeEnter;
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public bool freeExit;
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public int freeCount = 0;
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public int buffer1SetCount = 0;
 
         internal bool partial;
         internal long fromAddress;
         internal long untilAddress;
-        internal SectorAlignedMemory freeBuffer1;
+        internal SectorAlignedMemory freeBuffer1
+        {
+            set
+            {
+                buffer1SetCount++;
+                _freeBuffer1 = value;
+            }
+            get 
+            {
+                return _freeBuffer1;
+            }
+        }
         internal SectorAlignedMemory freeBuffer2;
         internal AutoResetEvent done;
         internal SemaphoreSlim completedSemaphore;
+
+        private SectorAlignedMemory _freeBuffer1;
 
         /// <summary>
         /// Free
         /// </summary>
         public void Free()
         {
+            freeCount++;
+            freeEnter = true;
             if (freeBuffer1 != null)
             {
                 freeBuffer1.Return();
-                freeBuffer1 = null;
+                // freeBuffer1 = null;
             }
             if (freeBuffer2 != null)
             {
                 freeBuffer2.Return();
-                freeBuffer2 = null;
+                // freeBuffer2 = null;
             }
+            freeExit = true;
 
             completedSemaphore?.Release();
         }

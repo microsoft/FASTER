@@ -1,11 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-// #define CHECK_FOR_LEAKS // disabled by default due to overhead
+#define CHECK_FOR_LEAKS // disabled by default due to overhead
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -51,6 +53,72 @@ namespace FASTER.core
         /// Available bytes
         /// </summary>
         public int available_bytes;
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public DateTime CreateTime = DateTime.UtcNow;
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public DateTime LastGetTime = DateTime.MinValue;
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public DateTime LastReturnTime = DateTime.MinValue;
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public int GetCount = 0;
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public int ReturnCount = 0;
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public string CurrentStatus = "Create";
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public string Usage = "Unset";
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public string CreateStackTrace;
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public string ReturnStackTrace;
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public PageAsyncFlushResult<Empty> BelongsResult;
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public void SetCreateStackTrace(System.Diagnostics.StackTrace st)
+        {
+            CreateStackTrace = string.Join("\n", st.GetFrames().Select(f => f?.GetFileName() + " " + f?.GetFileLineNumber() + " " + f?.GetMethod()?.ReflectedType?.Name + " " + f?.GetMethod()?.Name));
+        }
+
+        /// <summary>
+        /// aaa
+        /// </summary>
+        public void SetReturnStackTrace(System.Diagnostics.StackTrace st)
+        {
+            ReturnStackTrace = string.Join("\n", st.GetFrames().Select(f => f?.GetFileName() + " " + f?.GetFileLineNumber() + " " + f?.GetMethod()?.ReflectedType?.Name + " " + f?.GetMethod()?.Name));
+        }
 
         internal int level;
         internal SectorAlignedBufferPool pool;
@@ -131,8 +199,9 @@ namespace FASTER.core
         private readonly int recordSize;
         private readonly int sectorSize;
         private readonly ConcurrentQueue<SectorAlignedMemory>[] queue;
+        private readonly List<SectorAlignedMemory> allocated = new List<SectorAlignedMemory>();
 #if CHECK_FOR_LEAKS
-        static int totalGets, totalReturns;
+        private int totalGets = 0, totalReturns = 0, getFromQueue = 0, getFromNew = 0;
 #endif
 
         /// <summary>
@@ -158,11 +227,17 @@ namespace FASTER.core
             Interlocked.Increment(ref totalReturns);
 #endif
 
+            page.CurrentStatus = "StartReturn";
             Debug.Assert(queue[page.level] != null);
             page.available_bytes = 0;
             page.required_bytes = 0;
             page.valid_offset = 0;
+            page.CurrentStatus = "ReturnArrayClear";
             Array.Clear(page.buffer, 0, page.buffer.Length);
+            page.CurrentStatus = "FinishReturn";
+            page.ReturnCount++;
+            page.LastReturnTime = DateTime.UtcNow;
+            page.SetReturnStackTrace(new StackTrace(true));
             if (!Disabled)
                 queue[page.level].Enqueue(page);
             else
@@ -192,9 +267,10 @@ namespace FASTER.core
         /// Get buffer
         /// </summary>
         /// <param name="numRecords"></param>
+        /// <param name="usage"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe SectorAlignedMemory Get(int numRecords)
+        public unsafe SectorAlignedMemory Get(int numRecords, string usage = "Unset")
         {
 #if CHECK_FOR_LEAKS
             Interlocked.Increment(ref totalGets);
@@ -210,6 +286,11 @@ namespace FASTER.core
 
             if (!Disabled && queue[index].TryDequeue(out SectorAlignedMemory page))
             {
+                Interlocked.Increment(ref getFromQueue);
+                page.GetCount++;
+                page.CurrentStatus = "Get";
+                page.Usage = usage;
+                page.LastGetTime = DateTime.UtcNow;
                 return page;
             }
 
@@ -222,6 +303,13 @@ namespace FASTER.core
             page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
             page.offset = (int) ((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
             page.pool = this;
+            page.CurrentStatus = "Get";
+            page.GetCount++;
+            page.Usage = usage;
+            page.LastGetTime = DateTime.UtcNow;
+            page.SetCreateStackTrace(new System.Diagnostics.StackTrace(true));
+            allocated.Add(page);
+            Interlocked.Increment(ref getFromNew);
             return page;
         }
 

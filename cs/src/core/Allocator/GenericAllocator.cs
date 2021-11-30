@@ -354,7 +354,7 @@ namespace FASTER.core
             if (localSegmentOffsets == null) localSegmentOffsets = segmentOffsets;
 
             var src = values[flushPage % BufferSize];
-            var buffer = bufferPool.Get((int)numBytesToWrite);
+            var buffer = bufferPool.Get((int)numBytesToWrite, "WriteAsyncLog");
 
             if (aligned_start < start && (KeyHasObjects() || ValueHasObjects()))
             {
@@ -394,6 +394,7 @@ namespace FASTER.core
             long ptr = (long)buffer.aligned_pointer;
             List<long> addr = new List<long>();
             asyncResult.freeBuffer1 = buffer;
+            buffer.BelongsResult = asyncResult as PageAsyncFlushResult<Empty>;
 
             MemoryStream ms = new MemoryStream();
             IObjectSerializer<Key> keySerializer = null;
@@ -440,7 +441,7 @@ namespace FASTER.core
                 {
                     var memoryStreamLength = (int)ms.Position;
 
-                    var _objBuffer = bufferPool.Get(memoryStreamLength);
+                    var _objBuffer = bufferPool.Get(memoryStreamLength, "WriteAsyncObjLog");
 
                     asyncResult.done = new AutoResetEvent(false);
 
@@ -488,6 +489,7 @@ namespace FASTER.core
                         Interlocked.Increment(ref asyncResult.count);
 
                         asyncResult.freeBuffer2 = _objBuffer;
+                        _objBuffer.BelongsResult = asyncResult as PageAsyncFlushResult<Empty>;
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
                             (int)(alignedDestinationAddress >> LogSegmentSizeBits),
