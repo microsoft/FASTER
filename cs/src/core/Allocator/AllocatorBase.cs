@@ -1813,20 +1813,24 @@ namespace FASTER.core
         {
             int totalNumPages = (int)(endPage - startPage);
             completedSemaphore = new SemaphoreSlim(0);
-            var asyncResult = new PageAsyncFlushResult<Empty>
-            {
-                completedSemaphore = completedSemaphore,
-                count = totalNumPages
-            };
+            var flushCompletionTracker = new FlushCompletionTracker(completedSemaphore, totalNumPages);
             var localSegmentOffsets = new long[SegmentBufferSize];
 
             for (long flushPage = startPage; flushPage < endPage; flushPage++)
             {
-
+                long flushPageAddress = flushPage << LogPageSizeBits;
                 var pageSize = PageSize;
-
                 if (flushPage == endPage - 1)
-                    pageSize = (int)(endLogicalAddress - (flushPage << LogPageSizeBits));
+                    pageSize = (int)(endLogicalAddress - flushPageAddress);
+
+                var asyncResult = new PageAsyncFlushResult<Empty>
+                {
+                    flushCompletionTracker = flushCompletionTracker,
+                    page = flushPage,
+                    fromAddress = flushPageAddress,
+                    untilAddress = flushPageAddress + pageSize,
+                    count = 1
+                };
 
                 // Intended destination is flushPage
                 WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets);
