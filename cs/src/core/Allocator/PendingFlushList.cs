@@ -1,38 +1,25 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Threading;
+using System.Collections.Generic;
 
 namespace FASTER.core
 {
-    class PendingFlushList
+    sealed class PendingFlushList
     {
-        const int maxSize = 8;
-        const int maxRetries = 10;
-        public PageAsyncFlushResult<Empty>[] list;
+        public readonly LinkedList<PageAsyncFlushResult<Empty>> list;
 
         public PendingFlushList()
         {
-            list = new PageAsyncFlushResult<Empty>[maxSize];
+            list = new();
         }
 
-        public bool Add(PageAsyncFlushResult<Empty> t)
+        public void Add(PageAsyncFlushResult<Empty> t)
         {
-            int retries = 0;
-            do
+            lock (list)
             {
-                for (int i = 0; i < maxSize; i++)
-                {
-                    if (list[i] == default)
-                    {
-                        if (Interlocked.CompareExchange(ref list[i], t, default) == default)
-                        {
-                            return true;
-                        }
-                    }
-                }
-            } while (retries++ < maxRetries);
-            return false;
+                list.AddFirst(t);
+            }
         }
 
         /// <summary>
@@ -40,15 +27,17 @@ namespace FASTER.core
         /// </summary>
         public bool RemoveNextAdjacent(long address, out PageAsyncFlushResult<Empty> request)
         {
-            for (int i=0; i<maxSize; i++)
+            lock (list)
             {
-                request = list[i];
-                if (request?.fromAddress == address)
+                for (var it = list.First; it != null;)
                 {
-                    if (Interlocked.CompareExchange(ref list[i], null, request) == request)
+                    request = it.Value;
+                    if (request.fromAddress == address)
                     {
+                        list.Remove(it);
                         return true;
                     }
+                    it = it.Next;
                 }
             }
             request = null;
@@ -60,15 +49,17 @@ namespace FASTER.core
         /// </summary>
         public bool RemovePreviousAdjacent(long address, out PageAsyncFlushResult<Empty> request)
         {
-            for (int i = 0; i < maxSize; i++)
+            lock (list)
             {
-                request = list[i];
-                if (request?.untilAddress == address)
+                for (var it = list.First; it != null;)
                 {
-                    if (Interlocked.CompareExchange(ref list[i], null, request) == request)
+                    request = it.Value;
+                    if (request.untilAddress == address)
                     {
+                        list.Remove(it);
                         return true;
                     }
+                    it = it.Next;
                 }
             }
             request = null;
