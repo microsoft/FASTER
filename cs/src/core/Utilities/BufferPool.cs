@@ -123,12 +123,14 @@ namespace FASTER.core
     public sealed class SectorAlignedBufferPool
     {
         /// <summary>
-        /// Disable buffer pool
+        /// Disable buffer pool.
+        /// This static option should be enabled on program entry, and not modified once FASTER is instantiated.
         /// </summary>
         public static bool Disabled = false;
 
         /// <summary>
-        /// Unpin objects returned to the pool
+        /// Unpin objects when they are returned to the pool, so that we do not hold pinned objects long term. If set, we 
+        /// This static option should be enabled on program entry, and not modified once FASTER is instantiated.
         /// </summary>
         public static bool UnpinOnReturn = false;
 
