@@ -182,11 +182,6 @@ namespace FASTER.core
         /// automatically retried.
         /// </summary>
         /// <param name="k"> maximum number of commits that can be outstanding at a time </param>
-        /// <param name="autoRetry">
-        /// whether to automatically retry rejected commit requests later. If set to true, even when
-        /// a commit() returns false due to being limited, the tail as of that commit will eventually be committed
-        /// without the need to invoke commit() again.
-        /// </param>
         /// <returns> policy object </returns>
         public static IFasterLogCommitPolicy MaxParallelCommitStrategy(int k) => new MaxParallelCommitPolicy(k);
 

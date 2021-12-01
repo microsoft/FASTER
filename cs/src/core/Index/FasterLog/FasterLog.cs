@@ -17,7 +17,7 @@ namespace FASTER.core
     /// <summary>
     /// FASTER log
     /// </summary>
-    public sealed partial class FasterLog : IDisposable
+    public sealed partial class FasterLog
     {
         private readonly BlittableAllocator<Empty, byte> allocator;
         private readonly LightEpoch epoch;
@@ -519,6 +519,7 @@ namespace FASTER.core
         /// Proposal for the identifier to use for this commit, or -1 if the system should pick one. If supplied with
         /// a non -1 value, commit is guaranteed to have the supplied identifier if commit call is successful
         /// </param>
+        /// <param name="callback"> callback function that will be invoked when strong commit is persistent </param>
         /// <returns>Whether commit is successful </returns>
         public bool CommitStrongly(out long commitTail, out long actualCommitNum, bool spinWait = false, byte[] cookie = null, long proposedCommitNum = -1, Action callback = null)
         {
@@ -1072,7 +1073,7 @@ namespace FASTER.core
 
         private void WriteCommitMetadata(FasterLogRecoveryInfo recoveryInfo)
         {
-            // TODO(Tianyu): If fast commit, write this in separate thread?
+            // TODO: can change to write this in separate thread for fast commit
             logCommitManager.Commit(recoveryInfo.BeginAddress, recoveryInfo.UntilAddress,
                 recoveryInfo.ToByteArray(), recoveryInfo.CommitNum);
             // If not fast committing, set committed state as we commit metadata explicitly only after metadata commit
@@ -1138,7 +1139,7 @@ namespace FASTER.core
                 if (latestCommit.FastForwardAllowed) WriteCommitMetadata(latestCommit);
             }
 
-            // TODO(Tianyu): Can invoke earlier in the case of fast commit
+            // TODO: Can invoke earlier in the case of fast commit
             var _commitTcs = commitTcs;
             commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
             var lci = new LinkedCommitInfo
@@ -1717,6 +1718,8 @@ namespace FASTER.core
                     info.UntilAddress = commitTail = TailAddress;
                 }
 
+                Utility.MonotonicUpdate(ref commitCoveredAddress, commitTail, out _);
+                
                 commitPolicy.OnCommitCreated(info);
                 // Enqueue the commit record's content and offset into the queue so it can be picked up by the next flush
                 // At this point, we expect the commit record to be flushed out as a distinct recovery point
