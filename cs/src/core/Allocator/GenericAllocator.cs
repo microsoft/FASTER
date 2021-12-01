@@ -493,9 +493,6 @@ namespace FASTER.core
                         // need to write both page and object cache
                         Interlocked.Increment(ref asyncResult.count);
 
-                        if (asyncResult.flushCompletionTracker != null)
-                            Interlocked.Increment(ref asyncResult.flushCompletionTracker.count);
-
                         asyncResult.freeBuffer2 = _objBuffer;
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
