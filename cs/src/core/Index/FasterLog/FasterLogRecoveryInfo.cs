@@ -197,6 +197,9 @@ namespace FASTER.core
             return ms.ToArray();
         }
 
+        /// <summary>
+        /// </summary>
+        /// <returns> size of this recovery info serialized </returns>
         public int SerializedSize()
         {
             var iteratorSize = sizeof(int);
