@@ -130,7 +130,7 @@ namespace FASTER.core
         /// <summary>
         /// Unpin objects returned to the pool
         /// </summary>
-        public static bool UnpinOnReturn = true;
+        public static bool UnpinOnReturn = false;
 
         private const int levels = 32;
         private readonly int recordSize;
