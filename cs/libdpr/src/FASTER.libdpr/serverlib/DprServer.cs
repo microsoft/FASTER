@@ -137,7 +137,7 @@ namespace FASTER.libdpr
 
             // Can prune dependency information of committed versions
             var newCommitted = state.dprFinder.SafeVersion(state.me);
-            for (var i = lastCommitted + 1; i < newCommitted; i++)
+            for (var i = lastCommitted; i < newCommitted; i++)
                 stateObject.PruneVersion(i);
         }
 

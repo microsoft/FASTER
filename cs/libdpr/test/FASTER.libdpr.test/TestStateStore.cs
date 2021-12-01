@@ -74,7 +74,7 @@ namespace FASTER.libdpr
             dprServer = new DprServer<TestStateObject>(finder, me, stateObject);
         }
         
-        public void Process(Span<byte> dprHeader, Span<byte> response, (int, int) op)
+        public void Process(ReadOnlySpan<byte> dprHeader, Span<byte> response, (int, int) op)
         {
             ref var dprRequest =
                 ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(dprHeader));

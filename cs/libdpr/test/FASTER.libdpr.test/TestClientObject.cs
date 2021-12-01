@@ -27,7 +27,7 @@ namespace FASTER.libdpr
         {
             var buf = bufs.Checkout();
             var worker =  new Worker(workerId);
-            session.IssueBatch(1, worker, out var bytes);
+            session.IssueBatch(worker, out var bytes);
             var op = ValueTuple.Create(id, seqCounter++);
             stateStores[worker].Process(bytes, new Span<byte>(buf), op);
             responses.Add(op.Item2, buf);
