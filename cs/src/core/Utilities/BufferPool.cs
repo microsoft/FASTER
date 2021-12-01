@@ -129,7 +129,8 @@ namespace FASTER.core
         public static bool Disabled = false;
 
         /// <summary>
-        /// Unpin objects when they are returned to the pool, so that we do not hold pinned objects long term. If set, we will unpin when objects are returned and re-pin when objects are returned from the pool.
+        /// Unpin objects when they are returned to the pool, so that we do not hold pinned objects long term.
+        /// If set, we will unpin when objects are returned and re-pin when objects are returned from the pool.
         /// This static option should be enabled on program entry, and not modified once FASTER is instantiated.
         /// </summary>
         public static bool UnpinOnReturn = false;
