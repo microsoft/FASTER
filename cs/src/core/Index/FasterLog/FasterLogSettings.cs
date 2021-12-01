@@ -102,6 +102,9 @@ namespace FASTER.core
         /// </summary>
         public bool RemoveOutdatedCommitFiles = true;
 
+        /// <summary>
+        /// CommitPolicy that influences the behavior of Commit() calls, or null if default.
+        /// </summary>
         public IFasterLogCommitPolicy CommitPolicy = null;
 
         internal LogSettings GetLogSettings()
