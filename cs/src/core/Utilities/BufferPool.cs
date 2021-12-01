@@ -127,6 +127,11 @@ namespace FASTER.core
         /// </summary>
         public static bool Disabled = false;
 
+        /// <summary>
+        /// Unpin objects returned to the pool
+        /// </summary>
+        public static bool UnpinOnReturn = true;
+
         private const int levels = 32;
         private readonly int recordSize;
         private readonly int sectorSize;
@@ -164,7 +169,14 @@ namespace FASTER.core
             page.valid_offset = 0;
             Array.Clear(page.buffer, 0, page.buffer.Length);
             if (!Disabled)
+            {
+                if (UnpinOnReturn)
+                {
+                    page.handle.Free();
+                    page.handle = default;
+                }
                 queue[page.level].Enqueue(page);
+            }
             else
             {
                 page.handle.Free();
@@ -210,6 +222,12 @@ namespace FASTER.core
 
             if (!Disabled && queue[index].TryDequeue(out SectorAlignedMemory page))
             {
+                if (UnpinOnReturn)
+                {
+                    page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
+                    page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
+                    page.offset = (int)((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
+                }
                 return page;
             }
 
@@ -239,7 +257,8 @@ namespace FASTER.core
                 if (queue[i] == null) continue;
                 while (queue[i].TryDequeue(out SectorAlignedMemory result))
                 {
-                    result.handle.Free();
+                    if (!UnpinOnReturn)
+                        result.handle.Free();
                     result.buffer = null;
                 }
             }
