@@ -201,10 +201,9 @@ namespace FASTER.test
                         AssertIsLocked(manualOps, resultKey, lockInfo.Address, xlock: true, slock: false, stub: initialDestWillBeStub);
 
                         // Re-get source values, to verify (e.g. they may be in readcache now)
-                        int value24 = -1, value51 = -1;
-                        status = manualOps.Read(24, out value24);
+                        status = manualOps.Read(24, out var value24);
                         Assert.AreNotEqual(Status.PENDING, status);
-                        status = manualOps.Read(51, out value51);
+                        status = manualOps.Read(51, out var value51);
                         Assert.AreNotEqual(Status.PENDING, status);
 
                         // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks

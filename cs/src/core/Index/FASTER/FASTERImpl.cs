@@ -251,7 +251,16 @@ namespace FASTER.core
                 pendingContext.logicalAddress = logicalAddress;
                 ref Value recordValue = ref hlog.GetValue(physicalAddress);
 
-                if (recordInfo.Tombstone)
+                if (fasterSession.IsManualOperations && recordInfo.Stub)
+                {
+                    // This is only for ManualFasterOperations, and we assume we hold this lock, but we should not be reading or (un)locking a Stub (we should promote or Delete).
+                    return OperationStatus.NOTFOUND;
+                }
+                else if (IsIntermediate(ref pendingContext.recordInfo, useStartAddress))
+                {
+                    return RetryOnIntermediateRecord<Input, Output, Context, FasterSession>(ref recordInfo, ref key, ref hlog.GetValue(physicalAddress), fasterSession);
+                }
+                else if (recordInfo.Tombstone)
                 {
                     if (fasterSession.IsManualOperations && pendingContext.lockOperation.IsSet)
                     {
@@ -260,7 +269,9 @@ namespace FASTER.core
                     }
                 }
                 else if (fasterSession.ConcurrentReader(ref key, ref input, ref recordValue, ref output, ref pendingContext.lockOperation, ref recordInfo, logicalAddress))
+                {
                     return OperationStatus.SUCCESS;
+                }
                 return OperationStatus.NOTFOUND;
             }
 
@@ -270,10 +281,17 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 pendingContext.recordInfo = recordInfo;
                 pendingContext.logicalAddress = logicalAddress;
-                if (IsIntermediate(ref pendingContext.recordInfo, useStartAddress))
-                    return RetryOnIntermediateRecord<Input, Output, Context, FasterSession>(ref recordInfo, ref key, ref hlog.GetValue(physicalAddress), fasterSession);
 
-                if (recordInfo.Tombstone)
+                if (fasterSession.IsManualOperations && recordInfo.Stub)
+                {
+                    // This is only for ManualFasterOperations, and we assume we hold this lock, but we should not be reading or (un)locking a Stub (we should promote or Delete).
+                    return OperationStatus.NOTFOUND;
+                }
+                else if (IsIntermediate(ref pendingContext.recordInfo, useStartAddress))
+                {
+                    return RetryOnIntermediateRecord<Input, Output, Context, FasterSession>(ref recordInfo, ref key, ref hlog.GetValue(physicalAddress), fasterSession);
+                }
+                else if (recordInfo.Tombstone)
                 {
                     if (fasterSession.IsManualOperations && pendingContext.lockOperation.IsSet)
                     {
@@ -463,6 +481,7 @@ namespace FASTER.core
                     {
                         // This is only for ManualFasterOperations, and we assume we hold this lock. We will need to transfer the lock to the updated record.
                         stubPhysicalAddress = physicalAddress;
+                        status = OperationStatus.SUCCESS;
                         goto CreateNewRecord;
                     }
                     ref Value recordValue = ref hlog.GetValue(physicalAddress);
@@ -532,6 +551,7 @@ namespace FASTER.core
                             status = OperationStatus.SUCCESS;
                             goto LatchRelease; // Release shared latch (if acquired)
                         }
+                        goto CreateNewRecord;
                     }
                     else
                     {
@@ -550,6 +570,7 @@ namespace FASTER.core
                         // ConcurrentWriter failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
                         if (!SealRecord<Input, Output, Context, FasterSession>(ref recordInfo, ref key, ref recordValue, fasterSession))
                             return OperationStatus.RETRY_NOW;
+                        goto CreateNewRecord;
                     }
                 }
                 else if (fasterSession.IsManualOperations)
@@ -563,10 +584,18 @@ namespace FASTER.core
                         pendingContext.logicalAddress = logicalAddress;
                         status = OperationStatus.SUCCESS;
 
-                        if (pendingContext.lockOperation.IsSet)
+                        if (!recordInfo.Stub)
                         {
-                            fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref pendingContext.lockOperation, ref recordInfo, logicalAddress);
-                            goto LatchRelease; // Release shared latch (if acquired)
+                            if (pendingContext.lockOperation.IsSet)
+                            {
+                                fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref pendingContext.lockOperation, ref recordInfo, logicalAddress);
+                                goto LatchRelease; // Release shared latch (if acquired)
+                            }
+                            else if (IsIntermediate(ref recordInfo))
+                            {
+                                status = RetryOnIntermediateRecord<Input, Output, Context, FasterSession>(ref recordInfo, ref key, ref recordValue, fasterSession);
+                                goto LatchRelease; // Release shared latch (if acquired)
+                            }
                         }
 
                         // This ManualOps instance already owns this lock, or we wouldn't be here. Create a new record and transfer the lock
@@ -930,7 +959,7 @@ namespace FASTER.core
                 }
 
                 // Fuzzy Region: Must go pending due to lost-update anomaly
-                else if (!fasterSession.IsManualOperations && (logicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone)) // TODO replace with Sealed
+                else if (logicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone) // TODO replace with Sealed
                 {
                     status = OperationStatus.RETRY_LATER;
                     // Do not retain latch for pendings ops in relaxed CPR
@@ -1376,7 +1405,7 @@ namespace FASTER.core
                 if (fasterSession.IsManualOperations && recordInfo.Stub)
                 {
                     // This is only for ManualFasterOperations, and we assume we hold this lock. We can Tombstone the record directly and ManualsOps
-                    // will also clear Stub. Caller must still unlock.
+                    // will also clear Stub. Caller (ManualOps) must still unlock.
                     fasterSession.ConcurrentDeleter(ref hlog.GetKey(physicalAddress), ref recordValue, ref recordInfo, logicalAddress);
                     status = OperationStatus.SUCCESS;
                     goto LatchRelease; // Release shared latch (if acquired)
@@ -1813,8 +1842,6 @@ namespace FASTER.core
                                tombstone: false, dirty: true,
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
-
-                // TODO lockcache, LockOps
 
                 // Populate the new record
                 if ((request.logicalAddress < hlog.BeginAddress) || hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone)
