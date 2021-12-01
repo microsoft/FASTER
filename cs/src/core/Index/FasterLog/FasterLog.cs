@@ -1680,12 +1680,12 @@ namespace FASTER.core
             info.SnapshotIterators(PersistedIterators);
             var metadataChanged = ShouldCommmitMetadata(ref info);
             // Only apply commit policy if not a strong commit
-            if (!fastForwardAllowed && !commitPolicy.AdmitCommit(TailAddress, metadataChanged))
+            if (fastForwardAllowed && !commitPolicy.AdmitCommit(TailAddress, metadataChanged))
                 return false;
 
             lock (ongoingCommitRequests)
             {
-                if (commitCoveredAddress == TailAddress && metadataChanged)
+                if (commitCoveredAddress == TailAddress && !metadataChanged)
                     // Nothing to commit if no metadata update and no new entries
                     return false;
                 // Make sure we will not be allowed to back out of a commit of AdmitCommit returns true, as the strategy
