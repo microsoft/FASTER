@@ -11,7 +11,7 @@ namespace FasterServerOptions
         [Option("port", Required = false, Default = 3278, HelpText = "Port to run server on")]
         public int Port { get; set; }
 
-        [Option("bind", Required = false, Default = "127.0.0.1", HelpText = "IP address to bind server to")]
+        [Option("bind", Required = false, Default = null, HelpText = "IP address to bind server to (default: any)")]
         public string Address { get; set; }
 
         [Option('m', "memory", Required = false, Default = "16g", HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
