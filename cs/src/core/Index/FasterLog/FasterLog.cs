@@ -213,6 +213,13 @@ namespace FASTER.core
             if (disposeLogCommitManager)
                 logCommitManager.Dispose();
         }
+        
+        public void ResolveCommitFailure(CommitFailureException failure)
+        {
+            // Create a new commitTcs only if the failure status changed
+            if (Interlocked.CompareExchange(ref cannedException, null, failure) == failure)
+                commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
 
         #region Enqueue
         /// <summary>

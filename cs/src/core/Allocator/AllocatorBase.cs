@@ -221,11 +221,7 @@ namespace FASTER.core
         /// Whether to preallocate log on initialization
         /// </summary>
         private readonly bool PreallocateLog = false;
-
-        /// <summary>
-        /// Error handling
-        /// </summary>
-        private readonly ErrorList errorList = new();
+        
 
         /// <summary>
         /// Observer for records entering read-only region
@@ -1407,25 +1403,15 @@ namespace FASTER.core
             {
                 if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
                 {
-                    uint errorCode = 0;
-                    if (errorList.Count > 0)
-                    {
-                        errorCode = errorList.CheckAndWait(oldFlushedUntilAddress, currentFlushedUntilAddress);
-                    }
                     FlushCallback?.Invoke(
                         new CommitInfo
                         {
                             FromAddress = oldFlushedUntilAddress,
                             UntilAddress = currentFlushedUntilAddress,
-                            ErrorCode = errorCode
+                            ErrorCode = 0
                         });
 
                     this.FlushEvent.Set();
-
-                    if (errorList.Count > 0)
-                    {
-                        errorList.RemoveUntil(currentFlushedUntilAddress);
-                    }
 
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
                     {
@@ -1940,12 +1926,29 @@ namespace FASTER.core
 
                 if (Interlocked.Decrement(ref result.count) == 0)
                 {
-                    if (errorCode != 0)
+                    if (errorCode == 0)
                     {
-                        errorList.Add(result.fromAddress, errorCode);
+                        Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
+                        ShiftFlushedUntilAddress();
                     }
-                    Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
-                    ShiftFlushedUntilAddress();
+                    else
+                    {
+                        // Otherwise, immediately invoke callback with error --- this is ok to do out-of-order because we are not updating flushed until address
+                        
+                        if (FlushCallback == null)
+                        {
+                            Trace.TraceError($"No flush callback registered to handle ASyncFlushPageCallback error: {errorCode}");
+                        }
+                        // TODO(Tianyu): should we enforce that FlushCallback is not null to discourage ignoring errors?
+                        FlushCallback?.Invoke(
+                            new CommitInfo
+                            {
+                                FromAddress = result.fromAddress,
+                                UntilAddress = result.untilAddress,
+                                ErrorCode = errorCode
+                            });
+                    }
+
                     result.Free();
                 }
 
