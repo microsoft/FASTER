@@ -21,7 +21,7 @@ namespace FASTER.test
         {
             // Get an excruciatingly slow storage device to maximize chance of clogging the flush pipeline
             device = new LocalMemoryDevice(1L << 28, 1 << 28, 2, sector_size: 512, latencyMs: 50, fileName: "stress.log");
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager};
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager, SegmentSizeBits = 28};
             log = new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
