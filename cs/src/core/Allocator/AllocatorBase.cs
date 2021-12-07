@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -49,7 +50,7 @@ namespace FASTER.core
         /// </summary>
         protected readonly LightEpoch epoch;
         private readonly bool ownedEpoch;
-
+        
         /// <summary>
         /// Comparer
         /// </summary>
@@ -113,6 +114,7 @@ namespace FASTER.core
         /// HeadOFfset lag address
         /// </summary>
         internal long HeadOffsetLagAddress;
+        
 
         /// <summary>
         /// Log mutable fraction
@@ -222,6 +224,10 @@ namespace FASTER.core
         /// </summary>
         private readonly bool PreallocateLog = false;
         
+        /// <summary>
+        /// Error handling
+        /// </summary>
+        private readonly ErrorList errorList = new();
 
         /// <summary>
         /// Observer for records entering read-only region
@@ -1387,6 +1393,7 @@ namespace FASTER.core
         protected void ShiftFlushedUntilAddress()
         {
             long currentFlushedUntilAddress = FlushedUntilAddress;
+
             long page = GetPage(currentFlushedUntilAddress);
 
             bool update = false;
@@ -1401,6 +1408,7 @@ namespace FASTER.core
 
             if (update)
             {
+                // Anything here must be valid flushes because error flushes do not set LastFlushedUntilAddress.
                 if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
                 {
                     FlushCallback?.Invoke(
@@ -1417,6 +1425,17 @@ namespace FASTER.core
                     {
                         notifyFlushedUntilAddressSemaphore.Release();
                     }
+                }
+            }
+            
+            if (!errorList.Empty)
+            {
+                var info = errorList.PopEarliestError();
+                if (info.FromAddress == FlushedUntilAddress)
+                {
+                    // all requests before error range has finished successfully -- this is the earliest error and we
+                    // can invoke callback on it.
+                    FlushCallback?.Invoke(info);
                 }
             }
         }
@@ -1926,29 +1945,18 @@ namespace FASTER.core
 
                 if (Interlocked.Decrement(ref result.count) == 0)
                 {
-                    if (errorCode == 0)
+                    if (errorCode != 0)
                     {
-                        Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
-                        ShiftFlushedUntilAddress();
+                        errorList.Add(new CommitInfo { FromAddress =  result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode } );
                     }
                     else
                     {
-                        // Otherwise, immediately invoke callback with error --- this is ok to do out-of-order because we are not updating flushed until address
-                        
-                        if (FlushCallback == null)
-                        {
-                            Trace.TraceError($"No flush callback registered to handle ASyncFlushPageCallback error: {errorCode}");
-                        }
-                        // TODO(Tianyu): should we enforce that FlushCallback is not null to discourage ignoring errors?
-                        FlushCallback?.Invoke(
-                            new CommitInfo
-                            {
-                                FromAddress = result.fromAddress,
-                                UntilAddress = result.untilAddress,
-                                ErrorCode = errorCode
-                            });
+                        Utility.MonotonicUpdate(
+                            ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress,
+                            result.untilAddress, out _);
                     }
 
+                    ShiftFlushedUntilAddress();
                     result.Free();
                 }
 

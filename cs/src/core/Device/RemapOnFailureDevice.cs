@@ -14,19 +14,18 @@ namespace FASTER.core
         uint SectorSize();
 
         long Capacity();
-        
+
         IDevice CreateNewMappedRegion(long startAddress);
-
-        void SealLastMappedRegion(long endAddress);
-
+        
         IEnumerable<(long, IDevice)> ListMappedRegions();
     }
-    
+
     public class RemapOnFailureDevice : StorageDeviceBase
     {
         private IRemapScheme remapScheme;
         private SimpleVersionScheme simpleVersionScheme;
         private List<(long, IDevice)> existingMappedRegions;
+        private int outstandingRequests = 0;
 
         private class MappedRegionComparer : IComparer<(long, IDevice)>
         {
@@ -35,7 +34,8 @@ namespace FASTER.core
 
         private MappedRegionComparer comparer = new MappedRegionComparer();
 
-        public RemapOnFailureDevice(IRemapScheme remapScheme) : base(remapScheme.BaseName(), remapScheme.SectorSize(), remapScheme.Capacity())
+        public RemapOnFailureDevice(IRemapScheme remapScheme) : base(remapScheme.BaseName(), remapScheme.SectorSize(),
+            remapScheme.Capacity())
         {
             this.remapScheme = remapScheme;
             simpleVersionScheme = new SimpleVersionScheme();
@@ -46,7 +46,7 @@ namespace FASTER.core
                 existingMappedRegions.Add((0, remapScheme.CreateNewMappedRegion(0)));
         }
 
-        
+
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
             // TODO(Tianyu): Assumes that removing segment implicitly deletes every previous segments
@@ -54,8 +54,9 @@ namespace FASTER.core
 
             var removalStartAddress = segment << segmentSizeBits;
             var removalEndAddress = (segment + 1) << segmentSizeBits;
-            
+
             simpleVersionScheme.Enter();
+            Interlocked.Increment(ref outstandingRequests);
             var startIndex = existingMappedRegions.BinarySearch((removalStartAddress, null), comparer);
             if (startIndex < 0) startIndex = ~startIndex - 1;
 
@@ -79,7 +80,8 @@ namespace FASTER.core
                             {
                                 callback(ar);
                                 countdown.Dispose();
-                            } 
+                                Interlocked.Decrement(ref outstandingRequests);
+                            }
                         }, result);
                     continue;
                 }
@@ -99,13 +101,15 @@ namespace FASTER.core
                             {
                                 callback(ar);
                                 countdown.Dispose();
-                            } 
+                                Interlocked.Decrement(ref outstandingRequests);
+                            }
                         }, result);
                 }
                 else
                 {
                     Debug.Assert(translatedStartSegment == translatedEndSegment);
-                    if (translatedRemovalEnd % SegmentSize == 0 && ((ulong) translatedRemovalEnd & segmentSizeMask) == 0)
+                    if (translatedRemovalEnd % SegmentSize == 0 &&
+                        ((ulong) translatedRemovalEnd & segmentSizeMask) == 0)
                     {
                         // Special case where mapped region's segments and logical device segments align, can issue delete straight away
                         countdown.AddCount();
@@ -116,7 +120,8 @@ namespace FASTER.core
                                 {
                                     callback(ar);
                                     countdown.Dispose();
-                                } 
+                                    Interlocked.Decrement(ref outstandingRequests);
+                                }
                             }, result);
                     }
                     // Otherwise, cannot safely delete
@@ -128,18 +133,21 @@ namespace FASTER.core
             {
                 callback(result);
                 countdown.Dispose();
+                Interlocked.Decrement(ref outstandingRequests);
             }
         }
 
-        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress,
+            uint numBytesToWrite,
             DeviceIOCompletionCallback callback, object context)
         {
             var countdown = new CountdownEvent(1);
-            var startAddress =  (segmentId << segmentSizeBits) + (long) destinationAddress;
+            var startAddress = (segmentId << segmentSizeBits) + (long) destinationAddress;
             var endAddress = startAddress + numBytesToWrite;
             Debug.Assert(endAddress < (segmentId + 1) << segmentSizeBits);
-            
+
             simpleVersionScheme.Enter();
+            Interlocked.Increment(ref outstandingRequests);
             var i = existingMappedRegions.BinarySearch((startAddress, null), comparer);
             if (i < 0) i = ~i - 1;
             uint writtenBytes = 0;
@@ -153,24 +161,28 @@ namespace FASTER.core
                 var bytesToWrite = Math.Min(spaceLeft, numBytesToWrite - writtenBytes);
                 countdown.AddCount();
                 existingMappedRegions[i].Item2
-                    .WriteAsync(IntPtr.Add(sourceAddress, (int) writtenBytes), (int) startAddressOnMappedRegion >> segmentSizeBits, 
+                    .WriteAsync(IntPtr.Add(sourceAddress, (int) writtenBytes),
+                        (int) startAddressOnMappedRegion >> segmentSizeBits,
                         (ulong) startAddressOnMappedRegion & segmentSizeMask, (uint) bytesToWrite, (e, n, o) =>
-                    {
-                        if (e != 0) aggregateErrorCode = e;
-                        if (countdown.Signal())
                         {
-                            callback(aggregateErrorCode, n, o);
-                            countdown.Dispose();
-                        } 
-                    }, context);
+                            if (e != 0) aggregateErrorCode = e;
+                            if (countdown.Signal())
+                            {
+                                callback(aggregateErrorCode, n, o);
+                                countdown.Dispose();
+                                Interlocked.Decrement(ref outstandingRequests);
+                            }
+                        }, context);
                 writtenBytes += (uint) bytesToWrite;
             }
+
             simpleVersionScheme.Leave();
 
             if (countdown.Signal())
             {
                 callback(aggregateErrorCode, numBytesToWrite, context);
                 countdown.Dispose();
+                Interlocked.Decrement(ref outstandingRequests);
             }
         }
 
@@ -178,11 +190,12 @@ namespace FASTER.core
             DeviceIOCompletionCallback callback, object context)
         {
             var countdown = new CountdownEvent(1);
-            var startAddress =  (segmentId << segmentSizeBits) + (long) destinationAddress;
+            var startAddress = (segmentId << segmentSizeBits) + (long) destinationAddress;
             var endAddress = startAddress + readLength;
             Debug.Assert(endAddress < (segmentId + 1) << segmentSizeBits);
-            
+
             simpleVersionScheme.Enter();
+            Interlocked.Increment(ref outstandingRequests);
             var i = existingMappedRegions.BinarySearch((startAddress, null), comparer);
             if (i < 0) i = ~i - 1;
             uint bytesRead = 0;
@@ -196,24 +209,28 @@ namespace FASTER.core
                 var bytesToRead = Math.Min(bytesLeft, readLength - bytesRead);
                 countdown.AddCount();
                 existingMappedRegions[i].Item2
-                    .ReadAsync((int) startAddressOnMappedRegion >> segmentSizeBits, 
-                        (ulong) startAddressOnMappedRegion & segmentSizeMask, IntPtr.Add(destinationAddress, (int) bytesRead), (uint) bytesToRead, (e, n, o) =>
+                    .ReadAsync((int) startAddressOnMappedRegion >> segmentSizeBits,
+                        (ulong) startAddressOnMappedRegion & segmentSizeMask,
+                        IntPtr.Add(destinationAddress, (int) bytesRead), (uint) bytesToRead, (e, n, o) =>
                         {
                             if (e != 0) aggregateErrorCode = e;
                             if (countdown.Signal())
                             {
                                 callback(aggregateErrorCode, n, o);
                                 countdown.Dispose();
-                            } 
+                                Interlocked.Decrement(ref outstandingRequests);
+                            }
                         }, context);
                 bytesRead += (uint) bytesToRead;
             }
+
             simpleVersionScheme.Leave();
 
             if (countdown.Signal())
             {
                 callback(aggregateErrorCode, readLength, context);
                 countdown.Dispose();
+                Interlocked.Decrement(ref outstandingRequests);
             }
         }
 
@@ -222,7 +239,7 @@ namespace FASTER.core
             remapScheme.Dispose();
         }
 
-        public void HandleWriteError(CommitFailureException exception, Action beforeNewMappedRegion)
+        public void HandleWriteError(CommitFailureException exception, Action repairAction)
         {
             var sealLocation = exception.LinkedCommitInfo.CommitInfo.FromAddress;
             ManualResetEventSlim resetEvent = new ManualResetEventSlim();
@@ -230,9 +247,9 @@ namespace FASTER.core
             {
                 // Can only seal the last segment
                 Debug.Assert(sealLocation > existingMappedRegions[existingMappedRegions.Count - 1].Item1);
-                remapScheme.SealLastMappedRegion(sealLocation);
-                beforeNewMappedRegion();
+                while (outstandingRequests != 0) Thread.Yield();
                 existingMappedRegions.Add((sealLocation, remapScheme.CreateNewMappedRegion(sealLocation)));
+                repairAction();
                 resetEvent.Set();
             });
             resetEvent.Wait();
