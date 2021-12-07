@@ -273,7 +273,7 @@ namespace FASTER.core
                                                     (uint)(shardEndAddress - shardStartAddress),
                                                     (e, n, o) =>
                                                     {
-                                                        // TODO: this is incorrect if returned "bytes" written is allowed to be less than requested like POSIX.
+                                                        // TODO: this is incorrect if returned "bytes" written is allo`wed to be less than requested like POSIX.
                                                         if (e != 0) aggregateErrorCode = e;
                                                         if (countdown.Signal())
                                                         {

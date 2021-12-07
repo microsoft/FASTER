@@ -91,6 +91,7 @@ namespace FASTER.core
 
             // Any thread that sees ev will be in v + 1, because the bump happens only after ev is set. 
             var original = version;
+            epoch.Resume();
             epoch.BumpCurrentEpoch(() =>
             {
                 version = targetVersion == -1 ? version + 1 : targetVersion;
@@ -98,6 +99,7 @@ namespace FASTER.core
                 versionChanged.Set();
                 versionChanged = null;
             });
+            epoch.Suspend();
             return true;
         }
     }
