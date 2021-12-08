@@ -301,7 +301,7 @@ namespace FASTER.server
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header
             *(int*)networkSender.GetResponseObjectHead()= -(payloadSize - sizeof(int));
-            networkSender.SendResponse(payloadSize);
+            networkSender.SendResponse(0, payloadSize);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -341,7 +341,7 @@ namespace FASTER.server
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header
             *(int*)networkSender.GetResponseObjectHead() = -(payloadSize - sizeof(int));
-            networkSender.SendResponse(payloadSize);
+            networkSender.SendResponse(0, payloadSize);
         }
 
         private bool HandlePubSub(MessageType message, ref byte* src, ref byte* d, ref byte* dend)

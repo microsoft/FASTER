@@ -93,25 +93,10 @@ namespace FASTER.common
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public override void SendResponse(int size)
+        public override bool SendResponse(int offset, int size)
         {
             var _r = responseObject;
-            responseObject = null;
-            try
-            {
-                Send(socket, _r, 0, size);
-            }
-            catch
-            {
-                reusableSeaaBuffer.Return(_r);
-            }
-        }
-
-        /// <inheritdoc />
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public override void SendResponse(int offset, int size)
-        {
-            var _r = responseObject;
+            if (_r == null) return false;
             responseObject = null;
             try
             {
@@ -119,8 +104,10 @@ namespace FASTER.common
             }
             catch
             {
-                reusableSeaaBuffer.Return(_r);                
+                reusableSeaaBuffer.Return(_r);
+                return false;
             }
+            return true;
         }
 
         /// <inheritdoc />

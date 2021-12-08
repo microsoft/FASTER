@@ -56,7 +56,7 @@ namespace FASTER.server
         public override unsafe int TryConsumeMessages(byte* req_buf, int bytesReceived)
         {
             recvBufferPtr = req_buf;
-            while (TryReadMessages(req_buf, out var offset))
+            while (TryReadMessages(out var offset))
             {
                 bool completeWSCommand = ProcessBatch(req_buf, bytesReceived, offset);
                 if (!completeWSCommand)
@@ -114,7 +114,7 @@ namespace FASTER.server
             CreateSendPacketHeader(ref d, packetLen);
         }
 
-        private bool TryReadMessages(byte* buf, out int offset)
+        private bool TryReadMessages(out int offset)
         {
             offset = default;
 
@@ -304,10 +304,12 @@ namespace FASTER.server
                         nextBufOffset += 8;
                     }
 
-                    var nextDecoderInfo = new Decoder();
-                    nextDecoderInfo.msgLen = nextMsgLen;
-                    nextDecoderInfo.maskStart = nextBufOffset;
-                    nextDecoderInfo.dataStart = nextBufOffset + 4;
+                    var nextDecoderInfo = new Decoder
+                    {
+                        msgLen = nextMsgLen,
+                        maskStart = nextBufOffset,
+                        dataStart = nextBufOffset + 4
+                    };
                     decoderInfoList.Add(nextDecoderInfo);
                     totalMsgLen += nextMsgLen;
                     offset += 4;
@@ -615,7 +617,7 @@ namespace FASTER.server
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header
             *(int*)networkSender.GetResponseObjectHead() = -(payloadSize - sizeof(int));
-            networkSender.SendResponse(payloadSize);
+            networkSender.SendResponse(0, payloadSize);
         }
 
 

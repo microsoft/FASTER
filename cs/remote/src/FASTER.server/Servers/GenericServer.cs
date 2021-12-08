@@ -61,7 +61,7 @@ namespace FASTER.server
             // Create session provider for VarLen
             provider = new FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer>(functionsGen, store, serializer, kvBroker, broker, opts.Recover, maxSizeSettings);
 
-            server = new TcpServer(opts.Address, opts.Port);
+            server = new FasterServerTcp(opts.Address, opts.Port);
             server.Register(WireFormat.DefaultFixedLenKV, provider);
         }
 

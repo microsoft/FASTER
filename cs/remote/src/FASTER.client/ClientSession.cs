@@ -289,7 +289,7 @@ namespace FASTER.client
                 // Set packet size in header
                 *(int*)networkSender.GetResponseObjectHead() = -(payloadSize - sizeof(int));
 
-                networkSender.SendResponse(payloadSize);
+                networkSender.SendResponse(0, payloadSize);
                 networkSender.GetResponseObject();
                 offset = networkSender.GetResponseObjectHead() + sizeof(int) + BatchHeader.Size;
                 numMessages = 0;

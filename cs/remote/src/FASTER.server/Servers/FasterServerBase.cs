@@ -20,7 +20,7 @@ namespace FASTER.server
 
         readonly string address;
         readonly int port;
-        int networkBufferSize;
+        readonly int networkBufferSize;
 
         /// <summary>
         /// Server Address

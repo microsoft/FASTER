@@ -39,17 +39,12 @@ namespace FASTER.common
         unsafe byte* GetResponseObjectTail();
 
         /// <summary>
-        /// Send payload stored at response object of from head ptr to ptr + size
+        /// Send payload stored at response object, from offset to offset + size
         /// </summary>
-        /// <param name="size"></param>
-        void SendResponse(int size);
-
-        /// <summary>
-        /// Send payload stored at response object of from head ptr + offset to ptr + offset + size
-        /// </summary>
-        /// <param name="offset"></param>
-        /// <param name="size"></param>
-        void SendResponse(int offset, int size);
+        /// <param name="offset">Offset of response from which to start sending</param>
+        /// <param name="size">Number of bytes to send, starting from offset</param>
+        /// <returns>Whether the send succeeded</returns>
+        bool SendResponse(int offset, int size);
 
         /// <summary>
         /// Dispose, optionally waiting for ongoing outgoing calls to complete

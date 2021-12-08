@@ -12,20 +12,20 @@ using FASTER.common;
 namespace FASTER.server
 {
     /// <summary>
-    /// TcpServer
+    /// FASTER server for TCP protocol
     /// </summary>
-    public class TcpServer : FasterServerBase
+    public class FasterServerTcp : FasterServerBase
     {        
         readonly SocketAsyncEventArgs acceptEventArg;
         readonly Socket servSocket;
 
         /// <summary>
-        /// 
+        /// Constructor for server
         /// </summary>
         /// <param name="address"></param>
         /// <param name="port"></param>
         /// <param name="networkBufferSize"></param>
-        public TcpServer(string address, int port, int networkBufferSize = default)
+        public FasterServerTcp(string address, int port, int networkBufferSize = default)
             : base(address, port, networkBufferSize)
         {            
             var ip = Address == null ? IPAddress.Any : IPAddress.Parse(Address);
@@ -202,7 +202,7 @@ namespace FASTER.server
             return true;
         }
 
-        private unsafe void ProcessRequest(SocketAsyncEventArgs e)
+        private static unsafe void ProcessRequest(SocketAsyncEventArgs e)
         {
             var connArgs = (ConnectionArgs)e.UserToken;
             connArgs.session.AddBytesRead(e.BytesTransferred);

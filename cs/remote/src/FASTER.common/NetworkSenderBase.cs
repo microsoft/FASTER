@@ -59,10 +59,7 @@ namespace FASTER.common
         public virtual unsafe byte* GetResponseObjectTail() { return null; }
 
         /// <inheritdoc />
-        public abstract void SendResponse(int size);
-
-        /// <inheritdoc />
-        public abstract void SendResponse(int offset, int size);
+        public abstract bool SendResponse(int offset, int size);
 
         /// <inheritdoc />
         public abstract void Dispose();
