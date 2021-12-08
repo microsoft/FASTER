@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -1967,6 +1966,31 @@ namespace FASTER.core
                 }
             }
             catch when (disposed) { }
+        }
+
+        public void UnsafeResetFlushStatus()
+        {
+            for (var i = 0; i < BufferSize; i++)
+            {
+                PageStatusIndicator[i].LastFlushedUntilAddress = FlushedUntilAddress;
+            }
+            errorList.ClearError();
+        }
+
+        public void UnsafeSkipLogTo(long untilAddress)
+        {
+            if (Utility.MonotonicUpdate(ref FlushedUntilAddress, untilAddress,
+                out long oldFlushedUntilAddress))
+            {
+                this.FlushEvent.Set();
+
+                if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (untilAddress >= notifyFlushedUntilAddress))
+                {
+                    notifyFlushedUntilAddressSemaphore.Release();
+                }
+                
+                errorList.TruncateUntil(untilAddress);
+            }
         }
 
         /// <summary>

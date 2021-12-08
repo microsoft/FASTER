@@ -3,12 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace FASTER.core
 {
     class ErrorList
     {
-        private readonly List<CommitInfo> errorList;
+        private List<CommitInfo> errorList;
 
         public ErrorList() => errorList = new();
 
@@ -41,9 +42,13 @@ namespace FASTER.core
         public void ClearError()
         {
             lock (errorList)
-            {
                 errorList.Clear();
-            }
+        }
+
+        public void TruncateUntil(long untilAddress)
+        {
+            lock (errorList)
+                errorList = errorList.FindAll(info => info.UntilAddress > untilAddress);
         }
 
         public bool Empty => errorList.Count == 0;

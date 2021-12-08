@@ -25,7 +25,7 @@ namespace FASTER.core
         private IRemapScheme remapScheme;
         private SimpleVersionScheme simpleVersionScheme;
         private List<(long, IDevice)> existingMappedRegions;
-        private int outstandingRequests = 0;
+        private int outstandingWriteRequests = 0;
 
         private class MappedRegionComparer : IComparer<(long, IDevice)>
         {
@@ -56,7 +56,7 @@ namespace FASTER.core
             var removalEndAddress = (segment + 1) << segmentSizeBits;
 
             simpleVersionScheme.Enter();
-            Interlocked.Increment(ref outstandingRequests);
+            Interlocked.Increment(ref outstandingWriteRequests);
             var startIndex = existingMappedRegions.BinarySearch((removalStartAddress, null), comparer);
             if (startIndex < 0) startIndex = ~startIndex - 1;
 
@@ -80,7 +80,7 @@ namespace FASTER.core
                             {
                                 callback(ar);
                                 countdown.Dispose();
-                                Interlocked.Decrement(ref outstandingRequests);
+                                Interlocked.Decrement(ref outstandingWriteRequests);
                             }
                         }, result);
                     continue;
@@ -101,7 +101,7 @@ namespace FASTER.core
                             {
                                 callback(ar);
                                 countdown.Dispose();
-                                Interlocked.Decrement(ref outstandingRequests);
+                                Interlocked.Decrement(ref outstandingWriteRequests);
                             }
                         }, result);
                 }
@@ -120,7 +120,7 @@ namespace FASTER.core
                                 {
                                     callback(ar);
                                     countdown.Dispose();
-                                    Interlocked.Decrement(ref outstandingRequests);
+                                    Interlocked.Decrement(ref outstandingWriteRequests);
                                 }
                             }, result);
                     }
@@ -133,7 +133,7 @@ namespace FASTER.core
             {
                 callback(result);
                 countdown.Dispose();
-                Interlocked.Decrement(ref outstandingRequests);
+                Interlocked.Decrement(ref outstandingWriteRequests);
             }
         }
 
@@ -147,7 +147,7 @@ namespace FASTER.core
             Debug.Assert(endAddress < (segmentId + 1) << segmentSizeBits);
 
             simpleVersionScheme.Enter();
-            Interlocked.Increment(ref outstandingRequests);
+            Interlocked.Increment(ref outstandingWriteRequests);
             var i = existingMappedRegions.BinarySearch((startAddress, null), comparer);
             if (i < 0) i = ~i - 1;
             uint writtenBytes = 0;
@@ -170,7 +170,7 @@ namespace FASTER.core
                             {
                                 callback(aggregateErrorCode, n, o);
                                 countdown.Dispose();
-                                Interlocked.Decrement(ref outstandingRequests);
+                                Interlocked.Decrement(ref outstandingWriteRequests);
                             }
                         }, context);
                 writtenBytes += (uint) bytesToWrite;
@@ -182,7 +182,7 @@ namespace FASTER.core
             {
                 callback(aggregateErrorCode, numBytesToWrite, context);
                 countdown.Dispose();
-                Interlocked.Decrement(ref outstandingRequests);
+                Interlocked.Decrement(ref outstandingWriteRequests);
             }
         }
 
@@ -195,7 +195,6 @@ namespace FASTER.core
             Debug.Assert(endAddress < (segmentId + 1) << segmentSizeBits);
 
             simpleVersionScheme.Enter();
-            Interlocked.Increment(ref outstandingRequests);
             var i = existingMappedRegions.BinarySearch((startAddress, null), comparer);
             if (i < 0) i = ~i - 1;
             uint bytesRead = 0;
@@ -218,7 +217,6 @@ namespace FASTER.core
                             {
                                 callback(aggregateErrorCode, n, o);
                                 countdown.Dispose();
-                                Interlocked.Decrement(ref outstandingRequests);
                             }
                         }, context);
                 bytesRead += (uint) bytesToRead;
@@ -230,7 +228,6 @@ namespace FASTER.core
             {
                 callback(aggregateErrorCode, readLength, context);
                 countdown.Dispose();
-                Interlocked.Decrement(ref outstandingRequests);
             }
         }
 
@@ -247,7 +244,9 @@ namespace FASTER.core
             {
                 // Can only seal the last segment
                 Debug.Assert(sealLocation > existingMappedRegions[existingMappedRegions.Count - 1].Item1);
-                while (outstandingRequests != 0) Thread.Yield();
+                // TODO(Tianyu): Maybe too strict?
+                // Wait until there are no ongoing write requests 
+                while (outstandingWriteRequests != 0) Thread.Yield();
                 existingMappedRegions.Add((sealLocation, remapScheme.CreateNewMappedRegion(sealLocation)));
                 repairAction();
                 resetEvent.Set();
