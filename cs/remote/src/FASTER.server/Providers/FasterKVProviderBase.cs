@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Net.Sockets;
 using FASTER.common;
 using FASTER.core;
 
@@ -81,7 +80,6 @@ namespace FASTER.server
         /// <inheritdoc />
         public virtual IServerSession GetSession(WireFormat wireFormat, INetworkSender networkSender)
         {
-            //INetworkSender networkSender = socket != null ? new TcpNetworkSender(socket, maxSizeSettings) : null;
             switch (wireFormat)
             {
                 case WireFormat.WebSocket:

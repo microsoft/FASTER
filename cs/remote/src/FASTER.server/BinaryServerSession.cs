@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using FASTER.common;
 using FASTER.core;
@@ -104,8 +103,6 @@ namespace FASTER.server
             if (bytesAvailable < sizeof(int)) return false;
 
             // MSB is 1 to indicate binary protocol
-            byte[] data = new byte[4];
-            data[0] = buf[0]; data[1] = buf[1]; data[2] = buf[2]; data[3] = buf[3];            
             var size = -(*(int*)buf);
 
             // Not all of the message has arrived

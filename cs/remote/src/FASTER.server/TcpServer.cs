@@ -1,13 +1,13 @@
-﻿using System.Net;
-using System.Net.Sockets;
-using System.Threading.Tasks;
-using FASTER.core;
-using FASTER.common;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using System;
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Collections.Concurrent;
-using System.Threading;
+using System.Threading.Tasks;
+using FASTER.common;
 
 namespace FASTER.server
 {

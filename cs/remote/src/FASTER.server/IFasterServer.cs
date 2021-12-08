@@ -1,6 +1,9 @@
-﻿using System;
-using FASTER.common;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+using System;
 using System.Collections.Concurrent;
+using FASTER.common;
 
 namespace FASTER.server
 {

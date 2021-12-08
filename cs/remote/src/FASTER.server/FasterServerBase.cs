@@ -1,9 +1,11 @@
-﻿using System.Collections.Concurrent;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using FASTER.common;
 using FASTER.core;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Threading;
 
 namespace FASTER.server
 {

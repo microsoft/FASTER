@@ -1,4 +1,6 @@
-﻿using System.Net.Sockets;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using FASTER.common;
 
 namespace FASTER.server

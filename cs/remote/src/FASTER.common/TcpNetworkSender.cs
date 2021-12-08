@@ -1,11 +1,13 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.common
 {
     /// <summary>
-    /// 
+    /// TCP network sender
     /// </summary>
     public class TcpNetworkSender : NetworkSenderBase
     {

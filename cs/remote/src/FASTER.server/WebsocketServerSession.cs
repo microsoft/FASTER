@@ -3,9 +3,7 @@
 
 using System;
 using System.Diagnostics;
-using System.Net.Sockets;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using FASTER.common;
