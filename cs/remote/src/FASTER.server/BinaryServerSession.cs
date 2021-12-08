@@ -23,31 +23,37 @@ namespace FASTER.server
         readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker;
         readonly SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker;
 
-
-        public BinaryServerSession(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings, SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker, SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker)
-            : base(socket, store, functions, null, serializer, maxSizeSettings)
+        public BinaryServerSession(
+            INetworkSender networkSender, 
+            FasterKV<Key, Value> store, 
+            Functions functions, 
+            ParameterSerializer serializer,            
+            SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker, 
+            SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker)
+            : base(networkSender, store, functions, null, serializer)
         {
             this.subscribeKVBroker = subscribeKVBroker;
             this.subscribeBroker = subscribeBroker;
 
             readHead = 0;
-
-            // Reserve minimum 4 bytes to send pending sequence number as output
-            if (this.maxSizeSettings.MaxOutputSize < sizeof(int))
-                this.maxSizeSettings.MaxOutputSize = sizeof(int);
+            
+            // Reserve minimum 4 bytes to send pending sequence number as output            
+            if(this.networkSender.GetMaxSizeSettings.MaxOutputSize < sizeof(int))
+                this.networkSender.GetMaxSizeSettings.MaxOutputSize = sizeof(int);
         }
 
-        public override int TryConsumeMessages(byte[] buf)
+        public override unsafe int TryConsumeMessages(byte* req_buf, int bytesReceived)
         {
-            while (TryReadMessages(buf, out var offset))
-                ProcessBatch(buf, offset);
+            while (TryReadMessages(req_buf, out var offset))
+                ProcessBatch(req_buf, offset);
 
             // The bytes left in the current buffer not consumed by previous operations
             var bytesLeft = bytesRead - readHead;
             if (bytesLeft != bytesRead)
             {
-                // Shift them to the head of the array so we can reset the buffer to a consistent state
-                Array.Copy(buf, readHead, buf, 0, bytesLeft);
+                // Shift them to the head of the array so we can reset the buffer to a consistent state                
+                if (bytesLeft > 0) 
+                    Buffer.MemoryCopy(req_buf + readHead, req_buf, bytesLeft, bytesLeft);
                 bytesRead = bytesLeft;
                 readHead = 0;
             }
@@ -57,10 +63,10 @@ namespace FASTER.server
 
         public override void CompleteRead(ref Output output, long ctx, Status status)
         {
-            byte* d = responseObject.bufferPtr;
-            var dend = d + responseObject.buffer.Length;
+            byte* d = networkSender.GetResponseObjectHead();
+            var dend = networkSender.GetResponseObjectTail();
 
-            if ((int)(dend - dcurr) < 7 + maxSizeSettings.MaxOutputSize)
+            if ((int)(dend - dcurr) < 7 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                 SendAndReset(ref d, ref dend);
 
             hrw.Write(MessageType.PendingResult, ref dcurr, (int)(dend - dcurr));
@@ -74,10 +80,10 @@ namespace FASTER.server
 
         public override void CompleteRMW(ref Output output, long ctx, Status status)
         {
-            byte* d = responseObject.bufferPtr;
-            var dend = d + responseObject.buffer.Length;
+            byte* d = networkSender.GetResponseObjectHead();
+            var dend = networkSender.GetResponseObjectTail();
 
-            if ((int)(dend - dcurr) < 7 + maxSizeSettings.MaxOutputSize)
+            if ((int)(dend - dcurr) < 7 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                 SendAndReset(ref d, ref dend);
 
             hrw.Write(MessageType.PendingResult, ref dcurr, (int)(dend - dcurr));
@@ -89,7 +95,7 @@ namespace FASTER.server
             msgnum++;
         }
 
-        private bool TryReadMessages(byte[] buf, out int offset)
+        private bool TryReadMessages(byte* buf, out int offset)
         {
             offset = default;
 
@@ -98,7 +104,10 @@ namespace FASTER.server
             if (bytesAvailable < sizeof(int)) return false;
 
             // MSB is 1 to indicate binary protocol
-            var size = -BitConverter.ToInt32(buf, readHead);
+            byte[] data = new byte[4];
+            data[0] = buf[0]; data[1] = buf[1]; data[2] = buf[2]; data[3] = buf[3];            
+            var size = -(*(int*)buf);
+
             // Not all of the message has arrived
             if (bytesAvailable < size + sizeof(int)) return false;
             offset = readHead + sizeof(int);
@@ -108,118 +117,115 @@ namespace FASTER.server
             return true;
         }
 
-
-        private unsafe void ProcessBatch(byte[] buf, int offset)
+        private unsafe void ProcessBatch(byte* buf, int offset)
         {
-            GetResponseObject();
+            networkSender.GetResponseObject();
 
-            fixed (byte* b = &buf[offset])
+            //fixed (byte* b = &buf[offset])
+            byte* b = buf + offset;
+            byte* d = networkSender.GetResponseObjectHead();
+            var dend = networkSender.GetResponseObjectTail();
+            dcurr = d + sizeof(int); // reserve space for size
+            int origPendingSeqNo = pendingSeqNo;
+
+            var src = b;
+            ref var header = ref Unsafe.AsRef<BatchHeader>(src);
+            var num = header.NumMessages;
+            src += BatchHeader.Size;
+            Status status = default;
+
+            dcurr += BatchHeader.Size;
+            start = 0;
+            msgnum = 0;
+
+            for (msgnum = 0; msgnum < num; msgnum++)
             {
-                byte* d = responseObject.bufferPtr;
-                var dend = d + responseObject.buffer.Length;
-                dcurr = d + sizeof(int); // reserve space for size
-                int origPendingSeqNo = pendingSeqNo;
-
-                var src = b;
-                ref var header = ref Unsafe.AsRef<BatchHeader>(src);
-                var num = header.NumMessages;
-                src += BatchHeader.Size;
-                Status status = default;
-
-                dcurr += BatchHeader.Size;
-                start = 0;
-                msgnum = 0;
-
-                for (msgnum = 0; msgnum < num; msgnum++)
+                var message = (MessageType)(*src++);
+                var serialNum = hrw.ReadSerialNum(ref src);
+                switch (message)
                 {
-                    var message = (MessageType)(*src++);
-                    var serialNum = hrw.ReadSerialNum(ref src);
-                    switch (message)
-                    {
-                        case MessageType.Upsert:
-                        case MessageType.UpsertAsync:
-                            if ((int)(dend - dcurr) < 2)
-                                SendAndReset(ref d, ref dend);
+                    case MessageType.Upsert:
+                    case MessageType.UpsertAsync:
+                        if ((int)(dend - dcurr) < 2)
+                            SendAndReset(ref d, ref dend);
 
-                            var keyPtr = src;
-                            status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src), serialNo: serialNum);
+                        var keyPtr = src;
+                        status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src), serialNo: serialNum);
 
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
+                        hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                        Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            subscribeKVBroker?.Publish(keyPtr);
-                            break;
+                        subscribeKVBroker?.Publish(keyPtr);
+                        break;
 
-                        case MessageType.Read:
-                        case MessageType.ReadAsync:
-                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
-                                SendAndReset(ref d, ref dend);
+                    case MessageType.Read:
+                    case MessageType.ReadAsync:
+                        if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
+                            SendAndReset(ref d, ref dend);
 
-                            long ctx = ((long)message << 32) | (long)pendingSeqNo;
-                            status = session.Read(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
-                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
+                        long ctx = ((long)message << 32) | (long)pendingSeqNo;
+                        status = session.Read(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
+                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
 
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
+                        hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                        Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            if (status == Status.PENDING)
-                                Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                            else if (status == Status.OK)
-                                serializer.SkipOutput(ref dcurr);
-                            break;
+                        if (status == Status.PENDING)
+                            Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
+                        else if (status == Status.OK)
+                            serializer.SkipOutput(ref dcurr);
+                        break;
 
-                        case MessageType.RMW:
-                        case MessageType.RMWAsync:
-                            if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
-                                SendAndReset(ref d, ref dend);
+                    case MessageType.RMW:
+                    case MessageType.RMWAsync:
+                        if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
+                            SendAndReset(ref d, ref dend);
 
-                            keyPtr = src;
+                        keyPtr = src;
 
-                            ctx = ((long)message << 32) | (long)pendingSeqNo;
-                            status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
-                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
+                        ctx = ((long)message << 32) | (long)pendingSeqNo;
+                        status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
+                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
 
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
-                            if (status == Status.PENDING)
-                                Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                            else if (status == Status.OK || status == Status.NOTFOUND)
-                                serializer.SkipOutput(ref dcurr);
+                        hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                        Write(ref status, ref dcurr, (int)(dend - dcurr));
+                        if (status == Status.PENDING)
+                            Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
+                        else if (status == Status.OK || status == Status.NOTFOUND)
+                            serializer.SkipOutput(ref dcurr);
 
-                            subscribeKVBroker?.Publish(keyPtr);
-                            break;
+                        subscribeKVBroker?.Publish(keyPtr);
+                        break;
 
-                        case MessageType.Delete:
-                        case MessageType.DeleteAsync:
-                            if ((int)(dend - dcurr) < 2)
-                                SendAndReset(ref d, ref dend);
+                    case MessageType.Delete:
+                    case MessageType.DeleteAsync:
+                        if ((int)(dend - dcurr) < 2)
+                            SendAndReset(ref d, ref dend);
 
-                            keyPtr = src;
-                            status = session.Delete(ref serializer.ReadKeyByRef(ref src), serialNo: serialNum);
+                        keyPtr = src;
+                        status = session.Delete(ref serializer.ReadKeyByRef(ref src), serialNo: serialNum);
 
-                            hrw.Write(message, ref dcurr, (int)(dend - dcurr));
-                            Write(ref status, ref dcurr, (int)(dend - dcurr));
+                        hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                        Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            subscribeKVBroker?.Publish(keyPtr);
-                            break;
+                        subscribeKVBroker?.Publish(keyPtr);
+                        break;
 
-                        default:
-                            if (!HandlePubSub(message, ref src, ref d, ref dend)) throw new NotImplementedException();
-                            break;
-                    }
+                    default:
+                        if (!HandlePubSub(message, ref src, ref d, ref dend)) throw new NotImplementedException();
+                        break;
                 }
+            }
 
-                if (origPendingSeqNo != pendingSeqNo)
-                    session.CompletePending(true);
+            if (origPendingSeqNo != pendingSeqNo)
+                session.CompletePending(true);
 
-                // Send replies
-                if (msgnum - start > 0)
-                    Send(d);
-                else
-                {
-                    messageManager.Return(responseObject);
-                    responseObject = null;
-                }
+            // Send replies
+            if (msgnum - start > 0)
+                Send(d);
+            else
+            {
+                networkSender.ReturnResponseObject();                
             }
         }
 
@@ -247,13 +253,13 @@ namespace FASTER.server
                 if (prefix)
                     message = MessageType.PSubscribe;
             }
-
-            var respObj = messageManager.GetReusableSeaaBuffer();
+            
+            networkSender.GetResponseObject();            
 
             ref Key key = ref serializer.ReadKeyByRef(ref keyPtr);
 
-            byte* d = respObj.bufferPtr;
-            var dend = d + respObj.buffer.Length;
+            byte* d = networkSender.GetResponseObjectHead();
+            var dend = networkSender.GetResponseObjectTail();
             var dcurr = d + sizeof(int); // reserve space for size
             byte* outputDcurr;
 
@@ -297,15 +303,8 @@ namespace FASTER.server
             Unsafe.AsRef<BatchHeader>(dstart).SeqNo = 0;
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header
-            *(int*)respObj.bufferPtr = -(payloadSize - sizeof(int));
-            try
-            {
-                messageManager.Send(socket, respObj, 0, payloadSize);
-            }
-            catch
-            {
-                messageManager.Return(respObj);
-            }
+            *(int*)networkSender.GetResponseObjectHead()= -(payloadSize - sizeof(int));
+            networkSender.SendResponse(payloadSize);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -329,9 +328,9 @@ namespace FASTER.server
         private void SendAndReset(ref byte* d, ref byte* dend)
         {
             Send(d);
-            GetResponseObject();
-            d = responseObject.bufferPtr;
-            dend = d + responseObject.buffer.Length;
+            networkSender.GetResponseObject();
+            d = networkSender.GetResponseObjectHead();
+            dend = networkSender.GetResponseObjectTail();            
             dcurr = d + sizeof(int);
             start = msgnum;
         }
@@ -344,8 +343,8 @@ namespace FASTER.server
             Unsafe.AsRef<BatchHeader>(dstart).SeqNo = seqNo++;
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header
-            *(int*)responseObject.bufferPtr = -(payloadSize - sizeof(int));
-            SendResponse(payloadSize);
+            *(int*)networkSender.GetResponseObjectHead() = -(payloadSize - sizeof(int));
+            networkSender.SendResponse(payloadSize);
         }
 
         private bool HandlePubSub(MessageType message, ref byte* src, ref byte* d, ref byte* dend)
@@ -355,7 +354,7 @@ namespace FASTER.server
                 case MessageType.SubscribeKV:
                     if (subscribeKVBroker == null) return false;
 
-                    if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                    if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                         SendAndReset(ref d, ref dend);
 
                     var keyStart = src;
@@ -374,7 +373,7 @@ namespace FASTER.server
                 case MessageType.PSubscribeKV:
                     if (subscribeKVBroker == null) return false;
 
-                    if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                    if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                         SendAndReset(ref d, ref dend);
 
                     if (subscribeKVBroker == null)
@@ -416,7 +415,7 @@ namespace FASTER.server
                 case MessageType.Subscribe:
                     if (subscribeBroker == null) return false;
 
-                    if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                    if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                         SendAndReset(ref d, ref dend);
 
                     keyStart = src;
@@ -432,7 +431,7 @@ namespace FASTER.server
                 case MessageType.PSubscribe:
                     if (subscribeBroker == null) return false;
 
-                    if ((int)(dend - dcurr) < 2 + maxSizeSettings.MaxOutputSize)
+                    if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                         SendAndReset(ref d, ref dend);
 
                     keyStart = src;

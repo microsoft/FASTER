@@ -27,18 +27,16 @@ namespace FASTER.client
             where Functions : ICallbackFunctions<Key, Value, Input, Output, Context>
             where ParameterSerializer : IClientSerializer<Key, Value, Input, Output>
     {
-        readonly NetworkSender messageManager;
+        readonly INetworkSender networkSender;        
         readonly Functions functions;
-        readonly ParameterSerializer serializer;
-        readonly Socket sendSocket;
+        readonly ParameterSerializer serializer;        
         readonly HeaderReaderWriter hrw;
         readonly int bufferSize;
         readonly WireFormat wireFormat;
         readonly MaxSizeSettings maxSizeSettings;
         private bool subscriptionSession;
 
-        bool disposed;
-        SeaaBuffer sendObject;
+        bool disposed;        
         byte* offset;
         int numMessages;
         int numPendingBatches;
@@ -57,14 +55,19 @@ namespace FASTER.client
         /// <param name="wireFormat"></param>
         /// <param name="serializer">Serializer</param>
         /// <param name="maxSizeSettings">Size settings</param>
-        public ClientSession(string address, int port, Functions functions, WireFormat wireFormat, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
+        public ClientSession(
+            string address, 
+            int port, 
+            Functions functions, 
+            WireFormat wireFormat, 
+            ParameterSerializer serializer, 
+            MaxSizeSettings maxSizeSettings)
         {
             this.functions = functions;
             this.serializer = serializer;
             this.wireFormat = wireFormat;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
             this.bufferSize = BufferSizeUtils.ClientBufferSize(this.maxSizeSettings);
-            this.messageManager = new NetworkSender(bufferSize);
             this.disposed = false;
             this.subscriptionSession = false;
 
@@ -73,11 +76,11 @@ namespace FASTER.client
             pubsubQueue = new ElasticCircularBuffer<(Key, Value, Context)>();
             tcsQueue = new ElasticCircularBuffer<TaskCompletionSource<(Status, Output)>>();
 
-            numPendingBatches = 0;
-            sendObject = messageManager.GetReusableSeaaBuffer();
-            offset = sendObject.bufferPtr + sizeof(int) + BatchHeader.Size;
+            numPendingBatches = 0;            
+            this.networkSender = new TcpNetworkSender(GetSendSocket(address, port), maxSizeSettings ?? new MaxSizeSettings());
+            networkSender.GetResponseObject();
+            offset = networkSender.GetResponseObjectHead() + sizeof(int) + BatchHeader.Size;
             numMessages = 0;
-            sendSocket = GetSendSocket(address, port);
         }
 
         /// <summary>
@@ -276,27 +279,19 @@ namespace FASTER.client
         /// </summary>
         public void Flush()
         {
-            if (offset > sendObject.bufferPtr + sizeof(int) + BatchHeader.Size)
+            if (offset > networkSender.GetResponseObjectHead() + sizeof(int) + BatchHeader.Size)
             {
-                int payloadSize = (int)(offset - sendObject.bufferPtr);
+                int payloadSize = (int)(offset - networkSender.GetResponseObjectHead());
 
-                ((BatchHeader*)(sendObject.bufferPtr + sizeof(int)))->SetNumMessagesProtocol(numMessages, wireFormat);
+                ((BatchHeader*)(networkSender.GetResponseObjectHead() + sizeof(int)))->SetNumMessagesProtocol(numMessages, wireFormat);
                 Interlocked.Increment(ref numPendingBatches);
 
                 // Set packet size in header
-                *(int*)sendObject.bufferPtr = -(payloadSize - sizeof(int));
+                *(int*)networkSender.GetResponseObjectHead() = -(payloadSize - sizeof(int));
 
-                try
-                {
-                    messageManager.Send(sendSocket, sendObject, 0, payloadSize);
-                }
-                catch
-                {
-                    Dispose();
-                    throw;
-                }
-                sendObject = messageManager.GetReusableSeaaBuffer();
-                offset = sendObject.bufferPtr + sizeof(int) + BatchHeader.Size;
+                networkSender.SendResponse(payloadSize);
+                networkSender.GetResponseObject();
+                offset = networkSender.GetResponseObjectHead() + sizeof(int) + BatchHeader.Size;
                 numMessages = 0;
             }
         }
@@ -320,10 +315,7 @@ namespace FASTER.client
         public void Dispose()
         {
             disposed = true;
-            if (sendObject != null)
-                messageManager.Return(sendObject);
-            sendSocket.Dispose();
-            messageManager.Dispose();
+            networkSender.Dispose();            
         }
 
         /// <summary>
@@ -724,7 +716,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -747,7 +739,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -770,7 +762,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -793,7 +785,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -815,7 +807,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -838,7 +830,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -861,7 +853,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))

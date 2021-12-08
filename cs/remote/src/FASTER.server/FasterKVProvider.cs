@@ -44,18 +44,23 @@ namespace FASTER.server
             this.subscribeBroker = subscribeBroker;
         }
 
+        /// <summary>
+        /// Get MaxSizeSettings
+        /// </summary>
+        public MaxSizeSettings GetMaxSizeSettings => this.maxSizeSettings;
+
         /// <inheritdoc />
-        public IServerSession GetSession(WireFormat wireFormat, Socket socket)
-        {
+        public IServerSession GetSession(WireFormat wireFormat, INetworkSender networkSender)
+        {        
             switch (wireFormat)
             {
                 case WireFormat.WebSocket:
                     return new WebsocketServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker);
+                        (networkSender, store, functionsGen(wireFormat), serializer, subscribeKVBroker, subscribeBroker);
                 default:
                     return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker);
+                        (networkSender, store, functionsGen(wireFormat), serializer, subscribeKVBroker, subscribeBroker);
             }
-        }
+        }            
     }
 }

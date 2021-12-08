@@ -16,7 +16,7 @@ namespace FASTER.server
             where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly ServerOptions opts;
-        readonly FasterServer server;
+        readonly IFasterServer server;
         readonly FasterKV<Key, Value> store;
         readonly FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer> provider;
         readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> kvBroker;
@@ -61,7 +61,7 @@ namespace FASTER.server
             // Create session provider for VarLen
             provider = new FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer>(store, functionsGen, kvBroker, broker, serializer, maxSizeSettings);
 
-            server = new FasterServer(opts.Address, opts.Port);
+            server = new TcpServer(opts.Address, opts.Port);
             server.Register(WireFormat.DefaultFixedLenKV, provider);
         }
 

@@ -68,22 +68,28 @@ namespace FASTER.server
         }
 
         /// <summary>
+        /// Get MaxSizeSettings
+        /// </summary>
+        public MaxSizeSettings GetMaxSizeSettings => this.maxSizeSettings;
+
+        /// <summary>
         /// GetFunctions() for custom functions provided by the client
         /// </summary>
         /// <returns></returns>
-        public abstract Functions GetFunctions();
+        public abstract Functions GetFunctions();       
 
         /// <inheritdoc />
-        public virtual IServerSession GetSession(WireFormat wireFormat, Socket socket)
+        public virtual IServerSession GetSession(WireFormat wireFormat, INetworkSender networkSender)
         {
+            //INetworkSender networkSender = socket != null ? new TcpNetworkSender(socket, maxSizeSettings) : null;
             switch (wireFormat)
             {
                 case WireFormat.WebSocket:
                     return new WebsocketServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                        (socket, store, GetFunctions(), serializer, maxSizeSettings, kvBroker, broker);
+                        (networkSender, store, GetFunctions(), serializer, kvBroker, broker);
                 default:
                     return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                        (socket, store, GetFunctions(), serializer, maxSizeSettings, kvBroker, broker);
+                        (networkSender, store, GetFunctions(), serializer, kvBroker, broker);
             }
         }
     }
