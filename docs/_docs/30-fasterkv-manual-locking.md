@@ -85,9 +85,13 @@ Locking and unlocking use bits in the `RecordInfo` header to obtain one exclusiv
 ### Relevant RecordInfo bits
 
 The following sections refer to the following two in the `RecordInfo`:
+- **Lock Bits**: There is one Exclusive Lock bit and 6 Shared Lock bits (allowing 64 shared locks) in the RecordInfo.
 - **Tentative**: a record marked Tentative is very short-term; it indicates that the thread is performing a Tentative insertion of the record, and may make the Tentative record final by removing the Tentative bit, or may back off the insertion by setting the record to Invalid and returning RETRY_NOW.
 - **Sealed**: a record marked Sealed is one for which an update is known to be in progress. Sealed records are "visible" only short-term (e.g. a single call to Upsert or RMW, or a transfer to/from the `LockTable`). A thread encountering this should immediately return RETRY_NOW.
+  - Sealing is done via `RecordInfo.Seal`. This is used in locking scenarios rather than a sequence of "CAS to set Sealed; test Sealed bit` because the after-Seal locking is fuzzy; we don't know whether the record was CTT'd before or after a post-Seal lock, and thus we don't know if the transferred record "owns" our lock. `RecordInfo.Seal` does a CAS with both the XLock and Seal bits, then Unlocks the XLock bit; this ensures it works whether SupportsLocking is true or false. It returns  true if successsful or false if another thread Sealed the record.
 - **Invalid**: This is a well-known bit from v1 included here for clarity: its behavior is that the record is to be skipped, using its `.PreviousAddress` to move along the chain.
+
+Additionally, the `SupportsLocking` flag has been moved from IFunctions to a `FasterKV` constructor argument. This value must be uniform across all asessions. It is only to control the locking done by FasterKV; this replaces the concept of user-controlled locking that was provided with the `IFunctions` methods for concurrent record access.
 
 ### LockTable Overview
 
@@ -106,30 +110,37 @@ For records not found in memory, the `LockTable` is used. The semantics of `Lock
 - Because `LockTable` use does not verify that the key actually exists (as it does not issue a pending operation to ensure the requested key, and not a collision, is found in the on-disk portion), it is possible that keys will exist in the `LockTable` that do not in fact exist in the log. This is fine; if we do more than `Lock` them, then they will be added to the log at that time, and the locks applied to them.
 
 #### Insertion to LockTable due to Lock
-When a thread doing `Lock()` looks for a key in the LockTable and cannot find it, it must do a tentative insertion into the locktable, because it is possible that another thread CAS'd that key to the Tail of the log after the current thread had passed the hash table lookup:
-- We do not find the record in memory starting from current TailAddress, so we record that TailAddress as A.
-- Locktable does not have entry so we create a tentative entry in locktable
-- We check if key exists between current tail and A
-  - if yes we have to back off the LockTable entry creation by setting it Invalid and returning RETRY_NOW.
+
+When a thread doing `Lock()` looks for a key in the LockTable and cannot find it, it must do a Tentative insertion into the locktable, because it is possible that another thread CAS'd that key to the Tail of the log after the current thread had passed the hash table lookup:
+- We do not find the record in memory starting from current TailAddress, so we record that TailAddress as prevTailAddress.
+- Locktable does not have an entry for this key so we create a Tentative entry in the LockTable for it
+- We check if key exists between current TailAddress and prevTailAddress
+  - if yes we have to back off the LockTable entry creation by setting it Invalid (so anyone holding it to spin-test sees it is invalid), removing it from the LockTable, and returning RETRY_NOW.
     - Any thread trying an operation in the Lock Table on a Tentative record must spin until the Tentative bit is removed; this will be soon, because we are only following the hash chain back to A.
+      - If prevTailAddress has escaped to disk by the time we start following the hash chain from Tail to prevTailAddress, we must retry. See the InternalTryCopyToTail scan to expectedLogicalAddress and ON_DISK as an example of this.
     - Any waiting thread sees Invalid and in this case, it must also return RETRY_NOW.
   - if no, we can set locktable entry as final by removing the Tentative bit
     - Any waiting thread proceeds normally
 
 #### Removal from LockTable
+
 Here are the sequences of operations to remove records from the Lock Table:
 - Unlock
-  - If the lock count goes to 0, remove from `LockTable` conditionally on IsLocked == false.
+  - If the lock count goes to 0, remove from `LockTable` conditionally on IsLocked == false and Sealed == false.
+    - Since only lock bits are relevant in LockTable, this is equivalent to saying RecordInfo.word == 0, which is a faster test.
 - Pending Read to `ReadCache` or `CopyToTail`, Pending RMW to Tail, or Upsert or Delete of a key in the LockTable
-  - For all but Read(), we are modifying or removing the record, so we must acquire an Exclusive lock
+  - For all but Read(), we are modifying or removing the record, so we must acquire an Exclusive lock on the LockTable entry
     - This is not done for `ManualFasterOperations`, which we assume owns the lock
-  - The `LockTable` record is CAS'd to Sealed.
-    - Lock and Unlock must return an out bool sealedWhenLocked
-      - If so, then it reverts and retries
-    - Other operations retry upon seeing the record is sealed
+  - The `LockTable` record is Sealed as described in [Relevant RecordInfo bits](#relevant-recordInfo-bits)
+    - If this fails, the operation retries
+    - Other operation threads retry upon seeing the record is sealed
   - The Insplice to the main log is done
     - If this fails, the Sealed bit is removed from the `LockTable` entry and the thread does RETRY_NOW
     - Else the record is removed from the `LockTable`
+      - Note: there is no concern about other threads that did not find the record on lookup and "lag behind" the thread doing the LockTable-entry removal and arrive at the LockTable after that record has been removed, because:
+        - If the lagging thread is from a pending Read operation, then that pending operation will retry due to the InternalTryCopyToTail expectedLogicalAddress check or the readcache "dual 2pc" check in [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+        - If the lagging thread is from a pending RMW operation, then that pending operation will retry due to the InternalContinuePendingRMW previousFirstRecordAddress check or the readcache "dual 2pc" check in [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+        - Upsert and Delete would find the LT entry directly
 
 ### ReadCache Overview
 
@@ -150,16 +161,15 @@ In normal FASTER operation, records are appended at the tail of the log and do n
 Record transfers occur when a ReadCache entry must be updated, or a record is evicted from either ReadCache or the main log while it holds locks.
 
 #### `ReadCache` Records at Tail of Log
-Note that this resolution is only needed if there is an active `ManualFasterOperations` session at the time `ReadCacheEvict` is called. However, we must already traverse the `ReadCache` records, and it is possible for a new `ManualFasterOperations` session to start during the duration of `ReadCacheEvict`, so we do not optimize for the no-`ManualFasterOperations` case.
 
 For brevity, `ReadCache` is abbreviated RC, `CopyToTail` is abbreviated CTT, and `LockTable` is abbreviated LT. Main refers to the main log. The "final RC record" is the one at the RC->Main log boundary. As always, avoiding locking cost is a primary concern. 
 
 For record transfers involving the ReadCache, we have the following high-level considerations:
-- There is no record-transfer concern if the first record in the chain is not a `ReadCache` entry (normal CAS will do all necessary concurrency control as presently, and there are no outsplices).
+- There is no record-transfer concern if the first record in the hash chain is not a `ReadCache` entry.
   - Otherwise, we insplice between the final RC entry and the first main-log entry; we never splice into the middle of the RC prefix chain.
-- Even when RC entries are present in the tail, we must avoid latching because it affects all insert operations (at a minimum).
+- Even when there are RC entries in the hash chain, we must avoid latching because that would slow down all record-insertion operations (upsert, RMW of a new record, Delete of an on-disk record, etc.) as well as some Read situations.
 - "Insplicing" occurs when a new record is inserted into the main log after the end of the ReadCache prefix string.
-- "Outsplicing" occurs when a record is spliced out of the RC portion of the hash chain (main log records are never spliced out) because the value for that key must be updated, or because we are evicting records from the ReadCache. Outsplicing introduces concurrency considerations but we must support it; we cannot simply mark ReadCache entries as Invalid and leave them there, or the chain will grow without bound. 
+- "Outsplicing" occurs when a record is spliced out of the RC portion of the hash chain (main log records are never spliced out) because the value for that key must be updated, or because we are evicting records from the ReadCache. Outsplicing introduces concurrency considerations but we must support it; we cannot simply mark ReadCache entries as Invalid and leave them there, or the chain will grow without bound. For concurrency reasons we defer outsplicing to readcache eviction time, when readcache records are destroyed, as described below.
   - Insplicing: For splicing into the chain, we always CAS at the final RC entry rather than at the HashTable bucket slot (we never splice into the middle of the RC prefix chain).
     - Add the new record to the tail of main by pointing to the existing tail of in its `.PreviousAddress`.
     - CAS the existing final RC record to point to the new record (set its .PreviousAddress and CAS).
@@ -170,6 +180,7 @@ For record transfers involving the ReadCache, we have the following high-level c
       - CAS the RC record to be removed to be Sealed. This will cause any other operations to retry.
       - CAS the preceding RC record to point to the to-be-removed RC record's .PreviousAddress (standard singly-linked-list operations)
       - CAS the now-removed RC record to be Invalid.
+      - We only actually transfer records from the RC prefix to the LockTable if there is an active `ManualFasterOperations` session at the time `ReadCacheEvict` is called; otherwise there will be no locks. However, we must already traverse the `ReadCache` records, and it is possible for a new `ManualFasterOperations` session to start during the duration of `ReadCacheEvict`, so there is no benefit to checking for the no-`ManualFasterOperations` case (unlike [Main Log Evictions](#main-log-evictions), which can avoid page scans by checking for this).
 
 The above covers single-record operations on the RC prefix. Two-record operations occur when we must outsplice one record and insplice another, because the value for a record in the RC prefix is updated, e.g. Upsert updating a record in the ReadOnly region or RMW doing a CopyUpdater (of mutable or readonly), or either of these operating updating a key that is in the RC prefix chain. The considerations here are:
 - Updating an RC record:
@@ -187,23 +198,22 @@ When main log pages are evicted due to memory limits, *if* there are any active 
 
 Transfers to the `LockTable` due to main log evictions are handled in the following manner:
 - A new `TentativeHeadAddress` (THA) field is added next to `HeadAddress`.
-- Shifting HeadAddress is now done in two steps: Update THA, then update HeadAddress
-- The purpose of THA is:
-  - No record at address < THA shall be touched for Lock operations (lock or unlock).
-  - Existing locks will remain there until transferred to the lock table.
-  - A thread that attempts to unlock a record < THA must wait for the lock table to get populated (details below)
-    - To mitigate unlocking records that were never locked, this must abandon the wait when the record to be unlocked becomes < HeadAddress.
+- Shifting HeadAddress is now done in three steps: Update THA, handle evictions, then update HeadAddress
+  - In (PageAligned)ShiftHeadAddress, we now:
+    - epoch.BumpCurrentEpoch(() => OnPagesReadyToClose(oldTentativeHeadAddress, newHeadAddress));
+      - OnPagesReadyToTransfer() is a new routine:
+        - ReadCacheEvict (via EvictCallback)
+        - epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
+          - This actually evicts the pages
 
-Here is the sequence of operations to perform record eviction with `LockTable` Transfer:
-- In (PageAligned)ShiftHeadAddress:
-  - TentativeHeadAddress = desired new HeadAddress
-  - BumpCurrentEpoch(() => OnPagesReadyToTransfer())
-    - OnPagesReadyToTransfer() is a new routine:
-      - Scan from OldTentativeHeadAddress to new TentativeHeadAddress:
-        - Transfer records to `LockTable`
-        - This is safe because we are executing in the epoch Drain thread
-      - OldTentativeHeadAddress = TentativeHeadAddress
-      - HeadAddress = TentativeHeadAddress
+### Recovery Considerations
+
+We must clear in-memory records' lock bits during FoldOver recovery. 
+- Add to checkpoint information an indication of whether any `ManualFasterOperations` were active during the Checkpoint.
+- If this MRO indicator is true:
+  - Scan pages, clearing the locks of any records
+    - These pages do not need to be flushed to disk
+  - Ensure random reads and scans will NOT be flummoxed by the weird lock bits
 
 ### FASTER Operations
 
@@ -215,52 +225,128 @@ Abbreviations:
 - ITCTT: InternalTryCopyToTail
 - Unfound refers to entries that are not found in memory (the hash chain passes below HeadAddress) or are not found in the Hash chain
 
+#### Conflict Between Upsert/RMW and Reading From Disk to ReadCache
+
+One big consideration for Upsert is that it blindly upserts when a scan for a record drops below HeadAddress. This in conjunction with our two insertion points--at HT->RC and at RC->MainLog--gives rise to the following lost-update anomaly:
+- We Upsert k1 to the main log, splicing it into the RC->MainLog point
+- At the same time, we did a read of k1 which brought the previous k1 value from disk into the read cache, inserting it at the HT->RC point
+- Thus our upsert "failed", as the chain contains the old k1 in RC (even though the chain leads eventually to the new k1 at tail of main, operations will find the one in the readcache first).
+
+General algorithm, iff readcache entries are present: each participating thread adds a Tentative entry, then scans; if it does not find an existing record, then finalize. This is modified by ensuring that the update wins (its data is more recent). We *must* have such a two-phase operation at both ends, to ensure that whichever side completes the scan first, it will find an entry, either final or Tentative, for the other operation.
+- Upsert (blind only) or RMW when reading from disk:
+  - Save HT->RC record address as prevFirstRCAddress
+  - Do the usual check-for-mutable:
+    - Call SkipAndInvalidateReadCache
+    - If the record is found in mutable and updated, return SUCCESS
+  - It was not mutable, so we must insert at end of log
+    - Insert at RC->MainLog boundary. This is *not* tentative, because we want Upsert to win any ties
+    - SkipAndInvalidateReadCache until prevFirstRCAddress
+      - We want the Upsert to win, so this pass ensures that any newly-added readcache entry for this key, whether tentative or not, is marked Invalid
+    - Remove the tentative 
+- Read:
+  - Prior to its SkipReadCache/TracebackForKeyMatch, it sets a tentative record at the HT->RC boundary.
+  - it does the scan
+    - if the Tentative record is now Invalid, it means Upsert/RMW set it so for a later update; return NOTFOUND
+    - else if it found a non-RC record for this key, it sets the Tentative record to Invalid and returns NOTFOUND
+    - else it removes the Tentative flag
+
+OPTIMIZATION: Use readcache records rather than going to disk. However, there are issues here with the record being marked Invalid/Sealed in case multiple threads do it.
+
 #### Read
 
-- Lock/Unlock: None. Manual locking does not use Read
-- LockOp is not set:
-  - in-mem (mutable and RO):
-    - Sealed: Yield() and retry
-    - Other: as currently
-  - Unfound: After PENDING, transfer any `LockTable` entry as described above
-    - Splice out from readcache prefix chain if applicable
+Note that this changes specified here, including both shared and exclusive locks in the ReadOnly region, clarifies the distinction between a data-centric view of the ReadOnly region being implicitly read-locked (because it cannot be updated), vs. a transactional view that requires explicit read locks. In a transactional view, a read lock prevents an exclusive lock; implicit readlocks based on address cannot do this in FASTER, because we can always do XLock or an RCU. Therefore, we need explicit read locks, and reads must of course block if there is an XLock. This also means that SingleReader would have to lock anyway, losing any distinction between it and ConcurrentReader. Therefore, we have consolidated ConcurrentReader and SingleReader into a single function.
+
+- for both mutable and RO records, if the RecordInfo is:
+  - Sealed: Yield() and retry
+    - If SupportsLocking, we would ephemerally readlock the record, and we can't lock Sealed records as the lock may be transferred with the record.
+    - Tombstone: as current
+  - Other: as currently, including ephemeral locking
+    - Change IFunctions.SingleReader and .ConcurrentReader to simply .Reader
+- On-disk: 
+  - After PENDING
+    - if copying to readcache, do so in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+    - else if CopyToTail do [Removal From LockTable](#removal-from-locktable)
 
 #### Upsert
 
-- LockOp.IsSet
-  - Sealed: Yield() and retry
-  - Tombstone: Do Lock op (e.g. unlock)
-  - Normal: 
-    - Mutable and RO: Do LockOp in ConcurrentWriter
-    - on-disk: Perform `LockTable` insertion as described above
-  - Already in readcache: Lock
-  - Note: Locking adds ReadOnly-region handling to Upsert()
-- LockOp is not set:
-  - in-mem (mutable and RO):
+Note: Upsert skips RO ops if the current FasterSession is not `ManualFasterOperations` (MFO); this comparison is a static bool property of to the IFasterOperations implementation 
+
+- If LockOp.IsSet
+  - If the record is in readcache: 
+    - Do the Lock op:
+      - retry if the record is or becomes Sealed
+      - ignore/continue if the record is or becomes Invalid
+  - else for both mutable (and RO if MFO is active) records, if the RecordInfo is:
     - Sealed: Yield() and retry
-    - Other: as currently
-    - Splice out from readcache prefix chain if applicable
-  - Unfound: if found in `LockTable`, do [Removal From LockTable](#removal-from-locktable)
+    - Tombstone: Do the Lock op (e.g. unlock)
+    - Other: 
+      - Do the LockOp in ConcurrentWriter for both Mutable and RO 
+  - else // key is not found or hash chain goes below HeadAddress
+    - Perform `LockTable` insertion as described in [Insertion to LockTable due to Lock](#insertion-to-locktable-due-to-lock)
+- else // LockOp is not set:
+  - If the record is in readcache:
+    - Invalidate it
+    - insert the new value in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+  - else if the record is in the mutable region and the RecordInfo is:
+    - Sealed: Yield() and retry
+    - Tombstone: as current
+    - Other: IPU (including ephemeral locks)
+      - If this returns false
+        - Set RecordInfo Sealed as described in [Relevant RecordInfo bits](#relevant-recordinfo-bits)
+        - Insert in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+  - else if the record is in ReadOnly and the RecordInfo is:
+    - Sealed: Yield() and retry
+    - Tombstone: as current
+    - Other: Do CopyUpdater and insert in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+  - else // key is not found or hash chain goes below HeadAddress
+    - if the key is in the lock table
+      - XLock it
+        - If it is Sealed or Invalid, then RETRY_NOW (someone else did an operation that removed it)
+        - Else
+          - Insert new record
+          - Remove locktable entry per [Removal From LockTable](#removal-from-locktable)
+    - InitialUpdater and insert in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
 
 #### RMW
 
-- Lock/Unlock: None. Manual locking does not use RMW
-- LockOp is not set:
-  - in-mem (mutable and RO):
-    - Sealed: Yield() and retry
-    - Tombstone: Nothing here as we do not process LockOp in RMW
-    - Normal: as currently
-    - Splice out from readcache prefix chain if applicable
-  - Unfound: if found in `LockTable`, do [Removal From LockTable](#removal-from-locktable)
-    - Note: Splice out from readcache prefix chain if applicable
-    - TODO: potentially replace "fuzzy" region with Sealed
+RMW considerations are similar to Upsert from the sealing and "encountering locks" point of view. It does not do lock operations.
+
+- If the record is in readcache:
+  - Invalidate it
+  - CopyUpdater and insert the new value in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+- else if the record is in the mutable region and the RecordInfo is:
+  - Sealed: Yield() and retry
+  - Tombstone: as current
+  - Other: IPU (including ephemeral locks)
+    - If this returns false
+      - Set RecordInfo Sealed as described in [Relevant RecordInfo bits](#relevant-recordinfo-bits)
+      - Do CopyUpdater and insert in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+- else if the record is in ReadOnly and the RecordInfo is:
+  - Sealed: Yield() and retry
+  - Tombstone: as current
+  - Other: Do CopyUpdater and insert in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+- else // key is not found or hash chain goes below HeadAddress
+  - InitialUpdater and insert in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+- TODO: potentially replace "fuzzy" region at SafeReadOnlyAddress with Sealed, which should avoid the lost-update anomaly
 
 #### Delete
 
-- Lock/Unlock: None. Manual locking does not use Delete
-  - in-mem (mutable and RO):
-    - Sealed: Yield() and retry
-    - Other: as currently
-    - Splice out from readcache prefix chain if applicable
-  - Unfound: if found in `LockTable`, do [Removal From LockTable](#removal-from-locktable)
-  - Note: Splice out from readcache prefix chain if applicable
+- If the record is in readcache:
+  - Invalidate it
+  - insert the new deleted record in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+- else if the record is in the mutable region and the RecordInfo is:
+  - Sealed: Yield() and retry
+  - Tombstone: as current (nothing)
+  - Other: Mark as tombstone 
+- else if the record is in ReadOnly and the RecordInfo is:
+  - Sealed: Yield() and retry
+  - Tombstone: as current (nothing)
+  - Other: Insert deleted record in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
+- else // key is not found or hash chain goes below HeadAddress
+    - if the key is in the lock table
+      - XLock it
+        - If it is Sealed or Invalid, then RETRY_NOW (someone else did an operation that removed it)
+        - Else
+          - Insert deleted record
+          - Remove locktable entry per [Removal From LockTable](#removal-from-locktable)
+    - Insert deleted record in accordance with [Conflict Between Upsert/RMW and Reading From Disk to ReadCache](#conflict-between-upsert-rmw-and-reading-from-disk-to-readcache)
