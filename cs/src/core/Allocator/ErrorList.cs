@@ -19,7 +19,7 @@ namespace FASTER.core
                 errorList.Add(info);
         }
 
-        public CommitInfo PopEarliestError()
+        public CommitInfo GetEarliestError()
         {
             lock (errorList)
             {
@@ -33,7 +33,6 @@ namespace FASTER.core
                         index = i;
                     }
                 }
-                errorList.RemoveAt(index);
 
                 return result;
             }

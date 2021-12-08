@@ -1429,7 +1429,7 @@ namespace FASTER.core
             
             if (!errorList.Empty)
             {
-                var info = errorList.PopEarliestError();
+                var info = errorList.GetEarliestError();
                 if (info.FromAddress == FlushedUntilAddress)
                 {
                     // all requests before error range has finished successfully -- this is the earliest error and we

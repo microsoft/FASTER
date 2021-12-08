@@ -283,6 +283,7 @@ namespace FASTER.core
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
+                if (cannedException != null) throw cannedException;
                 return false;
             }
             
@@ -314,6 +315,7 @@ namespace FASTER.core
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
+                if (cannedException != null) throw cannedException;
                 return false;
             }
             
@@ -1517,6 +1519,7 @@ namespace FASTER.core
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
+                if (cannedException != null) throw cannedException;
                 return false;
             }
 

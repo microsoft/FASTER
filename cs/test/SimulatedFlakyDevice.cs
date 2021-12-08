@@ -50,9 +50,11 @@ namespace FASTER.test
                 
                 // First failed range after requested range end
                 var endIndex = permanentlyFailedRangesEnd.BinarySearch(logicalDestEnd);
+                if (endIndex < 0) endIndex = ~endIndex;
+
                 // Check if there are overlaps
-                if (permanentlyFailedRangesEnd[startIndex] > logicalDestStart ||
-                    permanentlyFailedRangesStart[endIndex] < logicalDestEnd)
+                if (startIndex >= 0 && permanentlyFailedRangesEnd[startIndex] > logicalDestStart ||
+                    endIndex < permanentlyFailedRangesStart.Count && permanentlyFailedRangesStart[endIndex] < logicalDestEnd)
                 {
                     // If so, simulate a failure by calling callback with an error
                     callback(42, numBytesToWrite, context);
@@ -64,25 +66,26 @@ namespace FASTER.test
             if (random.Value.NextDouble() < options.writeTransientErrorRate)
             {
                 callback(42, numBytesToWrite, context);
-                // decide whether failure should be in fact permanent. Don't necessarily need to fail concurrent requests
-                if (random.Value.NextDouble() < options.writePermanentErrorRate)
+            }
+            // decide whether failure should be in fact permanent. Don't necessarily need to fail concurrent requests
+            else if (random.Value.NextDouble() < options.writePermanentErrorRate)
+            {
+                callback(42, numBytesToWrite, context);
+                versionScheme.TryAdvanceVersion((_, _) =>
                 {
-                    versionScheme.TryAdvanceVersion((_, _) =>
+                    var index = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
+                    if (index >= 0)
+                        permanentlyFailedRangesEnd[index] =
+                            Math.Max(permanentlyFailedRangesEnd[index], logicalDestEnd);
+                    else
                     {
-                        var index = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
-                        if (index >= 0)
-                            permanentlyFailedRangesEnd[index] =
-                                Math.Max(permanentlyFailedRangesEnd[index], logicalDestEnd);
-                        else
-                        {
-                            // This technically does not correctly merge / stores overlapping ranges, but for failing
-                            // segments, it does not matter
-                            var i = ~index - 1;
-                            permanentlyFailedRangesStart.Insert(i, logicalDestStart);
-                            permanentlyFailedRangesEnd.Insert(i, logicalDestEnd);
-                        }
-                    });
-                }
+                        // This technically does not correctly merge / stores overlapping ranges, but for failing
+                        // segments, it does not matter
+                        var i = ~index;
+                        permanentlyFailedRangesStart.Insert(i, logicalDestStart);
+                        permanentlyFailedRangesEnd.Insert(i, logicalDestEnd);
+                    }
+                });
             }
             versionScheme.Leave();
             underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
@@ -102,9 +105,10 @@ namespace FASTER.test
                 
                 // First failed range after requested range end
                 var endIndex = permanentlyFailedRangesEnd.BinarySearch(logicalDestEnd);
+                if (endIndex < 0) endIndex = ~endIndex;
                 // Check if there are overlaps
-                if (permanentlyFailedRangesEnd[startIndex] > logicalDestStart ||
-                    permanentlyFailedRangesStart[endIndex] < logicalDestEnd)
+                if (startIndex >= 0 && permanentlyFailedRangesEnd[startIndex] > logicalDestStart ||
+                    endIndex < permanentlyFailedRangesStart.Count && permanentlyFailedRangesStart[endIndex] < logicalDestEnd)
                 {
                     // If so, simulate a failure by calling callback with an error
                     callback(42, readLength, context);
@@ -116,23 +120,24 @@ namespace FASTER.test
             if (random.Value.NextDouble() < options.readTransientErrorRate)
             {
                 callback(42, readLength, context);
-                // decide whether failure should be in fact permanent. Don't necessarily need to fail concurrent requests
-                if (random.Value.NextDouble() < options.readPermanentErrorRate)
+            }
+            else if (random.Value.NextDouble() < options.readPermanentErrorRate)
+            {
+                callback(42, readLength, context);
+
+                versionScheme.TryAdvanceVersion((_, _) =>
                 {
-                    versionScheme.TryAdvanceVersion((_, _) =>
+                    var index = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
+                    if (index >= 0)
+                        permanentlyFailedRangesEnd[index] =
+                            Math.Max(permanentlyFailedRangesEnd[index], logicalDestEnd);
+                    else
                     {
-                        var index = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
-                        if (index >= 0)
-                            permanentlyFailedRangesEnd[index] =
-                                Math.Max(permanentlyFailedRangesEnd[index], logicalDestEnd);
-                        else
-                        {
-                            var i = ~index - 1;
-                            permanentlyFailedRangesStart.Insert(i, logicalDestStart);
-                            permanentlyFailedRangesEnd.Insert(i, logicalDestEnd);
-                        }
-                    });
-                }
+                        var i = ~index;
+                        permanentlyFailedRangesStart.Insert(i, logicalDestStart);
+                        permanentlyFailedRangesEnd.Insert(i, logicalDestEnd);
+                    }
+                });
             }
             versionScheme.Leave();        
             underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);

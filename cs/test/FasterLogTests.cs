@@ -9,9 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
-using NUnit.Compatibility;
 using NUnit.Framework;
-using NUnit.Framework.Internal;
 
 namespace FASTER.test
 {
