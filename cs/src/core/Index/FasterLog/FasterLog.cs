@@ -1688,9 +1688,9 @@ namespace FASTER.core
                 if (commitCoveredAddress == TailAddress && !metadataChanged)
                     // Nothing to commit if no metadata update and no new entries
                     return false;
-                // Make sure we will not be allowed to back out of a commit of AdmitCommit returns true, as the strategy
+                // Make sure we will not be allowed to back out of a commit if AdmitCommit returns true, as the commit policy
                 // may need to update internal logic for every true response. We might waste some commit nums if commit
-                // strategy filters out a lot of commits, but that's fine.
+                // policy filters out a lot of commits, but that's fine.
                 if (proposedCommitNum == -1)
                     info.CommitNum = actualCommitNum = ++commitNum;
                 else if (proposedCommitNum > commitNum)

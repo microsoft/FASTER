@@ -12,9 +12,9 @@ namespace FASTER.core
     public abstract class LogCommitPolicy
     {
         /// <summary>
-        /// Invoked when strategy object is attached to a FasterLog instance.
+        /// Invoked when policy object is attached to a FasterLog instance.
         /// </summary>
-        /// <param name="log"> the log this commit strategy is attached to </param>
+        /// <param name="log">The log this log commit policy is attached to</param>
         public abstract void OnAttached(FasterLog log);
         
         /// <summary>
