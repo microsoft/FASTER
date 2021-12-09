@@ -69,8 +69,8 @@ namespace FASTER.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // Create devices \ log for test for in memory device
-            using LocalMemoryDevice device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyMs: 20);
-            using FasterLog LocalMemorylog = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
+            using var device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyMs: 20);
+            using var LocalMemorylog = new FasterLog(new FasterLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
 
             int entryLength = 10;
 
@@ -86,13 +86,11 @@ namespace FASTER.test
 
             // Read the log just to verify was actually committed
             int currentEntry = 0;
-            using (var iter = LocalMemorylog.Scan(0, 100_000_000))
+            using var iter = LocalMemorylog.Scan(0, 100_000_000);
+            while (iter.GetNext(out byte[] result, out _, out _))
             {
-                while (iter.GetNext(out byte[] result, out _, out _))
-                {
-                    Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as " + currentEntry.ToString());
-                    currentEntry++;
-                }
+                Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as " + currentEntry.ToString());
+                currentEntry++;
             }
         }
 

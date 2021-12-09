@@ -9,13 +9,13 @@ namespace FASTER.core
     /// FasterLogCommitPolicy defines the way FasterLog behaves on Commit(). In addition
     /// to choosing from a set of pre-defined ones, users can implement their own for custom behavior
     /// </summary>
-    public interface IFasterLogCommitPolicy
+    public abstract class LogCommitPolicy
     {
         /// <summary>
         /// Invoked when strategy object is attached to a FasterLog instance.
         /// </summary>
         /// <param name="log"> the log this commit strategy is attached to </param>
-        public void OnAttached(FasterLog log);
+        public abstract void OnAttached(FasterLog log);
         
         /// <summary>
         /// Admission control to decide whether a call to Commit() should successfully start or not.
@@ -27,55 +27,85 @@ namespace FASTER.core
         /// <param name="currentTail"> if successful, this request will commit at least up to this tail</param>
         /// <param name="metadataChanged"> whether commit metadata (e.g., iterators) has changed </param>
         /// <returns></returns>
-        public bool AdmitCommit(long currentTail, bool metadataChanged);
+        public abstract bool AdmitCommit(long currentTail, bool metadataChanged);
 
         /// <summary>
         /// Invoked when a commit is successfully created
         /// </summary>
         /// <param name="info"> commit content </param>
-        public void OnCommitCreated(FasterLogRecoveryInfo info);
+        public abstract void OnCommitCreated(FasterLogRecoveryInfo info);
 
         /// <summary>
         /// Invoked after a commit is complete
         /// </summary>
         /// <param name="info"> commit content </param>
-        public void OnCommitFinished(FasterLogRecoveryInfo info);
+        public abstract void OnCommitFinished(FasterLogRecoveryInfo info);
 
+        /// <summary>
+        /// The default log commit policy ensures that each record is covered by at most one commit request (except when
+        /// the metadata has changed). Redundant commit calls are dropped and corresponding commit invocation will
+        /// return false.
+        /// </summary>
+        /// <returns> policy object </returns>
+        public static LogCommitPolicy Default() => new DefaultLogCommitPolicy();
+
+        /// <summary>
+        /// MaxParallel log commit policy allows k (non-strong) commit requests to be in progress at any giving time. The k commits are guaranteed
+        /// to be non-overlapping unless there are metadata changes. Additional commit requests will fail and
+        /// automatically retried.
+        /// </summary>
+        /// <param name="k"> maximum number of commits that can be outstanding at a time </param>
+        /// <returns> policy object </returns>
+        public static LogCommitPolicy MaxParallel(int k) => new MaxParallelLogCommitPolicy(k);
+
+
+        /// <summary>
+        /// RateLimit log commit policy will only issue a request if it covers at least m bytes or if there has not been a
+        /// commit request in n milliseconds. Additional commit requests will fail and automatically retried
+        /// </summary>
+        /// <param name="thresholdMilli">
+        /// minimum time, in milliseconds, to be allowed between two commits, unless thresholdRange bytes will be committed
+        /// </param>
+        /// <param name="thresholdBytes">
+        /// minimum range, in bytes, to be allowed between two commits, unless it has been thresholdMilli milliseconds
+        /// </param>
+        /// <returns> policy object </returns>
+        public static LogCommitPolicy RateLimit(long thresholdMilli, long thresholdBytes) => new RateLimitLogCommitPolicy(thresholdMilli, thresholdBytes);
     }
     
-    internal class DefaultCommitPolicy : IFasterLogCommitPolicy
+    internal sealed class DefaultLogCommitPolicy : LogCommitPolicy
     {
+        /// <inheritdoc/>
+        public override void OnAttached(FasterLog log) {}
 
         /// <inheritdoc/>
-        public void OnAttached(FasterLog log) {}
+        public override bool AdmitCommit(long currentTail, bool metadataChanged) => true;
 
         /// <inheritdoc/>
-        public bool AdmitCommit(long currentTail, bool metadataChanged) => true;
-        
-        /// <inheritdoc/>
-        public void OnCommitCreated(FasterLogRecoveryInfo info) {}
+        public override void OnCommitCreated(FasterLogRecoveryInfo info) { }
 
         /// <inheritdoc/>
-        public void OnCommitFinished(FasterLogRecoveryInfo info) {}
+        public override void OnCommitFinished(FasterLogRecoveryInfo info) { }
     }
 
-    internal class MaxParallelCommitPolicy : IFasterLogCommitPolicy
+    internal sealed class MaxParallelLogCommitPolicy : LogCommitPolicy
     {
-        private FasterLog log;
-        private int commitInProgress, maxCommitInProgress;
+        readonly int maxCommitInProgress;
+        FasterLog log;
+        int commitInProgress;
         // If we filtered out some commit, make sure to remember to retry later 
-        private bool shouldRetry;
+        bool shouldRetry;
         
-        internal MaxParallelCommitPolicy(int maxCommitInProgress)
+        internal MaxParallelLogCommitPolicy(int maxCommitInProgress)
         {
             this.maxCommitInProgress = maxCommitInProgress;
         }
         
         /// <inheritdoc/>
-        public void OnAttached(FasterLog log) => this.log = log;
+        public override void OnAttached(FasterLog log) => this.log = log;
         
         /// <inheritdoc/>
-        public bool AdmitCommit(long currentTail, bool metadataChanged)
+        public override bool AdmitCommit(long currentTail, bool metadataChanged)
         {
             while (true)
             {
@@ -91,12 +121,10 @@ namespace FASTER.core
         }
         
         /// <inheritdoc/>
-        public void OnCommitCreated(FasterLogRecoveryInfo info)
-        {
-        }
+        public override void OnCommitCreated(FasterLogRecoveryInfo info) { }
 
         /// <inheritdoc/>
-        public void OnCommitFinished(FasterLogRecoveryInfo info)
+        public override void OnCommitFinished(FasterLogRecoveryInfo info)
         {
             Interlocked.Decrement(ref commitInProgress);
             if (shouldRetry)
@@ -107,14 +135,17 @@ namespace FASTER.core
         }
     }
 
-    internal class RateLimitCommitPolicy : IFasterLogCommitPolicy
+    internal sealed class RateLimitLogCommitPolicy : LogCommitPolicy
     {
-        private FasterLog log;
-        private Stopwatch stopwatch;
-        private long lastAdmittedMilli, lastAdmittedAddress, thresholdMilli, thresholdRange;
-        private int shouldRetry = 0;
+        readonly Stopwatch stopwatch;
+        readonly long thresholdMilli;
+        readonly long thresholdRange;
+        FasterLog log;
+        long lastAdmittedMilli;
+        long lastAdmittedAddress;
+        int shouldRetry = 0;
         
-        internal RateLimitCommitPolicy(long thresholdMilli, long thresholdRange)
+        internal RateLimitLogCommitPolicy(long thresholdMilli, long thresholdRange)
         {
             this.thresholdMilli = thresholdMilli;
             this.thresholdRange = thresholdRange;
@@ -124,10 +155,10 @@ namespace FASTER.core
         }
         
         /// <inheritdoc/>
-        public void OnAttached(FasterLog log) => this.log = log;
+        public override void OnAttached(FasterLog log) => this.log = log;
         
         /// <inheritdoc/>
-        public bool AdmitCommit(long currentTail, bool metadataChanged)
+        public override bool AdmitCommit(long currentTail, bool metadataChanged)
         {
             var now = stopwatch.ElapsedMilliseconds;
             while (true)
@@ -154,50 +185,11 @@ namespace FASTER.core
                     return true;
             }
         }
-        
-        /// <inheritdoc/>
-        public void OnCommitCreated(FasterLogRecoveryInfo info)
-        {
-        }
 
         /// <inheritdoc/>
-        public void OnCommitFinished(FasterLogRecoveryInfo info)
-        {
-        }
-    }
+        public override void OnCommitCreated(FasterLogRecoveryInfo info) { }
 
-    public sealed partial class FasterLog : IDisposable
-    {
-        /// <summary>
-        /// The default commit strategy ensures that each record is covered by at most one commit request (except when
-        /// the metadata has changed). Redundant commit calls are dropped and corresponding commit invocation will
-        /// return false.
-        /// </summary>
-        /// <returns> policy object </returns>
-        public static IFasterLogCommitPolicy DefaultStrategy() => new DefaultCommitPolicy();
-
-        /// <summary>
-        /// Allows k (non-strong) commit requests to be in progress at any giving time. The k commits are guaranteed
-        /// to be non-overlapping unless there are metadata changes. Additional commit requests will fail and
-        /// automatically retried.
-        /// </summary>
-        /// <param name="k"> maximum number of commits that can be outstanding at a time </param>
-        /// <returns> policy object </returns>
-        public static IFasterLogCommitPolicy MaxParallelCommitStrategy(int k) => new MaxParallelCommitPolicy(k);
-
-        
-        /// <summary>
-        /// RateLimitCommitStrategy will only issue a request if it covers at least m bytes or if there has not been a
-        /// commit request in n milliseconds. Additional commit requests will fail and automatically retried
-        /// </summary>
-        /// <param name="thresholdMilli">
-        /// minimum time, in milliseconds, to be allowed between two commits, unless thresholdRange bytes will be committed
-        /// </param>
-        /// <param name="thresholdBytes">
-        /// minimum range, in bytes, to be allowed between two commits, unless it has been thresholdMilli milliseconds
-        /// </param>
-        /// <returns> policy object </returns>
-        public static IFasterLogCommitPolicy RateLimitCommitStrategy(long thresholdMilli, long thresholdBytes) =>
-            new RateLimitCommitPolicy(thresholdMilli, thresholdBytes);
+        /// <inheritdoc/>
+        public override void OnCommitFinished(FasterLogRecoveryInfo info) { }
     }
 }

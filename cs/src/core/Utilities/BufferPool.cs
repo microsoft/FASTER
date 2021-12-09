@@ -126,14 +126,14 @@ namespace FASTER.core
         /// Disable buffer pool.
         /// This static option should be enabled on program entry, and not modified once FASTER is instantiated.
         /// </summary>
-        public static bool Disabled = false;
+        public static bool Disabled;
 
         /// <summary>
         /// Unpin objects when they are returned to the pool, so that we do not hold pinned objects long term.
         /// If set, we will unpin when objects are returned and re-pin when objects are returned from the pool.
         /// This static option should be enabled on program entry, and not modified once FASTER is instantiated.
         /// </summary>
-        public static bool UnpinOnReturn = false;
+        public static bool UnpinOnReturn;
 
         private const int levels = 32;
         private readonly int recordSize;
