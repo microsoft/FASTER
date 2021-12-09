@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 namespace FASTER.core
 {
     /// <summary>
-    /// FasterLogCommitPolicy defines the way FasterLog behaves on Commit(). In addition
+    /// LogCommitPolicy defines the way FasterLog behaves on Commit(). In addition
     /// to choosing from a set of pre-defined ones, users can implement their own for custom behavior
     /// </summary>
     public abstract class LogCommitPolicy
