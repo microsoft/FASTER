@@ -13,8 +13,8 @@ namespace FASTER.server
     /// </summary>
     public sealed class VarLenServer : IDisposable
     {
-        readonly ServerOptions opts;
-        readonly FasterServer server;
+        readonly ServerOptions opts;        
+        readonly IFasterServer server;
         readonly FasterKV<SpanByte, SpanByte> store;
         readonly SpanByteFasterKVProvider provider;
         readonly SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
@@ -47,7 +47,7 @@ namespace FASTER.server
             // Create session provider for VarLen
             provider = new SpanByteFasterKVProvider(store, kvBroker, broker, opts.Recover);
 
-            server = new FasterServer(opts.Address, opts.Port);
+            server = new FasterServerTcp(opts.Address, opts.Port);
             server.Register(WireFormat.DefaultVarLenKV, provider);
             server.Register(WireFormat.WebSocket, provider);
         }
