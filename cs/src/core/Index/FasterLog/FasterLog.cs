@@ -17,29 +17,29 @@ namespace FASTER.core
     /// <summary>
     /// FASTER log
     /// </summary>
-    public sealed partial class FasterLog
+    public sealed class FasterLog : IDisposable
     {
-        private readonly BlittableAllocator<Empty, byte> allocator;
-        private readonly LightEpoch epoch;
-        private readonly ILogCommitManager logCommitManager;
-        private readonly bool disposeLogCommitManager;
-        private readonly GetMemory getMemory;
-        private readonly int headerSize;
-        private readonly LogChecksumType logChecksum;
-        private readonly WorkQueueLIFO<CommitInfo> commitQueue;
+        readonly BlittableAllocator<Empty, byte> allocator;
+        readonly LightEpoch epoch;
+        readonly ILogCommitManager logCommitManager;
+        readonly bool disposeLogCommitManager;
+        readonly GetMemory getMemory;
+        readonly int headerSize;
+        readonly LogChecksumType logChecksum;
+        readonly WorkQueueLIFO<CommitInfo> commitQueue;
 
         internal readonly bool readOnlyMode;
         internal readonly bool fastCommitMode;
 
-        private TaskCompletionSource<LinkedCommitInfo> commitTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private TaskCompletionSource<Empty> refreshUncommittedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<LinkedCommitInfo> commitTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<Empty> refreshUncommittedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Offsets for all currently unprocessed commit records
-        private readonly Queue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
-        private readonly List<FasterLogRecoveryInfo> coveredCommits = new List<FasterLogRecoveryInfo>();
-        private long commitNum, commitCoveredAddress;
+        readonly Queue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
+        readonly List<FasterLogRecoveryInfo> coveredCommits = new();
+        long commitNum, commitCoveredAddress;
 
-        private IFasterLogCommitPolicy commitPolicy;
+        readonly LogCommitPolicy commitPolicy;
 
         /// <summary>
         /// Beginning address of log
@@ -48,7 +48,7 @@ namespace FASTER.core
 
         // Here's a soft begin address that is observed by all access at the FasterLog level but not actually on the
         // allocator. This is to make sure that any potential physical deletes only happen after commit.
-        private long beginAddress;
+        long beginAddress;
 
         /// <summary>
         /// Tail address of log
@@ -189,7 +189,7 @@ namespace FASTER.core
             fastCommitMode = logSettings.FastCommitMode;
 
             ongoingCommitRequests = new Queue<(long, FasterLogRecoveryInfo)>();
-            commitPolicy = logSettings.CommitPolicy ?? new DefaultCommitPolicy();
+            commitPolicy = logSettings.LogCommitPolicy ?? LogCommitPolicy.Default();
             commitPolicy.OnAttached(this);
         }
 
@@ -1688,9 +1688,9 @@ namespace FASTER.core
                 if (commitCoveredAddress == TailAddress && !metadataChanged)
                     // Nothing to commit if no metadata update and no new entries
                     return false;
-                // Make sure we will not be allowed to back out of a commit of AdmitCommit returns true, as the strategy
+                // Make sure we will not be allowed to back out of a commit if AdmitCommit returns true, as the commit policy
                 // may need to update internal logic for every true response. We might waste some commit nums if commit
-                // strategy filters out a lot of commits, but that's fine.
+                // policy filters out a lot of commits, but that's fine.
                 if (proposedCommitNum == -1)
                     info.CommitNum = actualCommitNum = ++commitNum;
                 else if (proposedCommitNum > commitNum)

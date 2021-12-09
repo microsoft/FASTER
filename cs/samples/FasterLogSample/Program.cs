@@ -158,7 +158,7 @@ namespace FasterLogSample
                 {
                     // For finite end address, check if iteration ended
                     // if (currentAddress >= endAddress) return; 
-                    iter.WaitAsync().GetAwaiter().GetResult();
+                    iter.WaitAsync().AsTask().GetAwaiter().GetResult();
                 }
 
                 // Memory pool variant:
@@ -197,7 +197,7 @@ namespace FasterLogSample
             long lastValue = log.TailAddress;
             long lastIterValue = log.BeginAddress;
 
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
 
             while (true)
