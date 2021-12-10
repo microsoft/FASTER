@@ -74,7 +74,7 @@ namespace FASTER.test
                 readTransientErrorRate = 0,
                 readPermanentErrorRate = 0,
                 writeTransientErrorRate = 0,
-                writePermanentErrorRate = 0.1,
+                writePermanentErrorRate = 0.05,
             };
             device = new SimulatedFlakyDevice(Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true),
                 errorOptions);

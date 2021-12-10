@@ -532,7 +532,7 @@ namespace FASTER.core
                         var curPage = currentAddress >> allocator.LogPageSizeBits;
                         throw new FasterException("Uninitialized page found during scan at page " + curPage);
                     }
-
+                    
                     // Otherwise, we must assume that zeroed out bits are due to page end and skip forward to the next
                     // page. If that's not the case, next iteration of the loop will either hit EOF exception or a
                     // blank page, and propagate failure upwards appropriately

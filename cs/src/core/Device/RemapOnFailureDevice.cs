@@ -15,6 +15,8 @@ namespace FASTER.core
 
         long Capacity();
 
+        long SegmentSize();
+
         IDevice CreateNewMappedRegion(long startAddress);
         
         IEnumerable<(long, IDevice)> ListMappedRegions();
@@ -23,7 +25,7 @@ namespace FASTER.core
     public class RemapOnFailureDevice : StorageDeviceBase
     {
         private IRemapScheme remapScheme;
-        private SimpleVersionScheme simpleVersionScheme;
+        private SimpleVersionScheme versionScheme;
         private List<(long, IDevice)> existingMappedRegions;
         private int outstandingWriteRequests = 0;
 
@@ -38,8 +40,9 @@ namespace FASTER.core
             remapScheme.Capacity())
         {
             this.remapScheme = remapScheme;
-            simpleVersionScheme = new SimpleVersionScheme();
+            versionScheme = new SimpleVersionScheme();
             existingMappedRegions = new List<(long, IDevice)>();
+            segmentSize = remapScheme.SegmentSize();
             foreach (var (startAddress, device) in remapScheme.ListMappedRegions())
                 existingMappedRegions.Add((startAddress, device));
             if (existingMappedRegions.Count == 0)
@@ -55,7 +58,7 @@ namespace FASTER.core
             var removalStartAddress = segment << segmentSizeBits;
             var removalEndAddress = (segment + 1) << segmentSizeBits;
 
-            simpleVersionScheme.Enter();
+            versionScheme.Enter();
             Interlocked.Increment(ref outstandingWriteRequests);
             var startIndex = existingMappedRegions.BinarySearch((removalStartAddress, null), comparer);
             if (startIndex < 0) startIndex = ~startIndex - 1;
@@ -128,7 +131,7 @@ namespace FASTER.core
                 }
             }
 
-            simpleVersionScheme.Leave();
+            versionScheme.Leave();
             if (countdown.Signal())
             {
                 callback(result);
@@ -146,7 +149,7 @@ namespace FASTER.core
             var endAddress = startAddress + numBytesToWrite;
             Debug.Assert(endAddress < (segmentId + 1) << segmentSizeBits);
 
-            simpleVersionScheme.Enter();
+            versionScheme.Enter();
             Interlocked.Increment(ref outstandingWriteRequests);
             var i = existingMappedRegions.BinarySearch((startAddress, null), comparer);
             if (i < 0) i = ~i - 1;
@@ -176,7 +179,7 @@ namespace FASTER.core
                 writtenBytes += (uint) bytesToWrite;
             }
 
-            simpleVersionScheme.Leave();
+            versionScheme.Leave();
 
             if (countdown.Signal())
             {
@@ -194,7 +197,7 @@ namespace FASTER.core
             var endAddress = startAddress + readLength;
             Debug.Assert(endAddress < (segmentId + 1) << segmentSizeBits);
 
-            simpleVersionScheme.Enter();
+            versionScheme.Enter();
             var i = existingMappedRegions.BinarySearch((startAddress, null), comparer);
             if (i < 0) i = ~i - 1;
             uint bytesRead = 0;
@@ -222,7 +225,7 @@ namespace FASTER.core
                 bytesRead += (uint) bytesToRead;
             }
 
-            simpleVersionScheme.Leave();
+            versionScheme.Leave();
 
             if (countdown.Signal())
             {
@@ -236,11 +239,11 @@ namespace FASTER.core
             remapScheme.Dispose();
         }
 
-        public void HandleWriteError(CommitFailureException exception, Action repairAction)
+        public void HandleWriteError<Key, Value>(CommitFailureException exception, AllocatorBase<Key, Value> allocator)
         {
             var sealLocation = exception.LinkedCommitInfo.CommitInfo.FromAddress;
             ManualResetEventSlim resetEvent = new ManualResetEventSlim();
-            simpleVersionScheme.TryAdvanceVersion((_, _) =>
+            versionScheme.TryAdvanceVersion((_, _) =>
             {
                 // Can only seal the last segment
                 Debug.Assert(sealLocation > existingMappedRegions[existingMappedRegions.Count - 1].Item1);
@@ -248,7 +251,7 @@ namespace FASTER.core
                 // Wait until there are no ongoing write requests 
                 while (outstandingWriteRequests != 0) Thread.Yield();
                 existingMappedRegions.Add((sealLocation, remapScheme.CreateNewMappedRegion(sealLocation)));
-                repairAction();
+                allocator.UnsafeResetFlushStatus();
                 resetEvent.Set();
             });
             resetEvent.Wait();
