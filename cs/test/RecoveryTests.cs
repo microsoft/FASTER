@@ -42,7 +42,7 @@ namespace FASTER.test.recovery.sumstore
             fht = new FasterKV<AdId, NumClicks>(keySpace,
                 //new LogSettings { LogDevice = log, MemorySizeBits = 14, PageSizeBits = 9 },  // locks ups at session.RMW line in Populate() for Local Memory
                 new LogSettings { LogDevice = log, SegmentSizeBits = 25 },
-                new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.Snapshot }
+                new CheckpointSettings { CheckpointDir = path }
             );
         }
 
@@ -104,7 +104,7 @@ namespace FASTER.test.recovery.sumstore
             if ((opNum + 1) % checkpointInterval == 0)
             {
                 Guid token;
-                while (!fht.TakeFullCheckpoint(out token)) { }
+                while (!fht.TakeFullCheckpoint(out token, CheckpointType.Snapshot)) { }
                 logTokens.Add(token);
                 indexTokens.Add(token);
                 fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -120,7 +120,7 @@ namespace FASTER.test.recovery.sumstore
             Guid token;
             if (checkpointNum % 2 == 1)
             {
-                while (!fht.TakeHybridLogCheckpoint(out token)) { }
+                while (!fht.TakeHybridLogCheckpoint(out token, CheckpointType.Snapshot)) { }
                 logTokens.Add(token);
             }
             else
@@ -290,7 +290,7 @@ namespace FASTER.test.recovery.sumstore
 
             var result = new FasterKV<TData, TData>(DeviceTypeRecoveryTests.keySpace,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, SegmentSizeBits = 25 },
-                new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.Snapshot },
+                new CheckpointSettings { CheckpointDir = path },
                 this.serializerSettingsObj as SerializerSettings<TData, TData>,
                 variableLengthStructSettings: varLenStructSettings
             );
@@ -448,7 +448,7 @@ namespace FASTER.test.recovery.sumstore
             }
             else
             {
-                while (!fht.TakeFullCheckpoint(out this.logToken)) { }
+                while (!fht.TakeFullCheckpoint(out this.logToken, CheckpointType.Snapshot)) { }
                 fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             }
             this.indexToken = this.logToken;

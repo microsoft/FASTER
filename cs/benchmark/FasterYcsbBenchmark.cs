@@ -76,11 +76,11 @@ namespace FASTER.benchmark
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<Key, Value>
                     (testLoader.MaxKey / 4, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
-                    new CheckpointSettings { CheckPointType = CheckpointType.Snapshot, CheckpointDir = testLoader.BackupPath });
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath });
             else
                 store = new FasterKV<Key, Value>
                     (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true },
-                    new CheckpointSettings { CheckPointType = CheckpointType.Snapshot, CheckpointDir = testLoader.BackupPath });
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath });
         }
 
         internal void Dispose()

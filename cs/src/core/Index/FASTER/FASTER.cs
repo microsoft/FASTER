@@ -43,7 +43,6 @@ namespace FASTER.core
 
         internal readonly bool UseReadCache;
         private readonly CopyReadsToTail CopyReadsToTail;
-        private readonly bool UseFoldOverCheckpoint;
         internal readonly int sectorSize;
         private readonly bool WriteDefaultOnDelete;
         internal bool RelaxedCPR;
@@ -149,7 +148,6 @@ namespace FASTER.core
             if (checkpointSettings.CheckpointManager == null)
                 disposeCheckpointManager = true;
 
-            UseFoldOverCheckpoint = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
             CopyReadsToTail = logSettings.CopyReadsToTail;
 
             if (logSettings.ReadCacheSettings != null)
@@ -230,23 +228,6 @@ namespace FASTER.core
 
             systemState = SystemState.Make(Phase.REST, 1);
         }
-
-        /// <summary>
-        /// Initiate full checkpoint
-        /// </summary>
-        /// <param name="token">Checkpoint token</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
-        /// <returns>
-        /// Whether we successfully initiated the checkpoint (initiation may
-        /// fail if we are already taking a checkpoint or performing some other
-        /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
-        /// </returns>
-        public bool TakeFullCheckpoint(out Guid token, long targetVersion = -1) 
-            => TakeFullCheckpoint(out token, this.UseFoldOverCheckpoint ? CheckpointType.FoldOver : CheckpointType.Snapshot, targetVersion);
 
         /// <summary>
         /// Initiate full checkpoint
@@ -343,19 +324,6 @@ namespace FASTER.core
 
             return (success, token);
         }
-
-        /// <summary>
-        /// Initiate log-only checkpoint
-        /// </summary>
-        /// <param name="token">Checkpoint token</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
-        /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1)
-            => TakeHybridLogCheckpoint(out token, UseFoldOverCheckpoint ? CheckpointType.FoldOver : CheckpointType.Snapshot, tryIncremental: false, targetVersion);
 
         /// <summary>
         /// Initiate log-only checkpoint
