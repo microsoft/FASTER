@@ -216,6 +216,7 @@ namespace FASTER.core
                 }
             }
             handles = null;
+            ptrHandle.Free();
             pointers = null;
             values = null;
             overflowPagePool.Dispose();
