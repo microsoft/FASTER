@@ -828,6 +828,8 @@ namespace FASTER.core
                 epoch.Dispose();
             bufferPool.Free();
 
+            this.FlushEvent.Dispose();
+
             OnReadOnlyObserver?.OnCompleted();
             OnEvictionObserver?.OnCompleted();
         }
