@@ -31,11 +31,6 @@ namespace FASTER.core
         public ICheckpointManager CheckpointManager = null;
 
         /// <summary>
-        /// Type of checkpoint
-        /// </summary>
-        public CheckpointType CheckPointType = CheckpointType.Snapshot;
-
-        /// <summary>
         /// Use specified directory for storing and retrieving checkpoints
         /// using local storage device.
         /// </summary>
