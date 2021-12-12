@@ -109,13 +109,13 @@ namespace FASTER.test
             bool preallocateFile = false;
             long capacity = -1; // Capacity unspecified
             bool recoverDevice = false;
-            bool useIoCompletionPort = false;
-            bool disableFileBuffering = true;
             
             switch (testDeviceType)
             {
 #if WINDOWS
                 case DeviceType.LSD:
+                    bool useIoCompletionPort = false;
+                    bool disableFileBuffering = true;
 #if NETSTANDARD || NET
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))    // avoids CA1416 // Validate platform compatibility
 #endif
