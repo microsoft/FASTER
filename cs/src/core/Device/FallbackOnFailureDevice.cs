@@ -224,7 +224,7 @@ namespace FASTER.core
             fallbackScheme.Dispose();
         }
 
-        public void HandleWriteError<Key, Value>(CommitFailureException exception, AllocatorBase<Key, Value> allocator)
+        public void HandleWriteError(FasterLog fasterLog, CommitFailureException exception)
         {
             var info = exception.LinkedCommitInfo.CommitInfo;
 
@@ -236,7 +236,7 @@ namespace FASTER.core
                 fallbackRanges.Add((info.FromAddress, info.UntilAddress));
                 fallbackRangeOffsets.Add(fallbackRangeOffsets[fallbackRangeOffsets.Count - 1] + info.UntilAddress -
                                          info.FromAddress);
-                allocator.AsyncFlushPages(info.FromAddress, info.UntilAddress);
+                fasterLog.UnsafeForceFlushRange(info.FromAddress, info.UntilAddress);
                 resetEvent.Set();
             });
             resetEvent.Wait();

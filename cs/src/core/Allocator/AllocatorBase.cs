@@ -1389,7 +1389,6 @@ namespace FASTER.core
         protected void ShiftFlushedUntilAddress()
         {
             long currentFlushedUntilAddress = FlushedUntilAddress;
-
             long page = GetPage(currentFlushedUntilAddress);
 
             bool update = false;
@@ -1404,7 +1403,8 @@ namespace FASTER.core
 
             if (update)
             {
-                // Anything here must be valid flushes because error flushes do not set LastFlushedUntilAddress.
+                // Anything here must be valid flushes because error flushes do not set LastFlushedUntilAddress, which
+                // prevents future ranges from being marked as flushed
                 if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
                 {
                     FlushCallback?.Invoke(
@@ -1433,6 +1433,7 @@ namespace FASTER.core
                     // can invoke callback on it.
                     FlushCallback?.Invoke(info);
                 }
+                // Otherwise, do nothing and wait for the next invocation.
             }
         }
 
@@ -1943,10 +1944,13 @@ namespace FASTER.core
                 {
                     if (errorCode != 0)
                     {
+                        // Note down error details and trigger handling only when we are certain this is the earliest
+                        // error among currently issued flushes
                         errorList.Add(new CommitInfo { FromAddress =  result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode } );
                     }
                     else
                     {
+                        // Update the page's last flushed until address only if there is no failure.
                         Utility.MonotonicUpdate(
                             ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress,
                             result.untilAddress, out _);
@@ -1965,16 +1969,17 @@ namespace FASTER.core
             catch when (disposed) { }
         }
 
-        public void UnsafeResetFlushStatus()
+        internal void UnsafeResetFlushStatus()
         {
             for (var i = 0; i < BufferSize; i++)
             {
                 PageStatusIndicator[i].LastFlushedUntilAddress = FlushedUntilAddress;
+                PendingFlush[i].list.Clear();
             }
             errorList.ClearError();
         }
 
-        public void UnsafeSkipLogTo(long untilAddress)
+        internal void UnsafeSkipLogTo(long untilAddress)
         {
             if (Utility.MonotonicUpdate(ref FlushedUntilAddress, untilAddress,
                 out long oldFlushedUntilAddress))

@@ -1,8 +1,6 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Threading;
 
 namespace FASTER.core
@@ -22,7 +20,7 @@ namespace FASTER.core
         IEnumerable<(long, IDevice)> ListMappedRegions();
     }
 
-    public class RemapOnFailureDevice : StorageDeviceBase
+    public class RemapOnFailureLogDevice : StorageDeviceBase
     {
         private IRemapScheme remapScheme;
         private SimpleVersionScheme versionScheme;
@@ -36,7 +34,7 @@ namespace FASTER.core
 
         private MappedRegionComparer comparer = new MappedRegionComparer();
 
-        public RemapOnFailureDevice(IRemapScheme remapScheme) : base(remapScheme.BaseName(), remapScheme.SectorSize(),
+        public RemapOnFailureLogDevice(IRemapScheme remapScheme) : base(remapScheme.BaseName(), remapScheme.SectorSize(),
             remapScheme.Capacity())
         {
             this.remapScheme = remapScheme;
@@ -239,7 +237,7 @@ namespace FASTER.core
             remapScheme.Dispose();
         }
 
-        public void HandleWriteError<Key, Value>(CommitFailureException exception, AllocatorBase<Key, Value> allocator)
+        public void HandleWriteError(FasterLog log, CommitFailureException exception)
         {
             var sealLocation = exception.LinkedCommitInfo.CommitInfo.FromAddress;
             ManualResetEventSlim resetEvent = new ManualResetEventSlim();
@@ -251,7 +249,7 @@ namespace FASTER.core
                 // Wait until there are no ongoing write requests 
                 while (outstandingWriteRequests != 0) Thread.Yield();
                 existingMappedRegions.Add((sealLocation, remapScheme.CreateNewMappedRegion(sealLocation)));
-                allocator.UnsafeResetFlushStatus();
+                log.UnsafeResetFlushStatus();
                 resetEvent.Set();
             });
             resetEvent.Wait();

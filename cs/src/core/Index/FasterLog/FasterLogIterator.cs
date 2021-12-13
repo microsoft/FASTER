@@ -525,19 +525,16 @@ namespace FASTER.core
                 // whether that is the case
                 if (entryLength == 0)
                 {
-                    // If zeroed out field is at page start, we encountered an uninitialized page and should signal up
-                    var pageOffset = currentAddress & ((1 << allocator.LogPageSizeBits) - 1);
-                    if (pageOffset == 0)
+                    // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page. 
+                    var  nextStart = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    if (Utility.MonotonicUpdate(ref nextAddress, nextStart, out _))
                     {
-                        var curPage = currentAddress >> allocator.LogPageSizeBits;
-                        throw new FasterException("Uninitialized page found during scan at page " + curPage);
+                        var pageOffset = currentAddress & ((1 << allocator.LogPageSizeBits) - 1);
+
+                        // If zeroed out field is at page start, we encountered an uninitialized page and should signal up
+                        if (pageOffset == 0)
+                            throw new FasterException("Uninitialized page found during scan at page " + (currentAddress >> allocator.LogPageSizeBits));
                     }
-                    
-                    // Otherwise, we must assume that zeroed out bits are due to page end and skip forward to the next
-                    // page. If that's not the case, next iteration of the loop will either hit EOF exception or a
-                    // blank page, and propagate failure upwards appropriately
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
-                    Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _);
                     continue;
                 }
 
@@ -551,10 +548,10 @@ namespace FASTER.core
                 int recordSize = headerSize + Align(entryLength);
                 if (_currentOffset + recordSize > allocator.PageSize)
                 {
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    currentAddress += headerSize;
                     if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                     {
-                        throw new FasterException("Invalid length of record found: " + entryLength + " at address " + currentAddress + ", skipping page");
+                        throw new FasterException("Invalid length of record found: " + entryLength + " at address " + currentAddress);
                     }
                     continue;
                 }
@@ -565,10 +562,10 @@ namespace FASTER.core
                     if (!fasterLog.VerifyChecksum((byte*)physicalAddress, entryLength))
                     {
                         var curPage = currentAddress >> allocator.LogPageSizeBits;
-                        currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                        currentAddress += headerSize;
                         if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         {
-                            throw new FasterException("Invalid checksum found during scan, skipping page " + curPage);
+                            throw new FasterException("Invalid checksum found during scan, skipping");
                         }
                         continue;
                     }

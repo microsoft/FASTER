@@ -6,8 +6,9 @@ namespace FASTER.core
 {
     /// <summary>
     ///     SimpleVersionScheme operates like a read-write latch that ensures protected code segments are not interleaved
-    ///     with special "version change" code segments that run sequentially. It is more scalable than a typical reader-writer latch
-    ///     by taking advantage of the epoch protection framework in the common case.
+    ///     with special, infrequent "version change" code segments that run sequentially. It is more scalable than a
+    ///     typical reader-writer latch by taking advantage of the epoch protection framework and avoiding false sharing
+    ///     in the common case.
     /// </summary>
     public class SimpleVersionScheme
     {
@@ -33,11 +34,14 @@ namespace FASTER.core
         }
 
         /// <summary>
-        ///     Enters a batch into the current version to protect later processing from concurrent checkpoints or recovery.
-        ///     Method may block if there is a checkpoint or recovery underway. Once a batch enters the version, it must
-        ///     eventually leave through the Leave() method so the system makes meaningful progress.
+        ///     Protects later processing from concurrent version changes until Leave() is called. Method may block if
+        ///     version change is under way. Leave() must eventually be called on the same thread so the rest of the
+        ///     system makes meaningful progress.
         /// </summary>
-        /// <returns>current version number</returns>
+        /// <returns>
+        ///     current version number. This guarantees that any version change logic from smaller version numbers
+        ///     have finished, and not version change logic to larger versions will begin during protection.
+        /// </returns>
         public long Enter()
         {
             epoch.Resume();
@@ -52,11 +56,12 @@ namespace FASTER.core
                 ev.Wait();
                 epoch.Resume();
             }
+
             return version;
         }
 
         /// <summary>
-        ///     Signals that a batch has been processed and should no longer be protected
+        ///     Drops protection for a thread.
         /// </summary>
         public void Leave()
         {
@@ -66,8 +71,8 @@ namespace FASTER.core
         /// <summary>
         ///     Attempts to advance the version to the target version, executing the given action in a critical section
         ///     where no batches are being processed before entering the next version. Each version will be advanced to
-        ///     exactly once. This method may fail and return false if given target version is not larger than the current
-        ///     version (possibly due to concurrent invocations to advance to the same version).
+        ///     exactly once. This method may fail and return false if given target version is not larger than the
+        ///     current version (possibly due to concurrent invocations to advance to the same version).
         ///     After the method returns, subsequent calls to Version() and Enter() will return at least the value of
         ///     targetVersion.
         /// </summary>
@@ -78,10 +83,8 @@ namespace FASTER.core
         {
             var ev = new ManualResetEventSlim();
             // Compare and exchange to install our advance
-            while (Interlocked.CompareExchange(ref versionChanged, ev, null) != null)
-            {
-            }
-            
+            while (Interlocked.CompareExchange(ref versionChanged, ev, null) != null) {}
+
             if (targetVersion != -1 && targetVersion <= version)
             {
                 versionChanged.Set();
@@ -98,6 +101,13 @@ namespace FASTER.core
                 versionChanged.Set();
                 versionChanged = null;
             });
+            
+            // Make sure that even if we are the only thread, we are able to make progress
+            if (!epoch.ThisInstanceProtected())
+            {
+                epoch.Resume();
+                epoch.Suspend();
+            }
             return true;
         }
     }

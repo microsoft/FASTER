@@ -19,7 +19,7 @@ namespace FASTER.core
     /// </summary>
     public sealed class FasterLog : IDisposable
     {
-        private CommitFailureException cannedException = null;
+        private Exception cannedException = null;
         
         readonly BlittableAllocator<Empty, byte> allocator;
         readonly LightEpoch epoch;
@@ -119,6 +119,8 @@ namespace FASTER.core
         /// </summary>
         internal int logRefCount = 1;
 
+        private Action<FasterLog, CommitFailureException> DeviceFailureHandler;
+
         /// <summary>
         /// Create new log instance
         /// </summary>
@@ -192,6 +194,8 @@ namespace FASTER.core
             ongoingCommitRequests = new Queue<(long, FasterLogRecoveryInfo)>();
             commitPolicy = logSettings.LogCommitPolicy ?? LogCommitPolicy.Default();
             commitPolicy.OnAttached(this);
+
+            DeviceFailureHandler = logSettings.DeviceFailureHandler;
         }
 
         /// <summary>
@@ -212,14 +216,38 @@ namespace FASTER.core
             if (disposeLogCommitManager)
                 logCommitManager.Dispose();
         }
-        
-        public void ResolveCommitFailure(CommitFailureException failure)
+
+        /// <summary>
+        /// (Unsafely) resets the current status of AllocatorBase to the current FlushedUntilAddress. All flushes beyond
+        /// the current flushed until address are thrown away for later retries. Should only be invoked when the allocator
+        /// is quiesced, i.e., no outstanding flushes or concurrent requests. Primarily used for handling device failure.
+        /// </summary>
+        public void UnsafeResetFlushStatus()
         {
-            // Create a new commitTcs only if the failure status changed
-            if (Interlocked.CompareExchange(ref cannedException, null, failure) == failure)
-                commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+            allocator.UnsafeResetFlushStatus();
         }
 
+        /// <summary>
+        /// (Unsafely) sets the flushed until address of AllocatorBase to be the given address, not waiting for outstanding
+        /// flushes and ignoring errors. Primarily used for handling device failure. WARNING: CAN CAUSE LOG DATA CORRUPTION.
+        /// </summary>
+        /// <param name="untilAddress"></param>
+        public void UnsafeSkipLogTo(long untilAddress)
+        {
+            allocator.UnsafeSkipLogTo(untilAddress);
+        }
+
+        /// <summary>
+        /// (Unsafely) flushes the specified address range to underlying storage, regardless of commit or flush status.
+        /// Primarily used for handling device failure.
+        /// </summary>
+        /// <param name="fromAddress"></param>
+        /// <param name="toAddress"></param>
+        public void UnsafeForceFlushRange(long fromAddress, long toAddress)
+        {
+            allocator.AsyncFlushPages(fromAddress, toAddress);
+        }
+        
         #region Enqueue
         /// <summary>
         /// Enqueue entry to log (in memory) - no guarantee of flush/commit
@@ -1108,10 +1136,19 @@ namespace FASTER.core
         {
             if (commitInfo.ErrorCode != 0)
             {
-                cannedException = new CommitFailureException(new LinkedCommitInfo { CommitInfo = commitInfo },
+                var exception = new CommitFailureException(new LinkedCommitInfo { CommitInfo = commitInfo },
                     $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}");
-                // Make sure future waiters do not get a fresh tcs until failure status is cleared
-                commitTcs.TrySetException(cannedException);
+
+                try
+                {
+                    DeviceFailureHandler(this, exception);
+                }
+                catch (Exception e)
+                {
+                    cannedException = e;
+                    // Make sure future waiters do not get a fresh tcs
+                    commitTcs.TrySetException(cannedException);
+                }
                 return;
             }
             // Check for the commit records included in this flush

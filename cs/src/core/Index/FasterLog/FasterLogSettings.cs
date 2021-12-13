@@ -106,6 +106,8 @@ namespace FASTER.core
         /// Log commit policy that influences the behavior of Commit() calls.
         /// </summary>
         public LogCommitPolicy LogCommitPolicy = LogCommitPolicy.Default();
+        
+        public Action<FasterLog, CommitFailureException> DeviceFailureHandler = (_, e) => throw e;
 
         internal LogSettings GetLogSettings()
         {

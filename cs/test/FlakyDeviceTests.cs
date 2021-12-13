@@ -7,6 +7,42 @@ using NUnit.Framework;
 
 namespace FASTER.test
 {
+    internal class TestFallbackScheme : IFallbackScheme
+    {
+        private IDevice mainDevice, fallbackDevice;
+
+        public TestFallbackScheme(IDevice mainDevice, IDevice fallbackDevice)
+        {
+            this.mainDevice = mainDevice;
+            this.fallbackDevice = fallbackDevice;
+        }
+        
+        public void Dispose()
+        {
+            mainDevice.Dispose();
+            fallbackDevice.Dispose();
+        }
+
+        public string BaseName() => mainDevice.FileName;
+
+        public uint SectorSize() => mainDevice.SectorSize;
+
+        public long SegmentSize() => mainDevice.SegmentSize;
+
+        public long Capacity() => mainDevice.Capacity;
+
+        public IDevice GetMainDevice() => mainDevice;
+
+        public IDevice GetFallbackDevice() => fallbackDevice;
+
+        // test devices not expected to persist across runs
+        public List<(long, long)> GetFallbackRanges() => new();
+
+        public void AddFallbackRange(long rangeStart, long rangeEnd)
+        {
+        }
+    }
+    
     [TestFixture]
     internal class FlakyDeviceTests : FasterLogTestBase
     {
