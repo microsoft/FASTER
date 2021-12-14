@@ -12,63 +12,9 @@ namespace FASTER.core
     /// </summary>
     public sealed class FasterKVConfig<Key, Value> : IDisposable
     {
-        bool disposeDevices = false;
-        bool deleteDirOnDispose = false;
-        string baseDir;
-
-        /// <summary>
-        /// Create default configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB"). Default index size is 64MB.
-        /// </summary>
-        public FasterKVConfig() { }
-
-        /// <summary>
-        /// Create default configuration backed by local storage at given base directory. Use Utility.ParseSize to specify sizes 
-        /// in familiar string notation (e.g., "4k" and "4 MB"). Default index size is 64MB.
-        /// </summary>
-        /// <param name="baseDir">Base directory (without trailing path separator)</param>
-        /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose</param>
-        public FasterKVConfig(string baseDir, bool deleteDirOnDispose = false)
-        {
-            disposeDevices = true;
-            this.deleteDirOnDispose = deleteDirOnDispose;
-            this.baseDir = baseDir;
-
-            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.log");
-            if ((!Utility.IsBlittable<Key>() && KeyLength == null) ||
-                (!Utility.IsBlittable<Value>() && ValueLength == null))
-            {
-                ObjectLogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.obj.log");
-            }
-            
-            CheckpointDir = baseDir == null ? null : baseDir + "/checkpoints";
-        }
-
-        /// <inheritdoc />
-        public void Dispose()
-        {
-            if (disposeDevices)
-            {
-                LogDevice?.Dispose();
-                ObjectLogDevice?.Dispose();
-                if (deleteDirOnDispose && baseDir != null)
-                {
-                    try { new DirectoryInfo(baseDir).Delete(true); } catch { }
-                }
-            }
-        }
-
-        /// <inheritdoc />
-        public override string ToString()
-        {
-            var retStr = $"index: {PrettySize(IndexSize)}; log memory: {PrettySize(MemorySize)}; log page: {PrettySize(PageSize)}; log segment: {PrettySize(SegmentSize)}";
-            retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
-            retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
-            retStr += $"; mutable fraction: {MutableFraction}; supports locking: {(SupportsLocking ? "yes" : "no")}";
-            retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
-            if (ReadCacheEnabled)
-                retStr += $"; rc memory: {PrettySize(ReadCacheMemorySize)}; rc page: {PrettySize(ReadCachePageSize)}";
-            return retStr;
-        }
+        readonly bool disposeDevices = false;
+        readonly bool deleteDirOnDispose = false;
+        readonly string baseDir;
 
         /// <summary>
         /// Size of main hash index, in bytes. Rounds down to power of 2.
@@ -182,6 +128,60 @@ namespace FASTER.core
         /// Whether FASTER should remove outdated checkpoints automatically
         /// </summary>
         public bool RemoveOutdatedCheckpoints = true;
+
+        /// <summary>
+        /// Create default configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB"). Default index size is 64MB.
+        /// </summary>
+        public FasterKVConfig() { }
+
+        /// <summary>
+        /// Create default configuration backed by local storage at given base directory. Use Utility.ParseSize to specify sizes 
+        /// in familiar string notation (e.g., "4k" and "4 MB"). Default index size is 64MB.
+        /// </summary>
+        /// <param name="baseDir">Base directory (without trailing path separator)</param>
+        /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose</param>
+        public FasterKVConfig(string baseDir, bool deleteDirOnDispose = false)
+        {
+            disposeDevices = true;
+            this.deleteDirOnDispose = deleteDirOnDispose;
+            this.baseDir = baseDir;
+
+            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.log");
+            if ((!Utility.IsBlittable<Key>() && KeyLength == null) ||
+                (!Utility.IsBlittable<Value>() && ValueLength == null))
+            {
+                ObjectLogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.obj.log");
+            }
+
+            CheckpointDir = baseDir == null ? null : baseDir + "/checkpoints";
+        }
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            if (disposeDevices)
+            {
+                LogDevice?.Dispose();
+                ObjectLogDevice?.Dispose();
+                if (deleteDirOnDispose && baseDir != null)
+                {
+                    try { new DirectoryInfo(baseDir).Delete(true); } catch { }
+                }
+            }
+        }
+
+        /// <inheritdoc />
+        public override string ToString()
+        {
+            var retStr = $"index: {PrettySize(IndexSize)}; log memory: {PrettySize(MemorySize)}; log page: {PrettySize(PageSize)}; log segment: {PrettySize(SegmentSize)}";
+            retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
+            retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
+            retStr += $"; mutable fraction: {MutableFraction}; supports locking: {(SupportsLocking ? "yes" : "no")}";
+            retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
+            if (ReadCacheEnabled)
+                retStr += $"; rc memory: {PrettySize(ReadCacheMemorySize)}; rc page: {PrettySize(ReadCachePageSize)}";
+            return retStr;
+        }
 
         internal long GetIndexSizeCacheLines()
         {
