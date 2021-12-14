@@ -46,6 +46,37 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Parse size in string notation into long.
+        /// Examples: 4k, 4K, 4KB, 4 KB, 8m, 8MB, 12g, 12 GB, 16t, 16 TB, 32p, 32 PB.
+        /// </summary>
+        /// <param name="value">String version of number</param>
+        /// <returns>The number</returns>
+        public static long ParseSize(string value)
+        {
+            char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
+            long result = 0;
+            foreach (char c in value)
+            {
+                if (char.IsDigit(c))
+                {
+                    result = result * 10 + (byte)c - '0';
+                }
+                else
+                {
+                    for (int i = 0; i < suffix.Length; i++)
+                    {
+                        if (char.ToLower(c) == suffix[i])
+                        {
+                            result *= (long)Math.Pow(1024, i + 1);
+                            return result;
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
         /// Is type blittable
         /// </summary>
         /// <typeparam name="T"></typeparam>

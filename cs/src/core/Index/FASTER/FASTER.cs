@@ -88,7 +88,23 @@ namespace FASTER.core
         internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
         /// <summary>
-        /// Create FASTER instance
+        /// Create FasterKV instance
+        /// </summary>
+        public FasterKV() : this(new FasterKVConfig<Key, Value>()) { }
+
+        /// <summary>
+        /// Create FasterKV instance
+        /// </summary>
+        /// <param name="fasterKVConfig">Config settings</param>
+        public FasterKV(FasterKVConfig<Key, Value> fasterKVConfig) :
+            this(
+                fasterKVConfig.GetIndexSizeCacheLines(), fasterKVConfig.GetLogSettings(), 
+                fasterKVConfig.GetCheckpointSettings(), fasterKVConfig.GetSerializerSettings(), 
+                fasterKVConfig.EqualityComparer, fasterKVConfig.GetVariableLengthStructSettings())
+        { }
+
+        /// <summary>
+        /// Create FasterKV instance
         /// </summary>
         /// <param name="size">Size of core index (#cache lines)</param>
         /// <param name="logSettings">Log settings</param>
@@ -126,24 +142,13 @@ namespace FASTER.core
                 checkpointSettings = new CheckpointSettings();
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
-                throw new FasterException(
-                    "Specify either CheckpointManager or CheckpointDir for CheckpointSettings, not both");
+                Trace.TraceInformation("CheckpointManager and CheckpointDir specified, ignoring CheckpointDir");
 
-            bool oldCheckpointManager = false;
-
-            if (oldCheckpointManager)
-            {
-                checkpointManager = checkpointSettings.CheckpointManager ??
-                                new LocalCheckpointManager(checkpointSettings.CheckpointDir ?? "");
-            }
-            else
-            {
-                checkpointManager = checkpointSettings.CheckpointManager ??
-                    new DeviceLogCommitCheckpointManager
-                    (new LocalStorageNamedDeviceFactory(),
-                        new DefaultCheckpointNamingScheme(
-                          new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName), removeOutdated: checkpointSettings.RemoveOutdated);
-            }
+            checkpointManager = checkpointSettings.CheckpointManager ??
+                new DeviceLogCommitCheckpointManager
+                (new LocalStorageNamedDeviceFactory(),
+                    new DefaultCheckpointNamingScheme(
+                        new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName), removeOutdated: checkpointSettings.RemoveOutdated);
 
             if (checkpointSettings.CheckpointManager == null)
                 disposeCheckpointManager = true;
