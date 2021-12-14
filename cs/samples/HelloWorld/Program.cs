@@ -28,7 +28,7 @@ namespace HelloWorld
 
             // Create a default config (null path indicates in-memory only)
             // Uses default config parameters. Update config fields to tune parameters.
-            using var config = new FasterKVConfig<long, long>(null);
+            using var config = new FasterKVSettings<long, long>(null);
             Console.WriteLine($"FasterKV config:\n{config}\n");
 
             using var store = new FasterKV<long, long>(config);
@@ -102,7 +102,7 @@ namespace HelloWorld
             long key = 1, value = 1, output = 0;
 
             // Create FasterKV config based on specified base directory path.
-            using var config = new FasterKVConfig<long, long>("./database") { TryRecoverLatest = true };
+            using var config = new FasterKVSettings<long, long>("./database") { TryRecoverLatest = true };
             Console.WriteLine($"FasterKV config:\n{config}\n");
 
             // Create store using specified config

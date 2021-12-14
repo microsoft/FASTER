@@ -122,43 +122,14 @@ namespace FASTER.core
         /// Create new log instance
         /// </summary>
         /// <param name="logSettings">Log settings</param>
-        /// <param name="requestedCommitNum">Specific commit number to recover from (or -1 for latest) </param>
-        public FasterLog(FasterLogSettings logSettings, long requestedCommitNum = -1)
-            : this(logSettings, false)
+        public FasterLog(FasterLogSettings logSettings)
         {
-            Dictionary<string, long> it;
-            if (requestedCommitNum == -1)
-                RestoreLatest(false, out it, out RecoveredCookie);
-            else
-                RestoreSpecificCommit(requestedCommitNum, out it, out RecoveredCookie);
-
-            RecoveredIterators = it;
-        }
-
-        /// <summary>
-        /// Create new log instance asynchronously
-        /// </summary>
-        /// <param name="logSettings"></param>
-        /// <param name="cancellationToken"></param>
-        public static async ValueTask<FasterLog> CreateAsync(FasterLogSettings logSettings, CancellationToken cancellationToken = default)
-        {
-            var fasterLog = new FasterLog(logSettings, false);
-            var (it, cookie) = await fasterLog.RestoreLatestAsync(false, cancellationToken).ConfigureAwait(false);
-            fasterLog.RecoveredIterators = it;
-            fasterLog.RecoveredCookie = cookie;
-
-            return fasterLog;
-        }
-
-        private FasterLog(FasterLogSettings logSettings, bool oldCommitManager)
-        {
-            Debug.Assert(oldCommitManager == false);
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
                 (new LocalStorageNamedDeviceFactory(),
                     new DefaultCheckpointNamingScheme(
                         logSettings.LogCommitDir ??
-                        new FileInfo(logSettings.LogDevice.FileName).Directory.FullName), 
+                        new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),
                     logSettings.ReadOnlyMode ? false : logSettings.RemoveOutdatedCommitFiles);
 
             if (logSettings.LogCommitManager == null)
@@ -191,6 +162,47 @@ namespace FASTER.core
             ongoingCommitRequests = new Queue<(long, FasterLogRecoveryInfo)>();
             commitPolicy = logSettings.LogCommitPolicy ?? LogCommitPolicy.Default();
             commitPolicy.OnAttached(this);
+
+            if (logSettings.TryRecoverLatest)
+            {
+                try
+                {
+                    Recover(-1);
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// Recover FasterLog to the specific commit number, or latest if -1
+        /// </summary>
+        /// <param name="requestedCommitNum">Requested commit number</param>
+        public void Recover(long requestedCommitNum = -1)
+        {
+            if (CommittedUntilAddress > BeginAddress)
+                throw new FasterException($"Already recovered until address {CommittedUntilAddress}");
+
+            Dictionary<string, long> it;
+            if (requestedCommitNum == -1)
+                RestoreLatest(false, out it, out RecoveredCookie);
+            else
+                RestoreSpecificCommit(requestedCommitNum, out it, out RecoveredCookie);
+            RecoveredIterators = it;
+        }
+
+        /// <summary>
+        /// Create new log instance asynchronously
+        /// </summary>
+        /// <param name="logSettings"></param>
+        /// <param name="cancellationToken"></param>
+        public static async ValueTask<FasterLog> CreateAsync(FasterLogSettings logSettings, CancellationToken cancellationToken = default)
+        {
+            var fasterLog = new FasterLog(logSettings);
+            var (it, cookie) = await fasterLog.RestoreLatestAsync(false, cancellationToken).ConfigureAwait(false);
+            fasterLog.RecoveredIterators = it;
+            fasterLog.RecoveredCookie = cookie;
+
+            return fasterLog;
         }
 
         /// <summary>

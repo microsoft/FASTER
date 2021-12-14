@@ -10,7 +10,7 @@ namespace FASTER.core
     /// <summary>
     /// Configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
     /// </summary>
-    public sealed class FasterKVConfig<Key, Value> : IDisposable
+    public sealed class FasterKVSettings<Key, Value> : IDisposable
     {
         readonly bool disposeDevices = false;
         readonly bool deleteDirOnDispose = false;
@@ -135,12 +135,12 @@ namespace FASTER.core
         public bool TryRecoverLatest = false;
 
         /// <summary>
-        /// Create default configuration settings for hybrid log. You need to create and specify LogDevice 
+        /// Create default configuration settings for FasterKV. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
         /// Default index size is 64MB.
         /// </summary>
-        public FasterKVConfig() { }
+        public FasterKVSettings() { }
 
         /// <summary>
         /// Create default configuration backed by local storage at given base directory.
@@ -149,7 +149,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="baseDir">Base directory (without trailing path separator)</param>
         /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose. This option prevents later recovery.</param>
-        public FasterKVConfig(string baseDir, bool deleteDirOnDispose = false)
+        public FasterKVSettings(string baseDir, bool deleteDirOnDispose = false)
         {
             disposeDevices = true;
             this.deleteDirOnDispose = deleteDirOnDispose;
@@ -182,19 +182,19 @@ namespace FASTER.core
         /// <inheritdoc />
         public override string ToString()
         {
-            var retStr = $"index: {PrettySize(IndexSize)}; log memory: {PrettySize(MemorySize)}; log page: {PrettySize(PageSize)}; log segment: {PrettySize(SegmentSize)}";
+            var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(MemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
             retStr += $"; mutable fraction: {MutableFraction}; supports locking: {(SupportsLocking ? "yes" : "no")}";
             retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
             if (ReadCacheEnabled)
-                retStr += $"; rc memory: {PrettySize(ReadCacheMemorySize)}; rc page: {PrettySize(ReadCachePageSize)}";
+                retStr += $"; rc memory: {Utility.PrettySize(ReadCacheMemorySize)}; rc page: {Utility.PrettySize(ReadCachePageSize)}";
             return retStr;
         }
 
         internal long GetIndexSizeCacheLines()
         {
-            long adjustedSize = PreviousPowerOf2(IndexSize);
+            long adjustedSize = Utility.PreviousPowerOf2(IndexSize);
             if (adjustedSize < 64)
                 throw new FasterException($"{nameof(IndexSize)} should be at least of size one cache line (64 bytes)");
             if (IndexSize != adjustedSize)
@@ -209,9 +209,9 @@ namespace FASTER.core
                 CopyReadsToTail = CopyReadsToTail,
                 LogDevice = LogDevice,
                 ObjectLogDevice = ObjectLogDevice,
-                MemorySizeBits = NumBitsPreviousPowerOf2(MemorySize),
-                PageSizeBits = NumBitsPreviousPowerOf2(PageSize),
-                SegmentSizeBits = NumBitsPreviousPowerOf2(SegmentSize),
+                MemorySizeBits = Utility.NumBitsPreviousPowerOf2(MemorySize),
+                PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
+                SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
                 MutableFraction = MutableFraction,
                 PreallocateLog = PreallocateLog,
                 ReadCacheSettings = GetReadCacheSettings()
@@ -223,8 +223,8 @@ namespace FASTER.core
             return ReadCacheEnabled ?
                 new ReadCacheSettings
                 {
-                    MemorySizeBits = NumBitsPreviousPowerOf2(ReadCacheMemorySize),
-                    PageSizeBits = NumBitsPreviousPowerOf2(ReadCachePageSize),
+                    MemorySizeBits = Utility.NumBitsPreviousPowerOf2(ReadCacheMemorySize),
+                    PageSizeBits = Utility.NumBitsPreviousPowerOf2(ReadCachePageSize),
                     SecondChanceFraction = ReadCacheSecondChanceFraction
                 }
                 : null;
@@ -264,57 +264,5 @@ namespace FASTER.core
             };
         }
 
-        private static int NumBitsPreviousPowerOf2(long v)
-        {
-            long adjustedSize = PreviousPowerOf2(v);
-            if (v != adjustedSize)
-                Trace.TraceInformation($"Warning: using lower value {adjustedSize} instead of specified value {v}");
-            return (int)Math.Log(adjustedSize, 2);
-        }
-
-        private static long PreviousPowerOf2(long v)
-        {
-            v |= v >> 1;
-            v |= v >> 2;
-            v |= v >> 4;
-            v |= v >> 8;
-            v |= v >> 16;
-            v |= v >> 32;
-            return v - (v >> 1);
-        }
-
-        /// <summary>
-        /// Pretty print value
-        /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        private static string PrettySize(long value)
-        {
-            char[] suffix = new char[] { 'K', 'M', 'G', 'T', 'P' };
-            double v = value;
-            int exp = 0;
-            while (v - Math.Floor(v) > 0)
-            {
-                if (exp >= 18)
-                    break;
-                exp += 3;
-                v *= 1024;
-                v = Math.Round(v, 12);
-            }
-
-            while (Math.Floor(v).ToString().Length > 3)
-            {
-                if (exp <= -18)
-                    break;
-                exp -= 3;
-                v /= 1024;
-                v = Math.Round(v, 12);
-            }
-            if (exp > 0)
-                return v.ToString() + suffix[exp / 3 - 1] + "B";
-            else if (exp < 0)
-                return v.ToString() + suffix[-exp / 3 - 1] + "B";
-            return v.ToString() + "B";
-        }
     }
 }

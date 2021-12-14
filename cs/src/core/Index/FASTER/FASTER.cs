@@ -91,7 +91,7 @@ namespace FASTER.core
         /// Create FasterKV instance
         /// </summary>
         /// <param name="fasterKVConfig">Config settings</param>
-        public FasterKV(FasterKVConfig<Key, Value> fasterKVConfig) :
+        public FasterKV(FasterKVSettings<Key, Value> fasterKVConfig) :
             this(
                 fasterKVConfig.GetIndexSizeCacheLines(), fasterKVConfig.GetLogSettings(), 
                 fasterKVConfig.GetCheckpointSettings(), fasterKVConfig.GetSerializerSettings(), 
