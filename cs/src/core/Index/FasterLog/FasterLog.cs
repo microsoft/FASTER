@@ -457,6 +457,7 @@ namespace FASTER.core
         /// ensure that someone else causes the commit to happen.
         /// </summary>
         /// <param name="untilAddress">Address until which we should wait for commit, default 0 for tail of log</param>
+        /// <param name ="commitNum">CommitNum until which we should wait for commit, default -1 for latest as of now</param>
         /// <returns></returns>
         public void WaitForCommit(long untilAddress = 0, long commitNum = -1)
         {

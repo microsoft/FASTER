@@ -69,7 +69,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterLog")]
-        public async ValueTask FlakyLogTestConcurrentWriteFailure()
+        public void FlakyLogTestConcurrentWriteFailure()
         {
             var errorOptions = new ErrorSimulationOptions
             {
