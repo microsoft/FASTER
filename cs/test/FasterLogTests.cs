@@ -833,7 +833,7 @@ namespace FASTER.test
         public void FasterLogManualCommitTest()
         {
             device = Devices.CreateLogDevice(path + "logManualCommitTest.log", deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager};
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager, TryRecoverLatest = false };
             log = new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
@@ -870,12 +870,14 @@ namespace FASTER.test
             commitSuccessful = log.CommitStrongly(out var commit6Addr, out _, true, cookie6, 6);
             Assert.IsTrue(commitSuccessful);
 
-            var recoveredLog = new FasterLog(logSettings, 1);
+            var recoveredLog = new FasterLog(logSettings);
+            recoveredLog.Recover(1);
             Assert.AreEqual(cookie1, recoveredLog.RecoveredCookie);
             Assert.AreEqual(commit1Addr, recoveredLog.TailAddress);
             recoveredLog.Dispose();
             
-            recoveredLog = new FasterLog(logSettings, 2);
+            recoveredLog = new FasterLog(logSettings);
+            recoveredLog.Recover(2);
             Assert.AreEqual(cookie2, recoveredLog.RecoveredCookie);
             Assert.AreEqual(commit2Addr, recoveredLog.TailAddress);
             recoveredLog.Dispose();
@@ -883,12 +885,14 @@ namespace FASTER.test
             // recovering to a non-existent commit should throw FasterException
             try
             {
-                recoveredLog = new FasterLog(logSettings, 4);
+                recoveredLog = new FasterLog(logSettings);
+                recoveredLog.Recover(4);
                 Assert.Fail();
             }
             catch (FasterException) {}
 
-            // Default argument should recover to most recent
+            // Default argument should recover to most recent, with TryRecoverLatest set to true
+            logSettings.TryRecoverLatest = true;
             recoveredLog = new FasterLog(logSettings);
             Assert.AreEqual(cookie6, recoveredLog.RecoveredCookie);
             Assert.AreEqual(commit6Addr, recoveredLog.TailAddress);
