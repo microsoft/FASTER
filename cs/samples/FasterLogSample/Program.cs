@@ -31,11 +31,11 @@ namespace FasterLogSample
                 staticEntry[i] = (byte)i;
             }
 
-            var path = Path.GetTempPath() + "FasterLogSample/";
-            IDevice device = Devices.CreateLogDevice(path + "hlog.log");
+            // Create settings to write logs and commits at specified local path
+            using var config = new FasterLogSettings("./FasterLogSample", deleteDirOnDispose: true);
 
             // FasterLog will recover and resume if there is a previous commit found
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(config);
 
             using (iter = log.Scan(log.BeginAddress, long.MaxValue))
             {

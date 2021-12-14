@@ -31,7 +31,6 @@ namespace FASTER.test
                 fht = new FasterKV<MyKey, MyValue>
                     (128,
                     logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
-                    checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                     serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                     );
             }
@@ -47,7 +46,6 @@ namespace FASTER.test
                 fht = new FasterKV<MyKey, MyValue>
                     (128,
                     logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9, SegmentSizeBits = 22 },
-                    checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                     serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                     );
             }

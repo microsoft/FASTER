@@ -50,6 +50,7 @@ namespace FASTER.common
         public void Dispose()
         {
             handle.Free();
+            socketEventAsyncArgs.UserToken = null;
             socketEventAsyncArgs.Dispose();
         }
     }

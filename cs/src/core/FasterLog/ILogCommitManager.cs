@@ -49,7 +49,6 @@ namespace FASTER.core
         /// Initiatize manager on recovery (e.g., deleting other commits)
         /// </summary>
         /// <param name="commitNum">Commit number</param>
-        /// <param name="purgeEarlierCommits">Whether to purge earlier commits, if removeOutdated is false (if removeOutdated is true, all other commits are purged)</param>
-        public void OnRecovery(long commitNum, bool purgeEarlierCommits);
+        public void OnRecovery(long commitNum);
     }
 }

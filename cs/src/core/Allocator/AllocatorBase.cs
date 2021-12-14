@@ -786,30 +786,28 @@ namespace FASTER.core
         {
             Debug.Assert(firstValidAddress <= PageSize, $"firstValidAddress {firstValidAddress} shoulld be <= PageSize {PageSize}");
 
-            bufferPool = new SectorAlignedBufferPool(1, sectorSize);
+            if (bufferPool == null)
+                bufferPool = new SectorAlignedBufferPool(1, sectorSize);
 
             if (BufferSize > 0)
             {
                 long tailPage = firstValidAddress >> LogPageSizeBits;
                 int tailPageIndex = (int)(tailPage % BufferSize);
-                AllocatePage(tailPageIndex);
+                if (!IsAllocated(tailPageIndex))
+                    AllocatePage(tailPageIndex);
 
                 // Allocate next page as well
                 int nextPageIndex = (int)(tailPage + 1) % BufferSize;
-                if ((!IsAllocated(nextPageIndex)))
-                {
+                if (!IsAllocated(nextPageIndex))
                     AllocatePage(nextPageIndex);
-                }
             }
 
             if (PreallocateLog)
             {
                 for (int i = 0; i < BufferSize; i++)
                 {
-                    if ((!IsAllocated(i)))
-                    {
+                    if (!IsAllocated(i))
                         AllocatePage(i);
-                    }
                 }
             }
 
@@ -835,6 +833,8 @@ namespace FASTER.core
             if (ownedEpoch)
                 epoch.Dispose();
             bufferPool.Free();
+
+            this.FlushEvent.Dispose();
 
             OnReadOnlyObserver?.OnCompleted();
             OnEvictionObserver?.OnCompleted();

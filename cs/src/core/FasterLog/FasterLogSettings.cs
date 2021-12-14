@@ -1,9 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
-
 using System;
+using System.IO;
 
 namespace FASTER.core
 {
@@ -32,8 +31,12 @@ namespace FASTER.core
     /// <summary>
     /// FASTER Log Settings
     /// </summary>
-    public class FasterLogSettings
+    public class FasterLogSettings : IDisposable
     {
+        readonly bool disposeDevices = false;
+        readonly bool deleteDirOnDispose = false;
+        readonly string baseDir;
+
         /// <summary>
         /// Device used for log
         /// </summary>
@@ -42,20 +45,35 @@ namespace FASTER.core
         /// <summary>
         /// Size of a page, in bits
         /// </summary>
-        public int PageSizeBits = 22;
+        public long PageSize = 1L << 22;
+
+        /// <summary>
+        /// Support bit-based setting of page size for backward compatibility, use PageSize directly for simplicity.
+        /// </summary>
+        public int PageSizeBits { set { PageSize = 1L << value; } }
 
         /// <summary>
         /// Total size of in-memory part of log, in bits
         /// Should be at least one page long
         /// Num pages = 2^(MemorySizeBits-PageSizeBits)
         /// </summary>
-        public int MemorySizeBits = 23;
+        public long MemorySize = 1L << 23;
+
+        /// <summary>
+        /// Support bit-based setting of memory size for backward compatibility, use MemorySize directly for simplicity.
+        /// </summary>
+        public int MemorySizeBits { set { MemorySize = 1L << value; } }
 
         /// <summary>
         /// Size of a segment (group of pages), in bits
         /// This is the granularity of files on disk
         /// </summary>
-        public int SegmentSizeBits = 30;
+        public long SegmentSize = 1L << 30;
+
+        /// <summary>
+        /// Support bit-based setting of segment size for backward compatibility, use SegmentSize directly for simplicity.
+        /// </summary>
+        public int SegmentSizeBits { set { SegmentSize = 1L << value; } }
 
         /// <summary>
         /// Log commit manager - if you want to override the default implementation of commit.
@@ -100,13 +118,65 @@ namespace FASTER.core
         /// When true, we automatically delete commit files that are covered by a successful subsequent commit, and during
         /// recovery we delete all commit files other than the one we have recovered to.
         /// </summary>
-        public bool RemoveOutdatedCommitFiles = true;
+        public bool RemoveOutdatedCommits = true;
 
         /// <summary>
         /// Log commit policy that influences the behavior of Commit() calls.
         /// </summary>
         public LogCommitPolicy LogCommitPolicy = LogCommitPolicy.Default();
 
+        /// <summary>
+        /// Try to recover from latest commit, if available
+        /// </summary>
+        public bool TryRecoverLatest = true;
+
+        /// <summary>
+        /// Create default configuration settings for FasterLog. You need to create and specify LogDevice 
+        /// explicitly with this API.
+        /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
+        /// </summary>
+        public FasterLogSettings() { }
+
+        /// <summary>
+        /// Create default configuration backed by local storage at given base directory.
+        /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
+        /// Default index size is 64MB.
+        /// </summary>
+        /// <param name="baseDir">Base directory (without trailing path separator)</param>
+        /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose. This option prevents later recovery.</param>
+        public FasterLogSettings(string baseDir, bool deleteDirOnDispose = false)
+        {
+            disposeDevices = true;
+            this.deleteDirOnDispose = deleteDirOnDispose;
+            this.baseDir = baseDir;
+            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/fasterlog.log", deleteOnClose: deleteDirOnDispose);
+            LogCommitDir = baseDir;
+        }
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            if (disposeDevices)
+            {
+                LogDevice?.Dispose();
+                if (deleteDirOnDispose && baseDir != null)
+                {
+                    try { new DirectoryInfo(baseDir).Delete(true); } catch { }
+                }
+            }
+        }
+
+        /// <inheritdoc />
+        public override string ToString()
+        {
+            var retStr = $"log memory: {Utility.PrettySize(MemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
+            retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
+            retStr += $"; mutable fraction: {MutableFraction}; fast commit mode: {(FastCommitMode ? "yes" : "no")}";
+            retStr += $"; read only mode: {(ReadOnlyMode ? "yes" : "no")}";
+            retStr += $"; try recover latest: {(TryRecoverLatest ? "yes" : "no")}";
+            return retStr;
+        }
+        
         /// <summary>
         /// FasterLog throws CommitFailureException on non-zero IDevice error codes. If TolerateDeviceFailure, FasterLog
         /// will permit operations and commits to proceed as normal after the exception is thrown, even if committed
@@ -116,15 +186,15 @@ namespace FASTER.core
         /// WARNING: TOLERATING DEVICE FAILURE CAN LEAD TO DATA LOSS OR CORRUPTION AND IS FOR ADVANCED USERS ONLY
         /// </summary>
         public bool TolerateDeviceFailure = false;
-        
+
         internal LogSettings GetLogSettings()
         {
             return new LogSettings
             {
                 LogDevice = LogDevice,
-                PageSizeBits = PageSizeBits,
-                SegmentSizeBits = SegmentSizeBits,
-                MemorySizeBits = ReadOnlyMode ? 0 : MemorySizeBits,
+                PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
+                SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
+                MemorySizeBits = ReadOnlyMode ? 0 : Utility.NumBitsPreviousPowerOf2(MemorySize),
                 CopyReadsToTail = CopyReadsToTail.None,
                 MutableFraction = MutableFraction,
                 ObjectLogDevice = null,

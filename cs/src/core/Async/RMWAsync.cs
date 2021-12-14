@@ -55,6 +55,7 @@ namespace FASTER.core
                 fasterSession.CompletePendingWithOutputs(out var completedOutputs, wait: true, spinWaitForCommit: false);
                 var status = completedOutputs.Next() ? completedOutputs.Current.Status : Status.ERROR;
                 completedOutputs.Dispose();
+                this.diskRequest = default;
                 return status != Status.PENDING;
             }
 
@@ -181,8 +182,10 @@ namespace FASTER.core
             if (internalStatus == OperationStatus.ALLOCATE_FAILED)
                 return Status.PENDING;    // This plus diskRequest.IsDefault() means allocate failed
 
-            flushEvent = default;
-            return HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, asyncOp, out diskRequest);
+            var result = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, asyncOp, out diskRequest);
+            if (!diskRequest.IsDefault())
+                flushEvent = default;
+            return result;
         }
 
         private static async ValueTask<RmwAsyncResult<Input, Output, Context>> SlowRmwAsync<Input, Output, Context>(

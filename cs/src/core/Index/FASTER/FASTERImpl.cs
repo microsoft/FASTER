@@ -1993,6 +1993,7 @@ namespace FASTER.core
 
             long newLogicalAddress, newPhysicalAddress;
             bool copyToReadCache = !noReadCache && UseReadCache;
+
             if (copyToReadCache)
             {
                 BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
@@ -2005,7 +2006,32 @@ namespace FASTER.core
                 readcache.Serialize(ref key, newPhysicalAddress);
                 fasterSession.SingleWriter(ref key, ref input, ref value,
                                         ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
-                                        ref recordInfo, Constants.kInvalidAddress); // We do not expose readcache addresses
+                                        ref recordInfo, Constants.kInvalidAddress, out long lockContext); // We do not expose readcache addresses
+
+                var updatedEntry = default(HashBucketEntry);
+                updatedEntry.Tag = tag;
+                updatedEntry.Address = newLogicalAddress & Constants.kAddressMask;
+                updatedEntry.Pending = entry.Pending;
+                updatedEntry.Tentative = false;
+                updatedEntry.ReadCache = copyToReadCache;
+
+                var foundEntry = default(HashBucketEntry);
+                foundEntry.word = Interlocked.CompareExchange(
+                                                ref bucket->bucket_entries[slot],
+                                                updatedEntry.word,
+                                                entry.word);
+                if (foundEntry.word != entry.word)
+                {
+                    if (!copyToReadCache) hlog.GetInfo(newPhysicalAddress).SetInvalid();
+                    return OperationStatus.RETRY_NOW;
+                }
+                else
+                {
+                    fasterSession.PostSingleWriter(ref key, ref input, ref value, 
+                        ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output, 
+                        ref recordInfo, Constants.kInvalidAddress, lockContext); // We do not expose readcache addresses
+                    return OperationStatus.SUCCESS;
+                }
             }
             else
             {
@@ -2019,29 +2045,34 @@ namespace FASTER.core
                 hlog.Serialize(ref key, newPhysicalAddress);
                 fasterSession.SingleWriter(ref key, ref input, ref value,
                                         ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
-                                        ref recordInfo, newLogicalAddress);
+                                        ref recordInfo, newLogicalAddress, out long lockContext);
+
+                var updatedEntry = default(HashBucketEntry);
+                updatedEntry.Tag = tag;
+                updatedEntry.Address = newLogicalAddress & Constants.kAddressMask;
+                updatedEntry.Pending = entry.Pending;
+                updatedEntry.Tentative = false;
+                updatedEntry.ReadCache = copyToReadCache;
+
+                var foundEntry = default(HashBucketEntry);
+                foundEntry.word = Interlocked.CompareExchange(
+                                                ref bucket->bucket_entries[slot],
+                                                updatedEntry.word,
+                                                entry.word);
+                if (foundEntry.word != entry.word)
+                {
+                    if (!copyToReadCache) hlog.GetInfo(newPhysicalAddress).SetInvalid();
+                    return OperationStatus.RETRY_NOW;
+                }
+                else
+                {
+                    fasterSession.PostSingleWriter(ref key, ref input, ref value, 
+                        ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output, 
+                        ref recordInfo, newLogicalAddress, lockContext);
+                    return OperationStatus.SUCCESS;
+                }
             }
 
-
-            var updatedEntry = default(HashBucketEntry);
-            updatedEntry.Tag = tag;
-            updatedEntry.Address = newLogicalAddress & Constants.kAddressMask;
-            updatedEntry.Pending = entry.Pending;
-            updatedEntry.Tentative = false;
-            updatedEntry.ReadCache = copyToReadCache;
-
-            var foundEntry = default(HashBucketEntry);
-            foundEntry.word = Interlocked.CompareExchange(
-                                            ref bucket->bucket_entries[slot],
-                                            updatedEntry.word,
-                                            entry.word);
-            if (foundEntry.word != entry.word)
-            {
-                if (!copyToReadCache) hlog.GetInfo(newPhysicalAddress).SetInvalid();
-                return OperationStatus.RETRY_NOW;
-            }
-            else
-                return OperationStatus.SUCCESS;
             #endregion
         }
 

@@ -62,7 +62,7 @@ jobs:
 
 - job: 'cppWindows'
   pool:
-    vmImage: vs2017-win2016
+    vmImage: windows-latest
   displayName: 'C++ (Windows)'
 
   strategy:
@@ -77,10 +77,10 @@ jobs:
 
   steps:
   - task: CMake@1
-    displayName: 'CMake .. -G"Visual Studio 15 2017 Win64"'
+    displayName: 'CMake .. -G"Visual Studio 16 2019"'
     inputs:
       workingDirectory: 'cc/build'
-      cmakeArgs: '.. -G"Visual Studio 15 2017 Win64"'
+      cmakeArgs: '.. -G"Visual Studio 16 2019"'
 
   - task: MSBuild@1
     displayName: 'Build solution cc/build/FASTER.sln'
@@ -157,7 +157,7 @@ jobs:
 
 # - job: 'cppBlobsWindows'
 #   pool:
-#     vmImage: vs2017-win2016
+#     vmImage: windows-latest
 #   displayName: 'C++ Blobs (Windows)'
 
 #   strategy:
@@ -172,10 +172,10 @@ jobs:
 
 #   steps:
 #   - task: CMake@1
-#     displayName: 'CMake .. -G"Visual Studio 15 2017 Win64" -DUSE_BLOBS=ON'
+#     displayName: 'CMake .. -G"Visual Studio 16 2019" -DUSE_BLOBS=ON'
 #     inputs:
 #       workingDirectory: 'cc/build'
-#       cmakeArgs: '.. -G"Visual Studio 15 2017 Win64" -DUSE_BLOBS=ON'
+#       cmakeArgs: '.. -G"Visual Studio 16 2019" -DUSE_BLOBS=ON'
 
 #   - script: 'git clone https://github.com/microsoft/vcpkg'
 #     workingDirectory: 'cc/build'

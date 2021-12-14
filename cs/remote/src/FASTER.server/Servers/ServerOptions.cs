@@ -155,7 +155,6 @@ namespace FASTER.server
 
             checkpointSettings = new CheckpointSettings
             {
-                CheckPointType = CheckpointType.Snapshot,
                 CheckpointDir = CheckpointDir ?? (LogDir + "/Store/checkpoints"),
                 RemoveOutdated = true,
             };

@@ -51,7 +51,7 @@ namespace FASTER.test.recovery
         public async Task RecoverReadOnlyCheck1([Values] bool isAsync)
         {
             using var device = Devices.CreateLogDevice(deviceName);
-            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, RemoveOutdatedCommitFiles = false };
+            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 };
             using var log = isAsync ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             await Task.WhenAll(ProducerAsync(log, cts),
@@ -120,10 +120,26 @@ namespace FASTER.test.recovery
                     await Task.Delay(TimeSpan.FromMilliseconds(RestorePeriodMs), cancellationToken);
                     if (cancellationToken.IsCancellationRequested)
                         break;
-                    if (isAsync)
-                        await log.RecoverReadOnlyAsync(true, cancellationToken);
-                    else
-                        log.RecoverReadOnly(true);
+                    long startTime = DateTimeOffset.UtcNow.Ticks;
+                    while (true)
+                    {
+                        try
+                        {
+                            if (isAsync)
+                            {
+                                await log.RecoverReadOnlyAsync(cancellationToken);
+                            }
+                            else
+                                log.RecoverReadOnly();
+                            break;
+                        }
+                        catch
+                        { }
+                        Thread.Yield();
+                        // retry until timeout
+                        if (DateTimeOffset.UtcNow.Ticks - startTime > TimeSpan.FromSeconds(5).Ticks)
+                            throw new Exception("Timed out retrying RecoverReadOnly");
+                    }
                 }
             }
         }

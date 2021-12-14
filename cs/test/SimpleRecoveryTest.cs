@@ -99,12 +99,12 @@ namespace FASTER.test.recovery.sumstore.simple
 
             fht1 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager, CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager }
                 );
 
             fht2 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager, CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager }
                 );
 
             NumClicks value;
@@ -120,7 +120,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             if (testCommitCookie)
                 fht1.CommitCookie = commitCookie;
-            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.TakeFullCheckpoint(out Guid token, checkpointType);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
@@ -163,12 +163,12 @@ namespace FASTER.test.recovery.sumstore.simple
 
             fht1 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
             fht2 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager, CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
 
@@ -182,7 +182,7 @@ namespace FASTER.test.recovery.sumstore.simple
                 value.numClicks = key;
                 session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
-            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.TakeFullCheckpoint(out Guid token, checkpointType);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
@@ -215,12 +215,12 @@ namespace FASTER.test.recovery.sumstore.simple
 
             fht1 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
             fht2 = new FasterKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
             NumClicks value;
@@ -238,7 +238,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             fht1.Log.ShiftBeginAddress(address);
 
-            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.TakeFullCheckpoint(out Guid token, CheckpointType.FoldOver);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 

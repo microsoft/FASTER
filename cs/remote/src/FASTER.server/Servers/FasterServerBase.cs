@@ -97,6 +97,7 @@ namespace FASTER.server
         {
             Disposed = true;
             DisposeActiveSessions();
+            sessionProviders.Clear();
         }
 
         internal void DisposeActiveSessions()

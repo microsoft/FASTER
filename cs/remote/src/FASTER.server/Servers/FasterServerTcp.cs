@@ -43,13 +43,16 @@ namespace FASTER.server
         public override void Dispose()
         {
             base.Dispose();
-            servSocket.Dispose();            
+            servSocket.Dispose();
+            acceptEventArg.UserToken = null;
+            acceptEventArg.Dispose();
         }
 
         private unsafe void DisposeConnectionSession(SocketAsyncEventArgs e)
         {
             var connArgs = (ConnectionArgs)e.UserToken;
             connArgs.socket.Dispose();
+            e.UserToken = null;
             e.Dispose();            
             DisposeSession(connArgs.session);
         }
