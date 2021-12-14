@@ -90,17 +90,13 @@ namespace FASTER.core
         /// <summary>
         /// Create FasterKV instance
         /// </summary>
-        public FasterKV() : this(new FasterKVConfig<Key, Value>()) { }
-
-        /// <summary>
-        /// Create FasterKV instance
-        /// </summary>
         /// <param name="fasterKVConfig">Config settings</param>
         public FasterKV(FasterKVConfig<Key, Value> fasterKVConfig) :
             this(
                 fasterKVConfig.GetIndexSizeCacheLines(), fasterKVConfig.GetLogSettings(), 
                 fasterKVConfig.GetCheckpointSettings(), fasterKVConfig.GetSerializerSettings(), 
-                fasterKVConfig.EqualityComparer, fasterKVConfig.GetVariableLengthStructSettings())
+                fasterKVConfig.EqualityComparer, fasterKVConfig.GetVariableLengthStructSettings(),
+                fasterKVConfig.TryRecoverLatest)
         { }
 
         /// <summary>
@@ -112,10 +108,11 @@ namespace FASTER.core
         /// <param name="serializerSettings">Serializer settings</param>
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
+        /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false)
         {
             if (comparer != null)
                 this.comparer = comparer;
@@ -232,6 +229,15 @@ namespace FASTER.core
             Initialize(size, sectorSize);
 
             systemState = SystemState.Make(Phase.REST, 1);
+
+            if (tryRecoverLatest)
+            {
+                try
+                {
+                    Recover();
+                }
+                catch { }
+            }
         }
 
         /// <summary>

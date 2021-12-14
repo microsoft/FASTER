@@ -130,27 +130,36 @@ namespace FASTER.core
         public bool RemoveOutdatedCheckpoints = true;
 
         /// <summary>
-        /// Create default configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB"). Default index size is 64MB.
+        /// Try to recover from latest checkpoint, if available
+        /// </summary>
+        public bool TryRecoverLatest = false;
+
+        /// <summary>
+        /// Create default configuration settings for hybrid log. You need to create and specify LogDevice 
+        /// explicitly with this API.
+        /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
+        /// Default index size is 64MB.
         /// </summary>
         public FasterKVConfig() { }
 
         /// <summary>
-        /// Create default configuration backed by local storage at given base directory. Use Utility.ParseSize to specify sizes 
-        /// in familiar string notation (e.g., "4k" and "4 MB"). Default index size is 64MB.
+        /// Create default configuration backed by local storage at given base directory.
+        /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
+        /// Default index size is 64MB.
         /// </summary>
         /// <param name="baseDir">Base directory (without trailing path separator)</param>
-        /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose</param>
+        /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose. This option prevents later recovery.</param>
         public FasterKVConfig(string baseDir, bool deleteDirOnDispose = false)
         {
             disposeDevices = true;
             this.deleteDirOnDispose = deleteDirOnDispose;
             this.baseDir = baseDir;
 
-            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.log");
+            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.log", deleteOnClose: deleteDirOnDispose);
             if ((!Utility.IsBlittable<Key>() && KeyLength == null) ||
                 (!Utility.IsBlittable<Value>() && ValueLength == null))
             {
-                ObjectLogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.obj.log");
+                ObjectLogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.obj.log", deleteOnClose: deleteDirOnDispose);
             }
 
             CheckpointDir = baseDir == null ? null : baseDir + "/checkpoints";
@@ -190,7 +199,7 @@ namespace FASTER.core
                 throw new FasterException($"{nameof(IndexSize)} should be at least of size one cache line (64 bytes)");
             if (IndexSize != adjustedSize)
                 Trace.TraceInformation($"Warning: using lower value {adjustedSize} instead of specified {IndexSize} for {nameof(IndexSize)}");
-            return adjustedSize;
+            return adjustedSize / 64;
         }
 
         internal LogSettings GetLogSettings()

@@ -43,6 +43,11 @@ namespace FASTER.core
         public long LastCheckpointedVersion => lastVersion;
 
         /// <summary>
+        /// Recovered version number (1 if started from clean slate)
+        /// </summary>
+        public long RecoveredVersion => systemState.Version;
+
+        /// <summary>
         /// Current version number of the store
         /// </summary>
         public long CurrentVersion => systemState.Version;
