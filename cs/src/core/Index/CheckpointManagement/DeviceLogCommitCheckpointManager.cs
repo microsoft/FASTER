@@ -373,24 +373,18 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void OnRecovery(long commitNum, bool purgeEarlierCommits)
+        public void OnRecovery(long commitNum)
         {
-            if (removeOutdated)
-            {
-                foreach (var recoveredCommitNum in ListCommits())
-                    if (recoveredCommitNum != commitNum) RemoveCommit(recoveredCommitNum);
+            if (!removeOutdated) return;
 
-                // Add recovered tokens to history, for eventual purging
-                if (commitNum != default)
-                {
-                    flogCommitHistory[flogCommitHistoryOffset] = commitNum;
-                    flogCommitHistoryOffset = (byte)((flogCommitHistoryOffset + 1) % flogCommitCount);
-                }
-            }
-            else if (purgeEarlierCommits)
+            foreach (var recoveredCommitNum in ListCommits())
+                if (recoveredCommitNum != commitNum) RemoveCommit(recoveredCommitNum);
+
+            // Add recovered tokens to history, for eventual purging
+            if (commitNum != default)
             {
-                foreach (var recoveredCommitNum in ListCommits())
-                    if (recoveredCommitNum < commitNum) RemoveCommit(recoveredCommitNum);
+                flogCommitHistory[flogCommitHistoryOffset] = commitNum;
+                flogCommitHistoryOffset = (byte)((flogCommitHistoryOffset + 1) % flogCommitCount);
             }
         }
 

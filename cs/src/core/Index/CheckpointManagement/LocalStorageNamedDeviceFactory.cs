@@ -1,9 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -70,20 +72,38 @@ namespace FASTER.core
         /// <inheritdoc />
         public void Delete(FileDescriptor fileInfo)
         {
+            long startTime = DateTimeOffset.UtcNow.Ticks;
             if (fileInfo.fileName != null)
             {
                 var file = new FileInfo(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName + ".0"));
-                if (file.Exists)
-                    file.Delete();
+                while (true)
+                {
+                    try
+                    {
+                        if (file.Exists)
+                            file.Delete();
+                        break;
+                    }
+                    catch { }
+                    Thread.Yield();
+                    // Retry until timeout
+                    if (DateTimeOffset.UtcNow.Ticks - startTime > TimeSpan.FromSeconds(5).Ticks) break;
+                }
             }
             else
             {
-                try
+                while (true)
                 {
-                    var dir = new DirectoryInfo(Path.Combine(baseName, fileInfo.directoryName));
-                    dir.Delete(true);
+                    try
+                    {
+                        var dir = new DirectoryInfo(Path.Combine(baseName, fileInfo.directoryName));
+                        dir.Delete(true);
+                    }
+                    catch { }
+                    Thread.Yield();
+                    // Retry until timeout
+                    if (DateTimeOffset.UtcNow.Ticks - startTime > TimeSpan.FromSeconds(5).Ticks) break;
                 }
-                catch { }
             }
         }
     }

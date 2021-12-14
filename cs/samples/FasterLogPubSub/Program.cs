@@ -165,7 +165,7 @@ namespace FasterLogPubSub
                     Console.WriteLine("Restoring Separate Log...");
 
                     // Recover to the last commit by the primary FasterLog instance.
-                    await log.RecoverReadOnlyAsync(true, cancellationToken);
+                    await log.RecoverReadOnlyAsync(cancellationToken);
                 }
             }
             catch (OperationCanceledException) { }

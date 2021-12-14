@@ -184,7 +184,7 @@ namespace FASTER.core
 
             Dictionary<string, long> it;
             if (requestedCommitNum == -1)
-                RestoreLatest(false, out it, out RecoveredCookie);
+                RestoreLatest(out it, out RecoveredCookie);
             else
                 RestoreSpecificCommit(requestedCommitNum, out it, out RecoveredCookie);
             RecoveredIterators = it;
@@ -198,7 +198,7 @@ namespace FASTER.core
         public static async ValueTask<FasterLog> CreateAsync(FasterLogSettings logSettings, CancellationToken cancellationToken = default)
         {
             var fasterLog = new FasterLog(logSettings);
-            var (it, cookie) = await fasterLog.RestoreLatestAsync(false, cancellationToken).ConfigureAwait(false);
+            var (it, cookie) = await fasterLog.RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
             fasterLog.RecoveredIterators = it;
             fasterLog.RecoveredCookie = cookie;
 
@@ -1209,24 +1209,24 @@ namespace FASTER.core
         /// <summary>
         /// Synchronously recover instance to FasterLog's latest valid commit, when being used as a readonly log iterator
         /// </summary>
-        public void RecoverReadOnly(bool purgeEarlierCommits = false)
+        public void RecoverReadOnly()
         {
             if (!readOnlyMode)
                 throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            RestoreLatest(purgeEarlierCommits, out _, out _);
+            RestoreLatest(out _, out _);
             SignalWaitingROIterators();
         }
 
         /// <summary>
         /// Asynchronously recover instance to FasterLog's latest commit, when being used as a readonly log iterator
         /// </summary>
-        public async ValueTask RecoverReadOnlyAsync(bool purgeEarlierCommits = false, CancellationToken cancellationToken = default)
+        public async ValueTask RecoverReadOnlyAsync(CancellationToken cancellationToken = default)
         {
             if (!readOnlyMode)
                 throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            await RestoreLatestAsync(purgeEarlierCommits, cancellationToken).ConfigureAwait(false);
+            await RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
             SignalWaitingROIterators();
         }
 
@@ -1271,7 +1271,7 @@ namespace FASTER.core
             return true;
         }
 
-        private void RestoreLatest(bool purgeEarlierCommits, out Dictionary<string, long> iterators, out byte[] cookie)
+        private void RestoreLatest(out Dictionary<string, long> iterators, out byte[] cookie)
         {
             iterators = null;
             cookie = null;
@@ -1336,7 +1336,7 @@ namespace FASTER.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart, purgeEarlierCommits);
+            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
         }
 
         private void RestoreSpecificCommit(long requestedCommitNum, out Dictionary<string, long> iterators, out byte[] cookie)
@@ -1399,13 +1399,13 @@ namespace FASTER.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart, false);
+            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
         }
 
         /// <summary>
         /// Restore log asynchronously
         /// </summary>
-        private async ValueTask<(Dictionary<string, long>, byte[])> RestoreLatestAsync(bool purgeEarlierCommits, CancellationToken cancellationToken)
+        private async ValueTask<(Dictionary<string, long>, byte[])> RestoreLatestAsync(CancellationToken cancellationToken)
         {
             FasterLogRecoveryInfo info = new();
 
@@ -1466,7 +1466,7 @@ namespace FASTER.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart, purgeEarlierCommits);
+            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
 
             return (iterators, cookie);
         }
