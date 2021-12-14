@@ -130,7 +130,7 @@ namespace FASTER.core
                     new DefaultCheckpointNamingScheme(
                         logSettings.LogCommitDir ??
                         new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),
-                    logSettings.ReadOnlyMode ? false : logSettings.RemoveOutdatedCommitFiles);
+                    logSettings.ReadOnlyMode ? false : logSettings.RemoveOutdatedCommits);
 
             if (logSettings.LogCommitManager == null)
                 disposeLogCommitManager = true;

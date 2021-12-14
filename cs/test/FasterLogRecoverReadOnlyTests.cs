@@ -51,7 +51,7 @@ namespace FASTER.test.recovery
         public async Task RecoverReadOnlyCheck1([Values] bool isAsync)
         {
             using var device = Devices.CreateLogDevice(deviceName);
-            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, RemoveOutdatedCommitFiles = false };
+            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, RemoveOutdatedCommits = false };
             using var log = isAsync ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             await Task.WhenAll(ProducerAsync(log, cts),

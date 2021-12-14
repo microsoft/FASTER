@@ -35,7 +35,7 @@ namespace FASTER.test
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(path + "Recover", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, RemoveOutdatedCommitFiles = false });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, RemoveOutdatedCommits = false });
             deviceReadOnly = Devices.CreateLogDevice(path + "RecoverReadOnly");
             logReadOnly = new FasterLog(new FasterLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 });
         }

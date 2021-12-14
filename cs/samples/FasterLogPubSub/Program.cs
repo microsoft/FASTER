@@ -31,7 +31,7 @@ namespace FasterLogPubSub
             }
 
             var device = Devices.CreateLogDevice(path + "mylog");
-            var log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, RemoveOutdatedCommitFiles = sameInstance });
+            var log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, RemoveOutdatedCommits = sameInstance });
             using var cts = new CancellationTokenSource();
 
             var producer = ProducerAsync(log, cts.Token);

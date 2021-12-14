@@ -118,7 +118,7 @@ namespace FASTER.core
         /// When true, we automatically delete commit files that are covered by a successful subsequent commit, and during
         /// recovery we delete all commit files other than the one we have recovered to.
         /// </summary>
-        public bool RemoveOutdatedCommitFiles = true;
+        public bool RemoveOutdatedCommits = true;
 
         /// <summary>
         /// Log commit policy that influences the behavior of Commit() calls.
