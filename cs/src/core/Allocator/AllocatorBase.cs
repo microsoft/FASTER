@@ -1969,32 +1969,26 @@ namespace FASTER.core
             catch when (disposed) { }
         }
 
-        internal void UnsafeResetFlushStatus()
+        internal void UnsafeSkipError(CommitInfo info)
         {
-            for (var i = 0; i < BufferSize; i++)
+            try
             {
-                PageStatusIndicator[i].LastFlushedUntilAddress = FlushedUntilAddress;
-                PendingFlush[i].list.Clear();
-            }
-            errorList.ClearError();
-        }
-
-        internal void UnsafeSkipLogTo(long untilAddress)
-        {
-            if (Utility.MonotonicUpdate(ref FlushedUntilAddress, untilAddress,
-                out long oldFlushedUntilAddress))
-            {
-                this.FlushEvent.Set();
-
-                if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (untilAddress >= notifyFlushedUntilAddress))
+                errorList.TruncateUntil(info.UntilAddress);
+                var page = info.FromAddress >> PageSizeMask;
+                Utility.MonotonicUpdate(
+                    ref PageStatusIndicator[page % BufferSize].LastFlushedUntilAddress,
+                    info.UntilAddress, out _);
+                ShiftFlushedUntilAddress();
+                var _flush = FlushedUntilAddress;
+                if (GetOffsetInPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
                 {
-                    notifyFlushedUntilAddressSemaphore.Release();
+                    WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
                 }
-                
-                errorList.TruncateUntil(untilAddress);
             }
-        }
+            catch when (disposed) { }
 
+        }
+        
         /// <summary>
         /// IOCompletion callback for page flush
         /// </summary>

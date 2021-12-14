@@ -48,8 +48,8 @@ namespace FASTER.core
         /// </summary>
         protected long segmentSize;
 
-        protected int segmentSizeBits;
-        protected ulong segmentSizeMask;
+        private int segmentSizeBits;
+        private ulong segmentSizeMask;
 
         /// <summary>
         /// Throttle limit (max number of pending I/Os) for this device instance

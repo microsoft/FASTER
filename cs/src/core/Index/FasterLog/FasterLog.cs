@@ -31,6 +31,7 @@ namespace FASTER.core
         readonly WorkQueueLIFO<CommitInfo> commitQueue;
         internal readonly bool readOnlyMode;
         internal readonly bool fastCommitMode;
+        internal readonly bool tolerateDeviceFailure;
 
         TaskCompletionSource<LinkedCommitInfo> commitTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource<Empty> refreshUncommittedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -118,9 +119,7 @@ namespace FASTER.core
         /// Used to determine disposability of log
         /// </summary>
         internal int logRefCount = 1;
-
-        private Action<FasterLog, CommitFailureException> DeviceFailureHandler;
-
+        
         /// <summary>
         /// Create new log instance
         /// </summary>
@@ -195,7 +194,7 @@ namespace FASTER.core
             commitPolicy = logSettings.LogCommitPolicy ?? LogCommitPolicy.Default();
             commitPolicy.OnAttached(this);
 
-            DeviceFailureHandler = logSettings.DeviceFailureHandler;
+            tolerateDeviceFailure = logSettings.TolerateDeviceFailure;
         }
 
         /// <summary>
@@ -216,37 +215,6 @@ namespace FASTER.core
             if (disposeLogCommitManager)
                 logCommitManager.Dispose();
         }
-
-        /// <summary>
-        /// (Unsafely) resets the current status of AllocatorBase to the current FlushedUntilAddress. All flushes beyond
-        /// the current flushed until address are thrown away for later retries. Should only be invoked when the allocator
-        /// is quiesced, i.e., no outstanding flushes or concurrent requests. Primarily used for handling device failure.
-        /// </summary>
-        public void UnsafeResetFlushStatus()
-        {
-            allocator.UnsafeResetFlushStatus();
-        }
-
-        /// <summary>
-        /// (Unsafely) sets the flushed until address of AllocatorBase to be the given address, not waiting for outstanding
-        /// flushes and ignoring errors. Primarily used for handling device failure. WARNING: CAN CAUSE LOG DATA CORRUPTION.
-        /// </summary>
-        /// <param name="untilAddress"></param>
-        public void UnsafeSkipLogTo(long untilAddress)
-        {
-            allocator.UnsafeSkipLogTo(untilAddress);
-        }
-
-        /// <summary>
-        /// (Unsafely) flushes the specified address range to underlying storage, regardless of commit or flush status.
-        /// Primarily used for handling device failure.
-        /// </summary>
-        /// <param name="fromAddress"></param>
-        /// <param name="toAddress"></param>
-        public void UnsafeForceFlushRange(long fromAddress, long toAddress)
-        {
-            allocator.AsyncFlushPages(fromAddress, toAddress);
-        }
         
         #region Enqueue
         /// <summary>
@@ -256,6 +224,7 @@ namespace FASTER.core
         /// <returns>Logical address of added entry</returns>
         public long Enqueue(byte[] entry)
         {
+            if (cannedException != null) throw cannedException;
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
                 Thread.Yield();
@@ -269,6 +238,7 @@ namespace FASTER.core
         /// <returns>Logical address of added entry</returns>
         public long Enqueue(ReadOnlySpan<byte> entry)
         {
+            if (cannedException != null) throw cannedException;
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
                 Thread.Yield();
@@ -282,6 +252,7 @@ namespace FASTER.core
         /// <returns>Logical address of added entry</returns>
         public long Enqueue(IReadOnlySpanBatch readOnlySpanBatch)
         {
+            if (cannedException != null) throw cannedException;
             long logicalAddress;
             while (!TryEnqueue(readOnlySpanBatch, out logicalAddress))
                 Thread.Yield();
@@ -299,6 +270,8 @@ namespace FASTER.core
         /// <returns>Whether the append succeeded</returns>
         public unsafe bool TryEnqueue(byte[] entry, out long logicalAddress)
         {
+            if (cannedException != null) throw cannedException;
+
             logicalAddress = 0;
             var length = entry.Length;
             int allocatedLength = headerSize + Align(length);
@@ -331,6 +304,8 @@ namespace FASTER.core
         /// <returns>Whether the append succeeded</returns>
         public unsafe bool TryEnqueue(ReadOnlySpan<byte> entry, out long logicalAddress)
         {
+            if (cannedException != null) throw cannedException;
+
             logicalAddress = 0;
             var length = entry.Length;
             int allocatedLength = headerSize + Align(length);
@@ -581,7 +556,7 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             var task = CommitTask;
-            if (!CommitInternal(out var tailAddress, out var actualCommitNum, false, null, -1, null))
+            if (!CommitInternal(out var tailAddress, out var actualCommitNum, true, null, -1, null))
                 return;
 
             while (CommittedUntilAddress < tailAddress || persistedCommitNum < actualCommitNum)
@@ -1138,14 +1113,18 @@ namespace FASTER.core
             {
                 var exception = new CommitFailureException(new LinkedCommitInfo { CommitInfo = commitInfo },
                     $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}");
-
-                try
+                if (tolerateDeviceFailure)
                 {
-                    DeviceFailureHandler(this, exception);
+                    var oldCommitTcs = commitTcs;
+                    commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    oldCommitTcs.TrySetException(exception);
+                    // Silently set flushed until past this range
+                    Utility.MonotonicUpdate(ref allocator.FlushedUntilAddress, commitInfo.UntilAddress, out _);
+                    allocator.UnsafeSkipError(commitInfo);
                 }
-                catch (Exception e)
+                else
                 {
-                    cannedException = e;
+                    cannedException = exception;
                     // Make sure future waiters do not get a fresh tcs
                     commitTcs.TrySetException(cannedException);
                 }
@@ -1538,6 +1517,8 @@ namespace FASTER.core
         /// <returns>Whether the append succeeded</returns>
         private unsafe bool TryAppend(IReadOnlySpanBatch readOnlySpanBatch, out long logicalAddress, out int allocatedLength)
         {
+            if (cannedException != null) throw cannedException;
+
             logicalAddress = 0;
 
             int totalEntries = readOnlySpanBatch.TotalEntries();

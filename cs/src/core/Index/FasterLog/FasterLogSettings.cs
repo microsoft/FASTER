@@ -106,9 +106,17 @@ namespace FASTER.core
         /// Log commit policy that influences the behavior of Commit() calls.
         /// </summary>
         public LogCommitPolicy LogCommitPolicy = LogCommitPolicy.Default();
-        
-        public Action<FasterLog, CommitFailureException> DeviceFailureHandler = (_, e) => throw e;
 
+        /// <summary>
+        /// FasterLog throws CommitFailureException on non-zero IDevice error codes. If TolerateDeviceFailure, FasterLog
+        /// will permit operations and commits to proceed as normal after the exception is thrown, even if committed
+        /// data may be lost as a result of the error. Otherwise, FasterLog enters a permanently errored state and
+        /// prevents future operations until restarted (on a repaired IDevice).
+        ///
+        /// WARNING: TOLERATING DEVICE FAILURE CAN LEAD TO DATA LOSS OR CORRUPTION AND IS FOR ADVANCED USERS ONLY
+        /// </summary>
+        public bool TolerateDeviceFailure = false;
+        
         internal LogSettings GetLogSettings()
         {
             return new LogSettings

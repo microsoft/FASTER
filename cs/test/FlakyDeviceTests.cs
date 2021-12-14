@@ -1,5 +1,7 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
@@ -7,42 +9,6 @@ using NUnit.Framework;
 
 namespace FASTER.test
 {
-    internal class TestFallbackScheme : IFallbackScheme
-    {
-        private IDevice mainDevice, fallbackDevice;
-
-        public TestFallbackScheme(IDevice mainDevice, IDevice fallbackDevice)
-        {
-            this.mainDevice = mainDevice;
-            this.fallbackDevice = fallbackDevice;
-        }
-        
-        public void Dispose()
-        {
-            mainDevice.Dispose();
-            fallbackDevice.Dispose();
-        }
-
-        public string BaseName() => mainDevice.FileName;
-
-        public uint SectorSize() => mainDevice.SectorSize;
-
-        public long SegmentSize() => mainDevice.SegmentSize;
-
-        public long Capacity() => mainDevice.Capacity;
-
-        public IDevice GetMainDevice() => mainDevice;
-
-        public IDevice GetFallbackDevice() => fallbackDevice;
-
-        // test devices not expected to persist across runs
-        public List<(long, long)> GetFallbackRanges() => new();
-
-        public void AddFallbackRange(long rangeStart, long rangeEnd)
-        {
-        }
-    }
-    
     [TestFixture]
     internal class FlakyDeviceTests : FasterLogTestBase
     {
@@ -166,5 +132,68 @@ namespace FASTER.test
                 Assert.AreEqual(failure, failureList[0]);
             }
         }
+        
+        [Test]
+        [Category("FasterLog")]
+        public async ValueTask FlakyLogTestTolerateFailure([Values] IteratorType iteratorType)
+        {
+            var errorOptions = new ErrorSimulationOptions
+            {
+                readTransientErrorRate = 0,
+                readPermanentErrorRate = 0,
+                writeTransientErrorRate = 0,
+                writePermanentErrorRate = 0.1,
+            };
+            device = new SimulatedFlakyDevice(Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true),
+                errorOptions);
+            var logSettings = new FasterLogSettings
+                {LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, TolerateDeviceFailure = true};
+            log = new FasterLog(logSettings);
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte) i;
+            
+            // Ensure we write enough to trigger errors
+            for (int i = 0; i < 1000; i++)
+            {
+                log.Enqueue(entry);
+                try
+                {
+                    await log.CommitAsync();
+                }
+                catch (CommitFailureException)
+                {
+                    // Ignore failure
+                }
+            }
+
+            // For surviving entries, scan should still work best-effort
+            // If endAddress > log.TailAddress then GetAsyncEnumerable() will wait until more entries are added.
+            var endAddress = IsAsync(iteratorType) ? log.CommittedUntilAddress : long.MaxValue;
+            using var iter = log.Scan(0, endAddress);
+            switch (iteratorType)
+            {
+                case IteratorType.AsyncByteVector:
+                    await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
+                        Assert.IsTrue(result.SequenceEqual(entry));
+                    break;
+                case IteratorType.AsyncMemoryOwner:
+                    await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                    {
+                        Assert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
+                        result.Dispose();
+                    }
+                    break;
+                case IteratorType.Sync:
+                    while (iter.GetNext(out byte[] result, out _, out _))
+                        Assert.IsTrue(result.SequenceEqual(entry));
+                    break;
+                default:
+                    Assert.Fail("Unknown IteratorType");
+                    break;
+            }
+        }
+
     }
 }
