@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 
 namespace FASTER.core
@@ -30,7 +31,7 @@ namespace FASTER.core
     /// <summary>
     /// FASTER Log Settings
     /// </summary>
-    public class FasterLogSettings
+    public class FasterLogSettings : IDisposable
     {
         readonly bool disposeDevices = false;
         readonly bool deleteDirOnDispose = false;
@@ -148,7 +149,8 @@ namespace FASTER.core
             disposeDevices = true;
             this.deleteDirOnDispose = deleteDirOnDispose;
             this.baseDir = baseDir;
-            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.log", deleteOnClose: deleteDirOnDispose);
+            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/fasterlog.log", deleteOnClose: deleteDirOnDispose);
+            LogCommitDir = baseDir;
         }
 
         /// <inheritdoc />
