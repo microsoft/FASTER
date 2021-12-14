@@ -16,10 +16,13 @@ namespace HelloWorld
         {
             long key = 1, value = 1, output = 0;
 
-            // Create FasterKV config based on specified base directory path (use null path for memory-only mode)
-            // Update config fields directly to tune parameters
+            // Create FasterKV config based on specified base directory path (use null path for memory-only mode).
+            // Uses default config parameters. Update config fields directly to tune parameters.
             var path = Path.GetTempPath() + "HelloWorld";
             using var config = new FasterKVConfig<long, long>(path, deleteDirOnDispose: true);
+            Console.WriteLine($"FasterKV config:\n{config}\n");
+
+            // Create store using specified config
             using var store = new FasterKV<long, long>(config);
 
             // Create functions for callbacks; we use a standard in-built function in this sample

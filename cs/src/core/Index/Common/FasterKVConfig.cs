@@ -22,7 +22,8 @@ namespace FASTER.core
         public FasterKVConfig() { }
 
         /// <summary>
-        /// Create default configuration backed by local storage at given base directory
+        /// Create default configuration backed by local storage at given base directory. Use Utility.ParseSize to specify sizes 
+        /// in familiar string notation (e.g., "4k" and "4 MB"). Default index size is 64MB.
         /// </summary>
         /// <param name="baseDir">Base directory (without trailing path separator)</param>
         /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose</param>
@@ -45,18 +46,34 @@ namespace FASTER.core
         /// <inheritdoc />
         public void Dispose()
         {
-            LogDevice?.Dispose();
-            ObjectLogDevice?.Dispose();
-            if (deleteDirOnDispose)
+            if (disposeDevices)
             {
-                try { new DirectoryInfo(baseDir).Delete(true); } catch { }
+                LogDevice?.Dispose();
+                ObjectLogDevice?.Dispose();
+                if (deleteDirOnDispose && baseDir != null)
+                {
+                    try { new DirectoryInfo(baseDir).Delete(true); } catch { }
+                }
             }
+        }
+
+        /// <inheritdoc />
+        public override string ToString()
+        {
+            var retStr = $"index: {PrettySize(IndexSize)}; log memory: {PrettySize(MemorySize)}; log page: {PrettySize(PageSize)}; log segment: {PrettySize(SegmentSize)}";
+            retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
+            retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
+            retStr += $"; mutable fraction: {MutableFraction}; supports locking: {(SupportsLocking ? "yes" : "no")}";
+            retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
+            if (ReadCacheEnabled)
+                retStr += $"; rc memory: {PrettySize(ReadCacheMemorySize)}; rc page: {PrettySize(ReadCachePageSize)}";
+            return retStr;
         }
 
         /// <summary>
         /// Size of main hash index, in bytes. Rounds down to power of 2.
         /// </summary>
-        public long IndexSize = 1L << 16;
+        public long IndexSize = 1L << 26;
 
         /// <summary>
         /// Whether FASTER takes read and write locks on records
@@ -236,17 +253,6 @@ namespace FASTER.core
                 keyLength = KeyLength,
                 valueLength = ValueLength
             };
-        }
-
-        /// <inheritdoc />
-        public override string ToString()
-        {
-            var retStr = $"index: {PrettySize(IndexSize)}; log memory: {PrettySize(MemorySize)}; log page: {PrettySize(PageSize)}; log segment: {PrettySize(SegmentSize)}";
-            retStr += $"; mutable fraction: {MutableFraction}; supports locking: {(SupportsLocking ? "yes" : "no")}";
-            retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
-            if (ReadCacheEnabled)
-                retStr += $"; rc memory: {PrettySize(ReadCacheMemorySize)}; rc page: {PrettySize(ReadCachePageSize)}";
-            return retStr;
         }
 
         private static int NumBitsPreviousPowerOf2(long v)
