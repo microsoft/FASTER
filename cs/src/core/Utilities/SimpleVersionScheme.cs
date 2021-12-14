@@ -10,7 +10,7 @@ namespace FASTER.core
     ///     typical reader-writer latch by taking advantage of the epoch protection framework and avoiding false sharing
     ///     in the common case.
     /// </summary>
-    public class SimpleVersionScheme
+    internal class SimpleVersionScheme
     {
         private LightEpoch epoch;
         private long version = 1;

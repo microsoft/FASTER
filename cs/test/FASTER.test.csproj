@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <Choose>
-    <When Condition="'$(MSBuildVersion)'&gt;='17.0.0'">
+    <When Condition="'$(MSBuildVersion)'>='17.0.0'">
       <PropertyGroup>
         <TargetFrameworks>net6.0;net5.0;netcoreapp3.1</TargetFrameworks>
       </PropertyGroup>

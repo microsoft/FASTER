@@ -235,7 +235,6 @@ namespace FASTER.core
         /// <returns>Logical address of added entry</returns>
         public long Enqueue(byte[] entry)
         {
-            if (cannedException != null) throw cannedException;
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
                 Thread.Yield();
@@ -249,7 +248,6 @@ namespace FASTER.core
         /// <returns>Logical address of added entry</returns>
         public long Enqueue(ReadOnlySpan<byte> entry)
         {
-            if (cannedException != null) throw cannedException;
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
                 Thread.Yield();
@@ -263,7 +261,6 @@ namespace FASTER.core
         /// <returns>Logical address of added entry</returns>
         public long Enqueue(IReadOnlySpanBatch readOnlySpanBatch)
         {
-            if (cannedException != null) throw cannedException;
             long logicalAddress;
             while (!TryEnqueue(readOnlySpanBatch, out logicalAddress))
                 Thread.Yield();
@@ -281,8 +278,6 @@ namespace FASTER.core
         /// <returns>Whether the append succeeded</returns>
         public unsafe bool TryEnqueue(byte[] entry, out long logicalAddress)
         {
-            if (cannedException != null) throw cannedException;
-
             logicalAddress = 0;
             var length = entry.Length;
             int allocatedLength = headerSize + Align(length);
@@ -315,8 +310,6 @@ namespace FASTER.core
         /// <returns>Whether the append succeeded</returns>
         public unsafe bool TryEnqueue(ReadOnlySpan<byte> entry, out long logicalAddress)
         {
-            if (cannedException != null) throw cannedException;
-
             logicalAddress = 0;
             var length = entry.Length;
             int allocatedLength = headerSize + Align(length);
@@ -1156,7 +1149,7 @@ namespace FASTER.core
                 }
             }
             
-            // Nothing was committed --- this was probably au auto-flush. Return now without touching any
+            // Nothing was committed --- this was probably an auto-flush. Return now without touching any
             // commit task tracking.
             if (coveredCommits.Count == 0) return;
 
@@ -1530,8 +1523,6 @@ namespace FASTER.core
         /// <returns>Whether the append succeeded</returns>
         private unsafe bool TryAppend(IReadOnlySpanBatch readOnlySpanBatch, out long logicalAddress, out int allocatedLength)
         {
-            if (cannedException != null) throw cannedException;
-
             logicalAddress = 0;
 
             int totalEntries = readOnlySpanBatch.TotalEntries();
