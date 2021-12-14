@@ -47,21 +47,23 @@ namespace FASTER.test
                 // First failed range that's smaller than requested range start
                 var startIndex = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
                 if (startIndex < 0) startIndex = ~startIndex - 1;
+                // Start at 0 if smaller
+                startIndex = Math.Max(0, startIndex);
                 
-                // First failed range after requested range end
-                var endIndex = permanentlyFailedRangesEnd.BinarySearch(logicalDestEnd);
-                if (endIndex < 0) endIndex = ~endIndex;
-
-                // Check if there are overlaps
-                if (startIndex >= 0 && permanentlyFailedRangesEnd[startIndex] > logicalDestStart ||
-                    endIndex < permanentlyFailedRangesStart.Count && permanentlyFailedRangesStart[endIndex] < logicalDestEnd)
+                // check if there are overlaps
+                for (var i = startIndex; i < permanentlyFailedRangesStart.Count; i++)
                 {
-                    // If so, simulate a failure by calling callback with an error
-                    callback(42, numBytesToWrite, context);
-                    versionScheme.Leave();
-                    return;
+                    if (permanentlyFailedRangesStart[i] > logicalDestEnd) break;
+                    if (permanentlyFailedRangesEnd[i] > logicalDestStart)
+                    {
+                        // If so, simulate a failure by calling callback with an error
+                        callback(42, numBytesToWrite, context);
+                        versionScheme.Leave();
+                        return;
+                    }
                 }
             }
+            
             // Otherwise, decide whether we need to introduce a failure
             if (random.Value.NextDouble() < options.writeTransientErrorRate)
             {
@@ -94,26 +96,28 @@ namespace FASTER.test
         public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
             DeviceIOCompletionCallback callback, object context)
         {
-            var logicalDestStart = segmentId * underlying.SegmentSize + (long) destinationAddress;
-            var logicalDestEnd = logicalDestStart + readLength;
+            var logicalSrcStart = segmentId * underlying.SegmentSize + (long) sourceAddress;
+            var logicalSrcEnd = logicalSrcStart + readLength;
             versionScheme.Enter();
             if (permanentlyFailedRangesStart.Count != 0)
             {
                 // First failed range that's smaller than requested range start
-                var startIndex = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
+                var startIndex = permanentlyFailedRangesStart.BinarySearch(logicalSrcStart);
                 if (startIndex < 0) startIndex = ~startIndex - 1;
+                // Start at 0 if smaller
+                startIndex = Math.Max(0, startIndex);
                 
-                // First failed range after requested range end
-                var endIndex = permanentlyFailedRangesEnd.BinarySearch(logicalDestEnd);
-                if (endIndex < 0) endIndex = ~endIndex;
-                // Check if there are overlaps
-                if (startIndex >= 0 && permanentlyFailedRangesEnd[startIndex] > logicalDestStart ||
-                    endIndex < permanentlyFailedRangesStart.Count && permanentlyFailedRangesStart[endIndex] < logicalDestEnd)
+                // check if there are overlaps
+                for (var i = startIndex; i < permanentlyFailedRangesStart.Count; i++)
                 {
-                    // If so, simulate a failure by calling callback with an error
-                    callback(42, readLength, context);
-                    versionScheme.Leave();
-                    return;
+                    if (permanentlyFailedRangesStart[i] > logicalSrcEnd) break;
+                    if (permanentlyFailedRangesEnd[i] > logicalSrcStart)
+                    {
+                        // If so, simulate a failure by calling callback with an error
+                        callback(42, readLength, context);
+                        versionScheme.Leave();
+                        return;
+                    }
                 }
             }
             // Otherwise, decide whether we need to introduce a failure
@@ -127,15 +131,15 @@ namespace FASTER.test
 
                 versionScheme.TryAdvanceVersion((_, _) =>
                 {
-                    var index = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
+                    var index = permanentlyFailedRangesStart.BinarySearch(logicalSrcStart);
                     if (index >= 0)
                         permanentlyFailedRangesEnd[index] =
-                            Math.Max(permanentlyFailedRangesEnd[index], logicalDestEnd);
+                            Math.Max(permanentlyFailedRangesEnd[index], logicalSrcEnd);
                     else
                     {
                         var i = ~index;
-                        permanentlyFailedRangesStart.Insert(i, logicalDestStart);
-                        permanentlyFailedRangesEnd.Insert(i, logicalDestEnd);
+                        permanentlyFailedRangesStart.Insert(i, logicalSrcStart);
+                        permanentlyFailedRangesEnd.Insert(i, logicalSrcEnd);
                     }
                 });
             }

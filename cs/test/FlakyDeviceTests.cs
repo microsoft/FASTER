@@ -13,7 +13,7 @@ namespace FASTER.test
     internal class FlakyDeviceTests : FasterLogTestBase
     {
         [SetUp]
-        public void Setup() => base.BaseSetup();
+        public void Setup() => base.BaseSetup(false);
 
         [TearDown]
         public void TearDown() => base.BaseTearDown();
@@ -160,7 +160,10 @@ namespace FASTER.test
                 log.Enqueue(entry);
                 try
                 {
-                    await log.CommitAsync();
+                    if (IsAsync(iteratorType))
+                        await log.CommitAsync();
+                    else
+                        log.Commit();
                 }
                 catch (CommitFailureException)
                 {
@@ -171,7 +174,8 @@ namespace FASTER.test
             // For surviving entries, scan should still work best-effort
             // If endAddress > log.TailAddress then GetAsyncEnumerable() will wait until more entries are added.
             var endAddress = IsAsync(iteratorType) ? log.CommittedUntilAddress : long.MaxValue;
-            using var iter = log.Scan(0, endAddress);
+            var recoveredLog = new FasterLog(logSettings);
+            using var iter = recoveredLog.Scan(0, endAddress);
             switch (iteratorType)
             {
                 case IteratorType.AsyncByteVector:
@@ -193,6 +197,7 @@ namespace FASTER.test
                     Assert.Fail("Unknown IteratorType");
                     break;
             }
+            recoveredLog.Dispose();
         }
 
     }
