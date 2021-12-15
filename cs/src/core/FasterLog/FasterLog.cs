@@ -27,6 +27,7 @@ namespace FASTER.core
         readonly int headerSize;
         readonly LogChecksumType logChecksum;
         readonly WorkQueueLIFO<CommitInfo> commitQueue;
+        private int completed = 0;
 
         internal readonly bool readOnlyMode;
         internal readonly bool fastCommitMode;
@@ -214,6 +215,31 @@ namespace FASTER.core
                 TrueDispose();
         }
 
+        public Task<long> CompleteLog()
+        {
+            var tcs = new TaskCompletionSource<long>();
+            if (Interlocked.CompareExchange(ref completed, 1, 0) != 0)
+            {
+                throw new FasterException("Attempting to double-close a closed FasterLog");
+            }
+
+            // Ensure all currently started entries will enqueue before we declare log closed
+            epoch.BumpCurrentEpoch(() =>
+            {
+                CommitInternal(out var tail, out _, false, null, -1, null, true);
+                tcs.SetResult(tail);
+            });
+
+            // Ensure progress even if there is no thread in epoch table
+            if (!epoch.ThisInstanceProtected())
+            {
+                epoch.Resume();
+                epoch.Suspend();
+            }
+
+            return tcs.Task;
+        }
+
         internal void TrueDispose()
         {
             commitQueue.Dispose();
@@ -282,6 +308,8 @@ namespace FASTER.core
 
             epoch.Resume();
 
+            if (completed == 1) throw new FasterException("Attempting to enqueue into a completed log");
+
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
             {
@@ -312,6 +340,8 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+
+            if (completed == 1) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -1058,7 +1088,7 @@ namespace FASTER.core
 
         private bool ShouldCommmitMetadata(ref FasterLogRecoveryInfo info)
         {
-            return beginAddress > CommittedBeginAddress || IteratorsChanged(ref info) || info.Cookie != null;
+            return beginAddress > CommittedBeginAddress || IteratorsChanged(ref info) || info.Cookie != null || info.LogCompleted == true;
         }
         
         private void CommitMetadataOnly(ref FasterLogRecoveryInfo info)
@@ -1333,6 +1363,7 @@ namespace FASTER.core
             cookie = info.Cookie;
             commitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
+            completed = info.LogCompleted ? 1 : 0;
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
@@ -1396,6 +1427,7 @@ namespace FASTER.core
             cookie = info.Cookie;
             commitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
+            completed = info.LogCompleted ? 1 : 0;
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
@@ -1511,6 +1543,8 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            if (completed == 1) throw new FasterException("Attempting to enqueue into a completed log");
+
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
 
             if (logicalAddress == 0)
@@ -1672,7 +1706,7 @@ namespace FASTER.core
                 Thread.Yield();
         }
 
-        private bool CommitInternal(out long commitTail, out long actualCommitNum, bool fastForwardAllowed, byte[] cookie, long proposedCommitNum, Action callback)
+        private bool CommitInternal(out long commitTail, out long actualCommitNum, bool fastForwardAllowed, byte[] cookie, long proposedCommitNum, Action callback, bool close = false)
         {
             commitTail = actualCommitNum = 0;
             
@@ -1687,7 +1721,8 @@ namespace FASTER.core
             {
                 FastForwardAllowed = fastForwardAllowed,
                 Cookie = cookie,
-                Callback = callback
+                Callback = callback,
+                LogCompleted = close
             };
             info.SnapshotIterators(PersistedIterators);
             var metadataChanged = ShouldCommmitMetadata(ref info);
