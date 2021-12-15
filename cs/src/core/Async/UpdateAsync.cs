@@ -77,7 +77,7 @@ namespace FASTER.core
             readonly FasterKV<Key, Value> _fasterKV;
             readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
             readonly FasterExecutionContext<Input, Output, Context> _currentCtx;
-            readonly TAsyncOperation _asyncOperation;
+            TAsyncOperation _asyncOperation;
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 
@@ -113,14 +113,17 @@ namespace FASTER.core
             {
                 if (!TryCompleteAsyncState(asyncOp: false, out CompletionEvent flushEvent, out TAsyncResult asyncResult))
                 {
-                    if (_exception != default)
-                        _exception.Throw();
-                    if (!flushEvent.IsDefault())
-                        flushEvent.Wait();
-                    while (!this.TryCompleteSync(asyncOp: false, out flushEvent, out asyncResult))
-                    {
-                        if (!_asyncOperation.CompletePendingIO(_fasterSession))
+                    while (true) { 
+                        if (_exception != default)
+                            _exception.Throw();
+
+                        if (!flushEvent.IsDefault())
                             flushEvent.Wait();
+                        else if (_asyncOperation.CompletePendingIO(_fasterSession))
+                            break;
+
+                        if (this.TryCompleteSync(asyncOp: false, out flushEvent, out asyncResult))
+                            break;
                     }
                 }
                 return asyncResult;
@@ -136,10 +139,6 @@ namespace FASTER.core
                     {
                         if (_exception == default)
                             return TryCompleteSync(asyncOp, out flushEvent, out asyncResult);
-                    }
-                    catch (Exception e)
-                    {
-                        _exception = ExceptionDispatchInfo.Capture(e);
                     }
                     finally
                     {
@@ -165,6 +164,11 @@ namespace FASTER.core
                         asyncResult = _asyncOperation.CreateResult(status, output);
                         return true;
                     }
+                }
+                catch (Exception e)
+                {
+                    _exception = ExceptionDispatchInfo.Capture(e);
+                    flushEvent = default;
                 }
                 finally
                 {
