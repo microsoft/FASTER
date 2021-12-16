@@ -18,12 +18,7 @@ namespace FASTER.core
         /// FasterLog recovery version
         /// </summary>
         const int FasterLogRecoveryVersion = 1;
-
-        /// <summary>
-        /// Whether this commit record is the last of ta log that will not longer be enqueued to
-        /// </summary>
-        public bool LogCompleted;
-
+        
         /// <summary>
         /// Begin address
         /// </summary>
@@ -89,7 +84,6 @@ namespace FASTER.core
                     CommitNum = reader.ReadInt64();
                 else
                     CommitNum = -1;
-                LogCompleted = reader.ReadBoolean();
             }
             catch (Exception e)
             {
@@ -185,7 +179,6 @@ namespace FASTER.core
                 writer.Write(BeginAddress);
                 writer.Write(UntilAddress);
                 writer.Write(CommitNum);
-                writer.Write(LogCompleted);
 
                 writer.Write(iteratorCount);
                 if (iteratorCount > 0)
@@ -216,7 +209,7 @@ namespace FASTER.core
                     iteratorSize += kvp.Key.Length + sizeof(long);
             }
 
-            return sizeof(int) + 4 * sizeof(long) + iteratorSize + sizeof(int) + (Cookie?.Length ?? 0) + sizeof(bool);
+            return sizeof(int) + 4 * sizeof(long) + iteratorSize + sizeof(int) + (Cookie?.Length ?? 0);
         }
 
         /// <summary>

@@ -183,7 +183,7 @@ namespace FASTER.core
         /// Get next record in iterator
         /// </summary>
         /// <param name="entry">Copy of entry, if found</param>
-        /// <param name="entryLength">Actual length of entry</param>
+        /// <param name="entryLength">Actual length of entry, or 0 for the last entry in a completed log</param>
         /// <param name="currentAddress">Logical address of entry</param>
         /// <returns></returns>
         public unsafe bool GetNext(out byte[] entry, out int entryLength, out long currentAddress)
@@ -195,7 +195,7 @@ namespace FASTER.core
         /// Get next record in iterator
         /// </summary>
         /// <param name="entry">Copy of entry, if found</param>
-        /// <param name="entryLength">Actual length of entry</param>
+        /// <param name="entryLength">Actual length of entry, or 0 for the last entry in a completed log</param>
         /// <param name="currentAddress">Logical address of entry</param>
         /// <param name="nextAddress">Logical address of next entry</param>
         /// <returns></returns>
@@ -234,6 +234,19 @@ namespace FASTER.core
                     throw;
                 }
                 
+                if (isCommitRecord)
+                {
+                    FasterLogRecoveryInfo info = new();
+                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
+                    if (info.CommitNum != long.MaxValue) continue;
+                    
+                    // Otherwise, set return entry length to be 0 to indicate eof
+                    entry = null;
+                    entryLength = 0;
+                    epoch.Suspend();
+                    return true;
+                }
+                
                 if (getMemory != null)
                 {
                     // Use user delegate to allocate memory
@@ -252,16 +265,6 @@ namespace FASTER.core
 
                 fixed (byte* bp = entry)
                     Buffer.MemoryCopy((void*) (headerSize + physicalAddress), bp, entryLength, entryLength);
-
-                if (isCommitRecord)
-                {
-                    FasterLogRecoveryInfo info = new();
-                    info.Initialize(new BinaryReader(new MemoryStream(entry)));
-                    if (!info.LogCompleted) continue;
-                    
-                    // Otherwise, set return entry length to be 0 to indicate eof
-                    entryLength = 0;
-                }
                 
                 epoch.Suspend();
                 return true;
@@ -273,7 +276,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="pool">Memory pool</param>
         /// <param name="entry">Copy of entry, if found</param>
-        /// <param name="entryLength">Actual length of entry</param>
+        /// <param name="entryLength">Actual length of entry, or 0 for the last entry in a completed log</param>
         /// <param name="currentAddress">Logical address of entry</param>
         /// <returns></returns>
         public unsafe bool GetNext(MemoryPool<byte> pool, out IMemoryOwner<byte> entry, out int entryLength, out long currentAddress)
@@ -286,7 +289,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="pool">Memory pool</param>
         /// <param name="entry">Copy of entry, if found</param>
-        /// <param name="entryLength">Actual length of entry</param>
+        /// <param name="entryLength">Actual length of entry, or 0 for the last entry in a completed log</param>
         /// <param name="currentAddress">Logical address of entry</param>
         /// <param name="nextAddress">Logical address of next entry</param>
         /// <returns></returns>
@@ -327,29 +330,96 @@ namespace FASTER.core
                     epoch.Suspend();
                     throw;
                 }
-
-
                 
+                if (isCommitRecord)
+                {
+                    FasterLogRecoveryInfo info = new();
+                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
+                    if (info.CommitNum != long.MaxValue) continue;
+                    
+                    // Otherwise, set return entry length to be 0 to indicate eof
+                    entry = null;
+                    entryLength = 0;
+                    epoch.Suspend();
+                    return true;
+                }
                 
                 entry = pool.Rent(entryLength);
 
                 fixed (byte* bp = &entry.Memory.Span.GetPinnableReference())
                     Buffer.MemoryCopy((void*)(headerSize + physicalAddress), bp, entryLength, entryLength);
-
-                if (isCommitRecord)
-                {
-                    FasterLogRecoveryInfo info = new();
-                    info.Initialize(new BinaryReader(new MemoryStream(entry.Memory.ToArray())));
-                    entry.Dispose();
-                    if (!info.LogCompleted) continue;
-                    
-                    // Otherwise, set return entry length to be 0 to indicate eof
-                    entryLength = 0;
-                }
                 epoch.Suspend();
                 return true;
             }
         }
+
+        /// <summary>
+        /// WARNING: advanced users only.
+        /// Get next record in iterator, accessing unsafe raw bytes and retaining epoch protection.
+        /// Make sure to call UnsafeRelease when done processing the raw bytes (without delay).
+        /// </summary>
+        /// <param name="entry">Copy of entry, if found</param>
+        /// <param name="entryLength">Actual length of entry, or 0 for the last entry in a completed log</param>
+        /// <param name="currentAddress">Logical address of entry</param>
+        /// <param name="nextAddress">Logical address of next entry</param>
+        /// <returns></returns>
+        public unsafe bool UnsafeGetNext(out byte* entry, out int entryLength, out long currentAddress, out long nextAddress)
+        {
+            if (disposed)
+            {
+                entry = default;
+                entryLength = default;
+                currentAddress = default;
+                nextAddress = default;
+                return false;
+            }
+            epoch.Resume();
+            // Continue looping until we find a record that is not a commit record
+            while (true)
+            {
+                long physicalAddress;
+                bool isCommitRecord;
+                try
+                {
+                    var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
+                        out nextAddress,
+                        out isCommitRecord);
+                    if (!hasNext)
+                    {
+                        entry = default;
+                        epoch.Suspend();
+                        return false;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Throw upwards, but first, suspend the epoch we are in 
+                    epoch.Suspend();
+                    throw;
+                }
+                
+                if (isCommitRecord)
+                {
+                    FasterLogRecoveryInfo info = new();
+                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
+                    if (info.CommitNum != long.MaxValue) continue;
+                    
+                    // Otherwise, set return entry length to be 0 to indicate eof
+                    entry = null;
+                    entryLength = 0;
+                    return true;
+                }
+                
+                entry = (byte*)(headerSize + physicalAddress);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// WARNING: advanced users only.
+        /// Release a native memory reference obtained via a successful UnsafeGetNext.
+        /// </summary>
+        public void UnsafeRelease() => epoch.Suspend();
 
         /// <summary>
         /// Mark iterator complete until specified address. Info is not
@@ -552,19 +622,16 @@ namespace FASTER.core
                 // whether that is the case
                 if (entryLength == 0)
                 {
-                    // If zeroed out field is at page start, we encountered an uninitialized page and should signal up
-                    var pageOffset = currentAddress & ((1 << allocator.LogPageSizeBits) - 1);
-                    if (pageOffset == 0)
+                    // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page. 
+                    var  nextStart = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    if (Utility.MonotonicUpdate(ref nextAddress, nextStart, out _))
                     {
-                        var curPage = currentAddress >> allocator.LogPageSizeBits;
-                        throw new FasterException("Uninitialized page found during scan at page " + curPage);
-                    }
+                        var pageOffset = currentAddress & ((1 << allocator.LogPageSizeBits) - 1);
 
-                    // Otherwise, we must assume that zeroed out bits are due to page end and skip forward to the next
-                    // page. If that's not the case, next iteration of the loop will either hit EOF exception or a
-                    // blank page, and propagate failure upwards appropriately
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
-                    Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _);
+                        // If zeroed out field is at page start, we encountered an uninitialized page and should signal up
+                        if (pageOffset == 0)
+                            throw new FasterException("Uninitialized page found during scan at page " + (currentAddress >> allocator.LogPageSizeBits));
+                    }
                     continue;
                 }
 
@@ -578,10 +645,10 @@ namespace FASTER.core
                 int recordSize = headerSize + Align(entryLength);
                 if (_currentOffset + recordSize > allocator.PageSize)
                 {
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    currentAddress += headerSize;
                     if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                     {
-                        throw new FasterException("Invalid length of record found: " + entryLength + " at address " + currentAddress + ", skipping page");
+                        throw new FasterException("Invalid length of record found: " + entryLength + " at address " + currentAddress);
                     }
                     continue;
                 }
@@ -592,10 +659,10 @@ namespace FASTER.core
                     if (!fasterLog.VerifyChecksum((byte*)physicalAddress, entryLength))
                     {
                         var curPage = currentAddress >> allocator.LogPageSizeBits;
-                        currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                        currentAddress += headerSize;
                         if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         {
-                            throw new FasterException("Invalid checksum found during scan, skipping page " + curPage);
+                            throw new FasterException("Invalid checksum found during scan, skipping");
                         }
                         continue;
                     }
