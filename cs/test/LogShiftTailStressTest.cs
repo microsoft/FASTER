@@ -59,6 +59,9 @@ namespace FASTER.test
                 t.Join();
             
             // We expect the test to finish and not get stuck somewhere
+            
+            // Ensure clean shutdown
+            log.Commit(true);
         }
     }
 }

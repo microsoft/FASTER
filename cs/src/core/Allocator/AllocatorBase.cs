@@ -49,7 +49,7 @@ namespace FASTER.core
         /// </summary>
         protected readonly LightEpoch epoch;
         private readonly bool ownedEpoch;
-
+        
         /// <summary>
         /// Comparer
         /// </summary>
@@ -113,6 +113,7 @@ namespace FASTER.core
         /// HeadOFfset lag address
         /// </summary>
         internal long HeadOffsetLagAddress;
+        
 
         /// <summary>
         /// Log mutable fraction
@@ -227,7 +228,7 @@ namespace FASTER.core
         /// Whether to preallocate log on initialization
         /// </summary>
         private readonly bool PreallocateLog = false;
-
+        
         /// <summary>
         /// Error handling
         /// </summary>
@@ -1402,33 +1403,37 @@ namespace FASTER.core
 
             if (update)
             {
+                // Anything here must be valid flushes because error flushes do not set LastFlushedUntilAddress, which
+                // prevents future ranges from being marked as flushed
                 if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
                 {
-                    uint errorCode = 0;
-                    if (errorList.Count > 0)
-                    {
-                        errorCode = errorList.CheckAndWait(oldFlushedUntilAddress, currentFlushedUntilAddress);
-                    }
                     FlushCallback?.Invoke(
                         new CommitInfo
                         {
                             FromAddress = oldFlushedUntilAddress,
                             UntilAddress = currentFlushedUntilAddress,
-                            ErrorCode = errorCode
+                            ErrorCode = 0
                         });
 
                     this.FlushEvent.Set();
-
-                    if (errorList.Count > 0)
-                    {
-                        errorList.RemoveUntil(currentFlushedUntilAddress);
-                    }
 
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
                     {
                         notifyFlushedUntilAddressSemaphore.Release();
                     }
                 }
+            }
+            
+            if (!errorList.Empty)
+            {
+                var info = errorList.GetEarliestError();
+                if (info.FromAddress == FlushedUntilAddress)
+                {
+                    // all requests before error range has finished successfully -- this is the earliest error and we
+                    // can invoke callback on it.
+                    FlushCallback?.Invoke(info);
+                }
+                // Otherwise, do nothing and wait for the next invocation.
             }
         }
 
@@ -1939,9 +1944,18 @@ namespace FASTER.core
                 {
                     if (errorCode != 0)
                     {
-                        errorList.Add(result.fromAddress, errorCode);
+                        // Note down error details and trigger handling only when we are certain this is the earliest
+                        // error among currently issued flushes
+                        errorList.Add(new CommitInfo { FromAddress =  result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode } );
                     }
-                    Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
+                    else
+                    {
+                        // Update the page's last flushed until address only if there is no failure.
+                        Utility.MonotonicUpdate(
+                            ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress,
+                            result.untilAddress, out _);
+                    }
+
                     ShiftFlushedUntilAddress();
                     result.Free();
                 }
@@ -1955,6 +1969,26 @@ namespace FASTER.core
             catch when (disposed) { }
         }
 
+        internal void UnsafeSkipError(CommitInfo info)
+        {
+            try
+            {
+                errorList.TruncateUntil(info.UntilAddress);
+                var page = info.FromAddress >> PageSizeMask;
+                Utility.MonotonicUpdate(
+                    ref PageStatusIndicator[page % BufferSize].LastFlushedUntilAddress,
+                    info.UntilAddress, out _);
+                ShiftFlushedUntilAddress();
+                var _flush = FlushedUntilAddress;
+                if (GetOffsetInPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
+                {
+                    WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
+                }
+            }
+            catch when (disposed) { }
+
+        }
+        
         /// <summary>
         /// IOCompletion callback for page flush
         /// </summary>

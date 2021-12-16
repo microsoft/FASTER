@@ -146,6 +146,9 @@ namespace FASTER.test
             var logTailGrowth = log.TailAddress - referenceTailLength;
             // Check that we are not growing the log more than one commit record per user entry
             Assert.IsTrue(logTailGrowth - referenceTailLength <= commitRecordSize * 5 * numEntries);
+            
+            // Ensure clean shutdown
+            log.Commit(true);
         }
     }
 }
