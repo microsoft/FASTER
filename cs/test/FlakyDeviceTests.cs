@@ -129,7 +129,7 @@ namespace FASTER.test
             // They all observed the same failure
             foreach (var failure in failureList)
             {
-                Assert.AreEqual(failure, failureList[0]);
+                Assert.AreEqual(failure.LinkedCommitInfo.CommitInfo, failureList[0].LinkedCommitInfo.CommitInfo);
             }
         }
         

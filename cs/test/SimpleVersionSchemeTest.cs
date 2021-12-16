@@ -70,7 +70,7 @@ namespace FASTER.test
                     while (!termination.IsSet)
                     {
                         var v = tested.Enter();
-                        Assert.AreEqual(v, protectedVal);
+                        Assert.AreEqual(v, Interlocked.Read(ref protectedVal));
                         tested.Leave();
                     }
                 });
@@ -82,7 +82,7 @@ namespace FASTER.test
             {
                 tested.TryAdvanceVersion((vOld, vNew) =>
                 {
-                    Assert.AreEqual(vOld, protectedVal);
+                    Assert.AreEqual(vOld, Interlocked.Read(ref protectedVal));
                     // Flip sign to simulate critical section processing
                     protectedVal = -vOld;
                     Thread.Yield();
