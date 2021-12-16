@@ -325,6 +325,64 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// WARNING: advanced users only.
+        /// Get next record in iterator, accessing unsafe raw bytes and retaining epoch protection.
+        /// Make sure to call UnsafeRelease when done processing the raw bytes (without delay).
+        /// </summary>
+        /// <param name="entry">Copy of entry, if found</param>
+        /// <param name="entryLength">Actual length of entry</param>
+        /// <param name="currentAddress">Logical address of entry</param>
+        /// <param name="nextAddress">Logical address of next entry</param>
+        /// <returns></returns>
+        public unsafe bool UnsafeGetNext(out byte* entry, out int entryLength, out long currentAddress, out long nextAddress)
+        {
+            if (disposed)
+            {
+                entry = default;
+                entryLength = default;
+                currentAddress = default;
+                nextAddress = default;
+                return false;
+            }
+            epoch.Resume();
+            // Continue looping until we find a record that is not a commit record
+            while (true)
+            {
+                long physicalAddress;
+                bool isCommitRecord;
+                try
+                {
+                    var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
+                        out nextAddress,
+                        out isCommitRecord);
+                    if (!hasNext)
+                    {
+                        entry = default;
+                        epoch.Suspend();
+                        return false;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Throw upwards, but first, suspend the epoch we are in 
+                    epoch.Suspend();
+                    throw;
+                }
+
+                if (isCommitRecord) continue;
+
+                entry = (byte*)(headerSize + physicalAddress);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// WARNING: advanced users only.
+        /// Release a native memory reference obtained via a successful UnsafeGetNext.
+        /// </summary>
+        public void UnsafeRelease() => epoch.Suspend();
+
+        /// <summary>
         /// Mark iterator complete until specified address. Info is not
         /// persisted until a subsequent commit operation on the log.
         /// </summary>

@@ -334,6 +334,112 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Try to append a user-defined header byte and three SpanByte entries entries atomically to the log. If it returns true, we are
+        /// done. If it returns false, we need to retry.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item1"></param>
+        /// <param name="item2"></param>
+        /// <param name="item3"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryEnqueue(byte userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, out long logicalAddress)
+        {
+            logicalAddress = 0;
+            var length = sizeof(byte) + item1.TotalSize + item2.TotalSize + item3.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *physicalAddress = userHeader;
+            item1.CopyTo(physicalAddress + sizeof(byte));
+            item2.CopyTo(physicalAddress + sizeof(byte) + item1.TotalSize);
+            item3.CopyTo(physicalAddress + sizeof(byte) + item1.TotalSize + item2.TotalSize);
+            SetHeader(length, physicalAddress);
+            epoch.Suspend();
+            return true;
+        }
+
+        /// <summary>
+        /// Try to append a user-defined header byte and two SpanByte entries entries atomically to the log. If it returns true, we are
+        /// done. If it returns false, we need to retry.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item1"></param>
+        /// <param name="item2"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryEnqueue(byte userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        {
+            logicalAddress = 0;
+            var length = sizeof(byte) + item1.TotalSize + item2.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *physicalAddress = userHeader;
+            item1.CopyTo(physicalAddress + sizeof(byte));
+            item2.CopyTo(physicalAddress + sizeof(byte) + item1.TotalSize);
+            SetHeader(length, physicalAddress);
+            epoch.Suspend();
+            return true;
+        }
+
+        /// <summary>
+        /// Try to append a user-defined header byte and a SpanByte entry atomically to the log. If it returns true, we are
+        /// done. If it returns false, we need to retry.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryEnqueue(byte userHeader, ref SpanByte item, out long logicalAddress)
+        {
+            logicalAddress = 0;
+            var length = sizeof(byte) + item.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *physicalAddress = userHeader;
+            item.CopyTo(physicalAddress + sizeof(byte));
+            SetHeader(length, physicalAddress);
+            epoch.Suspend();
+            return true;
+        }
+
+
+        /// <summary>
         /// Try to enqueue batch of entries as a single atomic unit (to memory). Entire 
         /// batch needs to fit on one log page.
         /// </summary>
