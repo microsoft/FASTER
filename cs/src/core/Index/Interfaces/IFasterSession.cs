@@ -30,7 +30,7 @@ namespace FASTER.core
 
         bool SupportsPostOperations { get; }
 
-        bool IsManualOperations { get; }
+        bool IsManualLocking { get; }
         #endregion Optional features supported by this implementation
 
         #region Reads
@@ -71,21 +71,6 @@ namespace FASTER.core
         bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address);
         void DeleteCompletionCallback(ref Key key, Context ctx);
         #endregion Deletes
-
-        #region Locking
-        void LockExclusive(ref RecordInfo recordInfo);
-        void UnlockExclusive(ref RecordInfo recordInfo);
-        bool TryLockExclusive(ref RecordInfo recordInfo, int spinCount = 1);
-        void LockShared(ref RecordInfo recordInfo);
-        void UnlockShared(ref RecordInfo recordInfo);
-        bool TryLockShared(ref RecordInfo recordInfo, int spinCount = 1);
-        void LockExclusiveFromShared(ref RecordInfo recordInfo);
-        bool TryLockExclusiveFromShared(ref RecordInfo recordInfo, int spinCount = 1);
-        bool IsLocked(ref RecordInfo recordInfo);
-        bool IsLockedExclusive(ref RecordInfo recordInfo);
-        bool IsLockedShared(ref RecordInfo recordInfo);
-        void TransferLocks(ref RecordInfo fromRecordInfo, ref RecordInfo toRecordInfo);
-        #endregion Locking
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 

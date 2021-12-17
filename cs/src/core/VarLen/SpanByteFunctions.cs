@@ -33,7 +33,6 @@ namespace FASTER.core
             
             if (dst.Length < src.Length)
             {
-                recordInfo.Sealed = true;
                 return false;
             }
 

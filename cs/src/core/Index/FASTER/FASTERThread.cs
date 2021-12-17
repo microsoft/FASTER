@@ -265,7 +265,6 @@ namespace FASTER.core
                     default:
                         throw new FasterException("Operation type not allowed for retry");
                 }
-
             }
         }
         #endregion
@@ -356,6 +355,9 @@ namespace FASTER.core
             ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
             OperationStatus internalStatus;
 
+            // Set the initial record metadata into pendingContext.
+            unsafe { pendingContext.recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
+
             // Issue the continue command
             if (pendingContext.type == OperationType.READ)
             {
@@ -366,10 +368,6 @@ namespace FASTER.core
                 internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
             }
-
-            // Set the record metadata into pendingContext. Note that pendingContext.logicalAddress has been correctly set by the
-            // InternalContinuePending operation we just did.
-            unsafe { pendingContext.recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
 
             request.Dispose();
 

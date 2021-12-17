@@ -9,6 +9,11 @@ namespace FASTER.core
     public enum LockType : byte
     {
         /// <summary>
+        /// No lock
+        /// </summary>
+        None,
+
+        /// <summary>
         /// Shared lock, taken on Read
         /// </summary>
         Shared,
@@ -24,38 +29,18 @@ namespace FASTER.core
         ExclusiveFromShared
     }
 
-    /// <summary>
-    /// Information returned from <see cref="ManualFasterOperations{Key, Value, Input, Output, Context, Functions}.Lock(Key, LockType, bool, ref LockInfo)"/>
-    /// </summary>
-    public struct LockInfo
-    {
-        /// <summary>
-        /// The type of lock that was acquired
-        /// </summary>
-        public LockType LockType;
-
-        /// <summary>
-        /// The address of the record that was locked. Useful for calling <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}.ReadAtAddress(long, ref Input, ref Output, ReadFlags, Context, long)"/>
-        /// </summary>
-        public long Address;
-
-        /// <inheritdoc/>
-        public override string ToString() => $"{LockType}: addr {Address}";
-    }
-
     internal enum LockOperationType : byte
     {
         None,
-        LockRead,
-        LockUpsert,
-        Unlock 
+        Lock,
+        Unlock,
+        IsLocked
     }
 
     internal struct LockOperation
     {
         internal LockType LockType;
         internal LockOperationType LockOperationType;
-        internal bool IsStubPromotion;
 
         internal bool IsSet => LockOperationType != LockOperationType.None;
 
@@ -63,9 +48,8 @@ namespace FASTER.core
         {
             this.LockType = lockType;
             this.LockOperationType = opType;
-            this.IsStubPromotion = false;
         }
 
-        public override string ToString() => $"{LockType}: opType {LockOperationType}, isStubPromo {IsStubPromotion}";
+        public override string ToString() => $"{LockType}: opType {LockOperationType}";
     }
 }

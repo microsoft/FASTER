@@ -113,6 +113,8 @@ namespace FASTER.core
         internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
         internal bool SupportsLocking;
+        internal LockTable<Key> LockTable;
+        internal long NumActiveLockingSessions = 0;
 
         /// <summary>
         /// Create FASTER instance
@@ -192,6 +194,8 @@ namespace FASTER.core
 
             UpdateVarLen(ref variableLengthStructSettings);
 
+            IVariableLengthStruct<Key> keyLen = null;
+
             if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength is null) ||
                 (!Utility.IsBlittable<Value>() && variableLengthStructSettings?.valueLength is null))
             {
@@ -217,6 +221,7 @@ namespace FASTER.core
             }
             else if (variableLengthStructSettings != null)
             {
+                keyLen = variableLengthStructSettings.keyLength;
                 hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings,
                     this.comparer, null, epoch);
                 Log = new LogAccessor<Key, Value>(this, hlog);
@@ -259,6 +264,8 @@ namespace FASTER.core
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
+
+            this.LockTable = new LockTable<Key>(keyLen, this.comparer, keyLen is null ? null : hlog.bufferPool);
 
             systemState = SystemState.Make(Phase.REST, 1);
         }
@@ -592,13 +599,12 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref LockOperation lockOp, ref RecordMetadata recordMetadata, ReadFlags readFlags, Context context,
+        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref RecordMetadata recordMetadata, ReadFlags readFlags, Context context,
                 FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             pcontext.SetOperationFlags(readFlags, recordMetadata.RecordInfo.PreviousAddress);
-            pcontext.lockOperation = lockOp;
             OperationStatus internalStatus;
             do
                 internalStatus = InternalRead(ref key, ref input, ref output, recordMetadata.RecordInfo.PreviousAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
@@ -677,12 +683,11 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref LockOperation lockOp, out RecordMetadata recordMetadata,
+        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, out RecordMetadata recordMetadata,
             Context context, FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.lockOperation = lockOp;
             OperationStatus internalStatus;
 
             do

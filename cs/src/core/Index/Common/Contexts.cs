@@ -89,15 +89,15 @@ namespace FASTER.core
             internal long minAddress;
             internal LockOperation lockOperation;
 
-            // Note: Must be kept in sync with corresponding ReadFlags enum values
+            // BEGIN Must be kept in sync with corresponding ReadFlags enum values
             internal const ushort kSkipReadCache = 0x0001;
             internal const ushort kMinAddress = 0x0002;
             internal const ushort kCopyReadsToTail = 0x0004;
             internal const ushort kSkipCopyReadsToTail = 0x0008;
+            // END  Must be kept in sync with corresponding ReadFlags enum values
 
             internal const ushort kNoKey = 0x0100;
             internal const ushort kIsAsync = 0x0200;
-            internal const ushort kIsReadingAtAddress = 0x0400;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal IHeapContainer<Key> DetachKey()
@@ -174,12 +174,6 @@ namespace FASTER.core
             {
                 get => (operationFlags & kIsAsync) != 0;
                 set => operationFlags = value ? (byte)(operationFlags | kIsAsync) : (byte)(operationFlags & ~kIsAsync);
-            }
-
-            internal bool IsReadingAtAddress
-            {
-                get => (operationFlags & kIsReadingAtAddress) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kIsReadingAtAddress) : (ushort)(operationFlags & ~kIsReadingAtAddress);
             }
 
             public void Dispose()

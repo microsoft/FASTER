@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 1591
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -11,7 +11,7 @@ using System.Threading;
 namespace FASTER.core
 {
     // RecordInfo layout (64 bits total):
-    // [--][InNewVersion][Filler][Dirty][Stub][Sealed] [Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
+    // [--][InNewVersion][Filler][Dirty][Tentative][Sealed] [Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
     //     where X = exclusive lock, S = shared lock, R = readcache, A = address, - = unused
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
@@ -41,15 +41,15 @@ namespace FASTER.core
         // Other marker bits
         const int kTombstoneBitOffset = kExclusiveLockBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
-        const int kStubBitOffset = kValidBitOffset + 1;
-        const int kSealedBitOffset = kStubBitOffset + 1;
+        const int kTentativeBitOffset = kValidBitOffset + 1;
+        const int kSealedBitOffset = kTentativeBitOffset + 1;
         const int kDirtyBitOffset = kSealedBitOffset + 1;
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
-        const long kStubBitMask = 1L << kStubBitOffset;
+        const long kTentativeBitMask = 1L << kTentativeBitOffset;
         const long kSealedBitMask = 1L << kSealedBitOffset;
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
         const long kFillerBitMask = 1L << kFillerBitOffset;
@@ -68,13 +68,17 @@ namespace FASTER.core
             info.InNewVersion = inNewVersion;
         }
 
+        public bool Equals(RecordInfo other) => this.word == other.word;
+
+        public long GetHashCode64() => Utility.GetHashCode(this.word);
+
         public bool IsLocked => (word & (kExclusiveLockBitMask | kSharedLockMaskInWord)) != 0;
 
         public bool IsLockedExclusive => (word & kExclusiveLockBitMask) != 0;
 
         public bool IsLockedShared => (word & kSharedLockMaskInWord) != 0;
 
-        public bool IsIntermediate => (word & (kStubBitMask | kSealedBitMask)) != 0;
+        public bool IsIntermediate => (word & (kTentativeBitMask | kSealedBitMask)) != 0;
 
         /// <summary>
         /// Take exclusive (write) lock on RecordInfo
@@ -88,7 +92,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockExclusive()
         {
-            Debug.Assert(IsLockedExclusive);
+            Debug.Assert(IsLockedExclusive, "Trying to X unlock an unlocked record");
             word &= ~kExclusiveLockBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point
         }
 
@@ -130,7 +134,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockShared()
         {
-            Debug.Assert((word & kSharedLockMaskInWord) != 0);
+            Debug.Assert((word & kSharedLockMaskInWord) != 0, "Trying to S unlock an unlocked record");
             Interlocked.Add(ref word, -kSharedLockIncrement);
         }
 
@@ -192,12 +196,21 @@ namespace FASTER.core
             return true;
         }
 
-        public void TransferLocksFrom(ref RecordInfo other)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyLocksFrom(RecordInfo other)
         {
-            // We should only be calling this when the record is sealed, to avoid an attempt to do a lock operation on the old record during this.
-            Debug.Assert(other.Sealed);
             word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
             word |= (other.word & (kExclusiveLockBitMask | kSharedLockMaskInWord));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryUpdateAddress(long newPrevAddress)
+        {
+            var expectedWord = word;
+            RecordInfo newRI = default;
+            newRI.PreviousAddress = newPrevAddress;
+            var foundWord = Interlocked.CompareExchange(ref this.word, newRI.word, expectedWord);
+            return foundWord == expectedWord;
         }
 
         public bool IsNull() => word == 0;
@@ -222,25 +235,51 @@ namespace FASTER.core
             }
         }
 
-        public bool Stub
+        public bool Tentative
         {
-            get => (word & kStubBitMask) > 0;
+            get => (word & kTentativeBitMask) > 0;
             set
             {
-                if (value) word |= kStubBitMask;
-                else word &= ~kStubBitMask;
+                if (value) word |= kTentativeBitMask;
+                else word &= ~kTentativeBitMask;
             }
         }
 
-        public bool Sealed
+        public bool Sealed => (word & kSealedBitMask) > 0;
+
+        // Ensure we have exclusive access before sealing.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Seal(bool isManualLocking = false)
         {
-            get => (word & kSealedBitMask) > 0;
-            set
+            if (isManualLocking)
             {
-                if (value) word |= kSealedBitMask;
-                else word &= ~kSealedBitMask;
+                // We own this lock, so just set the sealed bit.
+                word |= kSealedBitMask;
+                return true;
+            }
+            while (true)
+            {
+                if ((word & kExclusiveLockBitMask) == 0)
+                {
+                    long expected_word = word;
+                    long new_word = word | kExclusiveLockBitMask | kSealedBitMask;
+                    long current_word = Interlocked.CompareExchange(ref word, new_word, expected_word);
+                    if (expected_word == current_word)
+                    {
+                        // Lock+Seal succeeded; remove lock
+                        this.UnlockExclusive();
+                        return true;
+                    }
+
+                    // If someone else sealed this, we fail this attempt.
+                    if ((word & kSealedBitMask) > 0 || this.Invalid)
+                        return false;
+                }
+                Thread.Yield();
             }
         }
+
+        public void Unseal() => word &= ~kSealedBitMask;
 
         public bool DirtyAtomic
         {
@@ -294,7 +333,7 @@ namespace FASTER.core
 
         public bool Invalid => (word & kValidBitMask) == 0;
 
-        public bool SkipOnScan => Invalid || (word & (kSealedBitMask | kStubBitMask)) != 0;
+        public bool SkipOnScan => Invalid || (word & (kSealedBitMask | kTentativeBitMask)) != 0;
 
         public long PreviousAddress
         {

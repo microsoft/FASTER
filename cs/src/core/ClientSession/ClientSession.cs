@@ -225,8 +225,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                LockOperation lockOp = default;
-                return fht.ContextRead(ref key, ref input, ref output, ref lockOp, ref recordMetadata, readFlags, userContext, FasterSession, serialNo, ctx);
+                return fht.ContextRead(ref key, ref input, ref output, ref recordMetadata, readFlags, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -335,8 +334,7 @@ namespace FASTER.core
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                LockOperation lockOp = default;
-                return fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, ref lockOp, out recordMetadata, userContext, FasterSession, serialNo, ctx);
+                return fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -812,7 +810,7 @@ namespace FASTER.core
 
             public bool SupportsPostOperations => _clientSession.functions.SupportsPostOperations;
 
-            public bool IsManualOperations => false;
+            public bool IsManualLocking => false;
             #endregion IFunctions - Optional features supported
 
             #region IFunctions - Reads
@@ -827,14 +825,14 @@ namespace FASTER.core
 
             public bool ConcurrentReaderLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             {
-                this.LockShared(ref recordInfo);
+                recordInfo.LockShared();
                 try
                 {
                     return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
                 }
                 finally
                 {
-                    this.UnlockShared(ref recordInfo);
+                    recordInfo.UnlockShared();
                 }
             }
 
@@ -855,7 +853,7 @@ namespace FASTER.core
                 if (this.SupportsPostOperations && this.SupportsLocking)
                 {
                     // Lock must be taken after the value is initialized. Unlocked in PostSingleWriterLock.
-                    this.LockExclusive(ref recordInfo);
+                    recordInfo.LockExclusive();
                 }
             }
 
@@ -886,7 +884,7 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    this.UnlockExclusive(ref recordInfo);
+                    recordInfo.UnlockExclusive();
                 }
             }
 
@@ -907,14 +905,14 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool ConcurrentWriterLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                this.LockExclusive(ref recordInfo);
+                recordInfo.LockExclusive();
                 try
                 {
                     return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
                 }
                 finally
                 {
-                    this.UnlockExclusive(ref recordInfo);
+                    recordInfo.UnlockExclusive();
                 }
             }
 
@@ -936,7 +934,7 @@ namespace FASTER.core
                 if (this.SupportsPostOperations && this.SupportsLocking)
                 {
                     // Lock must be taken after the value is initialized. Unlocked in PostInitialUpdaterLock.
-                    this.LockExclusive(ref recordInfo);
+                    recordInfo.LockExclusive();
                 }
             }
 
@@ -967,7 +965,7 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    this.UnlockExclusive(ref recordInfo);
+                    recordInfo.UnlockExclusive();
                 }
             }
             #endregion InitialUpdater
@@ -985,7 +983,7 @@ namespace FASTER.core
                 if (this.SupportsPostOperations && this.SupportsLocking)
                 {
                     // Lock must be taken after the value is initialized. Unlocked in PostInitialUpdaterLock.
-                    this.LockExclusive(ref recordInfo);
+                    recordInfo.LockExclusive();
                 }
             }
 
@@ -1016,7 +1014,7 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    this.UnlockExclusive(ref recordInfo);
+                    recordInfo.UnlockExclusive();
                 }
             }
             #endregion CopyUpdater
@@ -1038,14 +1036,14 @@ namespace FASTER.core
 
             private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
             {
-                this.LockExclusive(ref recordInfo);
+                recordInfo.LockExclusive();
                 try
                 {
                     return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address);
                 }
                 finally
                 {
-                    this.UnlockExclusive(ref recordInfo);
+                    recordInfo.UnlockExclusive();
                 }
             }
 
@@ -1085,47 +1083,20 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             {
-                this.LockExclusive(ref recordInfo);
+                recordInfo.LockExclusive();
                 try
                 {
                     return ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address);
                 }
                 finally
                 {
-                    this.UnlockExclusive(ref recordInfo);
+                    recordInfo.UnlockExclusive();
                 }
             }
 
             public void DeleteCompletionCallback(ref Key key, Context ctx)
                 => _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
             #endregion IFunctions - Deletes
-
-            #region IFunctions - Locking
-
-            public void LockExclusive(ref RecordInfo recordInfo) => recordInfo.LockExclusive();
-
-            public void UnlockExclusive(ref RecordInfo recordInfo) => recordInfo.UnlockExclusive();
-
-            public bool TryLockExclusive(ref RecordInfo recordInfo, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
-
-            public void LockShared(ref RecordInfo recordInfo) => recordInfo.LockShared();
-
-            public void UnlockShared(ref RecordInfo recordInfo) => recordInfo.UnlockShared();
-
-            public bool TryLockShared(ref RecordInfo recordInfo, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
-
-            public void LockExclusiveFromShared(ref RecordInfo recordInfo) => recordInfo.LockExclusiveFromShared();
-
-            public bool TryLockExclusiveFromShared(ref RecordInfo recordInfo, int spinCount = 1) => recordInfo.TryLockExclusiveFromShared(spinCount);
-
-            public bool IsLocked(ref RecordInfo recordInfo) => recordInfo.IsLocked;
-
-            public bool IsLockedExclusive(ref RecordInfo recordInfo) => recordInfo.IsLockedExclusive;
-
-            public bool IsLockedShared(ref RecordInfo recordInfo) => recordInfo.IsLockedShared;
-
-            public void TransferLocks(ref RecordInfo oldRecordInfo, ref RecordInfo newRecordInfo) => newRecordInfo.TransferLocksFrom(ref oldRecordInfo);
-            #endregion IFunctions - Locking
 
             #region IFunctions - Checkpointing
             public void CheckpointCompletionCallback(string guid, CommitPoint commitPoint)

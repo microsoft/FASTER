@@ -32,7 +32,7 @@ namespace FASTER.test
         }
     }
 
-    public enum ResultLockTarget { MutableLock, Stub }
+    public enum ResultLockTarget { MutableLock, LockTable }
 
     public enum ReadCopyDestination { Tail, ReadCache }
 
@@ -95,32 +95,12 @@ namespace FASTER.test
             }
         }
 
-        (bool xlock, bool slock) IsLocked(ManualFasterOperations<int, int, int, int, Empty, ManualFunctions> manualOps, int key, long logicalAddress, bool stub, out RecordInfo recordInfo)
-        {
-            // We have the epoch protected so can access the address directly. For ReadCache, which does not expose addresses, we must look up the key
-            if (logicalAddress != Constants.kInvalidAddress)
-            {
-                var physicalAddress = fkv.hlog.GetPhysicalAddress(logicalAddress);
-                recordInfo = fkv.hlog.GetInfo(physicalAddress);
-                Assert.AreEqual(stub, recordInfo.Stub, "stub mismatch, valid Address");
-            }
-            else
-            {
-                int inoutDummy = default;
-                RecordMetadata recordMetadata = default;
-                var status = manualOps.Read(ref key, ref inoutDummy, ref inoutDummy, ref recordMetadata);
-                Assert.AreNotEqual(Status.PENDING, status);
-                Assert.AreEqual(logicalAddress, recordMetadata.Address);    // Either kInvalidAddress for readCache, or the expected address
+        static void AssertIsLocked(ManualFasterOperations<int, int, int, int, Empty, ManualFunctions> manualOps, int key, LockType lockType) 
+            => AssertIsLocked(manualOps, key, lockType == LockType.Exclusive, lockType == LockType.Shared);
 
-                recordInfo = recordMetadata.RecordInfo;
-                Assert.AreEqual(stub, recordInfo.Stub, "stub mismatch");
-            }
-            return (recordInfo.IsLockedExclusive, recordInfo.IsLockedShared);
-        }
-
-        void AssertIsLocked(ManualFasterOperations<int, int, int, int, Empty, ManualFunctions> manualOps, int key, long logicalAddress, bool xlock, bool slock, bool stub)
+        static void AssertIsLocked(ManualFasterOperations<int, int, int, int, Empty, ManualFunctions> manualOps, int key, bool xlock, bool slock)
         {
-            var (isX, isS) = IsLocked(manualOps, key, logicalAddress, stub, out var recordInfo);
+            var (isX, isS) = manualOps.IsLocked(key);
             Assert.AreEqual(xlock, isX, "xlock mismatch");
             Assert.AreEqual(slock, isS, "slock mismatch");
         }
@@ -163,17 +143,14 @@ namespace FASTER.test
             Populate();
             PrepareRecordLocation(flushMode);
 
-            Dictionary<int, LockInfo> locks = new();
-            LockInfo lockInfo = default;
-
             // SetUp also reads this to determine whether to supply ReadCacheSettings. If ReadCache is specified it wins over CopyToTail.
             bool useReadCache = readCopyDestination == ReadCopyDestination.ReadCache && flushMode == FlushMode.OnDisk;
             var useRMW = updateOp == UpdateOp.RMW;
-            bool initialDestWillBeStub = resultLockTarget == ResultLockTarget.Stub || flushMode == FlushMode.OnDisk;
-            int resultKey = resultLockTarget == ResultLockTarget.Stub ? numRecords + 1 : 75;
+            int resultKey = resultLockTarget == ResultLockTarget.LockTable ? numRecords + 1 : 75;
             int resultValue = -1;
             int expectedResult = (24 + 51) * valueMult;
             Status status;
+            Dictionary<int, LockType> locks = new();
 
             using (var manualOps = session.GetManualOperations())
             {
@@ -184,57 +161,91 @@ namespace FASTER.test
                     {   // key scope
                         // Get initial source values
                         int key = 24;
-                        manualOps.Lock(key, LockType.Shared, retrieveData: true, ref lockInfo);
-                        Assert.AreEqual(useReadCache, lockInfo.Address == Constants.kInvalidAddress);
-                        locks[key] = lockInfo;
-                        AssertIsLocked(manualOps, key, lockInfo.Address, xlock: false, slock: true, stub: false);
+                        manualOps.Lock(key, LockType.Shared);
+                        AssertIsLocked(manualOps, key, xlock: false, slock: true);
+                        locks[key] = LockType.Shared;
+
                         key = 51;
-                        manualOps.Lock(key, LockType.Shared, retrieveData: true, ref lockInfo);
-                        Assert.AreEqual(useReadCache, lockInfo.Address == Constants.kInvalidAddress);
-                        locks[key] = lockInfo;
-                        AssertIsLocked(manualOps, key, lockInfo.Address, xlock: false, slock: true, stub: false);
+                        manualOps.Lock(key, LockType.Shared);
+                        locks[key] = LockType.Shared;
+                        AssertIsLocked(manualOps, key, xlock: false, slock: true);
 
-                        // Lock destination value (which may entail dropping a stub).
-                        manualOps.Lock(resultKey, LockType.Exclusive, retrieveData: false, ref lockInfo);
-                        Assert.AreEqual(useReadCache && !initialDestWillBeStub, lockInfo.Address == Constants.kInvalidAddress);
-                        locks[resultKey] = lockInfo;
-                        AssertIsLocked(manualOps, resultKey, lockInfo.Address, xlock: true, slock: false, stub: initialDestWillBeStub);
+                        // Lock destination value.
+                        manualOps.Lock(resultKey, LockType.Exclusive);
+                        locks[resultKey] = LockType.Exclusive;
+                        AssertIsLocked(manualOps, resultKey, xlock: true, slock: false);
 
-                        // Re-get source values, to verify (e.g. they may be in readcache now)
+                        // Re-get source values, to verify (e.g. they may be in readcache now).
+                        // We just locked this above, but for FlushMode.OnDisk it will be in the LockTable and will still be PENDING.
                         status = manualOps.Read(24, out var value24);
-                        Assert.AreNotEqual(Status.PENDING, status);
+                        if (flushMode == FlushMode.OnDisk)
+                        {
+                            if (status == Status.PENDING)
+                            {
+                                manualOps.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                                Assert.True(completedOutputs.Next());
+                                value24 = completedOutputs.Current.Output;
+                                Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
+                                Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedShared);
+                                Assert.False(completedOutputs.Next());
+                                completedOutputs.Dispose();
+                            }
+                        }
+                        else
+                        {
+                            Assert.AreNotEqual(Status.PENDING, status);
+                        }
+
                         status = manualOps.Read(51, out var value51);
-                        Assert.AreNotEqual(Status.PENDING, status);
+                        if (flushMode == FlushMode.OnDisk)
+                        {
+                            if (status == Status.PENDING)
+                            {
+                                manualOps.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                                Assert.True(completedOutputs.Next());
+                                value51 = completedOutputs.Current.Output;
+                                Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
+                                Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedShared);
+                                Assert.False(completedOutputs.Next());
+                                completedOutputs.Dispose();
+                            }
+                        }
+                        else
+                        {
+                            Assert.AreNotEqual(Status.PENDING, status);
+                        }
 
                         // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
                         session.ctx.phase = phase;
                         int dummyInOut = 0;
-                        RecordMetadata recordMetadata = default;
                         status = useRMW
-                            ? manualOps.RMW(ref resultKey, ref expectedResult, ref dummyInOut, out recordMetadata)
+                            ? manualOps.RMW(ref resultKey, ref expectedResult, ref dummyInOut, out RecordMetadata recordMetadata)
                             : manualOps.Upsert(ref resultKey, ref dummyInOut, ref expectedResult, ref dummyInOut, out recordMetadata);
-                        Assert.AreNotEqual(Status.PENDING, status);
-                        if (initialDestWillBeStub || flushMode == FlushMode.ReadOnly)
+                        if (flushMode == FlushMode.OnDisk)
                         {
-                            // We initially created a stub for locking -or- we initially locked a RO record and then the update required RCU.
-                            // Under these circumstances, we allocated a new record and transferred the lock to it.
-                            Assert.AreNotEqual(locks[resultKey].Address, recordMetadata.Address);
-                            AssertIsLocked(manualOps, resultKey, locks[resultKey].Address, xlock: false, slock: false, stub: initialDestWillBeStub);
-                            AssertIsLocked(manualOps, resultKey, recordMetadata.Address, xlock: true, slock: false, stub: false);
-                            lockInfo = locks[resultKey];
-                            lockInfo.Address = recordMetadata.Address;
-                            locks[resultKey] = lockInfo;
+                            if (status == Status.PENDING)
+                            {
+                                manualOps.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                                Assert.True(completedOutputs.Next());
+                                resultValue = completedOutputs.Current.Output;
+                                Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
+                                Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedShared);
+                                Assert.False(completedOutputs.Next());
+                                completedOutputs.Dispose();
+                            }
                         }
                         else
-                            Assert.AreEqual(locks[resultKey].Address, recordMetadata.Address);
+                        {
+                            Assert.AreNotEqual(Status.PENDING, status);
+                        }
 
                         // Reread the destination to verify
                         status = manualOps.Read(resultKey, out resultValue);
                         Assert.AreNotEqual(Status.PENDING, status);
                         Assert.AreEqual(expectedResult, resultValue);
                     }
-                    foreach (var key in locks.Keys.OrderBy(key => key))
-                        manualOps.Unlock(key, locks[key].LockType);
+                    foreach (var key in locks.Keys.OrderBy(key => -key))
+                        manualOps.Unlock(key, locks[key]);
                 }
                 catch (Exception)
                 {
@@ -262,10 +273,9 @@ namespace FASTER.test
             Populate();
             PrepareRecordLocation(flushMode);
 
-            LockInfo lockInfo = default;
-            bool initialDestWillBeStub = resultLockTarget == ResultLockTarget.Stub || flushMode == FlushMode.OnDisk;
-            int resultKey = initialDestWillBeStub ? numRecords + 1 : 75;
-            int resultValue = -1;
+            bool initialDestWillBeLockTable = resultLockTarget == ResultLockTarget.LockTable || flushMode == FlushMode.OnDisk;
+            int resultKey = initialDestWillBeLockTable ? numRecords + 1 : 75;
+            int resultValue;
             const int expectedResult = (24 + 51) * valueMult;
             var useRMW = updateOp == UpdateOp.RMW;
             Status status;
@@ -275,7 +285,7 @@ namespace FASTER.test
 
             try
             {
-                manualOps.Lock(51, LockType.Exclusive, retrieveData: true, ref lockInfo);
+                manualOps.Lock(51, LockType.Exclusive);
 
                 status = manualOps.Read(24, out var value24);
                 if (flushMode == FlushMode.OnDisk)
@@ -289,9 +299,25 @@ namespace FASTER.test
                 else
                     Assert.AreNotEqual(Status.PENDING, status);
 
-                // We just locked this above, so it should not be PENDING
+                // We just locked this above, but for FlushMode.OnDisk it will be in the LockTable and will still be PENDING.
                 status = manualOps.Read(51, out var value51);
-                Assert.AreNotEqual(Status.PENDING, status);
+                if (flushMode == FlushMode.OnDisk)
+                {
+                    if (status == Status.PENDING)
+                    {
+                        manualOps.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        Assert.True(completedOutputs.Next());
+                        value51 = completedOutputs.Current.Output;
+                        Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
+                        Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedShared);
+                        Assert.False(completedOutputs.Next());
+                        completedOutputs.Dispose();
+                    }
+                }
+                else
+                {
+                    Assert.AreNotEqual(Status.PENDING, status);
+                }
                 Assert.AreEqual(51 * valueMult, value51);
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
@@ -305,7 +331,7 @@ namespace FASTER.test
                 Assert.AreNotEqual(Status.PENDING, status);
                 Assert.AreEqual(expectedResult, resultValue);
 
-                manualOps.Unlock(51, ref lockInfo);
+                manualOps.Unlock(51, LockType.Exclusive);
             }
             catch (Exception)
             {
@@ -334,13 +360,12 @@ namespace FASTER.test
             Populate();
             PrepareRecordLocation(flushMode);
 
-            Dictionary<int, LockInfo> locks = new();
-            LockInfo lockInfo = default;
+            Dictionary<int, LockType> locks = new();
 
             // SetUp also reads this to determine whether to supply ReadCacheSettings. If ReadCache is specified it wins over CopyToTail.
             bool useReadCache = readCopyDestination == ReadCopyDestination.ReadCache && flushMode == FlushMode.OnDisk;
-            bool initialDestWillBeStub = resultLockTarget == ResultLockTarget.Stub || flushMode == FlushMode.OnDisk;
-            int resultKey = resultLockTarget == ResultLockTarget.Stub ? numRecords + 1 : 75;
+            bool initialDestWillBeLockTable = resultLockTarget == ResultLockTarget.LockTable || flushMode == FlushMode.OnDisk;
+            int resultKey = resultLockTarget == ResultLockTarget.LockTable ? numRecords + 1 : 75;
             Status status;
 
             using (var manualOps = session.GetManualOperations())
@@ -349,38 +374,22 @@ namespace FASTER.test
 
                 try
                 {
-                    // Lock destination value (which may entail dropping a stub).
-                    manualOps.Lock(resultKey, LockType.Exclusive, retrieveData: false, ref lockInfo);
-                    Assert.AreEqual(useReadCache && !initialDestWillBeStub, lockInfo.Address == Constants.kInvalidAddress);
-                    locks[resultKey] = lockInfo;
-                    AssertIsLocked(manualOps, resultKey, lockInfo.Address, xlock: true, slock: false, stub: initialDestWillBeStub);
+                    // Lock destination value.
+                    manualOps.Lock(resultKey, LockType.Exclusive);
+                    locks[resultKey] = LockType.Exclusive;
+                    AssertIsLocked(manualOps, resultKey, xlock: true, slock: false);
 
                     // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
                     session.ctx.phase = phase;
                     status = manualOps.Delete(ref resultKey);
                     Assert.AreNotEqual(Status.PENDING, status);
 
-                    // If we initially created a stub for locking then we've updated it in place, unlike Upsert or RMW.
-                    if (!initialDestWillBeStub && flushMode == FlushMode.ReadOnly)
-                    {
-                        // We initially locked a RO record and then the delete required inserting a new record.
-                        // Under these circumstances, we allocated a new record and transferred the lock to it.
-                        Assert.AreNotEqual(locks[resultKey].Address, session.functions.deletedRecordAddress);
-                        AssertIsLocked(manualOps, resultKey, locks[resultKey].Address, xlock: false, slock: false, stub: initialDestWillBeStub);
-                        AssertIsLocked(manualOps, resultKey, session.functions.deletedRecordAddress, xlock: true, slock: false, stub: false);
-                        lockInfo = locks[resultKey];
-                        lockInfo.Address = session.functions.deletedRecordAddress;
-                        locks[resultKey] = lockInfo;
-                    }
-                    else
-                        Assert.AreEqual(locks[resultKey].Address, session.functions.deletedRecordAddress);
-
                     // Reread the destination to verify
                     status = manualOps.Read(resultKey, out var _);
                     Assert.AreEqual(Status.NOTFOUND, status);
 
                     foreach (var key in locks.Keys.OrderBy(key => key))
-                        manualOps.Unlock(key, locks[key].LockType);
+                        manualOps.Unlock(key, locks[key]);
                 }
                 catch (Exception)
                 {
@@ -414,7 +423,7 @@ namespace FASTER.test
 
             void runLockThread(int tid)
             {
-                Dictionary<int, LockInfo> locks = new();
+                Dictionary<int, LockType> locks = new();
                 Random rng = new(tid + 101);
 
                 using var localSession = fkv.For(new ManualFunctions()).NewSession<ManualFunctions>();
@@ -426,13 +435,12 @@ namespace FASTER.test
                     for (var key = baseKey + rng.Next(numIncrement); key < baseKey + numKeys; key += rng.Next(1, numIncrement))
                     {
                         var lockType = rng.Next(100) < 60 ? LockType.Shared : LockType.Exclusive;
-                        LockInfo lockInfo = default;
-                        manualOps.Lock(key, lockType, retrieveData: true, ref lockInfo);
-                        locks[key] = lockInfo;
+                        manualOps.Lock(key, lockType);
+                        locks[key] = lockType;
                     }
 
                     foreach (var key in locks.Keys.OrderBy(key => key))
-                        manualOps.Unlock(key, locks[key].LockType);
+                        manualOps.Unlock(key, locks[key]);
                     locks.Clear();
                 }
 

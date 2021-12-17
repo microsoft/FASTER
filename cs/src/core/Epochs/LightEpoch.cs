@@ -242,6 +242,7 @@ namespace FASTER.core
             threadEntryIndexCount++;
         }
 
+        internal int LocalCurrentEpoch => (*(tableAligned + threadEntryIndex)).localCurrentEpoch;
 
         /// <summary>
         /// Thread releases its epoch entry
