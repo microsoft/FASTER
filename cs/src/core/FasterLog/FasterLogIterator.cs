@@ -82,15 +82,15 @@ namespace FASTER.core
                 long nextAddress;
                 while (!GetNext(out result, out length, out currentAddress, out nextAddress))
                 {
-
                     if (currentAddress >= endAddress)
                         yield break;
                     if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
+                    // EOF
+                    if (fasterLog.LogCompleted)
+                        yield break;
                 }
-                // EOF
-                if (fasterLog.LogCompleted)
-                    yield break;
+
                 yield return (result, length, currentAddress, nextAddress);
             }
         }
@@ -113,10 +113,10 @@ namespace FASTER.core
                         yield break;
                     if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
+                    // EOF
+                    if (fasterLog.LogCompleted)
+                        yield break;
                 }
-                // EOF
-                if (fasterLog.LogCompleted)
-                    yield break;
                 yield return (result, length, currentAddress, nextAddress);
             }
         }
