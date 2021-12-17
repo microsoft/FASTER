@@ -137,7 +137,7 @@ namespace FASTER.test
                     case FasterLogTestBase.IteratorType.Sync:
                         while (iter.GetNext(out byte[] result, out var length, out _))
                         {
-                            if (length == 0) break;
+                            if (log.LogCompleted) break;
                             Assert.IsTrue(result.SequenceEqual(entry));
                             counter.IncrementAndMaybeTruncateUntil(iter.NextAddress);
                         }

@@ -220,8 +220,7 @@ namespace FASTER.core
 
         /// <summary>
         /// Mark the log as complete. A completed log will no longer allow enqueues, and all currently enqueued items will
-        /// be immediately committed. All iterators will receive a special 0-length entry when they traverse until the
-        /// tail of a completed log.
+        /// be immediately committed.
         /// </summary>
         /// <param name="spinWait"> whether to spin until log completion becomes committed </param>
         public void CompleteLog(bool spinWait = false)
@@ -230,7 +229,7 @@ namespace FASTER.core
             // Ensure all currently started entries will enqueue before we declare log closed
             epoch.BumpCurrentEpoch(() =>
             {
-                CommitInternal(out var tail, out _, false, null, long.MaxValue, null);
+                CommitInternal(out _, out _, false, null, long.MaxValue, null);
             });
 
             // Ensure progress even if there is no thread in epoch table
@@ -243,6 +242,12 @@ namespace FASTER.core
             if (spinWait)
                 WaitForCommit(TailAddress, long.MaxValue);
         }
+
+        /// <summary>
+        /// Check if the log is complete. A completed log will no longer allow enqueues, and all currently enqueued items will
+        /// be immediately committed.
+        /// </summary>
+        public bool LogCompleted => commitNum == long.MaxValue;
 
         internal void TrueDispose()
         {
@@ -1883,9 +1888,8 @@ namespace FASTER.core
                     // Invalid commit num
                     return false;
 
-                // Normally --- only need commit records if fast committing. Exception is for when completing a log, we
-                // want the record to be scanned by every iterator regardless of commit type
-                if (fastCommitMode || commitNum == long.MaxValue)
+                // Normally --- only need commit records if fast committing.
+                if (fastCommitMode)
                 {
                     // Ok to retry in critical section, any concurrently invoked commit would block, but cannot progress
                     // anyways if no record can be enqueued

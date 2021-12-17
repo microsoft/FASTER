@@ -82,7 +82,7 @@ namespace FASTER.core
                         yield break;
                 }
                 // EOF
-                if (length == 0)
+                if (fasterLog.LogCompleted)
                     yield break;
                 yield return (result, length, currentAddress, nextAddress);
             }
@@ -108,7 +108,7 @@ namespace FASTER.core
                         yield break;
                 }
                 // EOF
-                if (length == 0)
+                if (fasterLog.LogCompleted)
                     yield break;
                 yield return (result, length, currentAddress, nextAddress);
             }
@@ -240,11 +240,11 @@ namespace FASTER.core
                     info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
                     if (info.CommitNum != long.MaxValue) continue;
                     
-                    // Otherwise, set return entry length to be 0 to indicate eof
-                    entry = null;
-                    entryLength = 0;
+                    // Otherwise, no more entries
+                    entry = default;
+                    entryLength = default;
                     epoch.Suspend();
-                    return true;
+                    return false;
                 }
                 
                 if (getMemory != null)
@@ -337,11 +337,11 @@ namespace FASTER.core
                     info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
                     if (info.CommitNum != long.MaxValue) continue;
                     
-                    // Otherwise, set return entry length to be 0 to indicate eof
-                    entry = null;
-                    entryLength = 0;
+                    // Otherwise, no more entries
+                    entry = default;
+                    entryLength = default;
                     epoch.Suspend();
-                    return true;
+                    return false;
                 }
                 
                 entry = pool.Rent(entryLength);
@@ -404,10 +404,11 @@ namespace FASTER.core
                     info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
                     if (info.CommitNum != long.MaxValue) continue;
                     
-                    // Otherwise, set return entry length to be 0 to indicate eof
-                    entry = null;
-                    entryLength = 0;
-                    return true;
+                    // Otherwise, no more entries
+                    entry = default;
+                    entryLength = default;
+                    epoch.Suspend();
+                    return false;
                 }
                 
                 entry = (byte*)(headerSize + physicalAddress);
