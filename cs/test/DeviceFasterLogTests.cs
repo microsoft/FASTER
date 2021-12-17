@@ -107,12 +107,13 @@ namespace FASTER.test
             {
                 log.Enqueue(entry);
             }
-            log.Commit(true);
+
+            log.CompleteLog(true);
 
             // MoveNextAsync() would hang at TailAddress, waiting for more entries (that we don't add).
             // Note: If this happens and the test has to be canceled, there may be a leftover blob from the log.Commit(), because
             // the log device isn't Dispose()d; the symptom is currently a numeric string format error in DefaultCheckpointNamingScheme.
-            using (var iter = log.Scan(0, log.TailAddress))
+            using (var iter = log.Scan(0, long.MaxValue))
             {
                 var counter = new FasterLogTestBase.Counter(log);
 

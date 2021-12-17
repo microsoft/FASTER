@@ -18,7 +18,7 @@ namespace FASTER.core
         /// FasterLog recovery version
         /// </summary>
         const int FasterLogRecoveryVersion = 1;
-
+        
         /// <summary>
         /// Begin address
         /// </summary>

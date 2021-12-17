@@ -156,8 +156,7 @@ namespace FasterLogSample
             {
                 while (!iter.GetNext(out result, out _, out _))
                 {
-                    // For finite end address, check if iteration ended
-                    // if (currentAddress >= endAddress) return; 
+                    if (iter.Ended) return;
                     iter.WaitAsync().AsTask().GetAwaiter().GetResult();
                 }
 

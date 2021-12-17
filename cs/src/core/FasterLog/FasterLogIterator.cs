@@ -33,6 +33,12 @@ namespace FASTER.core
         public long CompletedUntilAddress;
 
         /// <summary>
+        /// Whether iteration has ended, either because we reached the end address of iteration, or because
+        /// we reached the end of a completed log.
+        /// </summary>
+        public bool Ended => (currentAddress >= endAddress) || (fasterLog.LogCompleted && currentAddress == fasterLog.TailAddress);
+
+        /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="fasterLog"></param>
@@ -75,11 +81,11 @@ namespace FASTER.core
                 long nextAddress;
                 while (!GetNext(out result, out length, out currentAddress, out nextAddress))
                 {
-                    if (currentAddress >= endAddress)
-                        yield break;
+                    if (Ended) yield break;
                     if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
                 }
+
                 yield return (result, length, currentAddress, nextAddress);
             }
         }
@@ -98,8 +104,7 @@ namespace FASTER.core
                 long nextAddress;
                 while (!GetNext(pool, out result, out length, out currentAddress, out nextAddress))
                 {
-                    if (currentAddress >= endAddress)
-                        yield break;
+                    if (Ended) yield break;
                     if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
                 }
@@ -226,9 +231,20 @@ namespace FASTER.core
                     epoch.Suspend();
                     throw;
                 }
-
-                if (isCommitRecord) continue;
-
+                
+                if (isCommitRecord)
+                {
+                    FasterLogRecoveryInfo info = new();
+                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
+                    if (info.CommitNum != long.MaxValue) continue;
+                    
+                    // Otherwise, no more entries
+                    entry = default;
+                    entryLength = default;
+                    epoch.Suspend();
+                    return false;
+                }
+                
                 if (getMemory != null)
                 {
                     // Use user delegate to allocate memory
@@ -247,7 +263,7 @@ namespace FASTER.core
 
                 fixed (byte* bp = entry)
                     Buffer.MemoryCopy((void*) (headerSize + physicalAddress), bp, entryLength, entryLength);
-
+                
                 epoch.Suspend();
                 return true;
             }
@@ -304,6 +320,7 @@ namespace FASTER.core
                         epoch.Suspend();
                         return false;
                     }
+
                 }
                 catch (Exception)
                 {
@@ -311,14 +328,24 @@ namespace FASTER.core
                     epoch.Suspend();
                     throw;
                 }
-
-                if (isCommitRecord) continue;
-
+                
+                if (isCommitRecord)
+                {
+                    FasterLogRecoveryInfo info = new();
+                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
+                    if (info.CommitNum != long.MaxValue) continue;
+                    
+                    // Otherwise, no more entries
+                    entry = default;
+                    entryLength = default;
+                    epoch.Suspend();
+                    return false;
+                }
+                
                 entry = pool.Rent(entryLength);
 
                 fixed (byte* bp = &entry.Memory.Span.GetPinnableReference())
                     Buffer.MemoryCopy((void*)(headerSize + physicalAddress), bp, entryLength, entryLength);
-
                 epoch.Suspend();
                 return true;
             }
@@ -368,9 +395,20 @@ namespace FASTER.core
                     epoch.Suspend();
                     throw;
                 }
-
-                if (isCommitRecord) continue;
-
+                
+                if (isCommitRecord)
+                {
+                    FasterLogRecoveryInfo info = new();
+                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
+                    if (info.CommitNum != long.MaxValue) continue;
+                    
+                    // Otherwise, no more entries
+                    entry = default;
+                    entryLength = default;
+                    epoch.Suspend();
+                    return false;
+                }
+                
                 entry = (byte*)(headerSize + physicalAddress);
                 return true;
             }
@@ -467,7 +505,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int Align(int length)
+        private static int Align(int length)
         {
             return (length + 3) & ~3;
         }
@@ -619,7 +657,6 @@ namespace FASTER.core
                 {
                     if (!fasterLog.VerifyChecksum((byte*)physicalAddress, entryLength))
                     {
-                        var curPage = currentAddress >> allocator.LogPageSizeBits;
                         currentAddress += headerSize;
                         if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         {

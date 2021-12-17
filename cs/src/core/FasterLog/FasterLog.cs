@@ -29,6 +29,7 @@ namespace FASTER.core
         readonly int headerSize;
         readonly LogChecksumType logChecksum;
         readonly WorkQueueLIFO<CommitInfo> commitQueue;
+
         internal readonly bool readOnlyMode;
         internal readonly bool fastCommitMode;
         internal readonly bool tolerateDeviceFailure;
@@ -132,7 +133,7 @@ namespace FASTER.core
                     new DefaultCheckpointNamingScheme(
                         logSettings.LogCommitDir ??
                         new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),
-                    logSettings.ReadOnlyMode ? false : logSettings.RemoveOutdatedCommits);
+                    !logSettings.ReadOnlyMode && logSettings.RemoveOutdatedCommits);
 
             if (logSettings.LogCommitManager == null)
                 disposeLogCommitManager = true;
@@ -217,6 +218,37 @@ namespace FASTER.core
                 TrueDispose();
         }
 
+        /// <summary>
+        /// Mark the log as complete. A completed log will no longer allow enqueues, and all currently enqueued items will
+        /// be immediately committed.
+        /// </summary>
+        /// <param name="spinWait"> whether to spin until log completion becomes committed </param>
+        public void CompleteLog(bool spinWait = false)
+        {
+
+            // Ensure all currently started entries will enqueue before we declare log closed
+            epoch.BumpCurrentEpoch(() =>
+            {
+                CommitInternal(out _, out _, false, null, long.MaxValue, null);
+            });
+
+            // Ensure progress even if there is no thread in epoch table
+            if (!epoch.ThisInstanceProtected())
+            {
+                epoch.Resume();
+                epoch.Suspend();
+            }
+
+            if (spinWait)
+                WaitForCommit(TailAddress, long.MaxValue);
+        }
+
+        /// <summary>
+        /// Check if the log is complete. A completed log will no longer allow enqueues, and all currently enqueued items will
+        /// be immediately committed.
+        /// </summary>
+        public bool LogCompleted => commitNum == long.MaxValue;
+
         internal void TrueDispose()
         {
             commitQueue.Dispose();
@@ -285,6 +317,8 @@ namespace FASTER.core
 
             epoch.Resume();
 
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
             {
@@ -316,6 +350,8 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -1463,6 +1499,7 @@ namespace FASTER.core
             cookie = info.Cookie;
             commitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
@@ -1641,6 +1678,8 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
 
             if (logicalAddress == 0)
@@ -1816,7 +1855,7 @@ namespace FASTER.core
             {
                 FastForwardAllowed = fastForwardAllowed,
                 Cookie = cookie,
-                Callback = callback
+                Callback = callback,
             };
             info.SnapshotIterators(PersistedIterators);
             var metadataChanged = ShouldCommmitMetadata(ref info);
@@ -1824,11 +1863,20 @@ namespace FASTER.core
             if (fastForwardAllowed && !commitPolicy.AdmitCommit(TailAddress, metadataChanged))
                 return false;
 
+            // This critical section serializes commit record creation / commit content generation and ensures that the
+            // long address are sorted in outstandingCommitRecords. Ok because we do not expect heavy contention on the
+            // commit code path
             lock (ongoingCommitRequests)
             {
                 if (commitCoveredAddress == TailAddress && !metadataChanged)
                     // Nothing to commit if no metadata update and no new entries
                     return false;
+                if (commitNum == long.MaxValue)
+                {
+                    // log has been closed, throw an exception
+                    throw new FasterException("log has already been closed");
+                }
+                
                 // Make sure we will not be allowed to back out of a commit if AdmitCommit returns true, as the commit policy
                 // may need to update internal logic for every true response. We might waste some commit nums if commit
                 // policy filters out a lot of commits, but that's fine.
@@ -1840,9 +1888,7 @@ namespace FASTER.core
                     // Invalid commit num
                     return false;
 
-                // This critical section serializes commit record creation / commit content generation and ensures that the
-                // long address are sorted in outstandingCommitRecords. Ok because we do not expect heavy contention on the
-                // commit code path
+                // Normally --- only need commit records if fast committing.
                 if (fastCommitMode)
                 {
                     // Ok to retry in critical section, any concurrently invoked commit would block, but cannot progress
