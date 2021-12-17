@@ -32,6 +32,13 @@ namespace FASTER.core
         /// </summary>
         public long CompletedUntilAddress;
 
+
+        /// <summary>
+        /// Whether the underlying log is completed. A completed log will no longer allow enqueues, and there will be
+        /// no more entries if the iterator has exhausted current entries. 
+        /// </summary>
+        public bool LogCompleted => fasterLog.LogCompleted;
+
         /// <summary>
         /// Constructor
         /// </summary>
