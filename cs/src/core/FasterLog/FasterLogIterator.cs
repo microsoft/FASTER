@@ -190,7 +190,7 @@ namespace FASTER.core
         /// Get next record in iterator
         /// </summary>
         /// <param name="entry">Copy of entry, if found</param>
-        /// <param name="entryLength">Actual length of entry, or 0 for the last entry in a completed log</param>
+        /// <param name="entryLength">Actual length of entry</param>
         /// <param name="currentAddress">Logical address of entry</param>
         /// <returns></returns>
         public unsafe bool GetNext(out byte[] entry, out int entryLength, out long currentAddress)
@@ -202,7 +202,7 @@ namespace FASTER.core
         /// Get next record in iterator
         /// </summary>
         /// <param name="entry">Copy of entry, if found</param>
-        /// <param name="entryLength">Actual length of entry, or 0 for the last entry in a completed log</param>
+        /// <param name="entryLength">Actual length of entry</param>
         /// <param name="currentAddress">Logical address of entry</param>
         /// <param name="nextAddress">Logical address of next entry</param>
         /// <returns></returns>
@@ -283,7 +283,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="pool">Memory pool</param>
         /// <param name="entry">Copy of entry, if found</param>
-        /// <param name="entryLength">Actual length of entry, or 0 for the last entry in a completed log</param>
+        /// <param name="entryLength">Actual length of entry</param>
         /// <param name="currentAddress">Logical address of entry</param>
         /// <returns></returns>
         public unsafe bool GetNext(MemoryPool<byte> pool, out IMemoryOwner<byte> entry, out int entryLength, out long currentAddress)
@@ -296,7 +296,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="pool">Memory pool</param>
         /// <param name="entry">Copy of entry, if found</param>
-        /// <param name="entryLength">Actual length of entry, or 0 for the last entry in a completed log</param>
+        /// <param name="entryLength">Actual length of entry</param>
         /// <param name="currentAddress">Logical address of entry</param>
         /// <param name="nextAddress">Logical address of next entry</param>
         /// <returns></returns>
@@ -366,7 +366,7 @@ namespace FASTER.core
         /// Make sure to call UnsafeRelease when done processing the raw bytes (without delay).
         /// </summary>
         /// <param name="entry">Copy of entry, if found</param>
-        /// <param name="entryLength">Actual length of entry, or 0 for the last entry in a completed log</param>
+        /// <param name="entryLength">Actual length of entry</param>
         /// <param name="currentAddress">Logical address of entry</param>
         /// <param name="nextAddress">Logical address of next entry</param>
         /// <returns></returns>
