@@ -30,7 +30,7 @@ namespace FASTER.core
         /// <returns>the current version</returns>
         public long Version()
         {
-            return version;
+            return Interlocked.Read(ref version);
         }
 
         /// <summary>
@@ -57,7 +57,7 @@ namespace FASTER.core
                 epoch.Resume();
             }
 
-            return version;
+            return Interlocked.Read(ref version);
         }
 
         /// <summary>
@@ -93,10 +93,10 @@ namespace FASTER.core
             }
 
             // Any thread that sees ev will be in v + 1, because the bump happens only after ev is set. 
-            var original = version;
+            var original = Interlocked.Read(ref version);
             epoch.BumpCurrentEpoch(() =>
             {
-                version = targetVersion == -1 ? version + 1 : targetVersion;
+                version = targetVersion == -1 ? original + 1 : targetVersion;
                 criticalSection(original, version);
                 versionChanged.Set();
                 versionChanged = null;
