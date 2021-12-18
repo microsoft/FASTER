@@ -355,9 +355,6 @@ namespace FASTER.core
             ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
             OperationStatus internalStatus;
 
-            // Set the initial record metadata into pendingContext.
-            unsafe { pendingContext.recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
-
             // Issue the continue command
             if (pendingContext.type == OperationType.READ)
             {

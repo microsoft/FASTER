@@ -98,6 +98,7 @@ namespace FASTER.core
 
             internal const ushort kNoKey = 0x0100;
             internal const ushort kIsAsync = 0x0200;
+            internal const ushort kHasPrevTailAddress = 0x0400;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal IHeapContainer<Key> DetachKey()
@@ -143,37 +144,43 @@ namespace FASTER.core
             internal bool NoKey
             {
                 get => (operationFlags & kNoKey) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kNoKey) : (byte)(operationFlags & ~kNoKey);
+                set => operationFlags = value ? (ushort)(operationFlags | kNoKey) : (ushort)(operationFlags & ~kNoKey);
             }
 
             internal bool SkipReadCache
             {
                 get => (operationFlags & kSkipReadCache) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kSkipReadCache) : (byte)(operationFlags & ~kSkipReadCache);
+                set => operationFlags = value ? (ushort)(operationFlags | kSkipReadCache) : (ushort)(operationFlags & ~kSkipReadCache);
             }
 
             internal bool HasMinAddress
             {
                 get => (operationFlags & kMinAddress) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kMinAddress) : (byte)(operationFlags & ~kMinAddress);
+                set => operationFlags = value ? (ushort)(operationFlags | kMinAddress) : (ushort)(operationFlags & ~kMinAddress);
             }
 
             internal bool CopyReadsToTail
             {
                 get => (operationFlags & kCopyReadsToTail) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kCopyReadsToTail) : (byte)(operationFlags & ~kCopyReadsToTail);
+                set => operationFlags = value ? (ushort)(operationFlags | kCopyReadsToTail) : (ushort)(operationFlags & ~kCopyReadsToTail);
             }
 
             internal bool SkipCopyReadsToTail
             {
                 get => (operationFlags & kSkipCopyReadsToTail) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kSkipCopyReadsToTail) : (byte)(operationFlags & ~kSkipCopyReadsToTail);
+                set => operationFlags = value ? (ushort)(operationFlags | kSkipCopyReadsToTail) : (ushort)(operationFlags & ~kSkipCopyReadsToTail);
             }
 
             internal bool IsAsync
             {
                 get => (operationFlags & kIsAsync) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kIsAsync) : (byte)(operationFlags & ~kIsAsync);
+                set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
+            }
+
+            internal bool HasPrevTailAddress
+            {
+                get => (operationFlags & kHasPrevTailAddress) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kHasPrevTailAddress) : (ushort)(operationFlags & ~kHasPrevTailAddress);
             }
 
             public void Dispose()

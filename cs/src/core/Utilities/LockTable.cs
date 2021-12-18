@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.core
@@ -62,21 +61,6 @@ namespace FASTER.core
             if (bufferPool is null)
                 return new StandardHeapContainer<TKey>(ref key);
             return new VarLenHeapContainer<TKey>(ref key, keyLen, bufferPool);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Lock(ref TKey key, LockType lockType)
-        {
-            var keyContainer = GetKeyContainer(ref key);
-            _ = dict.AddOrUpdate(keyContainer,
-                key => {
-                    RecordInfo logRecordInfo = default;
-                    logRecordInfo.Lock(lockType);
-                    return new(key, logRecordInfo, default);
-                }, (key, lte) => {
-                    lte.logRecordInfo.Lock(lockType); 
-                    return lte;
-                });
         }
 
         // Provide our own implementation of "Update by lambda"
@@ -143,25 +127,6 @@ namespace FASTER.core
                 });
             tentative = lte.lockRecordInfo.Tentative;
             return !existingConflict;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnlockOrClearTentative(ref TKey key, LockType lockType, bool wasTentative)
-        {
-            using var lookupKey = GetKeyContainer(ref key);
-            if (dict.TryGetValue(lookupKey, out var lte))
-            {
-                Debug.Assert(wasTentative || !lte.lockRecordInfo.Tentative, "lockRecordInfo.Tentative was not expected");
-                Debug.Assert(!lte.lockRecordInfo.Sealed, "lockRecordInfo.Sealed was not expected");
-
-                // We assume that we own the lock or placed the Tentative record.
-                if (!lte.lockRecordInfo.Tentative)
-                    lte.lockRecordInfo.Unlock(lockType);
-                if (!dict.TryRemove(lookupKey, out _))
-                    Debug.Fail("Could not remove Tentative record");
-                return;
-            }
-            Debug.Fail("Trying to UnlockOrClearTentative on nonexistent key");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

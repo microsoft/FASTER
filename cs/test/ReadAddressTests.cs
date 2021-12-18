@@ -61,7 +61,7 @@ namespace FASTER.test.readaddress
             internal long lastWriteAddress = Constants.kInvalidAddress;
             bool useReadCache;
             bool copyReadsToTail;   // Note: not currently used; not necessary due to setting SkipCopyToTail, and we get the copied-to address for CopyToTail (unlike ReadCache).
-            internal ReadFlags readFlags = ReadFlags.None;
+            internal ReadFlags readFlags = ReadFlags.SkipCopyReads;
 
             internal Functions()
             {
@@ -230,10 +230,10 @@ namespace FASTER.test.readaddress
                 Assert.GreaterOrEqual(lap, 0);
                 long expectedValue = SetReadOutput(defaultKeyToScan, LapOffset(lap) + defaultKeyToScan);
 
-                Assert.AreEqual(status == Status.NOTFOUND, recordInfo.Tombstone, $"status({status}) == NOTFOUND != Tombstone ({recordInfo.Tombstone})");
+                Assert.AreEqual(status == Status.NOTFOUND, recordInfo.Tombstone, $"status({status}) == NOTFOUND != Tombstone ({recordInfo.Tombstone}) on lap {lap}");
                 Assert.AreEqual(lap == deleteLap, recordInfo.Tombstone, $"lap({lap}) == deleteLap({deleteLap}) != Tombstone ({recordInfo.Tombstone})");
                 if (!recordInfo.Tombstone)
-                    Assert.AreEqual(expectedValue, actualOutput.value);
+                    Assert.AreEqual(expectedValue, actualOutput.value, $"lap({lap})");
 
                 // Check for end of loop
                 return recordInfo.PreviousAddress >= fkv.Log.BeginAddress;
@@ -282,21 +282,7 @@ namespace FASTER.test.readaddress
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    // If the ordinal is not in the range of the most recent record versions, do not copy to readcache or tail.
-                    session.functions.readFlags = (lap < maxLap - 1) ? ReadFlags.SkipCopyReads : ReadFlags.None;
-
                     var status = session.Read(ref key, ref input, ref output, ref recordMetadata, session.functions.readFlags, serialNo: maxLap + 1);
-
-                    if (iteration == 1 && lap == maxLap - 1 && useReadCache)
-                    {
-                        // This should have been served from the readcache. Verify that, then reissue the query without readcache, so we can
-                        // get the prev address for the chain.
-                        Assert.AreNotEqual(Status.PENDING, status);
-                        Assert.AreEqual(Constants.kInvalidAddress, recordMetadata.Address);
-                        Assert.IsTrue(testStore.ProcessChainRecord(status, recordMetadata, lap, ref output));
-                        session.functions.readFlags = ReadFlags.SkipReadCache;
-                        status = session.Read(ref key, ref input, ref output, ref recordMetadata, session.functions.readFlags, serialNo: maxLap + 1);
-                    }
 
                     if (status == Status.PENDING)
                     {
@@ -331,22 +317,8 @@ namespace FASTER.test.readaddress
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    // If the ordinal is not in the range of the most recent record versions, do not copy to readcache or tail.
-                    session.functions.readFlags = (lap < maxLap - 1) ? ReadFlags.SkipCopyReads : ReadFlags.None;
-
                     var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, session.functions.readFlags, default, serialNo: maxLap + 1);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
-
-                    if (iteration == 1 && lap == maxLap - 1 && useReadCache)
-                    {
-                        // This should have been served from the readcache. Verify that, then reissue the query without readcache, so we can
-                        // get the prev address for the chain.
-                        Assert.AreEqual(Constants.kInvalidAddress, recordMetadata.Address);
-                        Assert.IsTrue(testStore.ProcessChainRecord(status, recordMetadata, lap, ref output));
-                        session.functions.readFlags = ReadFlags.SkipReadCache;
-                        readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, session.functions.readFlags, default, serialNo: maxLap + 1);
-                        (status, output) = readAsyncResult.Complete(out recordMetadata);
-                    }
 
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
@@ -385,9 +357,6 @@ namespace FASTER.test.readaddress
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
-
-                    // After the first Read, do not allow copies to or lookups in ReadCache.
-                    session.functions.readFlags = ReadFlags.SkipCopyReads;
 
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
@@ -438,9 +407,6 @@ namespace FASTER.test.readaddress
                     var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, session.functions.readFlags, default, serialNo: maxLap + 1);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
-                    // After the first Read, do not allow copies to or lookups in ReadCache.
-                    session.functions.readFlags = ReadFlags.SkipCopyReads;
-
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
 
@@ -484,9 +450,6 @@ namespace FASTER.test.readaddress
 
                     var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, session.functions.readFlags, default, serialNo: maxLap + 1);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
-
-                    // After the first Read, do not allow copies to or lookups in ReadCache.
-                    session.functions.readFlags = ReadFlags.SkipCopyReads;
 
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
@@ -532,9 +495,6 @@ namespace FASTER.test.readaddress
                     var readAsyncResult = await session.ReadAsync(ref key, ref input, recordMetadata.RecordInfo.PreviousAddress, session.functions.readFlags, default, serialNo: maxLap + 1);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
-                    // After the first Read, do not allow copies to or lookups in ReadCache.
-                    session.functions.readFlags = ReadFlags.SkipCopyReads;
-
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
 
@@ -576,9 +536,6 @@ namespace FASTER.test.readaddress
                 {
                     var keyOrdinal = rng.Next(numKeys);
 
-                    // If the ordinal is not in the range of the most recent record versions, do not copy to readcache or tail.
-                    session.functions.readFlags = (keyOrdinal <= (numKeys - keyMod)) ? ReadFlags.SkipCopyReads : ReadFlags.None;
-
                     var status = session.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, session.functions.readFlags, serialNo: maxLap + 1);
                     if (status == Status.PENDING)
                     {
@@ -617,17 +574,11 @@ namespace FASTER.test.readaddress
                 {
                     var keyOrdinal = rng.Next(numKeys);
 
-                    // If the ordinal is not in the range of the most recent record versions, do not copy to readcache or tail.
-                    session.functions.readFlags = (keyOrdinal <= (numKeys - keyMod)) ? ReadFlags.SkipCopyReads : ReadFlags.None;
-
                     var readAsyncResult = await session.ReadAtAddressAsync(testStore.InsertAddresses[keyOrdinal], ref input, session.functions.readFlags, default, serialNo: maxLap + 1);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                     TestStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
                 }
-
-                // After the first Read, do not allow copies to or lookups in ReadCache.
-                session.functions.readFlags = ReadFlags.SkipReadCache;
             }
 
             await testStore.Flush();

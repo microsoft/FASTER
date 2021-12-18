@@ -34,22 +34,22 @@ namespace FASTER.core
         #endregion Optional features supported by this implementation
 
         #region Reads
-        bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref LockOperation lockOp, ref RecordInfo recordInfo, long address);
-        bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref LockOperation lockOp, ref RecordInfo recordInfo, long address);
+        bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address);
+        bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address);
         void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata);
         #endregion reads
 
         #region Upserts
-        void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address);
-        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address);
-        bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address);
+        void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
+        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
+        bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
         void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx);
         #endregion Upserts
 
         #region RMWs
         #region InitialUpdater
         bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output);
-        void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address);
+        void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address);
         void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address);
         #endregion InitialUpdater
 

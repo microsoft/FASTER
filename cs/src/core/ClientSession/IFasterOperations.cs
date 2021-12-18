@@ -80,7 +80,7 @@ namespace FASTER.core
         ///         </list>
         ///     </para>
         /// </param>
-        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction. When doing versioned reads, this should be set to <see cref="ReadFlags.SkipCopyReads"/></param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
         /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
@@ -92,7 +92,7 @@ namespace FASTER.core
         /// <param name="address">The address to look up</param>
         /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
         /// <param name="output">The location to place the retrieved value</param>
-        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction. When doing versioned reads, this should be set to <see cref="ReadFlags.SkipCopyReads"/></param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
         /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation; this should store the key if it needs it</returns>
@@ -178,7 +178,7 @@ namespace FASTER.core
         /// <param name="key">The key to look up</param>
         /// <param name="input">Input to help extract the retrieved value into output</param>
         /// <param name="startAddress">Start at this address rather than the address in the hash table for <paramref name="key"/>"/></param>
-        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction. When doing versioned reads, this should be set to <see cref="ReadFlags.SkipCopyReads"/></param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
         /// <param name="cancellationToken">Token to cancel the operation</param>
@@ -199,7 +199,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="address">The address to look up</param>
         /// <param name="input">Input to help extract the retrieved value into output</param>
-        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction. When doing versioned reads, this should be set to <see cref="ReadFlags.SkipCopyReads"/></param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
         /// <param name="cancellationToken">Token to cancel the operation</param>

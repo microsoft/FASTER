@@ -814,11 +814,11 @@ namespace FASTER.core
             #endregion IFunctions - Optional features supported
 
             #region IFunctions - Reads
-            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
+            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
                 => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref LockOperation lockOp, ref RecordInfo recordInfo, long address) 
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) 
                 => !this.SupportsLocking
                     ? _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address)
                     : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo, address);
@@ -846,7 +846,7 @@ namespace FASTER.core
 
             #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
+            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
@@ -858,7 +858,7 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 if (!this.SupportsPostOperations)
                     return;
@@ -889,7 +889,7 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
+            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
                 => !this.SupportsLocking
                     ? ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address)
                     : ConcurrentWriterLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
@@ -927,7 +927,7 @@ namespace FASTER.core
                 => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
 

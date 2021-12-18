@@ -476,13 +476,13 @@ namespace FASTER.core
 
             #region IFunctions - Reads
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
+            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             {
                 return _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             {
                 return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
             }
@@ -492,26 +492,24 @@ namespace FASTER.core
 
             #endregion IFunctions - Reads
 
-            // Our general locking rule in this "session" is: we don't lock unless explicitly requested via lockOp.IsSet. If it is requested, then as with
-            // ClientSession, except for readcache usage of SingleWriter, all operations that append a record must lock in the <Operation>() call. Unlike
-            // ClientSession, we do *not* unlock in the Post<Operation> call; instead we wait for explicit client user unlock.
+            // Our general locking rule in this "session" is: we don't lock unless explicitly requested.
 
             #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
+            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 if (_clientSession.functions.SupportsPostOperations)
                     _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
+            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
@@ -528,7 +526,7 @@ namespace FASTER.core
                 => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref LockOperation lockOp, ref RecordInfo recordInfo, long address)
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
