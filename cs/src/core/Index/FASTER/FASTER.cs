@@ -39,7 +39,7 @@ namespace FASTER.core
         /// <summary>
         /// Force a copy to tail if we read from immutable or on-disk. If this and ReadCache are both specified, ReadCache wins.
         /// This avoids log pollution for read-mostly workloads. Used mostly in conjunction with 
-        /// <see cref="ManualFasterOperations{Key, Value, Input, Output, Context, Functions}"/> locking.
+        /// <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions}"/> locking.
         /// </summary>
         CopyToTail = 0x00000004,
 

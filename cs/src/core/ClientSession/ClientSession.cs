@@ -19,7 +19,7 @@ namespace FASTER.core
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
     /// <typeparam name="Functions"></typeparam>
-    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IFasterOperations<Key, Value, Input, Output, Context>, IDisposable
+    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IFasterContext<Key, Value, Input, Output, Context>, IDisposable
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         internal readonly FasterKV<Key, Value> fht;
@@ -36,7 +36,7 @@ namespace FASTER.core
 
         internal readonly InternalFasterSession FasterSession;
 
-        ManualFasterOperations<Key, Value, Input, Output, Context, Functions> manualOperations;
+        LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> manualOperations;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
@@ -161,9 +161,9 @@ namespace FASTER.core
         /// <summary>
         /// Return a new interface to Faster operations that supports manual locking and epoch control.
         /// </summary>
-        public ManualFasterOperations<Key, Value, Input, Output, Context, Functions> GetManualOperations()
+        public LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> GetLockableUnsafeContext()
         {
-            this.manualOperations ??= new ManualFasterOperations<Key, Value, Input, Output, Context, Functions>(this);
+            this.manualOperations ??= new LockableUnsafeContext<Key, Value, Input, Output, Context, Functions>(this);
             this.manualOperations.Acquire();
             return this.manualOperations;
         }

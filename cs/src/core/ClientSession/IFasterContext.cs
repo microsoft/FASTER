@@ -9,7 +9,7 @@ namespace FASTER.core
     /// <summary>
     /// Interface for FASTER operations
     /// </summary>
-    public interface IFasterOperations<Key, Value, Input, Output, Context>
+    public interface IFasterContext<Key, Value, Input, Output, Context>
     {
         /// <summary>
         /// Read operation

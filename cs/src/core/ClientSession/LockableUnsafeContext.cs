@@ -12,7 +12,7 @@ namespace FASTER.core
     /// <summary>
     /// Faster Operations implementation that allows manual control of record locking and epoch management. For advanced use only.
     /// </summary>
-    public sealed class ManualFasterOperations<Key, Value, Input, Output, Context, Functions> : IFasterOperations<Key, Value, Input, Output, Context>, IDisposable
+    public sealed class LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, IDisposable
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
@@ -27,10 +27,10 @@ namespace FASTER.core
         void CheckAcquired()
         {
             if (!isAcquired)
-                throw new FasterException("Method call on not-acquired ManualFasterOperations");
+                throw new FasterException("Method call on not-acquired LockableUnsafeContext");
         }
 
-        internal ManualFasterOperations(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+        internal LockableUnsafeContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             this.clientSession = clientSession;
             FasterSession = new InternalFasterSession(clientSession);
@@ -40,25 +40,25 @@ namespace FASTER.core
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeResumeThread() => clientSession.UnsafeResumeThread();
+        public void ResumeThread() => clientSession.UnsafeResumeThread();
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
         /// </summary>
         /// <param name="resumeEpoch">Epoch that the session resumed on; can be saved to see if epoch has changed</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeResumeThread(out int resumeEpoch) => clientSession.UnsafeResumeThread(out resumeEpoch);
-
-        /// <summary>
-        /// Current epoch of the session
-        /// </summary>
-        public int LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
+        public void ResumeThread(out int resumeEpoch) => clientSession.UnsafeResumeThread(out resumeEpoch);
 
         /// <summary>
         /// Suspend session on current thread
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeSuspendThread() => clientSession.UnsafeSuspendThread();
+        public void SuspendThread() => clientSession.UnsafeSuspendThread();
+
+        /// <summary>
+        /// Current epoch of the session
+        /// </summary>
+        public int LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
 
         /// <summary>
         /// Synchronously complete outstanding pending synchronous operations.
@@ -86,7 +86,7 @@ namespace FASTER.core
         {
             Interlocked.Increment(ref this.clientSession.fht.NumActiveLockingSessions);
             if (this.isAcquired)
-                throw new FasterException("Trying to acquire an already-acquired ManualFasterOperations");
+                throw new FasterException("Trying to acquire an already-acquired LockableUnsafeContext");
             this.isAcquired = true;
         }
 
@@ -96,9 +96,9 @@ namespace FASTER.core
         public void Dispose()
         {
             if (LightEpoch.AnyInstanceProtected())
-                throw new FasterException("Disposing ManualFasterOperations with a protected epoch; must call UnsafeSuspendThread");
+                throw new FasterException("Disposing LockableUnsafeContext with a protected epoch; must call UnsafeSuspendThread");
             if (TotalLockCount > 0)
-                throw new FasterException($"Disposing ManualFasterOperations with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
+                throw new FasterException($"Disposing LockableUnsafeContext with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
             Interlocked.Decrement(ref this.clientSession.fht.NumActiveLockingSessions);
         }
         #endregion Acquire and Dispose

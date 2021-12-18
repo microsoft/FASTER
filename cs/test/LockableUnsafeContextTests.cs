@@ -14,7 +14,7 @@ namespace FASTER.test
     // Functions for the "Simple lock transaction" case, e.g.:
     //  - Lock key1, key2, key3, keyResult
     //  - Do some operation on value1, value2, value3 and write the result to valueResult
-    class ManualFunctions : SimpleFunctions<int, int>
+    class LockableUnsafeFunctions : SimpleFunctions<int, int>
     {
         internal long deletedRecordAddress;
 
@@ -41,13 +41,13 @@ namespace FASTER.test
     public enum UpdateOp { Upsert, RMW }
 
     [TestFixture]
-    class ManualOperationsTests
+    class LockableUnsafeContextTests
     {
         const int numRecords = 1000;
         const int valueMult = 1_000_000;
 
         private FasterKV<int, int> fkv;
-        private ClientSession<int, int, int, int, Empty, ManualFunctions> session;
+        private ClientSession<int, int, int, int, Empty, LockableUnsafeFunctions> session;
         private IDevice log;
 
         [SetUp]
@@ -70,7 +70,7 @@ namespace FASTER.test
 
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
                                          fasterSettings: new FasterSettings { SupportsLocking = true });
-            session = fkv.For(new ManualFunctions()).NewSession<ManualFunctions>();
+            session = fkv.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
         }
 
         [TearDown]
@@ -95,12 +95,12 @@ namespace FASTER.test
             }
         }
 
-        static void AssertIsLocked(ManualFasterOperations<int, int, int, int, Empty, ManualFunctions> manualOps, int key, LockType lockType) 
-            => AssertIsLocked(manualOps, key, lockType == LockType.Exclusive, lockType == LockType.Shared);
+        static void AssertIsLocked(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext, int key, LockType lockType) 
+            => AssertIsLocked(luContext, key, lockType == LockType.Exclusive, lockType == LockType.Shared);
 
-        static void AssertIsLocked(ManualFasterOperations<int, int, int, int, Empty, ManualFunctions> manualOps, int key, bool xlock, bool slock)
+        static void AssertIsLocked(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext, int key, bool xlock, bool slock)
         {
-            var (isX, isS) = manualOps.IsLocked(key);
+            var (isX, isS) = luContext.IsLocked(key);
             Assert.AreEqual(xlock, isX, "xlock mismatch");
             Assert.AreEqual(slock, isS, "slock mismatch");
         }
@@ -113,11 +113,11 @@ namespace FASTER.test
                 this.fkv.Log.FlushAndEvict(wait: true);
         }
 
-        static void ClearCountsOnError(ManualFasterOperations<int, int, int, int, Empty, ManualFunctions> manualOps)
+        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
-            manualOps.sharedLockCount = 0;
-            manualOps.exclusiveLockCount = 0;
+            luContext.sharedLockCount = 0;
+            luContext.exclusiveLockCount = 0;
         }
 
         void EnsureNoLocks()
@@ -135,7 +135,7 @@ namespace FASTER.test
         }
 
         [Test]
-        [Category(TestUtils.ManualOpsTestCategory)]
+        [Category(TestUtils.LockableUnsafeContextCategory)]
         [Category(TestUtils.SmokeTestCategory)]
         public void InMemorySimpleLockTxnTest([Values] ResultLockTarget resultLockTarget, [Values] ReadCopyDestination readCopyDestination,
                                               [Values]FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] UpdateOp updateOp)
@@ -152,37 +152,37 @@ namespace FASTER.test
             Status status;
             Dictionary<int, LockType> locks = new();
 
-            using (var manualOps = session.GetManualOperations())
+            using (var luContext = session.GetLockableUnsafeContext())
             {
-                manualOps.UnsafeResumeThread(out var epoch);
+                luContext.ResumeThread(out var epoch);
 
                 try
                 {
                     {   // key scope
                         // Get initial source values
                         int key = 24;
-                        manualOps.Lock(key, LockType.Shared);
-                        AssertIsLocked(manualOps, key, xlock: false, slock: true);
+                        luContext.Lock(key, LockType.Shared);
+                        AssertIsLocked(luContext, key, xlock: false, slock: true);
                         locks[key] = LockType.Shared;
 
                         key = 51;
-                        manualOps.Lock(key, LockType.Shared);
+                        luContext.Lock(key, LockType.Shared);
                         locks[key] = LockType.Shared;
-                        AssertIsLocked(manualOps, key, xlock: false, slock: true);
+                        AssertIsLocked(luContext, key, xlock: false, slock: true);
 
                         // Lock destination value.
-                        manualOps.Lock(resultKey, LockType.Exclusive);
+                        luContext.Lock(resultKey, LockType.Exclusive);
                         locks[resultKey] = LockType.Exclusive;
-                        AssertIsLocked(manualOps, resultKey, xlock: true, slock: false);
+                        AssertIsLocked(luContext, resultKey, xlock: true, slock: false);
 
                         // Re-get source values, to verify (e.g. they may be in readcache now).
                         // We just locked this above, but for FlushMode.OnDisk it will be in the LockTable and will still be PENDING.
-                        status = manualOps.Read(24, out var value24);
+                        status = luContext.Read(24, out var value24);
                         if (flushMode == FlushMode.OnDisk)
                         {
                             if (status == Status.PENDING)
                             {
-                                manualOps.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                                luContext.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
                                 Assert.True(completedOutputs.Next());
                                 value24 = completedOutputs.Current.Output;
                                 Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
@@ -196,12 +196,12 @@ namespace FASTER.test
                             Assert.AreNotEqual(Status.PENDING, status);
                         }
 
-                        status = manualOps.Read(51, out var value51);
+                        status = luContext.Read(51, out var value51);
                         if (flushMode == FlushMode.OnDisk)
                         {
                             if (status == Status.PENDING)
                             {
-                                manualOps.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                                luContext.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
                                 Assert.True(completedOutputs.Next());
                                 value51 = completedOutputs.Current.Output;
                                 Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
@@ -219,13 +219,13 @@ namespace FASTER.test
                         session.ctx.phase = phase;
                         int dummyInOut = 0;
                         status = useRMW
-                            ? manualOps.RMW(ref resultKey, ref expectedResult, ref dummyInOut, out RecordMetadata recordMetadata)
-                            : manualOps.Upsert(ref resultKey, ref dummyInOut, ref expectedResult, ref dummyInOut, out recordMetadata);
+                            ? luContext.RMW(ref resultKey, ref expectedResult, ref dummyInOut, out RecordMetadata recordMetadata)
+                            : luContext.Upsert(ref resultKey, ref dummyInOut, ref expectedResult, ref dummyInOut, out recordMetadata);
                         if (flushMode == FlushMode.OnDisk)
                         {
                             if (status == Status.PENDING)
                             {
-                                manualOps.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                                luContext.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
                                 Assert.True(completedOutputs.Next());
                                 resultValue = completedOutputs.Current.Output;
                                 Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
@@ -240,21 +240,21 @@ namespace FASTER.test
                         }
 
                         // Reread the destination to verify
-                        status = manualOps.Read(resultKey, out resultValue);
+                        status = luContext.Read(resultKey, out resultValue);
                         Assert.AreNotEqual(Status.PENDING, status);
                         Assert.AreEqual(expectedResult, resultValue);
                     }
                     foreach (var key in locks.Keys.OrderBy(key => -key))
-                        manualOps.Unlock(key, locks[key]);
+                        luContext.Unlock(key, locks[key]);
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(manualOps);
+                    ClearCountsOnError(luContext);
                     throw;
                 }
                 finally
                 {
-                    manualOps.UnsafeSuspendThread();
+                    luContext.SuspendThread();
                 }
             }
 
@@ -266,7 +266,7 @@ namespace FASTER.test
         }
 
         [Test]
-        [Category(TestUtils.ManualOpsTestCategory)]
+        [Category(TestUtils.LockableUnsafeContextCategory)]
         [Category(TestUtils.SmokeTestCategory)]
         public void InMemoryLongLockTest([Values] ResultLockTarget resultLockTarget, [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] UpdateOp updateOp)
         {
@@ -280,18 +280,18 @@ namespace FASTER.test
             var useRMW = updateOp == UpdateOp.RMW;
             Status status;
 
-            using var manualOps = session.GetManualOperations();
-            manualOps.UnsafeResumeThread();
+            using var luContext = session.GetLockableUnsafeContext();
+            luContext.ResumeThread();
 
             try
             {
-                manualOps.Lock(51, LockType.Exclusive);
+                luContext.Lock(51, LockType.Exclusive);
 
-                status = manualOps.Read(24, out var value24);
+                status = luContext.Read(24, out var value24);
                 if (flushMode == FlushMode.OnDisk)
                 {
                     Assert.AreEqual(Status.PENDING, status);
-                    manualOps.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    luContext.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
                     (status, value24) = TestUtils.GetSinglePendingResult(completedOutputs);
                     Assert.AreEqual(Status.OK, status);
                     Assert.AreEqual(24 * valueMult, value24);
@@ -300,12 +300,12 @@ namespace FASTER.test
                     Assert.AreNotEqual(Status.PENDING, status);
 
                 // We just locked this above, but for FlushMode.OnDisk it will be in the LockTable and will still be PENDING.
-                status = manualOps.Read(51, out var value51);
+                status = luContext.Read(51, out var value51);
                 if (flushMode == FlushMode.OnDisk)
                 {
                     if (status == Status.PENDING)
                     {
-                        manualOps.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        luContext.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
                         Assert.True(completedOutputs.Next());
                         value51 = completedOutputs.Current.Output;
                         Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
@@ -323,24 +323,24 @@ namespace FASTER.test
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
                 session.ctx.phase = phase;
                 status = useRMW
-                    ? manualOps.RMW(resultKey, value24 + value51)
-                    : manualOps.Upsert(resultKey, value24 + value51);
+                    ? luContext.RMW(resultKey, value24 + value51)
+                    : luContext.Upsert(resultKey, value24 + value51);
                 Assert.AreNotEqual(Status.PENDING, status);
 
-                status = manualOps.Read(resultKey, out resultValue);
+                status = luContext.Read(resultKey, out resultValue);
                 Assert.AreNotEqual(Status.PENDING, status);
                 Assert.AreEqual(expectedResult, resultValue);
 
-                manualOps.Unlock(51, LockType.Exclusive);
+                luContext.Unlock(51, LockType.Exclusive);
             }
             catch (Exception)
             {
-                ClearCountsOnError(manualOps);
+                ClearCountsOnError(luContext);
                 throw;
             }
             finally
             {
-                manualOps.UnsafeSuspendThread();
+                luContext.SuspendThread();
             }
 
             // Verify from the full session.
@@ -351,7 +351,7 @@ namespace FASTER.test
         }
 
         [Test]
-        [Category(TestUtils.ManualOpsTestCategory)]
+        [Category(TestUtils.LockableUnsafeContextCategory)]
         [Category(TestUtils.SmokeTestCategory)]
         public void InMemoryDeleteTest([Values] ResultLockTarget resultLockTarget, [Values] ReadCopyDestination readCopyDestination,
                                        [Values(FlushMode.NoFlush, FlushMode.ReadOnly)] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
@@ -368,37 +368,37 @@ namespace FASTER.test
             int resultKey = resultLockTarget == ResultLockTarget.LockTable ? numRecords + 1 : 75;
             Status status;
 
-            using (var manualOps = session.GetManualOperations())
+            using (var luContext = session.GetLockableUnsafeContext())
             {
-                manualOps.UnsafeResumeThread(out var epoch);
+                luContext.ResumeThread(out var epoch);
 
                 try
                 {
                     // Lock destination value.
-                    manualOps.Lock(resultKey, LockType.Exclusive);
+                    luContext.Lock(resultKey, LockType.Exclusive);
                     locks[resultKey] = LockType.Exclusive;
-                    AssertIsLocked(manualOps, resultKey, xlock: true, slock: false);
+                    AssertIsLocked(luContext, resultKey, xlock: true, slock: false);
 
                     // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
                     session.ctx.phase = phase;
-                    status = manualOps.Delete(ref resultKey);
+                    status = luContext.Delete(ref resultKey);
                     Assert.AreNotEqual(Status.PENDING, status);
 
                     // Reread the destination to verify
-                    status = manualOps.Read(resultKey, out var _);
+                    status = luContext.Read(resultKey, out var _);
                     Assert.AreEqual(Status.NOTFOUND, status);
 
                     foreach (var key in locks.Keys.OrderBy(key => key))
-                        manualOps.Unlock(key, locks[key]);
+                        luContext.Unlock(key, locks[key]);
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(manualOps);
+                    ClearCountsOnError(luContext);
                     throw;
                 }
                 finally
                 {
-                    manualOps.UnsafeSuspendThread();
+                    luContext.SuspendThread();
                 }
             }
 
@@ -409,7 +409,7 @@ namespace FASTER.test
         }
 
         [Test]
-        [Category(TestUtils.ManualOpsTestCategory)]
+        [Category(TestUtils.LockableUnsafeContextCategory)]
         [Category(TestUtils.SmokeTestCategory)]
         public void StressLocks([Values(1, 8)] int numLockThreads, [Values(1, 8)] int numOpThreads)
         {
@@ -426,32 +426,32 @@ namespace FASTER.test
                 Dictionary<int, LockType> locks = new();
                 Random rng = new(tid + 101);
 
-                using var localSession = fkv.For(new ManualFunctions()).NewSession<ManualFunctions>();
-                using var manualOps = localSession.GetManualOperations();
-                manualOps.UnsafeResumeThread();
+                using var localSession = fkv.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
+                using var luContext = localSession.GetLockableUnsafeContext();
+                luContext.ResumeThread();
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
                     for (var key = baseKey + rng.Next(numIncrement); key < baseKey + numKeys; key += rng.Next(1, numIncrement))
                     {
                         var lockType = rng.Next(100) < 60 ? LockType.Shared : LockType.Exclusive;
-                        manualOps.Lock(key, lockType);
+                        luContext.Lock(key, lockType);
                         locks[key] = lockType;
                     }
 
                     foreach (var key in locks.Keys.OrderBy(key => key))
-                        manualOps.Unlock(key, locks[key]);
+                        luContext.Unlock(key, locks[key]);
                     locks.Clear();
                 }
 
-                manualOps.UnsafeSuspendThread();
+                luContext.SuspendThread();
             }
 
             void runOpThread(int tid)
             {
                 Random rng = new(tid + 101);
 
-                using var localSession = fkv.For(new ManualFunctions()).NewSession<ManualFunctions>();
+                using var localSession = fkv.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -468,7 +468,7 @@ namespace FASTER.test
                 }
             }
 
-            // Run a mix of ManualOps and normal ClientSession operations
+            // Run a mix of luContext and normal ClientSession operations
             int numThreads = numLockThreads + numOpThreads;
             Thread[] threads = new Thread[numThreads];
             for (int t = 0; t < numThreads; t++)

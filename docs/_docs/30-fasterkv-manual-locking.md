@@ -10,10 +10,10 @@ toc: true
 
 Manual locking in FasterKV refers to the user specifying when records will be locked. This is different from the per-operation locks that ensure consistency for concurrent operations, e.g. ConcurrentReader and ConcurrentWriter. Manual locks have a longer duration.
 
-Manual locking is done by obtaining the `ManualFasterOperations` instance from a `ClientSession`. This provides an implementation of `IFasterOperations` that:
+Manual locking is done by obtaining the `LockableUnsafeContext` instance from a `ClientSession`. This provides an implementation of `IFasterContext` that:
 - Does not do automatic locking (except when updated records are inserted, as described below)
-- Does not do automatic epoch protection; instead, the user must call `UnsafeResumeThread` and `UnsafeSuspendThread`. In these, "Unsafe" refers to the fact it is the user's responsibility to make the correct calls.
-- Exposes `Lock()` and `Unlock()` APIs. These are the *only* way records are locked in `ManualFasterOperations`; we assume that all locks are taken before any operations are done. Therefore, `ManualFasterOperations` `IFunctions` update operations do not honor locks; it assumes that it owns them.
+- Does not do automatic epoch protection; instead, the user must call the `LockableUnsafeContext`'s`ResumeThread` and `SuspendThread`. In these, "Unsafe" refers to the fact it is the user's responsibility to make the correct calls.
+- Exposes `Lock()` and `Unlock()` APIs. These are the *only* way records are locked in `LockableUnsafeContext`; we assume that all locks are taken before any operations are done. Therefore, `LockableUnsafeContext`'s `IFunctions` update operations do not honor locks; it assumes that it owns them.
 
 Here are two use case examples:
 - Lock key1, key2, and key3, then Read key1 and key2 values, calculate the result, write them to key3, and unlock all keys. This ensures that key3 has a consistent value based on key1 and key2 values.
@@ -23,50 +23,50 @@ Here are two use case examples:
 
 All keys must be locked in a deterministic order, and unlocked in the reverse order, to avoid deadlocks.
 
-`ManualFasterOperations` inherits from `IDisposable`. All locks must be released and `UnsafeSuspendThread` must be called before `Dispose()` is called; `Dispose()` does *not* make these calls automatically.
+`LockableUnsafeContext` inherits from `IDisposable`. All locks must be released and `UnsafeSuspendThread` must be called before `Dispose()` is called; `Dispose()` does *not* make these calls automatically.
 
 ### Examples
-Here are examples of the above two use cases, taken from the unit tests in `ManualOperationsTests.cs`:
+Here are examples of the above two use cases, taken from the unit tests in `LockableUnsafeContextTests.cs`:
 
 Lock multiple keys:
 ```cs
-    using (var manualOps = session.GetManualOperations())
+    using (var luContext = session.GetLockableUnsafeContext())
     {
-        manualOps.UnsafeResumeThread(out var epoch);
+        luContext.ResumeThread(out var epoch);
 
-        manualOps.Lock(24, LockType.Shared);
-        manualOps.Lock(51, LockType.Shared);
-        manualOps.Lock(75, LockType.Exclusive);
+        luContext.Lock(24, LockType.Shared);
+        luContext.Lock(51, LockType.Shared);
+        luContext.Lock(75, LockType.Exclusive);
 
-        manualOps.Read(24, out var value24);
-        manualOps.Read(51, out var value51);
-        manualOps.Upsert(75, value24 + value51);
+        luContext.Read(24, out var value24);
+        luContext.Read(51, out var value51);
+        luContext.Upsert(75, value24 + value51);
 
-        manualOps.Unlock(24, LockType.Shared);
-        manualOps.Unlock(51, LockType.Shared);
-        manualOps.Unlock(75, LockType.Exclusive);
+        luContext.Unlock(24, LockType.Shared);
+        luContext.Unlock(51, LockType.Shared);
+        luContext.Unlock(75, LockType.Exclusive);
 
-        manualOps.UnsafeSuspendThread();
+        luContext.SuspendThread();
 ```
 
 Lock multiple keys:
 ```cs
-    using (var manualOps = session.GetManualOperations())
+    using (var luContext = session.GetLockableUnsafeContext())
     {
-        manualOps.UnsafeResumeThread(out var epoch);
+        luContext.ResumeThread(out var epoch);
 
-        manualOps.Lock(51, LockType.Shared);
+        luContext.Lock(51, LockType.Shared);
 
-        manualOps.Read(24, out var value24);
-        manualOps.Read(51, out var value51);
-        manualOps.Upsert(75, value24 + value51);
+        luContext.Read(24, out var value24);
+        luContext.Read(51, out var value51);
+        luContext.Upsert(75, value24 + value51);
 
-        manualOps.Unlock(51, LockType.Shared);
+        luContext.Unlock(51, LockType.Shared);
 
-        manualOps.UnsafeSuspendThread();
+        luContext.SuspendThread();
 ```
 
-TODO: Add sample with `manualOps.LocalCurrentEpoch`.
+TODO: Add sample with `luContext.LocalCurrentEpoch`.
 
 ## Internal Design
 
@@ -76,7 +76,7 @@ Manual locking and checking is integrated into `FASTERImpl.cs` methods:
 - The locking and unlocking are implemented in `InternalLock`
 - Other record operations that must consider locks are `InternalUpsert`, `InternalRead` and `InternalCompletePendingRead`, `InternalRMW` and `InternalCompletePendingRMW`, and `InternalDelete`. These modifications are exposed via the `Lock()` and `Unlock()`.
 
-Because epoch protection is done by user calls, ManualFasterOperations methods call the internal ContextRead etc. methods, which are called by the API methods that do Resume and Suspend of epoch protection.
+Because epoch protection is done by user calls, LockableUnsafeContext methods call the internal ContextRead etc. methods, which are called by the API methods that do Resume and Suspend of epoch protection.
 
 At a high level, `Lock()` and `Unlock()` call `InternalLock()`. Locking does not issue PENDING operations to retrieve on-disk data, and locking/unlocking is designed to avoid pending I/O operations by use of a [`LockTable`](#locktable-overview) consisting of {`TKey`, `RecordInfo`} pairs, where `TKey` is the FasterKV Key type and `RecordInfo` is used to perform the locking/unlocking.
 
@@ -88,7 +88,7 @@ The following sections refer to the following two in the `RecordInfo`:
 - **Lock Bits**: There is one Exclusive Lock bit and 6 Shared Lock bits (allowing 64 shared locks) in the RecordInfo.
 - **Tentative**: a record marked Tentative is very short-term; it indicates that the thread is performing a Tentative insertion of the record, and may make the Tentative record final by removing the Tentative bit, or may back off the insertion by setting the record to Invalid and returning RETRY_NOW.
 - **Sealed**: a record marked Sealed is one for which an update is known to be in progress. Sealed records are "visible" only short-term (e.g. a single call to Upsert or RMW, or a transfer to/from the `LockTable`). A thread encountering this should immediately return RETRY_NOW.
-  - Sealing is done via `RecordInfo.Seal`. This is used in locking scenarios rather than a sequence of "CAS to set Sealed; test Sealed bit because the after-Seal locking is fuzzy; we don't know whether the record was CTT'd before or after a post-Seal lock, and thus we don't know if the transferred record "owns" our lock. `RecordInfo.Seal` does a CAS with both the XLock and Seal bits, then Unlocks the XLock bit; this ensures it works whether SupportsLocking is true or false. It returns true if successsful or false if another thread Sealed the record. However, `ManualFasterOperations` must not try to lock as it owns the lock already.
+  - Sealing is done via `RecordInfo.Seal`. This is used in locking scenarios rather than a sequence of "CAS to set Sealed; test Sealed bit because the after-Seal locking is fuzzy; we don't know whether the record was CTT'd before or after a post-Seal lock, and thus we don't know if the transferred record "owns" our lock. `RecordInfo.Seal` does a CAS with both the XLock and Seal bits, then Unlocks the XLock bit; this ensures it works whether SupportsLocking is true or false. It returns true if successsful or false if another thread Sealed the record. However, `LockableUnsafeContext` must not try to lock as it owns the lock already.
 - **Invalid**: This is a well-known bit from v1 included here for clarity: its behavior is that the record is to be skipped, using its `.PreviousAddress` to move along the chain. This has relevance to some areas of [Record Transfers](#record-transfers), particularly with respect to the `ReadCache`.
 
 Additionally, the `SupportsLocking` flag has been moved from IFunctions to a `FasterKV` constructor argument. This value must be uniform across all asessions. It is only to control the locking done by FasterKV; this replaces the concept of user-controlled locking that was provided with the `IFunctions` methods for concurrent record access.
@@ -214,7 +214,7 @@ For record transfers involving the ReadCache, we have the following high-level c
       - CAS the RC record to be removed to be Sealed. This will cause any other operations to retry.
       - CAS the preceding RC record to point to the to-be-removed RC record's .PreviousAddress (standard singly-linked-list operations)
       - CAS the now-removed RC record to be Invalid.
-      - We only actually transfer records from the RC prefix to the LockTable if there is an active `ManualFasterOperations` session at the time `ReadCacheEvict` is called; otherwise there will be no locks. However, we must already traverse the `ReadCache` records, and it is possible for a new `ManualFasterOperations` session to start during the duration of `ReadCacheEvict`, so there is no benefit to checking for the no-`ManualFasterOperations` case (unlike [Main Log Evictions](#main-log-evictions), which can avoid page scans by checking for this).
+      - We only actually transfer records from the RC prefix to the LockTable if there is an active `LockableUnsafeContext` session at the time `ReadCacheEvict` is called; otherwise there will be no locks. However, we must already traverse the `ReadCache` records, and it is possible for a new `LockableUnsafeContext` session to start during the duration of `ReadCacheEvict`, so there is no benefit to checking for the no-`LockableUnsafeContext` case (unlike [Main Log Evictions](#main-log-evictions), which can avoid page scans by checking for this).
 
 The above covers single-record operations on the RC prefix. Two-record operations occur when we must outsplice one record and insplice another, because the value for a record in the RC prefix is updated, e.g. Upsert updating a record in the ReadOnly region or RMW doing a CopyUpdater (of mutable or readonly), or either of these operating updating a key that is in the RC prefix chain. The considerations here are:
 - Updating an RC record:
@@ -228,7 +228,7 @@ The above covers single-record operations on the RC prefix. Two-record operation
 
 #### Main Log Evictions
 
-When main log pages are evicted due to memory limits, *if* there are any active `ManualFasterOperations` sessions, then each record on those pages must be examined and any locks transferred to `LockTable` entries.
+When main log pages are evicted due to memory limits, *if* there are any active `LockableUnsafeContext` sessions, then each record on those pages must be examined and any locks transferred to `LockTable` entries.
 
 Transfers to the `LockTable` due to main log evictions are handled in the following manner:
 - A new `TentativeHeadAddress` (THA) field is added next to `HeadAddress`.
@@ -243,7 +243,7 @@ Transfers to the `LockTable` due to main log evictions are handled in the follow
 ### Recovery Considerations
 
 We must clear in-memory records' lock bits during FoldOver recovery. 
-- Add to checkpoint information an indication of whether any `ManualFasterOperations` were active during the Checkpoint.
+- Add to checkpoint information an indication of whether any `LockableUnsafeContext` were active during the Checkpoint.
 - If this MRO indicator is true:
   - Scan pages, clearing the locks of any records
     - These pages do not need to be flushed to disk
