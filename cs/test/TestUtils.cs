@@ -86,7 +86,7 @@ namespace FASTER.test
 
         internal static void IgnoreIfNotRunningAzureTests()
         {
-            Need this environment variable set AND Azure Storage Emulator running
+            // Need this environment variable set AND Azure Storage Emulator running
             if (!IsRunningAzureTests)
                 Assert.Ignore("Environment variable RunAzureTests is not defined");
         }
