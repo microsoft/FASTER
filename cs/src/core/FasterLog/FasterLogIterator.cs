@@ -36,7 +36,7 @@ namespace FASTER.core
         /// Whether iteration has ended, either because we reached the end address of iteration, or because
         /// we reached the end of a completed log.
         /// </summary>
-        public bool Ended => (currentAddress >= endAddress) || (fasterLog.LogCompleted && currentAddress == fasterLog.TailAddress);
+        public bool Ended => (nextAddress >= endAddress) || (fasterLog.LogCompleted && nextAddress == fasterLog.TailAddress);
 
         /// <summary>
         /// Constructor
