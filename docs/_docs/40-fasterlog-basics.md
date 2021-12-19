@@ -1,4 +1,4 @@
----
+ ---
 title: "FasterLog Basics"
 permalink: /docs/fasterlog-basics/
 excerpt: "FasterLog Basics"
@@ -209,6 +209,30 @@ Here is an example, where we truncate the log to limit it to the last 100GB:
   log.TruncateUntilPageStart(log.CommittedUntilAddress - 100_000_000_000L);
 ```
 
+### Log Completion
+
+A log can be explicitly marked as **completed**. A completed log simply signals that log producer (callers of ``Enqueue``)
+have finished adding entries, and will no longer grow the log. This is useful when coordinating with log consumers (e.g., a thread
+iterating through the log with an async iterator, waiting for new entries) to stop waiting for more data. Current entries in the
+log can still be read as normal.
+
+To complete a log:
+```cs
+log.CompleteLog();
+```
+
+After this call, the log will commit all entries enqueued so far, and future ``Enqueues`` will throw an exception. Users can check for
+log completion by calling:
+```cs
+log.LogCompleted();
+```
+
+or:
+
+```cs
+iterator.Ended
+```
+
 ### Random Read
 
 You can issue random reads on any valid address in the log. This is useful to build, for example, an index over the
@@ -276,6 +300,9 @@ long Enqueue(byte[] entry)
 long Enqueue(ReadOnlySpan<byte> entry)
 long Enqueue(IReadOnlySpanBatch readOnlySpanBatch)
 
+// Log Completion
+void CompleteLog(bool spinWait = false)
+
 // Try to enqueue log entry (to memory)
 
 bool TryEnqueue(byte[] entry, out long logicalAddress)
@@ -290,7 +317,7 @@ async ValueTask<long> EnqueueAsync(IReadOnlySpanBatch readOnlySpanBatch)
 
 // Wait for commit
 
-void WaitForCommit(long untilAddress = 0) // spin-wait
+void WaitForCommit(long untilAddress = 0, long commitNum = -1) // spin-wait
 async ValueTask WaitForCommitAsync(long untilAddress = 0)
 
 // Commit
