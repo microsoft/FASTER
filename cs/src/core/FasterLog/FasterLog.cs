@@ -120,12 +120,21 @@ namespace FASTER.core
         /// Used to determine disposability of log
         /// </summary>
         internal int logRefCount = 1;
-        
+
         /// <summary>
         /// Create new log instance
         /// </summary>
         /// <param name="logSettings">Log settings</param>
         public FasterLog(FasterLogSettings logSettings)
+            : this(logSettings, logSettings.TryRecoverLatest)
+        { }
+
+        /// <summary>
+        /// Create new log instance
+        /// </summary>
+        /// <param name="logSettings">Log settings</param>
+        /// <param name="syncRecover">Recover synchronously</param>
+        private FasterLog(FasterLogSettings logSettings, bool syncRecover)
         {
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
@@ -167,7 +176,8 @@ namespace FASTER.core
             commitPolicy.OnAttached(this);
 
             tolerateDeviceFailure = logSettings.TolerateDeviceFailure;
-            if (logSettings.TryRecoverLatest)
+
+            if (syncRecover)
             {
                 try
                 {
@@ -201,11 +211,13 @@ namespace FASTER.core
         /// <param name="cancellationToken"></param>
         public static async ValueTask<FasterLog> CreateAsync(FasterLogSettings logSettings, CancellationToken cancellationToken = default)
         {
-            var fasterLog = new FasterLog(logSettings);
-            var (it, cookie) = await fasterLog.RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
-            fasterLog.RecoveredIterators = it;
-            fasterLog.RecoveredCookie = cookie;
-
+            var fasterLog = new FasterLog(logSettings, false);
+            if (logSettings.TryRecoverLatest)
+            {
+                var (it, cookie) = await fasterLog.RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
+                fasterLog.RecoveredIterators = it;
+                fasterLog.RecoveredCookie = cookie;
+            }
             return fasterLog;
         }
 
@@ -1499,7 +1511,6 @@ namespace FASTER.core
             cookie = info.Cookie;
             commitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
-            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
