@@ -38,21 +38,21 @@ namespace FASTER.test.recovery.objects
             [Values]bool isAsync)
         {
             this.iterations = iterations;
-            Prepare(checkpointType, out _, out _, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context);
+            Prepare(out _, out _, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context);
 
             var session1 = h.For(new MyFunctions()).NewSession<MyFunctions>();
-            var tokens = Write(session1, context, h);
+            var tokens = Write(session1, context, h, checkpointType);
             Read(session1, context, false, iterations);
             session1.Dispose();
 
-            h.TakeHybridLogCheckpoint(out Guid token);
+            h.TakeHybridLogCheckpoint(out Guid token, checkpointType);
             h.CompleteCheckpointAsync().GetAwaiter().GetResult();
             tokens.Add((iterations, token));
             Destroy(log, objlog, h);
 
             foreach (var item in tokens)
             {
-                Prepare(checkpointType, out _, out _, out log, out objlog, out h, out context);
+                Prepare(out _, out _, out log, out objlog, out h, out context);
 
                 if (isAsync)
                     await h.RecoverAsync(default, item.Item2);
@@ -67,7 +67,7 @@ namespace FASTER.test.recovery.objects
             }
         }
 
-        private void Prepare(CheckpointType checkpointType, out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context)
+        private void Prepare(out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context)
         {
             logPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests.log");
             objPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests_HEAP.log");
@@ -86,8 +86,7 @@ namespace FASTER.test.recovery.objects
                 },
                 new CheckpointSettings()
                 {
-                    CheckpointDir = Path.Combine(FasterFolderPath, "check-points"),
-                    CheckPointType = checkpointType
+                    CheckpointDir = Path.Combine(FasterFolderPath, "check-points")
                 },
                 new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
              );
@@ -102,7 +101,7 @@ namespace FASTER.test.recovery.objects
             objlog.Dispose();
         }
 
-        private List<(int, Guid)> Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue> fht)
+        private List<(int, Guid)> Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue> fht, CheckpointType checkpointType)
         {
             var tokens = new List<(int, Guid)>();
             for (int i = 0; i < iterations; i++)
@@ -113,7 +112,7 @@ namespace FASTER.test.recovery.objects
 
                 if (i % 1000 == 0 && i > 0)
                 {
-                    fht.TakeHybridLogCheckpoint(out Guid token);
+                    fht.TakeHybridLogCheckpoint(out Guid token, checkpointType);
                     fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
                     tokens.Add((i, token));
                 }

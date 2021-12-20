@@ -28,7 +28,7 @@ namespace FASTER.test
             
             var filename = path + "fastCommit" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename, deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true};
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true, TryRecoverLatest = false};
             log = new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
@@ -73,17 +73,20 @@ namespace FASTER.test
             manager.RemoveAllCommits();
 
             // Recovery should still work
-            var recoveredLog = new FasterLog(logSettings, 1);
+            var recoveredLog = new FasterLog(logSettings);
+            recoveredLog.Recover(1);
             Assert.AreEqual(cookie1, recoveredLog.RecoveredCookie);
             Assert.AreEqual(commit1Addr, recoveredLog.TailAddress);
             recoveredLog.Dispose();
             
-            recoveredLog = new FasterLog(logSettings, 2);
+            recoveredLog = new FasterLog(logSettings);
+            recoveredLog.Recover(2);
             Assert.AreEqual(cookie2, recoveredLog.RecoveredCookie);
             Assert.AreEqual(commit2Addr, recoveredLog.TailAddress);
             recoveredLog.Dispose();
 
-            // Default argument should recover to most recent
+            // Default argument should recover to most recent, if TryRecoverLatest is set
+            logSettings.TryRecoverLatest = true;
             recoveredLog = new FasterLog(logSettings);
             Assert.AreEqual(cookie6, recoveredLog.RecoveredCookie);
             Assert.AreEqual(commit6Addr, recoveredLog.TailAddress);
@@ -143,6 +146,9 @@ namespace FASTER.test
             var logTailGrowth = log.TailAddress - referenceTailLength;
             // Check that we are not growing the log more than one commit record per user entry
             Assert.IsTrue(logTailGrowth - referenceTailLength <= commitRecordSize * 5 * numEntries);
+            
+            // Ensure clean shutdown
+            log.Commit(true);
         }
     }
 }

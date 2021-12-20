@@ -16,7 +16,7 @@ namespace FASTER.server
             where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly ServerOptions opts;
-        readonly FasterServer server;
+        readonly IFasterServer server;
         readonly FasterKV<Key, Value> store;
         readonly FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer> provider;
         readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> kvBroker;
@@ -31,7 +31,7 @@ namespace FASTER.server
         /// <param name="keyInputSerializer"></param>
         /// <param name="supportsLocking"></param>
         /// <param name="maxSizeSettings"></param>
-        public GenericServer(ServerOptions opts, Func<WireFormat, Functions> functionsGen, ParameterSerializer serializer, IKeyInputSerializer<Key, Input> keyInputSerializer, 
+        public GenericServer(ServerOptions opts, Func<Functions> functionsGen, ParameterSerializer serializer, IKeyInputSerializer<Key, Input> keyInputSerializer, 
                              bool supportsLocking, MaxSizeSettings maxSizeSettings = default)
         {
             this.opts = opts;
@@ -43,7 +43,7 @@ namespace FASTER.server
                 Directory.CreateDirectory(opts.CheckpointDir);
 
             opts.GetSettings(out var logSettings, out var checkpointSettings, out var indexSize);
-            store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings, fasterSettings: new FasterSettings { SupportsLocking = supportsLocking });
+            store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings, supportsLocking: supportsLocking);
 
             if (opts.Recover)
             {
@@ -61,9 +61,9 @@ namespace FASTER.server
             }
 
             // Create session provider for VarLen
-            provider = new FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer>(store, functionsGen, kvBroker, broker, serializer, maxSizeSettings);
+            provider = new FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer>(functionsGen, store, serializer, kvBroker, broker, opts.Recover, maxSizeSettings);
 
-            server = new FasterServer(opts.Address, opts.Port);
+            server = new FasterServerTcp(opts.Address, opts.Port);
             server.Register(WireFormat.DefaultFixedLenKV, provider);
         }
 

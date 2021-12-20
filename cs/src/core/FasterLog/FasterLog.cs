@@ -17,29 +17,32 @@ namespace FASTER.core
     /// <summary>
     /// FASTER log
     /// </summary>
-    public sealed partial class FasterLog
+    public sealed class FasterLog : IDisposable
     {
-        private readonly BlittableAllocator<Empty, byte> allocator;
-        private readonly LightEpoch epoch;
-        private readonly ILogCommitManager logCommitManager;
-        private readonly bool disposeLogCommitManager;
-        private readonly GetMemory getMemory;
-        private readonly int headerSize;
-        private readonly LogChecksumType logChecksum;
-        private readonly WorkQueueLIFO<CommitInfo> commitQueue;
+        private Exception cannedException = null;
+        
+        readonly BlittableAllocator<Empty, byte> allocator;
+        readonly LightEpoch epoch;
+        readonly ILogCommitManager logCommitManager;
+        readonly bool disposeLogCommitManager;
+        readonly GetMemory getMemory;
+        readonly int headerSize;
+        readonly LogChecksumType logChecksum;
+        readonly WorkQueueLIFO<CommitInfo> commitQueue;
 
         internal readonly bool readOnlyMode;
         internal readonly bool fastCommitMode;
+        internal readonly bool tolerateDeviceFailure;
 
-        private TaskCompletionSource<LinkedCommitInfo> commitTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private TaskCompletionSource<Empty> refreshUncommittedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<LinkedCommitInfo> commitTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<Empty> refreshUncommittedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Offsets for all currently unprocessed commit records
-        private readonly Queue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
-        private readonly List<FasterLogRecoveryInfo> coveredCommits = new List<FasterLogRecoveryInfo>();
-        private long commitNum, commitCoveredAddress;
+        readonly Queue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
+        readonly List<FasterLogRecoveryInfo> coveredCommits = new();
+        long commitNum, commitCoveredAddress;
 
-        private IFasterLogCommitPolicy commitPolicy;
+        readonly LogCommitPolicy commitPolicy;
 
         /// <summary>
         /// Beginning address of log
@@ -48,7 +51,7 @@ namespace FASTER.core
 
         // Here's a soft begin address that is observed by all access at the FasterLog level but not actually on the
         // allocator. This is to make sure that any potential physical deletes only happen after commit.
-        private long beginAddress;
+        long beginAddress;
 
         /// <summary>
         /// Tail address of log
@@ -117,49 +120,20 @@ namespace FASTER.core
         /// Used to determine disposability of log
         /// </summary>
         internal int logRefCount = 1;
-
+        
         /// <summary>
         /// Create new log instance
         /// </summary>
         /// <param name="logSettings">Log settings</param>
-        /// <param name="requestedCommitNum">Specific commit number to recover from (or -1 for latest) </param>
-        public FasterLog(FasterLogSettings logSettings, long requestedCommitNum = -1)
-            : this(logSettings, false)
+        public FasterLog(FasterLogSettings logSettings)
         {
-            Dictionary<string, long> it;
-            if (requestedCommitNum == -1)
-                RestoreLatest(false, out it, out RecoveredCookie);
-            else
-                RestoreSpecificCommit(requestedCommitNum, out it, out RecoveredCookie);
-
-            RecoveredIterators = it;
-        }
-
-        /// <summary>
-        /// Create new log instance asynchronously
-        /// </summary>
-        /// <param name="logSettings"></param>
-        /// <param name="cancellationToken"></param>
-        public static async ValueTask<FasterLog> CreateAsync(FasterLogSettings logSettings, CancellationToken cancellationToken = default)
-        {
-            var fasterLog = new FasterLog(logSettings, false);
-            var (it, cookie) = await fasterLog.RestoreLatestAsync(false, cancellationToken).ConfigureAwait(false);
-            fasterLog.RecoveredIterators = it;
-            fasterLog.RecoveredCookie = cookie;
-
-            return fasterLog;
-        }
-
-        private FasterLog(FasterLogSettings logSettings, bool oldCommitManager)
-        {
-            Debug.Assert(oldCommitManager == false);
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
                 (new LocalStorageNamedDeviceFactory(),
                     new DefaultCheckpointNamingScheme(
                         logSettings.LogCommitDir ??
-                        new FileInfo(logSettings.LogDevice.FileName).Directory.FullName), 
-                    logSettings.ReadOnlyMode ? false : logSettings.RemoveOutdatedCommitFiles);
+                        new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),
+                    !logSettings.ReadOnlyMode && logSettings.RemoveOutdatedCommits);
 
             if (logSettings.LogCommitManager == null)
                 disposeLogCommitManager = true;
@@ -189,8 +163,50 @@ namespace FASTER.core
             fastCommitMode = logSettings.FastCommitMode;
 
             ongoingCommitRequests = new Queue<(long, FasterLogRecoveryInfo)>();
-            commitPolicy = logSettings.CommitPolicy ?? new DefaultCommitPolicy();
+            commitPolicy = logSettings.LogCommitPolicy ?? LogCommitPolicy.Default();
             commitPolicy.OnAttached(this);
+
+            tolerateDeviceFailure = logSettings.TolerateDeviceFailure;
+            if (logSettings.TryRecoverLatest)
+            {
+                try
+                {
+                    Recover(-1);
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// Recover FasterLog to the specific commit number, or latest if -1
+        /// </summary>
+        /// <param name="requestedCommitNum">Requested commit number</param>
+        public void Recover(long requestedCommitNum = -1)
+        {
+            if (CommittedUntilAddress > BeginAddress)
+                throw new FasterException($"Already recovered until address {CommittedUntilAddress}");
+
+            Dictionary<string, long> it;
+            if (requestedCommitNum == -1)
+                RestoreLatest(out it, out RecoveredCookie);
+            else
+                RestoreSpecificCommit(requestedCommitNum, out it, out RecoveredCookie);
+            RecoveredIterators = it;
+        }
+
+        /// <summary>
+        /// Create new log instance asynchronously
+        /// </summary>
+        /// <param name="logSettings"></param>
+        /// <param name="cancellationToken"></param>
+        public static async ValueTask<FasterLog> CreateAsync(FasterLogSettings logSettings, CancellationToken cancellationToken = default)
+        {
+            var fasterLog = new FasterLog(logSettings);
+            var (it, cookie) = await fasterLog.RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
+            fasterLog.RecoveredIterators = it;
+            fasterLog.RecoveredCookie = cookie;
+
+            return fasterLog;
         }
 
         /// <summary>
@@ -202,6 +218,37 @@ namespace FASTER.core
                 TrueDispose();
         }
 
+        /// <summary>
+        /// Mark the log as complete. A completed log will no longer allow enqueues, and all currently enqueued items will
+        /// be immediately committed.
+        /// </summary>
+        /// <param name="spinWait"> whether to spin until log completion becomes committed </param>
+        public void CompleteLog(bool spinWait = false)
+        {
+
+            // Ensure all currently started entries will enqueue before we declare log closed
+            epoch.BumpCurrentEpoch(() =>
+            {
+                CommitInternal(out _, out _, false, null, long.MaxValue, null);
+            });
+
+            // Ensure progress even if there is no thread in epoch table
+            if (!epoch.ThisInstanceProtected())
+            {
+                epoch.Resume();
+                epoch.Suspend();
+            }
+
+            if (spinWait)
+                WaitForCommit(TailAddress, long.MaxValue);
+        }
+
+        /// <summary>
+        /// Check if the log is complete. A completed log will no longer allow enqueues, and all currently enqueued items will
+        /// be immediately committed.
+        /// </summary>
+        public bool LogCompleted => commitNum == long.MaxValue;
+
         internal void TrueDispose()
         {
             commitQueue.Dispose();
@@ -211,7 +258,7 @@ namespace FASTER.core
             if (disposeLogCommitManager)
                 logCommitManager.Dispose();
         }
-
+        
         #region Enqueue
         /// <summary>
         /// Enqueue entry to log (in memory) - no guarantee of flush/commit
@@ -270,10 +317,13 @@ namespace FASTER.core
 
             epoch.Resume();
 
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
+                if (cannedException != null) throw cannedException;
                 return false;
             }
             
@@ -301,10 +351,13 @@ namespace FASTER.core
 
             epoch.Resume();
 
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
+                if (cannedException != null) throw cannedException;
                 return false;
             }
             
@@ -315,6 +368,112 @@ namespace FASTER.core
             epoch.Suspend();
             return true;
         }
+
+        /// <summary>
+        /// Try to append a user-defined header byte and three SpanByte entries entries atomically to the log. If it returns true, we are
+        /// done. If it returns false, we need to retry.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item1"></param>
+        /// <param name="item2"></param>
+        /// <param name="item3"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryEnqueue(byte userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, out long logicalAddress)
+        {
+            logicalAddress = 0;
+            var length = sizeof(byte) + item1.TotalSize + item2.TotalSize + item3.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *physicalAddress = userHeader;
+            item1.CopyTo(physicalAddress + sizeof(byte));
+            item2.CopyTo(physicalAddress + sizeof(byte) + item1.TotalSize);
+            item3.CopyTo(physicalAddress + sizeof(byte) + item1.TotalSize + item2.TotalSize);
+            SetHeader(length, physicalAddress);
+            epoch.Suspend();
+            return true;
+        }
+
+        /// <summary>
+        /// Try to append a user-defined header byte and two SpanByte entries entries atomically to the log. If it returns true, we are
+        /// done. If it returns false, we need to retry.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item1"></param>
+        /// <param name="item2"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryEnqueue(byte userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        {
+            logicalAddress = 0;
+            var length = sizeof(byte) + item1.TotalSize + item2.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *physicalAddress = userHeader;
+            item1.CopyTo(physicalAddress + sizeof(byte));
+            item2.CopyTo(physicalAddress + sizeof(byte) + item1.TotalSize);
+            SetHeader(length, physicalAddress);
+            epoch.Suspend();
+            return true;
+        }
+
+        /// <summary>
+        /// Try to append a user-defined header byte and a SpanByte entry atomically to the log. If it returns true, we are
+        /// done. If it returns false, we need to retry.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryEnqueue(byte userHeader, ref SpanByte item, out long logicalAddress)
+        {
+            logicalAddress = 0;
+            var length = sizeof(byte) + item.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *physicalAddress = userHeader;
+            item.CopyTo(physicalAddress + sizeof(byte));
+            SetHeader(length, physicalAddress);
+            epoch.Suspend();
+            return true;
+        }
+
 
         /// <summary>
         /// Try to enqueue batch of entries as a single atomic unit (to memory). Entire 
@@ -439,38 +598,43 @@ namespace FASTER.core
         #region WaitForCommit and WaitForCommitAsync
 
         /// <summary>
-        /// Spin-wait for enqueues, until tail or specified address, to commit to 
+        /// Spin-wait until specified address (or tail) and commit num (or latest), to commit to 
         /// storage. Does NOT itself issue a commit, just waits for commit. So you should 
         /// ensure that someone else causes the commit to happen.
         /// </summary>
         /// <param name="untilAddress">Address until which we should wait for commit, default 0 for tail of log</param>
+        /// <param name ="commitNum">CommitNum until which we should wait for commit, default -1 for latest as of now</param>
         /// <returns></returns>
-        public void WaitForCommit(long untilAddress = 0)
+        public void WaitForCommit(long untilAddress = 0, long commitNum = -1)
         {
-            var tailAddress = untilAddress;
-            if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
-
-            var observedCommitNum = commitNum;
-            while (CommittedUntilAddress < tailAddress || persistedCommitNum < observedCommitNum) Thread.Yield();
+            if (untilAddress == 0) untilAddress = TailAddress;
+            if (commitNum == -1) commitNum = this.commitNum;
+            
+            while (commitNum > persistedCommitNum || untilAddress > CommittedUntilAddress)
+            {
+                if (cannedException != null) throw cannedException;
+                Thread.Yield();
+            }
         }
 
         /// <summary>
-        /// Wait for appends (in memory), until tail or specified address, to commit to 
+        /// Wait until specified address (or tail) and commit num (or latest), to commit to 
         /// storage. Does NOT itself issue a commit, just waits for commit. So you should 
         /// ensure that someone else causes the commit to happen.
         /// </summary>
         /// <param name="untilAddress">Address until which we should wait for commit, default 0 for tail of log</param>
+        /// <param name ="commitNum">CommitNum until which we should wait for commit, default -1 for latest as of now</param>
         /// <param name="token">Cancellation token</param>
         /// <returns></returns>
-        public async ValueTask WaitForCommitAsync(long untilAddress = 0, CancellationToken token = default)
+        public async ValueTask WaitForCommitAsync(long untilAddress = 0, long commitNum = -1, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
             var task = CommitTask;
             var tailAddress = untilAddress;
             if (tailAddress == 0) tailAddress = allocator.GetTailAddress();
 
-            var observedCommitNum = commitNum;
-            while (CommittedUntilAddress < tailAddress || persistedCommitNum < observedCommitNum)
+            if (commitNum == -1) commitNum = this.commitNum;
+            while (CommittedUntilAddress < tailAddress || persistedCommitNum < commitNum)
             {
                 var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
                 task = linkedCommitInfo.NextTask;
@@ -495,10 +659,10 @@ namespace FASTER.core
             var success = CommitInternal(out var actualTail, out var actualCommitNum, true, null, -1, null);
             if (!spinWait) return;
             if (success)
-                SpinWaitForCommit(actualTail, actualCommitNum);
+                WaitForCommit(actualTail, actualCommitNum);
             else 
                 // Still need to imitate semantics to spin until all previous enqueues are committed when commit has been filtered  
-                SpinWaitForCommit(tail, lastCommit);
+                WaitForCommit(tail, lastCommit);
         }
 
         /// <summary>
@@ -526,7 +690,7 @@ namespace FASTER.core
             if (!CommitInternal(out commitTail, out actualCommitNum, false, cookie, proposedCommitNum, callback))
                 return false;
             if (spinWait)
-                SpinWaitForCommit(commitTail, actualCommitNum);
+                WaitForCommit(commitTail, actualCommitNum);
             return true;
         }
 
@@ -540,7 +704,7 @@ namespace FASTER.core
         {
             token.ThrowIfCancellationRequested();
             var task = CommitTask;
-            if (!CommitInternal(out var tailAddress, out var actualCommitNum, false, null, -1, null))
+            if (!CommitInternal(out var tailAddress, out var actualCommitNum, true, null, -1, null))
                 return;
 
             while (CommittedUntilAddress < tailAddress || persistedCommitNum < actualCommitNum)
@@ -649,7 +813,7 @@ namespace FASTER.core
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
                 Thread.Yield();
-            while (CommittedUntilAddress < logicalAddress + 1) Thread.Yield();
+            WaitForCommit(logicalAddress + 1);
             return logicalAddress;
         }
 
@@ -664,7 +828,7 @@ namespace FASTER.core
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
                 Thread.Yield();
-            while (CommittedUntilAddress < logicalAddress + 1) Thread.Yield();
+            WaitForCommit(logicalAddress + 1);
             return logicalAddress;
         }
 
@@ -679,7 +843,7 @@ namespace FASTER.core
             long logicalAddress;
             while (!TryEnqueue(readOnlySpanBatch, out logicalAddress))
                 Thread.Yield();
-            while (CommittedUntilAddress < logicalAddress + 1) Thread.Yield();
+            WaitForCommit(logicalAddress + 1);
             return logicalAddress;
         }
 
@@ -1010,7 +1174,7 @@ namespace FASTER.core
         private void CommitCallback(CommitInfo commitInfo)
         {
             // Using count is safe as a fast filtering mechanism to reduce number of invocations despite concurrency
-            if (ongoingCommitRequests.Count == 0) return;
+            if (ongoingCommitRequests.Count == 0 && commitInfo.ErrorCode == 0) return;
             commitQueue.EnqueueAndTryWork(commitInfo, asTask: true);
         }
 
@@ -1093,52 +1257,70 @@ namespace FASTER.core
 
         private void SerialCommitCallbackWorker(CommitInfo commitInfo)
         {
-            if (commitInfo.ErrorCode == 0)
+            if (commitInfo.ErrorCode != 0)
             {
-                // Check for the commit records included in this flush
-                coveredCommits.Clear();
-                lock (ongoingCommitRequests)
+                var exception = new CommitFailureException(new LinkedCommitInfo { CommitInfo = commitInfo },
+                    $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}");
+                if (tolerateDeviceFailure)
                 {
-                    while (ongoingCommitRequests.Count != 0)
-                    {
-                        var (addr, recoveryInfo) = ongoingCommitRequests.Peek();
-                        if (addr > commitInfo.UntilAddress) break;
-                        coveredCommits.Add(recoveryInfo);
-                        ongoingCommitRequests.Dequeue();
-                    }
+                    var oldCommitTcs = commitTcs;
+                    commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    oldCommitTcs.TrySetException(exception);
+                    // Silently set flushed until past this range
+                    Utility.MonotonicUpdate(ref allocator.FlushedUntilAddress, commitInfo.UntilAddress, out _);
+                    allocator.UnsafeSkipError(commitInfo);
                 }
-                
-                // Nothing was committed --- this was probably au auto-flush. Return now without touching any
-                // commit task tracking.
-                if (coveredCommits.Count == 0) return;
-
-                var latestCommit = coveredCommits[coveredCommits.Count - 1];
-                if (fastCommitMode)
+                else
                 {
-                    // In fast commit mode, can safely set committed state to the latest flushed and invoke callbacks early
-                    UpdateCommittedState(latestCommit);
-                    foreach (var recoveryInfo in coveredCommits)
-                    {
-                        recoveryInfo.Callback?.Invoke();
-                        commitPolicy.OnCommitFinished(recoveryInfo);
-                    }
+                    cannedException = exception;
+                    // Make sure future waiters do not get a fresh tcs
+                    commitTcs.TrySetException(cannedException);
                 }
+                return;
+            }
+            // Check for the commit records included in this flush
+            coveredCommits.Clear();
+            lock (ongoingCommitRequests)
+            {
+                while (ongoingCommitRequests.Count != 0)
+                {
+                    var (addr, recoveryInfo) = ongoingCommitRequests.Peek();
+                    if (addr > commitInfo.UntilAddress) break;
+                    coveredCommits.Add(recoveryInfo);
+                    ongoingCommitRequests.Dequeue();
+                }
+            }
+            
+            // Nothing was committed --- this was probably an auto-flush. Return now without touching any
+            // commit task tracking.
+            if (coveredCommits.Count == 0) return;
 
+            var latestCommit = coveredCommits[coveredCommits.Count - 1];
+            if (fastCommitMode)
+            {
+                // In fast commit mode, can safely set committed state to the latest flushed and invoke callbacks early
+                UpdateCommittedState(latestCommit);
                 foreach (var recoveryInfo in coveredCommits)
                 {
-                    // Only write out commit metadata if user cares about this as a distinct recoverable point
-                    if (!recoveryInfo.FastForwardAllowed) WriteCommitMetadata(recoveryInfo);
-                    if (!fastCommitMode)
-                    {
-                        recoveryInfo.Callback?.Invoke();
-                        commitPolicy.OnCommitFinished(recoveryInfo);
-                    }
+                    recoveryInfo.Callback?.Invoke();
+                    commitPolicy.OnCommitFinished(recoveryInfo);
                 }
-
-                // We fast-forwarded commits earlier, so write it out if not covered by another commit
-                if (latestCommit.FastForwardAllowed) WriteCommitMetadata(latestCommit);
             }
 
+            foreach (var recoveryInfo in coveredCommits)
+            {
+                // Only write out commit metadata if user cares about this as a distinct recoverable point
+                if (!recoveryInfo.FastForwardAllowed) WriteCommitMetadata(recoveryInfo);
+                if (!fastCommitMode)
+                {
+                    recoveryInfo.Callback?.Invoke();
+                    commitPolicy.OnCommitFinished(recoveryInfo);
+                }
+            }
+
+            // We fast-forwarded commits earlier, so write it out if not covered by another commit
+            if (latestCommit.FastForwardAllowed) WriteCommitMetadata(latestCommit);
+            
             // TODO: Can invoke earlier in the case of fast commit
             var _commitTcs = commitTcs;
             commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1147,11 +1329,7 @@ namespace FASTER.core
                 CommitInfo = commitInfo,
                 NextTask = commitTcs.Task
             };
-
-            if (commitInfo.ErrorCode == 0)
-                _commitTcs?.TrySetResult(lci);
-            else
-                _commitTcs.TrySetException(new CommitFailureException(lci, $"Commit of address range [{commitInfo.FromAddress}-{commitInfo.UntilAddress}] failed with error code {commitInfo.ErrorCode}"));
+            _commitTcs?.TrySetResult(lci);
         }
 
         private bool IteratorsChanged(ref FasterLogRecoveryInfo info)
@@ -1197,24 +1375,24 @@ namespace FASTER.core
         /// <summary>
         /// Synchronously recover instance to FasterLog's latest valid commit, when being used as a readonly log iterator
         /// </summary>
-        public void RecoverReadOnly(bool purgeEarlierCommits = false)
+        public void RecoverReadOnly()
         {
             if (!readOnlyMode)
                 throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            RestoreLatest(purgeEarlierCommits, out _, out _);
+            RestoreLatest(out _, out _);
             SignalWaitingROIterators();
         }
 
         /// <summary>
         /// Asynchronously recover instance to FasterLog's latest commit, when being used as a readonly log iterator
         /// </summary>
-        public async ValueTask RecoverReadOnlyAsync(bool purgeEarlierCommits = false, CancellationToken cancellationToken = default)
+        public async ValueTask RecoverReadOnlyAsync(CancellationToken cancellationToken = default)
         {
             if (!readOnlyMode)
                 throw new FasterException("This method can only be used with a read-only FasterLog instance used for iteration. Set FasterLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            await RestoreLatestAsync(purgeEarlierCommits, cancellationToken).ConfigureAwait(false);
+            await RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
             SignalWaitingROIterators();
         }
 
@@ -1259,7 +1437,7 @@ namespace FASTER.core
             return true;
         }
 
-        private void RestoreLatest(bool purgeEarlierCommits, out Dictionary<string, long> iterators, out byte[] cookie)
+        private void RestoreLatest(out Dictionary<string, long> iterators, out byte[] cookie)
         {
             iterators = null;
             cookie = null;
@@ -1321,10 +1499,11 @@ namespace FASTER.core
             cookie = info.Cookie;
             commitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart, purgeEarlierCommits);
+            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
         }
 
         private void RestoreSpecificCommit(long requestedCommitNum, out Dictionary<string, long> iterators, out byte[] cookie)
@@ -1387,13 +1566,13 @@ namespace FASTER.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart, false);
+            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
         }
 
         /// <summary>
         /// Restore log asynchronously
         /// </summary>
-        private async ValueTask<(Dictionary<string, long>, byte[])> RestoreLatestAsync(bool purgeEarlierCommits, CancellationToken cancellationToken)
+        private async ValueTask<(Dictionary<string, long>, byte[])> RestoreLatestAsync(CancellationToken cancellationToken)
         {
             FasterLogRecoveryInfo info = new();
 
@@ -1454,7 +1633,7 @@ namespace FASTER.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart, purgeEarlierCommits);
+            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
 
             return (iterators, cookie);
         }
@@ -1499,11 +1678,14 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
 
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
+                if (cannedException != null) throw cannedException;
                 return false;
             }
 
@@ -1653,15 +1835,13 @@ namespace FASTER.core
             record.Return();
             return length;
         }
-
-        private void SpinWaitForCommit(long address, long commitNum)
-        {
-            while (commitNum > persistedCommitNum || address > CommittedUntilAddress)
-                Thread.Yield();
-        }
+        
 
         private bool CommitInternal(out long commitTail, out long actualCommitNum, bool fastForwardAllowed, byte[] cookie, long proposedCommitNum, Action callback)
         {
+            if (cannedException != null)
+                throw cannedException;
+            
             commitTail = actualCommitNum = 0;
             
             if (readOnlyMode)
@@ -1675,7 +1855,7 @@ namespace FASTER.core
             {
                 FastForwardAllowed = fastForwardAllowed,
                 Cookie = cookie,
-                Callback = callback
+                Callback = callback,
             };
             info.SnapshotIterators(PersistedIterators);
             var metadataChanged = ShouldCommmitMetadata(ref info);
@@ -1683,14 +1863,23 @@ namespace FASTER.core
             if (fastForwardAllowed && !commitPolicy.AdmitCommit(TailAddress, metadataChanged))
                 return false;
 
+            // This critical section serializes commit record creation / commit content generation and ensures that the
+            // long address are sorted in outstandingCommitRecords. Ok because we do not expect heavy contention on the
+            // commit code path
             lock (ongoingCommitRequests)
             {
                 if (commitCoveredAddress == TailAddress && !metadataChanged)
                     // Nothing to commit if no metadata update and no new entries
                     return false;
-                // Make sure we will not be allowed to back out of a commit of AdmitCommit returns true, as the strategy
+                if (commitNum == long.MaxValue)
+                {
+                    // log has been closed, throw an exception
+                    throw new FasterException("log has already been closed");
+                }
+                
+                // Make sure we will not be allowed to back out of a commit if AdmitCommit returns true, as the commit policy
                 // may need to update internal logic for every true response. We might waste some commit nums if commit
-                // strategy filters out a lot of commits, but that's fine.
+                // policy filters out a lot of commits, but that's fine.
                 if (proposedCommitNum == -1)
                     info.CommitNum = actualCommitNum = ++commitNum;
                 else if (proposedCommitNum > commitNum)
@@ -1699,9 +1888,7 @@ namespace FASTER.core
                     // Invalid commit num
                     return false;
 
-                // This critical section serializes commit record creation / commit content generation and ensures that the
-                // long address are sorted in outstandingCommitRecords. Ok because we do not expect heavy contention on the
-                // commit code path
+                // Normally --- only need commit records if fast committing.
                 if (fastCommitMode)
                 {
                     // Ok to retry in critical section, any concurrently invoked commit would block, but cannot progress

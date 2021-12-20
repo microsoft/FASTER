@@ -69,7 +69,7 @@ namespace FASTER.test
             }
 
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
-                                         fasterSettings: new FasterSettings { SupportsLocking = true });
+                                         supportsLocking: true );
             session = fkv.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
         }
 

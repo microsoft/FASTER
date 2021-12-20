@@ -57,7 +57,7 @@ namespace FASTER.test.recovery.sumstore
             Populate(this.original.Faster);
 
             // Take checkpoint from original to start the clone from
-            Assert.IsTrue(this.original.Faster.TakeFullCheckpoint(out var checkpointGuid));
+            Assert.IsTrue(this.original.Faster.TakeFullCheckpoint(out var checkpointGuid, CheckpointType.FoldOver));
             this.original.Faster.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
             // Sanity check against original
@@ -145,7 +145,7 @@ namespace FASTER.test.recovery.sumstore
                 this.Faster = new FasterKV<AdId, NumClicks>(
                     keySpace,
                     new LogSettings { LogDevice = this.LogDevice },
-                    new CheckpointSettings { CheckpointDir = this.CheckpointDirectory, CheckPointType = CheckpointType.FoldOver });
+                    new CheckpointSettings { CheckpointDir = this.CheckpointDirectory });
             }
 
             public void TearDown()

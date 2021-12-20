@@ -44,7 +44,7 @@ namespace FASTER.test.recovery.objectstore
                 (
                     keySpace,
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
-                    new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot },
+                    new CheckpointSettings { CheckpointDir = test_path },
                     new SerializerSettings<AdId, NumClicks> { keySerializer = () => new AdIdSerializer(), valueSerializer = () => new NumClicksSerializer() }
                     );
         }
@@ -111,9 +111,9 @@ namespace FASTER.test.recovery.objectstore
                 if ((i + 1) % checkpointInterval == 0)
                 {
                     if (first)
-                        while (!fht.TakeFullCheckpoint(out token)) ;
+                        while (!fht.TakeFullCheckpoint(out token, CheckpointType.Snapshot)) ;
                     else
-                        while (!fht.TakeFullCheckpoint(out _)) ;
+                        while (!fht.TakeFullCheckpoint(out _, CheckpointType.Snapshot)) ;
 
                     fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
 

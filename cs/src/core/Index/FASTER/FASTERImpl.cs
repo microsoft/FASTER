@@ -2414,6 +2414,7 @@ namespace FASTER.core
 
             long newLogicalAddress, newPhysicalAddress;
             bool copyToReadCache = !noReadCache && UseReadCache;
+
             if (copyToReadCache)
             {
                 // Copy to readcache should just append at the tail (becoming the first, not last, readcache record in the chain).

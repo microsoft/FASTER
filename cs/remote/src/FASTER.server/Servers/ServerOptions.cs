@@ -61,7 +61,7 @@ namespace FASTER.server
         /// <summary>
         /// Enable pub/sub feature on server.
         /// </summary>
-        public bool EnablePubSub = true;
+        public bool EnablePubSub = true;       
 
         /// <summary>
         /// Constructor
@@ -155,7 +155,6 @@ namespace FASTER.server
 
             checkpointSettings = new CheckpointSettings
             {
-                CheckPointType = CheckpointType.Snapshot,
                 CheckpointDir = CheckpointDir ?? (LogDir + "/Store/checkpoints"),
                 RemoveOutdated = true,
             };

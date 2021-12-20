@@ -28,10 +28,9 @@ namespace StoreAsyncApi
             var objlog = Devices.CreateLogDevice(path + "hlog.obj.log", deleteOnClose: true);
 
             var logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = objlog };
-            var checkpointSettings = new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.FoldOver };
             var serializerSettings = new SerializerSettings<CacheKey, CacheValue> { keySerializer = () => new CacheKeySerializer(), valueSerializer = () => new CacheValueSerializer() };
 
-            faster = new FasterKV<CacheKey, CacheValue>(1L << 20, logSettings, checkpointSettings, serializerSettings);
+            faster = new FasterKV<CacheKey, CacheValue>(1L << 20, logSettings, serializerSettings: serializerSettings);
 
             const int NumParallelTasks = 1;
             ThreadPool.SetMinThreads(2 * Environment.ProcessorCount, 2 * Environment.ProcessorCount);

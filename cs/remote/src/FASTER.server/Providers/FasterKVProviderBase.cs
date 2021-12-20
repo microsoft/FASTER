@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Net.Sockets;
 using FASTER.common;
 using FASTER.core;
 
@@ -68,22 +67,27 @@ namespace FASTER.server
         }
 
         /// <summary>
+        /// Get MaxSizeSettings
+        /// </summary>
+        public MaxSizeSettings GetMaxSizeSettings => this.maxSizeSettings;
+
+        /// <summary>
         /// GetFunctions() for custom functions provided by the client
         /// </summary>
         /// <returns></returns>
-        public abstract Functions GetFunctions();
+        public abstract Functions GetFunctions();       
 
         /// <inheritdoc />
-        public virtual IServerSession GetSession(WireFormat wireFormat, Socket socket)
+        public virtual IServerSession GetSession(WireFormat wireFormat, INetworkSender networkSender)
         {
             switch (wireFormat)
             {
                 case WireFormat.WebSocket:
                     return new WebsocketServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                        (socket, store, GetFunctions(), serializer, maxSizeSettings, kvBroker, broker);
+                        (networkSender, store, GetFunctions(), serializer, kvBroker, broker);
                 default:
                     return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
-                        (socket, store, GetFunctions(), serializer, maxSizeSettings, kvBroker, broker);
+                        (networkSender, store, GetFunctions(), serializer, kvBroker, broker);
             }
         }
     }

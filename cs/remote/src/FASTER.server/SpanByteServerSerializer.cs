@@ -42,7 +42,7 @@ namespace FASTER.server
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref SpanByte ReadValueByRef(ref byte* src)
-        {
+        {            
             ref var ret = ref Unsafe.AsRef<SpanByte>(src);
             src += ret.TotalSize;
             return ref ret;

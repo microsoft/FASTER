@@ -49,7 +49,7 @@ namespace FASTER.core
         /// </summary>
         protected readonly LightEpoch epoch;
         private readonly bool ownedEpoch;
-
+        
         /// <summary>
         /// Comparer
         /// </summary>
@@ -113,6 +113,7 @@ namespace FASTER.core
         /// HeadOFfset lag address
         /// </summary>
         internal long HeadOffsetLagAddress;
+        
 
         /// <summary>
         /// Log mutable fraction
@@ -145,6 +146,12 @@ namespace FASTER.core
         ///  Safe head address
         /// </summary>
         public long SafeHeadAddress;
+
+        /// <summary>
+        /// Tentative head address. Threads do not take any record locks earlier than this point.
+        /// Records earlier than this address undergo eviction, before HeadAddress is moved.
+        /// </summary>
+        public long TentativeHeadAddress;
 
         /// <summary>
         /// Flushed until address
@@ -221,7 +228,7 @@ namespace FASTER.core
         /// Whether to preallocate log on initialization
         /// </summary>
         private readonly bool PreallocateLog = false;
-
+        
         /// <summary>
         /// Error handling
         /// </summary>
@@ -779,30 +786,28 @@ namespace FASTER.core
         {
             Debug.Assert(firstValidAddress <= PageSize, $"firstValidAddress {firstValidAddress} shoulld be <= PageSize {PageSize}");
 
-            bufferPool = new SectorAlignedBufferPool(1, sectorSize);
+            if (bufferPool == null)
+                bufferPool = new SectorAlignedBufferPool(1, sectorSize);
 
             if (BufferSize > 0)
             {
                 long tailPage = firstValidAddress >> LogPageSizeBits;
                 int tailPageIndex = (int)(tailPage % BufferSize);
-                AllocatePage(tailPageIndex);
+                if (!IsAllocated(tailPageIndex))
+                    AllocatePage(tailPageIndex);
 
                 // Allocate next page as well
                 int nextPageIndex = (int)(tailPage + 1) % BufferSize;
-                if ((!IsAllocated(nextPageIndex)))
-                {
+                if (!IsAllocated(nextPageIndex))
                     AllocatePage(nextPageIndex);
-                }
             }
 
             if (PreallocateLog)
             {
                 for (int i = 0; i < BufferSize; i++)
                 {
-                    if ((!IsAllocated(i)))
-                    {
+                    if (!IsAllocated(i))
                         AllocatePage(i);
-                    }
                 }
             }
 
@@ -828,6 +833,8 @@ namespace FASTER.core
             if (ownedEpoch)
                 epoch.Dispose();
             bufferPool.Free();
+
+            this.FlushEvent.Dispose();
 
             OnReadOnlyObserver?.OnCompleted();
             OnEvictionObserver?.OnCompleted();
@@ -1235,7 +1242,7 @@ namespace FASTER.core
         /// Flush: send page to secondary store
         /// </summary>
         /// <param name="newSafeReadOnlyAddress"></param>
-        public void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress)
+        private void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress)
         {
             if (Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
             {
@@ -1250,16 +1257,30 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Action to be performed when all threads agree that 
+        /// a page range is ready to close.
+        /// </summary>
+        private void OnPagesReadyToClose(long oldHeadAddress, long newHeadAddress)
+        {
+            if (ReadCache && (newHeadAddress > HeadAddress))
+                EvictCallback(HeadAddress, newHeadAddress);
+
+            if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out oldHeadAddress))
+            {
+                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
+                epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
+            }
+        }
+
+        /// <summary>
         /// Action to be performed for when all threads have 
         /// agreed that a page range is closed.
         /// </summary>
         /// <param name="newSafeHeadAddress"></param>
-        public void OnPagesClosed(long newSafeHeadAddress)
+        private void OnPagesClosed(long newSafeHeadAddress)
         {
             if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out long oldSafeHeadAddress))
             {
-                Debug.WriteLine("SafeHeadOffset shifted from {0:X} to {1:X}", oldSafeHeadAddress, newSafeHeadAddress);
-
                 // Also shift begin address if we are using a null storage device
                 if (IsNullDevice)
                     Utility.MonotonicUpdate(ref BeginAddress, newSafeHeadAddress, out _);
@@ -1298,12 +1319,14 @@ namespace FASTER.core
             var _readonly = ReadOnlyAddress;
             var _safereadonly = SafeReadOnlyAddress;
             var _tail = GetTailAddress();
+            var _thead = TentativeHeadAddress;
             var _head = HeadAddress;
             var _safehead = SafeHeadAddress;
 
             Console.WriteLine("ClosePageAddress: {0}.{1}", GetPage(closePageAddress), GetOffsetInPage(closePageAddress));
             Console.WriteLine("FlushedUntil: {0}.{1}", GetPage(_flush), GetOffsetInPage(_flush));
             Console.WriteLine("Tail: {0}.{1}", GetPage(_tail), GetOffsetInPage(_tail));
+            Console.WriteLine("TentativeHead: {0}.{1}", GetPage(_thead), GetOffsetInPage(_thead));
             Console.WriteLine("Head: {0}.{1}", GetPage(_head), GetOffsetInPage(_head));
             Console.WriteLine("SafeHead: {0}.{1}", GetPage(_safehead), GetOffsetInPage(_safehead));
             Console.WriteLine("ReadOnly: {0}.{1}", GetPage(_readonly), GetOffsetInPage(_readonly));
@@ -1334,29 +1357,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="currentTailAddress"></param>
         private void PageAlignedShiftHeadAddress(long currentTailAddress)
-        {
-            //obtain local values of variables that can change
-            long currentHeadAddress = HeadAddress;
-            long currentFlushedUntilAddress = FlushedUntilAddress;
-            long pageAlignedTailAddress = currentTailAddress & ~PageSizeMask;
-            long desiredHeadAddress = (pageAlignedTailAddress - HeadOffsetLagAddress);
-
-            long newHeadAddress = desiredHeadAddress;
-            if (currentFlushedUntilAddress < newHeadAddress)
-            {
-                newHeadAddress = currentFlushedUntilAddress;
-            }
-            newHeadAddress &= ~PageSizeMask;
-
-            if (ReadCache && (newHeadAddress > HeadAddress))
-                EvictCallback(HeadAddress, newHeadAddress);
-
-            if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
-            {
-                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
-                epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
-            }
-        }
+            => ShiftHeadAddress((currentTailAddress & ~PageSizeMask) - HeadOffsetLagAddress);
 
         /// <summary>
         /// Tries to shift head address to specified value
@@ -1373,14 +1374,11 @@ namespace FASTER.core
                 newHeadAddress = currentFlushedUntilAddress;
             }
 
-            if (ReadCache && (newHeadAddress > HeadAddress))
-                EvictCallback(HeadAddress, newHeadAddress);
-
-            if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
+            if (Utility.MonotonicUpdate(ref TentativeHeadAddress, newHeadAddress, out long oldTentativeHeadAddress))
             {
-                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
-                epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
+                epoch.BumpCurrentEpoch(() => OnPagesReadyToClose(oldTentativeHeadAddress, newHeadAddress));
             }
+
             return newHeadAddress;
         }
 
@@ -1405,33 +1403,37 @@ namespace FASTER.core
 
             if (update)
             {
+                // Anything here must be valid flushes because error flushes do not set LastFlushedUntilAddress, which
+                // prevents future ranges from being marked as flushed
                 if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
                 {
-                    uint errorCode = 0;
-                    if (errorList.Count > 0)
-                    {
-                        errorCode = errorList.CheckAndWait(oldFlushedUntilAddress, currentFlushedUntilAddress);
-                    }
                     FlushCallback?.Invoke(
                         new CommitInfo
                         {
                             FromAddress = oldFlushedUntilAddress,
                             UntilAddress = currentFlushedUntilAddress,
-                            ErrorCode = errorCode
+                            ErrorCode = 0
                         });
 
                     this.FlushEvent.Set();
-
-                    if (errorList.Count > 0)
-                    {
-                        errorList.RemoveUntil(currentFlushedUntilAddress);
-                    }
 
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
                     {
                         notifyFlushedUntilAddressSemaphore.Release();
                     }
                 }
+            }
+            
+            if (!errorList.Empty)
+            {
+                var info = errorList.GetEarliestError();
+                if (info.FromAddress == FlushedUntilAddress)
+                {
+                    // all requests before error range has finished successfully -- this is the earliest error and we
+                    // can invoke callback on it.
+                    FlushCallback?.Invoke(info);
+                }
+                // Otherwise, do nothing and wait for the next invocation.
             }
         }
 
@@ -1942,9 +1944,18 @@ namespace FASTER.core
                 {
                     if (errorCode != 0)
                     {
-                        errorList.Add(result.fromAddress, errorCode);
+                        // Note down error details and trigger handling only when we are certain this is the earliest
+                        // error among currently issued flushes
+                        errorList.Add(new CommitInfo { FromAddress =  result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode } );
                     }
-                    Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
+                    else
+                    {
+                        // Update the page's last flushed until address only if there is no failure.
+                        Utility.MonotonicUpdate(
+                            ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress,
+                            result.untilAddress, out _);
+                    }
+
                     ShiftFlushedUntilAddress();
                     result.Free();
                 }
@@ -1958,6 +1969,26 @@ namespace FASTER.core
             catch when (disposed) { }
         }
 
+        internal void UnsafeSkipError(CommitInfo info)
+        {
+            try
+            {
+                errorList.TruncateUntil(info.UntilAddress);
+                var page = info.FromAddress >> PageSizeMask;
+                Utility.MonotonicUpdate(
+                    ref PageStatusIndicator[page % BufferSize].LastFlushedUntilAddress,
+                    info.UntilAddress, out _);
+                ShiftFlushedUntilAddress();
+                var _flush = FlushedUntilAddress;
+                if (GetOffsetInPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
+                {
+                    WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
+                }
+            }
+            catch when (disposed) { }
+
+        }
+        
         /// <summary>
         /// IOCompletion callback for page flush
         /// </summary>

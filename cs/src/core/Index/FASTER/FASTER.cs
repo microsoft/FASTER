@@ -67,7 +67,6 @@ namespace FASTER.core
 
         internal readonly bool UseReadCache;
         private readonly CopyReadsToTail CopyReadsToTail;
-        private readonly bool UseFoldOverCheckpoint;
         internal readonly int sectorSize;
         private readonly bool WriteDefaultOnDelete;
         internal bool RelaxedCPR;
@@ -117,7 +116,19 @@ namespace FASTER.core
         internal long NumActiveLockingSessions = 0;
 
         /// <summary>
-        /// Create FASTER instance
+        /// Create FasterKV instance
+        /// </summary>
+        /// <param name="fasterKVConfig">Config settings</param>
+        public FasterKV(FasterKVSettings<Key, Value> fasterKVConfig) :
+            this(
+                fasterKVConfig.GetIndexSizeCacheLines(), fasterKVConfig.GetLogSettings(), 
+                fasterKVConfig.GetCheckpointSettings(), fasterKVConfig.GetSerializerSettings(), 
+                fasterKVConfig.EqualityComparer, fasterKVConfig.GetVariableLengthStructSettings(),
+                fasterKVConfig.TryRecoverLatest, fasterKVConfig.SupportsLocking)
+        { }
+
+        /// <summary>
+        /// Create FasterKV instance
         /// </summary>
         /// <param name="size">Size of core index (#cache lines)</param>
         /// <param name="logSettings">Log settings</param>
@@ -125,11 +136,12 @@ namespace FASTER.core
         /// <param name="serializerSettings">Serializer settings</param>
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
-        /// <param name="fasterSettings">FASTER settings</param>
+        /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
+        /// <param name="supportsLocking">Whether FASTER takes read and write locks on records</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, FasterSettings fasterSettings = null)
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool supportsLocking = false)
         {
             if (comparer != null)
                 this.comparer = comparer;
@@ -152,38 +164,23 @@ namespace FASTER.core
                 }
             }
 
-            if (fasterSettings is not null)
-            {
-                this.SupportsLocking = fasterSettings.SupportsLocking;
-            }
+            this.SupportsLocking = supportsLocking;
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
-                throw new FasterException(
-                    "Specify either CheckpointManager or CheckpointDir for CheckpointSettings, not both");
+                Trace.TraceInformation("CheckpointManager and CheckpointDir specified, ignoring CheckpointDir");
 
-            bool oldCheckpointManager = false;
-
-            if (oldCheckpointManager)
-            {
-                checkpointManager = checkpointSettings.CheckpointManager ??
-                                new LocalCheckpointManager(checkpointSettings.CheckpointDir ?? "");
-            }
-            else
-            {
-                checkpointManager = checkpointSettings.CheckpointManager ??
-                    new DeviceLogCommitCheckpointManager
-                    (new LocalStorageNamedDeviceFactory(),
-                        new DefaultCheckpointNamingScheme(
-                          new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName), removeOutdated: checkpointSettings.RemoveOutdated);
-            }
+            checkpointManager = checkpointSettings.CheckpointManager ??
+                new DeviceLogCommitCheckpointManager
+                (new LocalStorageNamedDeviceFactory(),
+                    new DefaultCheckpointNamingScheme(
+                        new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName), removeOutdated: checkpointSettings.RemoveOutdated);
 
             if (checkpointSettings.CheckpointManager is null)
                 disposeCheckpointManager = true;
 
-            UseFoldOverCheckpoint = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
             CopyReadsToTail = logSettings.CopyReadsToTail;
 
             if (logSettings.ReadCacheSettings is not null)
@@ -268,24 +265,16 @@ namespace FASTER.core
             this.LockTable = new LockTable<Key>(keyLen, this.comparer, keyLen is null ? null : hlog.bufferPool);
 
             systemState = SystemState.Make(Phase.REST, 1);
-        }
 
-        /// <summary>
-        /// Initiate full checkpoint
-        /// </summary>
-        /// <param name="token">Checkpoint token</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
-        /// <returns>
-        /// Whether we successfully initiated the checkpoint (initiation may
-        /// fail if we are already taking a checkpoint or performing some other
-        /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
-        /// </returns>
-        public bool TakeFullCheckpoint(out Guid token, long targetVersion = -1) 
-            => TakeFullCheckpoint(out token, this.UseFoldOverCheckpoint ? CheckpointType.FoldOver : CheckpointType.Snapshot, targetVersion);
+            if (tryRecoverLatest)
+            {
+                try
+                {
+                    Recover();
+                }
+                catch { }
+            }
+        }
 
         /// <summary>
         /// Initiate full checkpoint
@@ -382,19 +371,6 @@ namespace FASTER.core
 
             return (success, token);
         }
-
-        /// <summary>
-        /// Initiate log-only checkpoint
-        /// </summary>
-        /// <param name="token">Checkpoint token</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
-        /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1)
-            => TakeHybridLogCheckpoint(out token, UseFoldOverCheckpoint ? CheckpointType.FoldOver : CheckpointType.Snapshot, tryIncremental: false, targetVersion);
 
         /// <summary>
         /// Initiate log-only checkpoint

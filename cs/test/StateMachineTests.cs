@@ -34,7 +34,7 @@ namespace FASTER.test.statemachine
             fht1 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
         }
 
@@ -323,7 +323,7 @@ namespace FASTER.test.statemachine
 
             s2.Dispose();
 
-            fht1.TakeHybridLogCheckpoint(out _);
+            fht1.TakeHybridLogCheckpoint(out _, CheckpointType.FoldOver);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             // We should be in REST, 3
@@ -480,7 +480,7 @@ namespace FASTER.test.statemachine
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
 
-            fht1.TakeHybridLogCheckpoint(out _, toVersion);
+            fht1.TakeHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
@@ -496,7 +496,7 @@ namespace FASTER.test.statemachine
                 <AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir + "/statemachinetest", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir + "/statemachinetest" }
                 );
 
             fht2.Recover(); // sync, does not require session
