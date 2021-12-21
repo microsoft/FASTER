@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -46,6 +47,11 @@ namespace FASTER.core
         readonly KeyComparer keyComparer;
         readonly SectorAlignedBufferPool bufferPool;
 
+        // dict.Empty takes locks on all tables ("snapshot semantics"), which is too much of a perf hit. So we track this
+        // separately. It is not atomic when items are added/removed, but by incrementing it before and decrementing it after
+        // we add or remove items, respectively, we achieve the desired goal of IsActive.
+        long approxNumItems = 0;
+
         internal LockTable(IVariableLengthStruct<TKey> keyLen, IFasterEqualityComparer<TKey> comparer, SectorAlignedBufferPool bufferPool)
         {
             this.keyLen = keyLen;
@@ -54,14 +60,10 @@ namespace FASTER.core
             this.dict = new(this.keyComparer);
         }
 
-        internal bool IsActive => this.dict.Count > 0;
+        internal bool IsActive => this.approxNumItems > 0;
 
-        IHeapContainer<TKey> GetKeyContainer(ref TKey key)
-        {
-            if (bufferPool is null)
-                return new StandardHeapContainer<TKey>(ref key);
-            return new VarLenHeapContainer<TKey>(ref key, keyLen, bufferPool);
-        }
+        IHeapContainer<TKey> GetKeyContainer(ref TKey key) 
+            => bufferPool is null ? new StandardHeapContainer<TKey>(ref key) : new VarLenHeapContainer<TKey>(ref key, keyLen, bufferPool);
 
         // Provide our own implementation of "Update by lambda"
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -80,11 +82,9 @@ namespace FASTER.core
         internal void Unlock(ref TKey key, LockType lockType)
         {
             if (Update(ref key, lte => { lte.lockRecordInfo.Unlock(lockType); return lte; }))
-            {
                 TryRemoveIfNoLocks(ref key);
-                return;
-            }
-            Debug.Fail("Trying to unlock a nonexistent key");
+            else
+                Debug.Fail("Trying to unlock a nonexistent key");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -113,6 +113,7 @@ namespace FASTER.core
                     lockRecordInfo.Tentative = true;
                     RecordInfo logRecordInfo = default;
                     logRecordInfo.Lock(lockType);
+                    Interlocked.Increment(ref this.approxNumItems);
                     return new(key, logRecordInfo, lockRecordInfo);
                 }, (key, lte) => {
                     if (lte.lockRecordInfo.Tentative || lte.lockRecordInfo.Sealed)
@@ -148,6 +149,7 @@ namespace FASTER.core
                     return;
                 if (dict.TryRemoveConditional(lookupKey, lte))
                 {
+                    Interlocked.Decrement(ref this.approxNumItems);
                     lte.key.Dispose();
                     return;
                 }
@@ -237,7 +239,10 @@ namespace FASTER.core
                 logRecord.CopyLocksFrom(lte.logRecordInfo);
                 lte.lockRecordInfo.SetInvalid();
                 if (dict.TryRemove(lookupKey, out _))
+                {
+                    Interlocked.Decrement(ref this.approxNumItems);
                     lte.key.Dispose();
+                }
                 lte.lockRecordInfo.Tentative = false;
             }
 

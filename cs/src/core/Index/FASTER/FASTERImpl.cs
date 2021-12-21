@@ -418,7 +418,6 @@ namespace FASTER.core
                 if (logicalAddress >= hlog.ReadOnlyAddress)
                 {
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
-                    ref Value recordValue = ref hlog.GetValue(physicalAddress);
                     if (recordInfo.IsIntermediate(out status))
                         return status;
 
@@ -1348,10 +1347,10 @@ namespace FASTER.core
                         break;
                 }
             }
-            #endregion
+#endregion
 
 
-            #region Normal processing
+#region Normal processing
 
             // Mutable Region: Update the record in-place
             if (logicalAddress >= hlog.ReadOnlyAddress)
@@ -1534,7 +1533,7 @@ namespace FASTER.core
             return status;
         }
 
-        #endregion
+#endregion
 
         /// <summary>
         /// Manual Lock operation. Locks the record corresponding to 'key'.
@@ -1558,7 +1557,7 @@ namespace FASTER.core
 
             var prevTailAddress = hlog.GetTailAddress();
 
-            #region Trace back for record in in-memory HybridLog
+#region Trace back for record in in-memory HybridLog
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             var logicalAddress = entry.Address;
@@ -1584,7 +1583,7 @@ namespace FASTER.core
                                         out physicalAddress);
                 }
             }
-            #endregion
+#endregion
 
             lockInfo = default;
             if (logicalAddress >= hlog.HeadAddress)
@@ -1633,7 +1632,7 @@ namespace FASTER.core
             return OperationStatus.SUCCESS;
         }
 
-        #region ContainsKeyInMemory
+#region ContainsKeyInMemory
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status InternalContainsKeyInMemory<Input, Output, Context, FasterSession>(
@@ -2363,7 +2362,7 @@ namespace FASTER.core
             var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
-            #region Trace back for record in in-memory HybridLog
+#region Trace back for record in in-memory HybridLog
             // Find the entry in the log and make sure someone didn't insert another record after we decided there wasn't one.
             var entry = default(HashBucketEntry);
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
@@ -2407,9 +2406,9 @@ namespace FASTER.core
                 else
                     return OperationStatus.NOTFOUND;
             }
-            #endregion
+#endregion
 
-            #region Create new copy in mutable region
+#region Create new copy in mutable region
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
 
             long newLogicalAddress, newPhysicalAddress;
