@@ -80,8 +80,7 @@ namespace FASTER.core
                 {
                     try
                     {
-                        if (file.Exists)
-                            file.Delete();
+                        if (file.Exists) file.Delete();
                         break;
                     }
                     catch { }
@@ -92,12 +91,13 @@ namespace FASTER.core
             }
             else
             {
+                var dir = new DirectoryInfo(Path.Combine(baseName, fileInfo.directoryName));
                 while (true)
                 {
                     try
                     {
-                        var dir = new DirectoryInfo(Path.Combine(baseName, fileInfo.directoryName));
-                        dir.Delete(true);
+                        if (dir.Exists) dir.Delete(true);
+                        break;
                     }
                     catch { }
                     Thread.Yield();
