@@ -75,7 +75,7 @@ namespace FASTER.test
         {
             long lockTestValue = 0;
             const int numThreads = 50;
-            const int numIters = 5000;
+            const int numIters = 1000;
 
             var tasks = Enumerable.Range(0, numThreads).Select(ii => Task.Factory.StartNew(XLockTestFunc)).ToArray();
             Task.WaitAll(tasks);
@@ -101,7 +101,7 @@ namespace FASTER.test
             long lockTestValueResult = 0;
 
             const int numThreads = 50;
-            const int numIters = 5000;
+            const int numIters = 1000;
 
             var tasks = Enumerable.Range(0, numThreads).Select(ii => Task.Factory.StartNew(SLockTestFunc)).ToArray();
             Task.WaitAll(tasks);
@@ -126,7 +126,7 @@ namespace FASTER.test
             long lockTestValueResult = 0;
 
             const int numThreads = 50;
-            const int numIters = 5000;
+            const int numIters = 1000;
 
             var tasks = Enumerable.Range(0, numThreads).Select(ii => Task.Factory.StartNew(XLockTestFunc))
                 .Concat(Enumerable.Range(0, numThreads).Select(ii => Task.Factory.StartNew(SLockTestFunc))).ToArray();

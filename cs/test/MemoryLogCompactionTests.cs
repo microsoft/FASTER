@@ -84,9 +84,7 @@ namespace FASTER.test
                 key.Span.Fill(i);
 
                 var (status, output) = session.Read(key, userContext: i < 10 ? 1 : 0); 
-                if (status == Status.PENDING)
-                    session.CompletePending(true);
-                else
+                if (status != Status.PENDING)
                 {
                     if (i < 10)
                         Assert.AreEqual(Status.NOTFOUND, status);
@@ -98,6 +96,7 @@ namespace FASTER.test
                     }
                 }
             }
+            session.CompletePending(true);
 
             // Test iteration of distinct live keys
             using (var iter = session.Iterate())

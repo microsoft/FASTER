@@ -13,7 +13,7 @@ namespace FASTER.test.async
     {
         IDevice log;
         FasterKV<long, long> fht1;
-        const int numOps = 5000;
+        const int numOps = 2000;
         string path;
 
         [SetUp]
