@@ -266,7 +266,6 @@ namespace FASTER.test
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
                 session.Upsert(ref key1, ref value, Empty.Default, 0);
             }
-            Console.WriteLine($"Time to insert {NumRecs} records: {sw.ElapsedMilliseconds} ms");
 
             r = new Random(RandSeed);
             sw.Restart();
@@ -278,15 +277,13 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
+                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0) != Status.PENDING)
                 {
-                    session.CompletePending(true);
+                    Assert.AreEqual(value.vfield1, output.value.vfield1);
+                    Assert.AreEqual(value.vfield2, output.value.vfield2);
                 }
-
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
-            Console.WriteLine($"Time to read {NumRecs} in-memory records: {sw.ElapsedMilliseconds} ms");
+            session.CompletePending(true);
 
             // Shift head and retry - should not find in main memory now
             fht.Log.FlushAndEvict(true);
@@ -299,17 +296,20 @@ namespace FASTER.test
                 var i = r.Next(RandRange);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-
                 Status foundStatus = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.AreEqual(Status.PENDING, foundStatus);
-                session.CompletePendingWithOutputs(out var outputs, wait: true);
-                Assert.IsTrue(outputs.Next());
-                Assert.AreEqual(value.vfield1, outputs.Current.Output.value.vfield1);
-                outputs.Current.Dispose();
-                Assert.IsFalse(outputs.Next());
             }
-            Console.WriteLine($"Time to read {NumRecs} on-disk records: {sw.ElapsedMilliseconds} ms");
+
+            session.CompletePendingWithOutputs(out var outputs, wait: true);
+            int count = 0;
+            while (outputs.Next())
+            {
+                count++;
+                Assert.AreEqual(outputs.Current.Key.kfield1, outputs.Current.Output.value.vfield1);
+                Assert.AreEqual(outputs.Current.Key.kfield2, outputs.Current.Output.value.vfield2);
+            }
+            outputs.Dispose();
+            Assert.AreEqual(NumRecs, count);
         }
 
         [Test]

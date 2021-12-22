@@ -62,8 +62,9 @@ namespace FASTER.test
             var termination = new ManualResetEventSlim();
 
             var workerThreads = new List<Thread>();
+            int numThreads = Math.Min(8, Environment.ProcessorCount / 2);
             // Force lots of interleavings by having many threads
-            for (var i = 0; i < 2 * Environment.ProcessorCount; i++)
+            for (var i = 0; i < numThreads; i++)
             {
                 var t = new Thread(() =>
                 {
@@ -78,7 +79,7 @@ namespace FASTER.test
                 t.Start();
             }
 
-            for (var i = 0; i < 100000; i++)
+            for (var i = 0; i < 1000; i++)
             {
                 tested.TryAdvanceVersion((vOld, vNew) =>
                 {

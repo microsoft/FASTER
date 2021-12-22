@@ -617,15 +617,13 @@ namespace FASTER.test
             //*******
             // Main point of the test ... If commit(true) (like other tests do) it waits until commit completes before moving on.
             // If set to false, it will fire and forget the commit and return immediately (which is the way this test is set up).
-            // There won't be that much difference from True to False here as the True case is so quick but there can be issues if start checking right after commit without giving time to commit.
+            // There won't be that much difference from True to False here as the True case is so quick but there can be issues
+            // if start checking right after commit without giving time to commit.
             // Also, it is a good basic check to make sure it isn't crashing and that it does actually commit it
-            // Can take two approaches
-            //    1) Just give it a few seconds to commit before checking as literally takes a second or so to commit. If commit isn't finished after this slight delay, then we have issues and it will show as a fail when reads and it needs investigated
-            //    2) Check right away but if it fails, check again and repeat until it is done committing. No need to add this extra complexity into the test and so this is appropriate use of a sleep
             //*******
 
             log.Commit(false);
-            Thread.Sleep(5000);
+            while (log.CommittedUntilAddress < log.TailAddress) Thread.Yield();
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
