@@ -818,16 +818,24 @@ namespace FASTER.core
                 => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) 
-                => !this.SupportsLocking
-                    ? _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address)
-                    : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo, address);
-
-            public bool ConcurrentReaderLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
-                recordInfo.LockShared();
+                lockFailed = false;
+                return !this.SupportsLocking
+                                   ? _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address)
+                                   : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo, address, out lockFailed);
+            }
+
+            public bool ConcurrentReaderLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address, out bool lockFailed)
+            {
+                if (!recordInfo.LockShared())
+                {
+                    lockFailed = true;
+                    return false;
+                }
                 try
                 {
+                    lockFailed = false;
                     return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
                 }
                 finally
@@ -852,8 +860,8 @@ namespace FASTER.core
 
                 if (this.SupportsPostOperations && this.SupportsLocking)
                 {
-                    // Lock must be taken after the value is initialized. Unlocked in PostSingleWriterLock.
-                    recordInfo.LockExclusive();
+                    // Lock ephemerally before we CAS into the log; Unlocked in PostSingleWriterLock.
+                    recordInfo.SetLockExclusiveBit();
                 }
             }
 
@@ -889,10 +897,13 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
-                => !this.SupportsLocking
-                    ? ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address)
-                    : ConcurrentWriterLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
+            {
+                lockFailed = false;
+                return !this.SupportsLocking
+                                   ? ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address)
+                                   : ConcurrentWriterLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, out lockFailed);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool ConcurrentWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
@@ -903,11 +914,16 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+            private bool ConcurrentWriterLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
-                recordInfo.LockExclusive();
+                if (!recordInfo.LockExclusive())
+                {
+                    lockFailed = true;
+                    return false;
+                }
                 try
                 {
+                    lockFailed = false;
                     return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
                 }
                 finally
@@ -933,8 +949,8 @@ namespace FASTER.core
 
                 if (this.SupportsPostOperations && this.SupportsLocking)
                 {
-                    // Lock must be taken after the value is initialized. Unlocked in PostInitialUpdaterLock.
-                    recordInfo.LockExclusive();
+                    // Lock ephemerally before we CAS into the log; Unlocked in PostInitialUpdaterLock.
+                    recordInfo.SetLockExclusiveBit();
                 }
             }
 
@@ -982,8 +998,8 @@ namespace FASTER.core
 
                 if (this.SupportsPostOperations && this.SupportsLocking)
                 {
-                    // Lock must be taken after the value is initialized. Unlocked in PostInitialUpdaterLock.
-                    recordInfo.LockExclusive();
+                    // Lock ephemerally before we CAS into the log. Unlocked in PostInitialUpdaterLock.
+                    recordInfo.SetLockExclusiveBit();
                 }
             }
 
@@ -1021,10 +1037,13 @@ namespace FASTER.core
 
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
-                => !this.SupportsLocking
-                    ? InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address)
-                    : InPlaceUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, address);
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
+            {
+                lockFailed = false;
+                return !this.SupportsLocking
+                                   ? InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address)
+                                   : InPlaceUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, address, out lockFailed);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
@@ -1034,11 +1053,16 @@ namespace FASTER.core
                 return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             }
 
-            private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
+            private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
-                recordInfo.LockExclusive();
+                if (!recordInfo.LockExclusive())
+                {
+                    lockFailed = true;
+                    return false;
+                }
                 try
                 {
+                    lockFailed = false;
                     return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address);
                 }
                 finally
@@ -1067,10 +1091,13 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
-                => (!this.SupportsLocking)
-                    ? ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address)
-                    : ConcurrentDeleterLock(ref key, ref value, ref recordInfo, address);
+            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address, out bool lockFailed)
+            {
+                lockFailed = false;
+                return (!this.SupportsLocking)
+                                   ? ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address)
+                                   : ConcurrentDeleterLock(ref key, ref value, ref recordInfo, address, out lockFailed);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
@@ -1081,11 +1108,16 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+            private bool ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
-                recordInfo.LockExclusive();
+                if (!recordInfo.LockExclusive())
+                {
+                    lockFailed = true;
+                    return false;
+                }
                 try
                 {
+                    lockFailed = false;
                     return ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address);
                 }
                 finally

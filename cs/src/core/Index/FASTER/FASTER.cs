@@ -258,6 +258,7 @@ namespace FASTER.core
             }
 
             hlog.Initialize();
+            hlog.OnLockEvictionObserver = new LockEvictionObserver<Key, Value>(this);
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);

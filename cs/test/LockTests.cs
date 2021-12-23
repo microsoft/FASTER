@@ -65,6 +65,7 @@ namespace FASTER.test
                 RecordInfo recordInfo = new();
                 RecordInfo* ri = &recordInfo;
 
+                // We are not sealing in this test, so there is no need to check the return
                 XLockTest(() => ri->LockExclusive(), () => ri->UnlockExclusive());
                 SLockTest(() => ri->LockShared(), () => ri->UnlockShared());
                 XSLockTest(() => ri->LockExclusive(), () => ri->UnlockExclusive(), () => ri->LockShared(), () => ri->UnlockShared());

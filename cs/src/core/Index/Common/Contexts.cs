@@ -264,7 +264,7 @@ namespace FASTER.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        const int CheckpointVersion = 3;
+        const int CheckpointVersion = 4;
 
         /// <summary>
         /// Guid
@@ -307,6 +307,11 @@ namespace FASTER.core
         /// Begin address
         /// </summary>
         public long beginAddress;
+        /// <summary>
+        /// If true, there was at least one IFasterContext implementation active that did manual locking at some point during the checkpoint;
+        /// these pages must be scanned for lock cleanup.
+        /// </summary>
+        bool manualLockingActive;
 
         /// <summary>
         /// Commit tokens per session restored during Continue

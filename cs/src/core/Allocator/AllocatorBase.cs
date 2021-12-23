@@ -245,6 +245,11 @@ namespace FASTER.core
         internal IObserver<IFasterScanIterator<Key, Value>> OnEvictionObserver;
 
         /// <summary>
+        /// Observer for locked records getting evicted from memory (page closed)
+        /// </summary>
+        internal IObserver<IFasterScanIterator<Key, Value>> OnLockEvictionObserver;
+
+        /// <summary>
         /// The "event" to be waited on for flush completion by the initiator of an operation
         /// </summary>
         internal CompletionEvent FlushEvent;
@@ -688,9 +693,15 @@ namespace FASTER.core
         /// </summary>
         /// <param name="beginAddress">Begin address</param>
         /// <param name="endAddress">End address</param>
+        internal abstract void MemoryPageLockEvictionScan(long beginAddress, long endAddress);
+
+        /// <summary>
+        /// Scan page guaranteed to be in memory
+        /// </summary>
+        /// <param name="beginAddress">Begin address</param>
+        /// <param name="endAddress">End address</param>
         internal abstract void MemoryPageScan(long beginAddress, long endAddress);
         #endregion
-
 
         /// <summary>
         /// Instantiate base allocator

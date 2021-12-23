@@ -37,28 +37,31 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void HandleLockOperation(this ref RecordInfo recordInfo, LockOperation lockOp, out bool isLock)
+        internal static bool HandleLockOperation(this ref RecordInfo recordInfo, LockOperation lockOp, out bool isLock)
         {
             isLock = lockOp.LockOperationType == LockOperationType.Lock;
 
             if (isLock)
-                recordInfo.Lock(lockOp.LockType);
-            else if (lockOp.LockOperationType == LockOperationType.Unlock)
+                return recordInfo.Lock(lockOp.LockType);
+
+            if (lockOp.LockOperationType == LockOperationType.Unlock)
                 recordInfo.Unlock(lockOp.LockType);
             else
                 Debug.Fail($"Unexpected LockOperation {lockOp.LockOperationType}");
+            return true;
         }
 
-        internal static void Lock(this ref RecordInfo recordInfo, LockType lockType)
+        internal static bool Lock(this ref RecordInfo recordInfo, LockType lockType)
         {
             if (lockType == LockType.Shared)
-                recordInfo.LockShared();
-            else if (lockType == LockType.Exclusive)
-                recordInfo.LockExclusive();
-            else if (lockType == LockType.ExclusiveFromShared)
-                recordInfo.LockExclusiveFromShared();
+                return recordInfo.LockShared();
+            if (lockType == LockType.Exclusive)
+                return recordInfo.LockExclusive();
+            if (lockType == LockType.ExclusiveFromShared)
+                return recordInfo.LockExclusiveFromShared();
             else
                 Debug.Fail($"Unexpected LockType: {lockType}");
+            return false;
         }
 
         internal static void Unlock(this ref RecordInfo recordInfo, LockType lockType)

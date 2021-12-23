@@ -1030,7 +1030,13 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        internal override void MemoryPageLockEvictionScan(long beginAddress, long endAddress) => MemoryPageScan(beginAddress, endAddress, OnLockEvictionObserver);
+
+        /// <inheritdoc />
+        internal override void MemoryPageScan(long beginAddress, long endAddress) => MemoryPageScan(beginAddress, endAddress, OnEvictionObserver);
+
+        /// <inheritdoc />
+        private void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
             int start = (int)(beginAddress & PageSizeMask) / recordSize;
@@ -1041,7 +1047,7 @@ namespace FASTER.core
             try
             {
                 epoch.Suspend();
-                OnEvictionObserver?.OnNext(iter);
+                observer?.OnNext(iter);
             }
             finally
             {

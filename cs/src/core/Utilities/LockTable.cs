@@ -112,13 +112,11 @@ namespace FASTER.core
                     RecordInfo lockRecordInfo = default;
                     lockRecordInfo.Tentative = true;
                     RecordInfo logRecordInfo = default;
-                    logRecordInfo.Lock(lockType);
+                    existingConflict = !logRecordInfo.Lock(lockType);
                     Interlocked.Increment(ref this.approxNumItems);
                     return new(key, logRecordInfo, lockRecordInfo);
                 }, (key, lte) => {
-                    if (lte.lockRecordInfo.Tentative || lte.lockRecordInfo.Sealed)
-                        existingConflict = true;
-                    lte.logRecordInfo.Lock(lockType);
+                    existingConflict = !lte.logRecordInfo.Lock(lockType);
                     if (lte.lockRecordInfo.Sealed)
                     {
                         existingConflict = true;

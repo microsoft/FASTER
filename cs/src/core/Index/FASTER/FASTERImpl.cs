@@ -209,15 +209,13 @@ namespace FASTER.core
                 ref Value recordValue = ref hlog.GetValue(physicalAddress);
 
                 if (recordInfo.IsIntermediate(out status, useStartAddress))
-                {
                     return status;
-                }
-                else if (!recordInfo.Tombstone
-                        && fasterSession.ConcurrentReader(ref key, ref input, ref recordValue, ref output, ref recordInfo, logicalAddress))
-                {
+
+                bool lockFailed = false;
+                if (!recordInfo.Tombstone
+                        && fasterSession.ConcurrentReader(ref key, ref input, ref recordValue, ref output, ref recordInfo, logicalAddress, out lockFailed))
                     return OperationStatus.SUCCESS;
-                }
-                return OperationStatus.NOTFOUND;
+                return lockFailed ? OperationStatus.RETRY_NOW : OperationStatus.NOTFOUND;
             }
 
             // Immutable region
@@ -423,7 +421,7 @@ namespace FASTER.core
 
                     if (!recordInfo.Tombstone)
                     {
-                        if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress))
+                        if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress, out bool lockFailed))
                         {
                             hlog.MarkPage(logicalAddress, sessionCtx.version);
                             pendingContext.recordInfo = recordInfo;
@@ -432,7 +430,7 @@ namespace FASTER.core
                         }
 
                         // ConcurrentWriter failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
-                        if (!recordInfo.Seal(fasterSession.IsManualLocking))
+                        if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                             return OperationStatus.RETRY_NOW;
                         unsealPhysicalAddress = physicalAddress;
                     }
@@ -463,7 +461,7 @@ namespace FASTER.core
 
                     if (!recordInfo.Tombstone)
                     {
-                        if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref recordInfo, logicalAddress))
+                        if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref recordInfo, logicalAddress, out bool lockFailed))
                         {
                             if (sessionCtx.phase == Phase.REST)
                                 hlog.MarkPage(logicalAddress, sessionCtx.version);
@@ -476,7 +474,7 @@ namespace FASTER.core
                         }
 
                         // ConcurrentWriter failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
-                        if (!recordInfo.Seal(fasterSession.IsManualLocking))
+                        if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                         {
                             status = OperationStatus.RETRY_NOW;
                             goto LatchRelease; // Release shared latch (if acquired)
@@ -710,7 +708,7 @@ namespace FASTER.core
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
             // First set Invalid to true so that ConcurrentDeleter knows to dispose key as well
             insertedRecordInfo.SetInvalid();
-            fasterSession.ConcurrentDeleter(ref insertedKey, ref insertedValue, ref insertedRecordInfo, newLogicalAddress);
+            fasterSession.ConcurrentDeleter(ref insertedKey, ref insertedValue, ref insertedRecordInfo, newLogicalAddress, out _);
             if (WriteDefaultOnDelete)
             {
                 insertedKey = default;
@@ -827,7 +825,7 @@ namespace FASTER.core
 
                 if (!recordInfo.Tombstone)
                 {
-                    if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress))
+                    if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, logicalAddress, out bool lockFailed))
                     {
                         hlog.MarkPage(logicalAddress, sessionCtx.version);
                         pendingContext.recordInfo = recordInfo;
@@ -835,8 +833,8 @@ namespace FASTER.core
                         return OperationStatus.SUCCESS;
                     }
 
-                    // ConcurrentWriter failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
-                    if (!recordInfo.Seal(fasterSession.IsManualLocking))
+                    // InPlaceUpdater failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
+                    if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                         return OperationStatus.RETRY_NOW;
                     unsealPhysicalAddress = physicalAddress;
                 }
@@ -864,7 +862,7 @@ namespace FASTER.core
 
                     if (!recordInfo.Tombstone)
                     {
-                        if (fasterSession.InPlaceUpdater(ref key, ref input, ref recordValue, ref output, ref recordInfo, logicalAddress))
+                        if (fasterSession.InPlaceUpdater(ref key, ref input, ref recordValue, ref output, ref recordInfo, logicalAddress, out bool lockFailed))
                         {
                             if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
                             else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
@@ -874,8 +872,8 @@ namespace FASTER.core
                             goto LatchRelease; // Release shared latch (if acquired)
                         }
 
-                        // ConcurrentWriter failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
-                        if (!recordInfo.Seal(fasterSession.IsManualLocking))
+                        // InPlaceUpdater failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
+                        if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                             return OperationStatus.RETRY_NOW;
                         unsealPhysicalAddress = physicalAddress;
                     }
@@ -1362,8 +1360,12 @@ namespace FASTER.core
                     goto LatchRelease; // Release shared latch (if acquired)
                 }
 
-                if (!fasterSession.ConcurrentDeleter(ref hlog.GetKey(physicalAddress), ref recordValue, ref recordInfo, logicalAddress))
+                if (!fasterSession.ConcurrentDeleter(ref hlog.GetKey(physicalAddress), ref recordValue, ref recordInfo, logicalAddress, out bool lockFailed))
+                {
+                    if (lockFailed)
+                        status = OperationStatus.RETRY_NOW;
                     goto CreateNewRecord;
+                }
 
                 if (sessionCtx.phase == Phase.REST)
                     hlog.MarkPage(logicalAddress, sessionCtx.version);
@@ -1593,8 +1595,8 @@ namespace FASTER.core
                 {
                     if (lockOp.LockOperationType == LockOperationType.IsLocked)
                         status = OperationStatus.SUCCESS;
-                    else
-                        recordInfo.HandleLockOperation(lockOp, out _);
+                    else if (!recordInfo.HandleLockOperation(lockOp, out _))
+                        return OperationStatus.RETRY_NOW;
                 }
                 if (lockOp.LockOperationType == LockOperationType.IsLocked)
                     lockInfo = recordInfo;
@@ -2852,7 +2854,13 @@ namespace FASTER.core
                         if (!recordInfo.IsIntermediate(out internalStatus))
                         {
                             if (lockOp.LockOperationType != LockOperationType.IsLocked)
-                                recordInfo.HandleLockOperation(lockOp, out _);
+                            {
+                                if (!recordInfo.HandleLockOperation(lockOp, out _))
+                                {
+                                    internalStatus = OperationStatus.RETRY_NOW;
+                                    return false;
+                                }
+                            }
                             lockInfo = recordInfo;
                         }
                         return true;
@@ -2943,9 +2951,8 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
                 if (comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
-                    if (recordInfo.IsIntermediate(out internalStatus))
+                    if (recordInfo.IsIntermediate(out internalStatus) || !recordInfo.LockExclusive())
                         return false;
-                    recordInfo.LockExclusive();
                     recordInfo.SetInvalid();
                     recordInfo.UnlockExclusive();
                 }
@@ -2967,10 +2974,9 @@ namespace FASTER.core
             var logicalAddress = Constants.kInvalidAddress;
             var physicalAddress = default(long);
 
-            HashBucketEntry entry = default;
             logicalAddress = fromHeadAddress;
 
-            // Remove readcache entries from the main FKV that are in the fromHeadAddress/toHeadAddress range in the readcache.
+            // Iterate readcache entries in the range fromHeadAddress/toHeadAddress range, and remove them from the primary FKV.
             while (logicalAddress < toHeadAddress)
             {
                 physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
@@ -2980,36 +2986,68 @@ namespace FASTER.core
                 {
                     ref Key key = ref readcache.GetKey(physicalAddress);
 
-                    // If this to-be-evicted readcache record's prevAddress points to a record in the main FKV...
+                    // If there is a readcache entry for this hash, the chain will always be of the form:
+                    //      hashtable -> zero or more readcache entries in latest-to-earliest order -> main FKV entry.
+
+                    // If this to-be-evicted readcache record's prevAddress points to a record in the main FKV, evict all Invalid
+                    // readcache records in this key's readcache chain in the FKV, as well as any entries in the readcache range.
+                    // The ordering of readcache records ensures we won't miss any readcache records that are eligible for eviction,
+                    // while only executing the body of the loop once for each hash chain.
+                    HashBucketEntry entry = default;
                     entry.word = info.PreviousAddress;
                     if (!entry.ReadCache)
                     {
-                        // Find the index entry for the key in the main FKV.
+                        // Find the hash index entry for the key in the main FKV.
                         var hash = comparer.GetHashCode64(ref key);
                         var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                         entry = default;
                         var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                        if (!tagExists)
+                            continue;
 
-                        // Because we call SkipReadCache on upserts, if we have a readcache entry for this hash, it will be pointed to by
-                        // the hashtable; there may be other readcache entries as well, before one that is a non-readcache entry.
-                        // That is, if there is a readcache entry for this hash, the chain will always be of the form:
-                        //      hashtable -> zero or more readcache entries -> main FKV entry.
-                        // Remove the readcache entry for this hash from the main FKV, unless somee other thread has done it for us.
-                        // Note that this removes the entire leading readcache-entry set of records from the hash table pointer. 
-                        while (tagExists && entry.ReadCache)
+                        // Traverse the chain of readcache entries for this key. 
+                        while (entry.ReadCache)
                         {
-                            var updatedEntry = default(HashBucketEntry);
-                            updatedEntry.Tag = tag;
-                            updatedEntry.Address = info.PreviousAddress;
-                            updatedEntry.Pending = entry.Pending;
-                            updatedEntry.Tentative = false;
+                            var la = entry.Address & ~Constants.kReadCacheBitMask;
+                            var pa = readcache.GetPhysicalAddress(la);
+                            ref RecordInfo ri = ref readcache.GetInfo(pa);
 
-                            if (entry.word == Interlocked.CompareExchange
-                                (ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
-                                break;
+                            // If the record is Invalid or its address is in the from/to HeadAddress range, unlink it from the chain.
+                            if (ri.Invalid || (la >= fromHeadAddress && la < toHeadAddress))
+                            {
+                                if (ri.IsLocked)
+                                {
+                                    // If it is not Invalid, we must Seal it so there is no possibility it will be missed while we're in the process
+                                    // of transferring it to the Lock Table. Use manualLocking as we want to transfer the locks, not drain them.
+                                    if (!ri.Invalid)
+                                        ri.Seal(manualLocking: true);
 
-                            tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                                    // Now get it into the lock table, so it is ready as soon as the CAS removes this record from the RC chain.
+                                    this.LockTable.TransferFrom(ref key, ri);
+                                }
+
+                                // Swap in the next entry in the chain, unless somee other thread has done it for us.
+                                // Note that this removes the entire leading readcache-entry set of records from the hash table pointer. 
+                                while (tagExists && entry.ReadCache)
+                                {
+                                    var updatedEntry = default(HashBucketEntry);
+                                    updatedEntry.Tag = tag;
+                                    updatedEntry.Address = ri.PreviousAddress;
+                                    updatedEntry.Pending = entry.Pending;
+                                    updatedEntry.Tentative = false;
+
+                                    if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
+                                    {
+                                        entry.word = updatedEntry.word;
+                                        break;
+                                    }
+
+                                    tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                                }
+                            }
+                            else
+                                entry.word = ri.PreviousAddress;
                         }
                     }
                 }

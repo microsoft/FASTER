@@ -26,11 +26,6 @@ namespace FASTER.core
         /// <inheritdoc />
         public override bool ConcurrentWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref RecordInfo recordInfo, long address)
         {
-            // We can write the source (src) data to the existing destination (dst) in-place, 
-            // only if there is sufficient space
-            if (recordInfo.Sealed)
-                return false; 
-            
             if (dst.Length < src.Length)
             {
                 return false;

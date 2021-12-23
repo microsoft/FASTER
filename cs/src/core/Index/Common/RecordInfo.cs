@@ -84,7 +84,10 @@ namespace FASTER.core
         /// Take exclusive (write) lock on RecordInfo
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void LockExclusive() => TryLockExclusive(spinCount: -1);
+        public bool LockExclusive() => TryLockExclusive(spinCount: -1);
+
+        // For new records, which don't need the Interlocked overhead.
+        internal void SetLockExclusiveBit() => this.word |= kExclusiveLockBitMask;
 
         /// <summary>
         /// Unlock RecordInfo that was previously locked for exclusive access, via <see cref="LockExclusive"/>
@@ -107,6 +110,8 @@ namespace FASTER.core
             // Acquire exclusive lock (readers may still be present; we'll drain them later)
             while (true)
             {
+                if (IsIntermediate)
+                    return false;
                 long expected_word = word;
                 if ((expected_word & kExclusiveLockBitMask) == 0)
                 {
@@ -126,7 +131,7 @@ namespace FASTER.core
         /// Take shared (read) lock on RecordInfo
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void LockShared() => TryLockShared(spinCount: -1);
+        public bool LockShared() => TryLockShared(spinCount: -1);
 
         /// <summary>
         /// Unlock RecordInfo that was previously locked for shared access, via <see cref="LockShared"/>
@@ -149,6 +154,8 @@ namespace FASTER.core
             // Acquire shared lock
             while (true)
             {
+                if (IsIntermediate)
+                    return false;
                 long expected_word = word;
                 if (((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
                     && (expected_word & kSharedLockMaskInWord) != kSharedLockMaskInWord) // shared lock is not full
@@ -166,7 +173,7 @@ namespace FASTER.core
         /// Take shared (read) lock on RecordInfo
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void LockExclusiveFromShared() => TryLockExclusiveFromShared(spinCount: -1);
+        public bool LockExclusiveFromShared() => TryLockExclusiveFromShared(spinCount: -1);
 
         /// <summary>
         /// Promote a shared (read) lock on RecordInfo to exclusive
@@ -179,6 +186,9 @@ namespace FASTER.core
             // Acquire shared lock
             while (true)
             {
+                // Even though we own the lock here, it might be in the process of eviction, which seals it
+                if (IsIntermediate)
+                    return false;
                 long expected_word = word;
                 if ((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
                 {
@@ -249,25 +259,24 @@ namespace FASTER.core
 
         // Ensure we have exclusive access before sealing.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Seal(bool isManualLocking = false)
+        public bool Seal(bool manualLocking = false)
         {
-            if (isManualLocking)
-            {
-                // We own this lock, so just set the sealed bit.
-                word |= kSealedBitMask;
-                return true;
-            }
+            // If manualLocking, we own this lock or are transferring to the Lock Table, so just set the sealed bit.
+            long sealBits = manualLocking ? kSealedBitMask : kExclusiveLockBitMask | kSealedBitMask;
             while (true)
             {
-                if ((word & kExclusiveLockBitMask) == 0)
+                if (IsIntermediate)
+                    return false;
+                if ((word & sealBits) == 0)
                 {
                     long expected_word = word;
-                    long new_word = word | kExclusiveLockBitMask | kSealedBitMask;
+                    long new_word = word | sealBits;
                     long current_word = Interlocked.CompareExchange(ref word, new_word, expected_word);
                     if (expected_word == current_word)
                     {
-                        // Lock+Seal succeeded; remove lock
-                        this.UnlockExclusive();
+                        // (Lock+)Seal succeeded; remove lock if not doing manual locking
+                        if (!manualLocking)
+                            this.UnlockExclusive();
                         return true;
                     }
 
