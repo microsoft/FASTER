@@ -1273,8 +1273,17 @@ namespace FASTER.core
         /// </summary>
         private void OnPagesReadyToClose(long oldHeadAddress, long newHeadAddress)
         {
-            if (ReadCache && (newHeadAddress > HeadAddress))
-                EvictCallback(HeadAddress, newHeadAddress);
+            if (newHeadAddress > HeadAddress)
+            {
+                if (ReadCache)
+                    EvictCallback(HeadAddress, newHeadAddress);
+                for (long closePageAddress = HeadAddress & ~PageSizeMask; closePageAddress < newHeadAddress; closePageAddress += PageSize)
+                {
+                    long start = HeadAddress > closePageAddress ? HeadAddress : closePageAddress;
+                    long end = newHeadAddress < closePageAddress + PageSize ? newHeadAddress : closePageAddress + PageSize;
+                    MemoryPageLockEvictionScan(start, end);
+                }
+            }
 
             if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out oldHeadAddress))
             {

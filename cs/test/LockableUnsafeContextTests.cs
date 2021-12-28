@@ -669,8 +669,96 @@ namespace FASTER.test.LockableUnsafeContext
         [Category(TestUtils.SmokeTestCategory)]
         public void LockAndUnlockInLockTableOnlyTest()
         {
-            // TODO this
-            // TODO: MemoryPageLockEvictionScan tests
+            // For this, just don't load anything, and it will happen in lock table.
+            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var luContext = session.GetLockableUnsafeContext();
+
+            Dictionary<int, LockType> locks = new();
+            var rng = new Random(101);
+            foreach (var key in Enumerable.Range( 0, numRecords).Select(ii => rng.Next(numRecords)))
+                locks[key] = (key & 1) == 0 ? LockType.Exclusive : LockType.Shared;
+
+            // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
+            foreach (var key in locks.Keys.OrderBy(k => k))
+                luContext.Lock(key, locks[key]);
+
+            Assert.IsTrue(fht.LockTable.IsActive);
+            Assert.AreEqual(locks.Count, fht.LockTable.dict.Count);
+
+            foreach (var key in locks.Keys)
+            {
+                var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
+                Assert.IsTrue(found);
+                var lockType = locks[key];
+                Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
+                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
+
+                luContext.Unlock(key, lockType);
+                Assert.IsFalse(fht.LockTable.Get(key, out _));
+            }
+
+            Assert.IsFalse(fht.LockTable.IsActive);
+            Assert.AreEqual(0, fht.LockTable.dict.Count);
+        }
+
+        [Test]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
+        [Category(TestUtils.SmokeTestCategory)]
+        public void EvictFromMainLogToLockTableTest()
+        {
+            Populate();
+
+            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var luContext = session.GetLockableUnsafeContext();
+
+            Dictionary<int, LockType> locks = new();
+            var rng = new Random(101);
+            foreach (var key in Enumerable.Range(0, numRecords / 5).Select(ii => rng.Next(numRecords)))
+                locks[key] = (key & 1) == 0 ? LockType.Exclusive : LockType.Shared;
+
+            // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
+            foreach (var key in locks.Keys.OrderBy(k => k))
+                luContext.Lock(key, locks[key]);
+
+            // All locking should have been done in main log.
+            Assert.IsFalse(fht.LockTable.IsActive);
+            Assert.AreEqual(0, fht.LockTable.dict.Count);
+
+            // Now evict main log which should transfer records to the LockTable.
+            fht.Log.FlushAndEvict(wait: true);
+
+            Assert.IsTrue(fht.LockTable.IsActive);
+            Assert.AreEqual(locks.Count, fht.LockTable.dict.Count);
+
+            // Verify LockTable
+            foreach (var key in locks.Keys)
+            {
+                var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
+                Assert.IsTrue(found);
+                var lockType = locks[key];
+                Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
+                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
+
+                // Just a little more testing of Read/CTT transferring from LockTable
+                int input = 0, output = 0, localKey = key;
+                RecordMetadata recordMetadata = default;
+                var status = session.Read(ref localKey, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
+                Assert.AreEqual(Status.PENDING, status);
+                session.CompletePending(wait: true);
+
+                Assert.IsFalse(fht.LockTable.Get(key, out _));
+                var (isLockedExclusive, isLockedShared) = luContext.IsLocked(localKey);
+                Assert.AreEqual(lockType == LockType.Exclusive, isLockedExclusive);
+                Assert.AreEqual(lockType != LockType.Exclusive, isLockedShared);
+
+                luContext.Unlock(key, lockType);
+                (isLockedExclusive, isLockedShared) = luContext.IsLocked(localKey);
+                Assert.IsFalse(isLockedExclusive);
+                Assert.IsFalse(isLockedShared);
+            }
+
+            Assert.IsFalse(fht.LockTable.IsActive);
+            Assert.AreEqual(0, fht.LockTable.dict.Count);
         }
     }
 }
