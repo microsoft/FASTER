@@ -58,12 +58,12 @@ namespace FASTER.core
         IFasterKV<Key, Value>
     {
         internal readonly AllocatorBase<Key, Value> hlog;
-        private readonly AllocatorBase<Key, Value> readcache;
+        internal readonly AllocatorBase<Key, Value> readcache;
 
         /// <summary>
         /// Compares two keys
         /// </summary>
-        protected readonly IFasterEqualityComparer<Key> comparer;
+        internal protected readonly IFasterEqualityComparer<Key> comparer;
 
         internal readonly bool UseReadCache;
         private readonly CopyReadsToTail CopyReadsToTail;

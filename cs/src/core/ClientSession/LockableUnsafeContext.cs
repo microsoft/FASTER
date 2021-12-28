@@ -40,20 +40,32 @@ namespace FASTER.core
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResumeThread() => clientSession.UnsafeResumeThread();
+        public void ResumeThread()
+        {
+            CheckAcquired();
+            clientSession.UnsafeResumeThread();
+        }
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
         /// </summary>
         /// <param name="resumeEpoch">Epoch that the session resumed on; can be saved to see if epoch has changed</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResumeThread(out int resumeEpoch) => clientSession.UnsafeResumeThread(out resumeEpoch);
+        public void ResumeThread(out int resumeEpoch)
+        {
+            CheckAcquired();
+            clientSession.UnsafeResumeThread(out resumeEpoch);
+        }
 
         /// <summary>
         /// Suspend session on current thread
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SuspendThread() => clientSession.UnsafeSuspendThread();
+        public void SuspendThread()
+        {
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            clientSession.UnsafeSuspendThread();
+        }
 
         /// <summary>
         /// Current epoch of the session
@@ -67,7 +79,7 @@ namespace FASTER.core
         /// <param name="wait">Wait for all pending operations on session to complete</param>
         /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
         /// <returns>True if all pending operations have completed, false otherwise</returns>
-        public bool UnsafeCompletePending(bool wait = false, bool spinWaitForCommit = false)
+        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
             => this.clientSession.UnsafeCompletePending(this.FasterSession, false, wait, spinWaitForCommit);
 
         /// <summary>
@@ -78,7 +90,7 @@ namespace FASTER.core
         /// <param name="wait">Wait for all pending operations on session to complete</param>
         /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
         /// <returns>True if all pending operations have completed, false otherwise</returns>
-        public bool UnsafeCompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             => this.clientSession.UnsafeCompletePendingWithOutputs(this.FasterSession, out completedOutputs, wait, spinWaitForCommit);
 
         #region Acquire and Dispose
@@ -99,6 +111,7 @@ namespace FASTER.core
                 throw new FasterException("Disposing LockableUnsafeContext with a protected epoch; must call UnsafeSuspendThread");
             if (TotalLockCount > 0)
                 throw new FasterException($"Disposing LockableUnsafeContext with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
+            this.isAcquired = false;
             Interlocked.Decrement(ref this.clientSession.fht.NumActiveLockingSessions);
         }
         #endregion Acquire and Dispose

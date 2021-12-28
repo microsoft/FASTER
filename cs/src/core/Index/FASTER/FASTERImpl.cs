@@ -383,14 +383,14 @@ namespace FASTER.core
             var logicalAddress = entry.Address;
             var physicalAddress = default(long);
 
-            long lastReadCachePhysicalAddress = Constants.kInvalidAddress;
-            long prevFirstReadCacheLogicalAddress = Constants.kInvalidAddress;
+            long lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
+            long prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
             if (UseReadCache)
             {
-                prevFirstReadCacheLogicalAddress = logicalAddress;
-                SkipReadCache(ref logicalAddress, out lastReadCachePhysicalAddress);
-                if (prevFirstReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
-                    prevFirstReadCacheLogicalAddress = Constants.kInvalidAddress;
+                prevHighestReadCacheLogicalAddress = logicalAddress;
+                SkipReadCache(ref logicalAddress, out lowestReadCachePhysicalAddress);
+                if (prevHighestReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
+                    prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
             }
             var latestLogicalAddress = logicalAddress;
 
@@ -511,8 +511,8 @@ namespace FASTER.core
             // Invalidate the entry in the read cache, as we did not do IPU.
             if (UseReadCache)
             {
-                prevFirstReadCacheLogicalAddress = logicalAddress;
-                if (!SkipAndInvalidateReadCache(ref logicalAddress, ref key, out lastReadCachePhysicalAddress, out OperationStatus internalStatus))
+                var la = prevHighestReadCacheLogicalAddress;
+                if (!SkipAndInvalidateReadCache(ref la, ref key, out lowestReadCachePhysicalAddress, out OperationStatus internalStatus))
                     return internalStatus;
             }
 
@@ -520,7 +520,7 @@ namespace FASTER.core
             {
                 // Immutable region or new record
                 status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, tag, entry,
-                                               latestLogicalAddress, prevFirstReadCacheLogicalAddress, lastReadCachePhysicalAddress, unsealPhysicalAddress);
+                                               latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, unsealPhysicalAddress);
                 if (status != OperationStatus.SUCCESS)
                 {
                     if (unsealPhysicalAddress != Constants.kInvalidAddress)
@@ -641,7 +641,7 @@ namespace FASTER.core
 
         private OperationStatus CreateNewRecordUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                              FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, ushort tag, HashBucketEntry entry,
-                                                                                             long latestLogicalAddress, long prevFirstReadCacheLogicalAddress, long lastReadCachePhysicalAddress, long unsealPhysicalAddress) 
+                                                                                             long latestLogicalAddress, long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealPhysicalAddress) 
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
@@ -660,8 +660,12 @@ namespace FASTER.core
 
             fasterSession.SingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress);
 
+            bool lockTableEntryExists = false;
+            if (unsealPhysicalAddress == Constants.kInvalidAddress && LockTable.IsActive && !LockTable.TrySeal(ref key, out lockTableEntryExists) && lockTableEntryExists)
+                return OperationStatus.RETRY_NOW;
+
             bool success = true;
-            if (lastReadCachePhysicalAddress == Constants.kInvalidAddress)
+            if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
             {
                 // Insert as the first record in the hash chain.
                 var updatedEntry = default(HashBucketEntry);
@@ -677,7 +681,7 @@ namespace FASTER.core
             else
             {
                 // Splice into the gap of the last readcache/first main log entries.
-                ref RecordInfo rcri = ref readcache.GetInfo(lastReadCachePhysicalAddress);
+                ref RecordInfo rcri = ref readcache.GetInfo(lowestReadCachePhysicalAddress);
                 if (rcri.PreviousAddress != latestLogicalAddress)
                     return OperationStatus.RETRY_NOW;
                 
@@ -685,15 +689,18 @@ namespace FASTER.core
                 success = rcri.TryUpdateAddress(newLogicalAddress);
 
                 // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
-                InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevFirstReadCacheLogicalAddress);
+                InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevHighestReadCacheLogicalAddress);
             }
 
             if (success)
             {
                 if (unsealPhysicalAddress != Constants.kInvalidAddress)
                     recordInfo.CopyLocksFrom(hlog.GetInfo(unsealPhysicalAddress));
-                else if (LockTable.IsActive && !LockTable.ApplyToLogRecord(ref key, ref recordInfo))
+                else if (lockTableEntryExists && !LockTable.ApplyToLogRecord(ref key, ref recordInfo))
+                {
+                    LockTable.Unseal(ref key);
                     return OperationStatus.RETRY_NOW;
+                }
                 recordInfo.Tentative = false;
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress);
@@ -787,14 +794,14 @@ namespace FASTER.core
             FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
             var logicalAddress = entry.Address;
 
-            long lastReadCachePhysicalAddress = Constants.kInvalidAddress;
-            long prevFirstReadCacheLogicalAddress = Constants.kInvalidAddress;
+            long lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
+            long prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
             if (UseReadCache)
             {
-                prevFirstReadCacheLogicalAddress = logicalAddress;
-                SkipReadCache(ref logicalAddress, out lastReadCachePhysicalAddress);
-                if (prevFirstReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
-                    prevFirstReadCacheLogicalAddress = Constants.kInvalidAddress;
+                prevHighestReadCacheLogicalAddress = logicalAddress;
+                SkipReadCache(ref logicalAddress, out lowestReadCachePhysicalAddress);
+                if (prevHighestReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
+                    prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
             }
             var latestLogicalAddress = logicalAddress;
 
@@ -864,8 +871,10 @@ namespace FASTER.core
                     {
                         if (fasterSession.InPlaceUpdater(ref key, ref input, ref recordValue, ref output, ref recordInfo, logicalAddress, out bool lockFailed))
                         {
-                            if (sessionCtx.phase == Phase.REST) hlog.MarkPage(logicalAddress, sessionCtx.version);
-                            else hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
+                            if (sessionCtx.phase == Phase.REST)
+                                hlog.MarkPage(logicalAddress, sessionCtx.version);
+                            else
+                                hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
                             pendingContext.recordInfo = recordInfo;
                             pendingContext.logicalAddress = logicalAddress;
                             status = OperationStatus.SUCCESS;
@@ -939,15 +948,15 @@ namespace FASTER.core
             // Invalidate the entry in the read cache, as we did not do IPU.
             if (UseReadCache)
             {
-                prevFirstReadCacheLogicalAddress = logicalAddress;
-                if (!SkipAndInvalidateReadCache(ref logicalAddress, ref key, out lastReadCachePhysicalAddress, out OperationStatus internalStatus))
+                var la = prevHighestReadCacheLogicalAddress;
+                if (!SkipAndInvalidateReadCache(ref la, ref key, out lowestReadCachePhysicalAddress, out OperationStatus internalStatus))
                     return internalStatus;
             }
 
             if (latchDestination != LatchDestination.CreatePendingContext)
             {
                 status = CreateNewRecordRMW(ref key, ref input, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
-                                            latestLogicalAddress, prevFirstReadCacheLogicalAddress, lastReadCachePhysicalAddress, unsealPhysicalAddress);
+                                            latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, unsealPhysicalAddress);
                 if (status != OperationStatus.SUCCESS)
                 {
                     if (unsealPhysicalAddress != Constants.kInvalidAddress)
@@ -1069,7 +1078,7 @@ namespace FASTER.core
         private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                           FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, long logicalAddress, 
                                                                                           long physicalAddress, ushort tag, HashBucketEntry entry, long latestLogicalAddress,
-                                                                                          long prevFirstReadCacheLogicalAddress, long lastReadCachePhysicalAddress, long unsealPhysicalAddress)
+                                                                                          long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealPhysicalAddress)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // Determine if we should allocate a new record
@@ -1131,8 +1140,12 @@ namespace FASTER.core
                 return OperationStatus.RETRY_NOW;
             }
 
+            bool lockTableEntryExists = false;
+            if (unsealPhysicalAddress == Constants.kInvalidAddress && LockTable.IsActive && !LockTable.TrySeal(ref key, out lockTableEntryExists) && lockTableEntryExists)
+                return OperationStatus.RETRY_NOW;
+
             bool success = true;
-            if (lastReadCachePhysicalAddress == Constants.kInvalidAddress)
+            if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
             {
                 // Insert as the first record in the hash chain.
                 var updatedEntry = default(HashBucketEntry);
@@ -1148,7 +1161,7 @@ namespace FASTER.core
             else
             {
                 // Splice into the gap of the last readcache/first main log entries.
-                ref RecordInfo rcri = ref readcache.GetInfo(lastReadCachePhysicalAddress);
+                ref RecordInfo rcri = ref readcache.GetInfo(lowestReadCachePhysicalAddress);
                 if (rcri.PreviousAddress != latestLogicalAddress)
                     return OperationStatus.RETRY_NOW;
 
@@ -1156,15 +1169,18 @@ namespace FASTER.core
                 success = rcri.TryUpdateAddress(newLogicalAddress);
 
                 // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
-                InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevFirstReadCacheLogicalAddress);
+                InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevHighestReadCacheLogicalAddress);
             }
 
             if (success)
             {
                 if (unsealPhysicalAddress != Constants.kInvalidAddress)
                     recordInfo.CopyLocksFrom(hlog.GetInfo(unsealPhysicalAddress));
-                else if (LockTable.IsActive && !LockTable.ApplyToLogRecord(ref key, ref recordInfo))
+                else if (lockTableEntryExists && !LockTable.ApplyToLogRecord(ref key, ref recordInfo))
+                {
+                    LockTable.Unseal(ref key);
                     return OperationStatus.RETRY_NOW;
+                }
                 recordInfo.Tentative = false;
 
                 // If IU, status will be NOTFOUND; return that.
@@ -1265,14 +1281,14 @@ namespace FASTER.core
 
             logicalAddress = entry.Address;
 
-            long lastReadCachePhysicalAddress = Constants.kInvalidAddress;
-            long prevFirstReadCacheLogicalAddress = Constants.kInvalidAddress;
+            long lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
+            long prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
             if (UseReadCache)
             {
-                prevFirstReadCacheLogicalAddress = logicalAddress;
-                SkipReadCache(ref logicalAddress, out lastReadCachePhysicalAddress);
-                if (prevFirstReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
-                    prevFirstReadCacheLogicalAddress = Constants.kInvalidAddress;
+                prevHighestReadCacheLogicalAddress = logicalAddress;
+                SkipReadCache(ref logicalAddress, out lowestReadCachePhysicalAddress);
+                if (prevHighestReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
+                    prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
             }
             var latestLogicalAddress = logicalAddress;
 
@@ -1419,6 +1435,14 @@ namespace FASTER.core
 #region Create new record in the mutable region
             CreateNewRecord:
             {
+                // Invalidate the entry in the read cache, as we did not do IPU.
+                if (UseReadCache)
+                {
+                    var la = prevHighestReadCacheLogicalAddress;
+                    if (!SkipAndInvalidateReadCache(ref la, ref key, out lowestReadCachePhysicalAddress, out OperationStatus internalStatus))
+                        return internalStatus;
+                }
+
                 var value = default(Value);
                 // Immutable region or new record
                 // Allocate default record size for tombstone
@@ -1443,8 +1467,12 @@ namespace FASTER.core
                                latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
 
+                bool lockTableEntryExists = false;
+                if (unsealPhysicalAddress == Constants.kInvalidAddress && LockTable.IsActive && !LockTable.TrySeal(ref key, out lockTableEntryExists) && lockTableEntryExists)
+                    return OperationStatus.RETRY_NOW;
+
                 bool success = true;
-                if (lastReadCachePhysicalAddress == Constants.kInvalidAddress)
+                if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
                 {
                     // Insert as the first record in the hash chain.
                     var updatedEntry = default(HashBucketEntry);
@@ -1460,7 +1488,7 @@ namespace FASTER.core
                 else
                 {
                     // Splice into the gap of the last readcache/first main log entries.
-                    ref RecordInfo rcri = ref readcache.GetInfo(lastReadCachePhysicalAddress);
+                    ref RecordInfo rcri = ref readcache.GetInfo(lowestReadCachePhysicalAddress);
                     if (rcri.PreviousAddress != latestLogicalAddress)
                         return OperationStatus.RETRY_NOW;
 
@@ -1468,15 +1496,18 @@ namespace FASTER.core
                     success = rcri.TryUpdateAddress(newLogicalAddress);
 
                     // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
-                    InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevFirstReadCacheLogicalAddress);
+                    InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevHighestReadCacheLogicalAddress);
                 }
 
                 if (success)
                 {
                     if (unsealPhysicalAddress != Constants.kInvalidAddress)
                         recordInfo.CopyLocksFrom(hlog.GetInfo(unsealPhysicalAddress));
-                    else if (LockTable.IsActive && !LockTable.ApplyToLogRecord(ref key, ref recordInfo))
+                    else if (lockTableEntryExists && !LockTable.ApplyToLogRecord(ref key, ref recordInfo))
+                    {
+                        LockTable.Unseal(ref key);
                         return OperationStatus.RETRY_NOW;
+                    }
                     recordInfo.Tentative = false;
 
                     // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
@@ -1567,7 +1598,7 @@ namespace FASTER.core
             OperationStatus status;
             if (UseReadCache)
             {
-                if (LockReadCacheRecord(logicalAddress, ref key, lockOp, out lockInfo, out status))
+                if (DoReadCacheRecordLockOperation(logicalAddress, ref key, lockOp, out lockInfo, out status))
                     return status;
             }
 
@@ -1798,7 +1829,7 @@ namespace FASTER.core
             ref RecordInfo oldRecordInfo = ref hlog.GetInfoFromBytePointer(physicalAddress);
             
             InternalTryCopyToTail(opCtx, ref pendingContext, ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), 
-                                 ref pendingContext.output, logicalAddress, fasterSession, currentCtx);
+                                 ref pendingContext.output, logicalAddress, fasterSession, currentCtx, noReadCache: pendingContext.CopyReadsToTail);
         }
 
         /// <summary>
@@ -1847,8 +1878,8 @@ namespace FASTER.core
             var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
-            long lastReadCachePhysicalAddress = Constants.kInvalidAddress;
-            long prevFirstReadCacheLogicalAddress = Constants.kInvalidAddress;
+            long lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
+            long prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
 
 #region Trace Back for Record on In-Memory HybridLog
             while (true)
@@ -1860,11 +1891,11 @@ namespace FASTER.core
                 // Invalidate the entry in the read cache, as we did not do IPU.
                 if (UseReadCache)
                 {
-                    prevFirstReadCacheLogicalAddress = logicalAddress;
-                    if (!SkipAndInvalidateReadCache(ref logicalAddress, ref key, out lastReadCachePhysicalAddress, out status))
+                    prevHighestReadCacheLogicalAddress = logicalAddress;
+                    if (!SkipAndInvalidateReadCache(ref logicalAddress, ref key, out lowestReadCachePhysicalAddress, out status))
                         return status;
-                    if (prevFirstReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
-                        prevFirstReadCacheLogicalAddress = Constants.kInvalidAddress;
+                    if (prevHighestReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
+                        prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
                 }
                 var latestLogicalAddress = logicalAddress;
 
@@ -1943,8 +1974,12 @@ namespace FASTER.core
                     status = OperationStatus.SUCCESS;
                 }
 
+                bool lockTableEntryExists = false;
+                if (LockTable.IsActive && !LockTable.TrySeal(ref key, out lockTableEntryExists) && lockTableEntryExists)
+                    return OperationStatus.RETRY_NOW;
+
                 bool success = true;
-                if (lastReadCachePhysicalAddress == Constants.kInvalidAddress)
+                if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
                 {
                     // Insert as the first record in the hash chain.
                     var updatedEntry = default(HashBucketEntry);
@@ -1960,7 +1995,7 @@ namespace FASTER.core
                 else
                 {
                     // Splice into the gap of the last readcache/first main log entries.
-                    ref RecordInfo rcri = ref readcache.GetInfo(lastReadCachePhysicalAddress);
+                    ref RecordInfo rcri = ref readcache.GetInfo(lowestReadCachePhysicalAddress);
                     if (rcri.PreviousAddress != latestLogicalAddress)
                         return OperationStatus.RETRY_NOW;
 
@@ -1968,13 +2003,16 @@ namespace FASTER.core
                     success = rcri.TryUpdateAddress(newLogicalAddress);
 
                     // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
-                    InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevFirstReadCacheLogicalAddress);
+                    InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevHighestReadCacheLogicalAddress);
                 }
 
                 if (success)
                 {
-                    if (LockTable.IsActive && !LockTable.ApplyToLogRecord(ref key, ref recordInfo))
+                    if (lockTableEntryExists && !LockTable.ApplyToLogRecord(ref key, ref recordInfo))
+                    {
+                        LockTable.Unseal(ref key);
                         return OperationStatus.RETRY_NOW;
+                    }
                     recordInfo.Tentative = false;
 
                     // If IU, status will be NOTFOUND; return that.
@@ -2373,14 +2411,14 @@ namespace FASTER.core
 
             var prevTailAddress = pendingContext.recordInfo.PreviousAddress;
 
-            long lastReadCachePhysicalAddress = Constants.kInvalidAddress;
-            long prevFirstReadCacheLogicalAddress = Constants.kInvalidAddress;
+            long lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
+            long prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
             if (UseReadCache)
             {
-                prevFirstReadCacheLogicalAddress = logicalAddress;
-                SkipReadCache(ref logicalAddress, out lastReadCachePhysicalAddress);
-                if (prevFirstReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
-                    prevFirstReadCacheLogicalAddress = Constants.kInvalidAddress;
+                prevHighestReadCacheLogicalAddress = logicalAddress;
+                SkipReadCache(ref logicalAddress, out lowestReadCachePhysicalAddress);
+                if (prevHighestReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
+                    prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
             }
             var latestLogicalAddress = logicalAddress;
 
@@ -2419,7 +2457,7 @@ namespace FASTER.core
             if (copyToReadCache)
             {
                 // Copy to readcache should just append at the tail (becoming the first, not last, readcache record in the chain).
-                lastReadCachePhysicalAddress = Constants.kInvalidAddress;
+                lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
 
                 BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
@@ -2451,8 +2489,12 @@ namespace FASTER.core
                                         ref recordInfo, newLogicalAddress);
             }
 
+            bool lockTableEntryExists = false;
+            if (LockTable.IsActive && !LockTable.TrySeal(ref key, out lockTableEntryExists) && lockTableEntryExists)
+                return OperationStatus.RETRY_NOW;
+
             bool success = true;
-            if (lastReadCachePhysicalAddress == Constants.kInvalidAddress)
+            if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
             {
                 // Insert as the first record in the hash chain--this can be either a readcache entry or a main-log entry
                 // when there are no readcache records.
@@ -2499,7 +2541,7 @@ namespace FASTER.core
             else
             {
                 // Splice into the gap of the last readcache/first main log entries.
-                ref RecordInfo rcri = ref readcache.GetInfo(lastReadCachePhysicalAddress);
+                ref RecordInfo rcri = ref readcache.GetInfo(lowestReadCachePhysicalAddress);
                 if (rcri.PreviousAddress != latestLogicalAddress)
                     return OperationStatus.RETRY_NOW;
 
@@ -2507,7 +2549,7 @@ namespace FASTER.core
                 success = rcri.TryUpdateAddress(newLogicalAddress);
 
                 // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
-                InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevFirstReadCacheLogicalAddress);
+                InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevHighestReadCacheLogicalAddress);
             }
 
             if (!success)
@@ -2520,8 +2562,9 @@ namespace FASTER.core
                 var log = copyToReadCache ? readcache : hlog;
                 ref RecordInfo recordInfo = ref log.GetInfo(newPhysicalAddress);
 
-                if (LockTable.IsActive && !LockTable.ApplyToLogRecord(ref key, ref recordInfo))
+                if (lockTableEntryExists && !LockTable.ApplyToLogRecord(ref key, ref recordInfo))
                 {
+                    LockTable.Unseal(ref key);
                     recordInfo.SetInvalid();
                     recordInfo.Tentative = false;
                     return OperationStatus.RETRY_NOW;
@@ -2807,13 +2850,13 @@ namespace FASTER.core
         }
 
         // Skip over all readcache records in this key's chain (advancing logicalAddress to the first non-readcache record we encounter).
-        private void SkipReadCache(ref long logicalAddress, out long lastReadCachePhysicalAddress)
+        private void SkipReadCache(ref long logicalAddress, out long lowestReadCachePhysicalAddress)
         {
             HashBucketEntry entry = default;
             entry.word = logicalAddress;
             if (!entry.ReadCache)
             {
-                lastReadCachePhysicalAddress = Constants.kInvalidAddress;
+                lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
                 return;
             }
 
@@ -2821,7 +2864,7 @@ namespace FASTER.core
 
             while (true)
             {
-                lastReadCachePhysicalAddress = physicalAddress;
+                lowestReadCachePhysicalAddress = physicalAddress;
                 logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
                 entry.word = logicalAddress;
                 if (!entry.ReadCache) 
@@ -2830,7 +2873,7 @@ namespace FASTER.core
             }
         }
 
-        private bool LockReadCacheRecord(long logicalAddress, ref Key key, LockOperation lockOp, out RecordInfo lockInfo, out OperationStatus internalStatus)
+        private bool DoReadCacheRecordLockOperation(long logicalAddress, ref Key key, LockOperation lockOp, out RecordInfo lockInfo, out OperationStatus internalStatus)
         {
             HashBucketEntry entry = default;
             lockInfo = default;
@@ -2931,19 +2974,19 @@ namespace FASTER.core
             }
         }
 
-        private bool SkipAndInvalidateReadCache(ref long logicalAddress, ref Key key, out long lastReadCachePhysicalAddress, out OperationStatus internalStatus)
+        private bool SkipAndInvalidateReadCache(ref long logicalAddress, ref Key key, out long lowestReadCachePhysicalAddress, out OperationStatus internalStatus)
         {
             internalStatus = OperationStatus.SUCCESS;
             HashBucketEntry entry = default;
             entry.word = logicalAddress;
             if (!entry.ReadCache)
             {
-                lastReadCachePhysicalAddress = Constants.kInvalidAddress;
+                lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
                 return true;
             }
 
             var physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
-            lastReadCachePhysicalAddress = physicalAddress;
+            lowestReadCachePhysicalAddress = physicalAddress;
 
             while (true)
             {
@@ -2957,7 +3000,7 @@ namespace FASTER.core
                     recordInfo.UnlockExclusive();
                 }
 
-                lastReadCachePhysicalAddress = physicalAddress;
+                lowestReadCachePhysicalAddress = physicalAddress;
                 logicalAddress = recordInfo.PreviousAddress;
                 entry.word = logicalAddress;
                 if (!entry.ReadCache) 
@@ -2966,7 +3009,7 @@ namespace FASTER.core
             }
         }
 
-        private void ReadCacheEvict(long fromHeadAddress, long toHeadAddress)
+        internal void ReadCacheEvict(long fromHeadAddress, long toHeadAddress)
         {
             // fromHeadAddress and toHeadAddress are in the readCache
             var bucket = default(HashBucket*);
@@ -2982,72 +3025,115 @@ namespace FASTER.core
                 physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
                 var (actualSize, allocatedSize) = readcache.GetRecordSize(physicalAddress);
                 ref RecordInfo info = ref readcache.GetInfo(physicalAddress);
-                if (!info.Invalid)
+
+                // We can't get a key from an invalid record so trace back to a valid one if necessary (and possible).
+                var keyPhysicalAddress = physicalAddress;
+                var keyLog = readcache;
+                if (info.Invalid)
                 {
-                    ref Key key = ref readcache.GetKey(physicalAddress);
+                    RecordInfo ri = info;
+                    for (var prevAddress = info.PreviousAddress; prevAddress > Constants.kInvalidAddress; /* in loop */)
+                    {
+                        HashBucketEntry entry = new() { word = prevAddress };
+                        keyLog = entry.ReadCache ? readcache : hlog;
+                        keyPhysicalAddress = keyLog.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
+                        ri = keyLog.GetInfo(keyPhysicalAddress);
+
+                        // Stop at the first valid or MainLog record.
+                        if (!ri.Invalid || !entry.ReadCache)
+                            break;
+                        prevAddress = ri.PreviousAddress;
+                    }
+
+                    // Found no valid record so can't look up key
+                    if (ri.Invalid)
+                        keyLog = null;
+                }
+
+                if (keyLog is not null)
+                {
+                    ref Key key = ref keyLog.GetKey(keyPhysicalAddress);
 
                     // If there is a readcache entry for this hash, the chain will always be of the form:
-                    //      hashtable -> zero or more readcache entries in latest-to-earliest order -> main FKV entry.
+                    //      hashtable -> zero or more readcache entries in latest-to-earliest order -> main FKV records.
 
                     // If this to-be-evicted readcache record's prevAddress points to a record in the main FKV, evict all Invalid
                     // readcache records in this key's readcache chain in the FKV, as well as any entries in the readcache range.
                     // The ordering of readcache records ensures we won't miss any readcache records that are eligible for eviction,
-                    // while only executing the body of the loop once for each hash chain.
+                    // while only executing the body of the loop once for each hash chain. Note: This means we may leave some Invalid
+                    // entries in hash chains where the RC->MainLog boundary is not contained in the range to be evicted.
                     HashBucketEntry entry = default;
                     entry.word = info.PreviousAddress;
                     if (!entry.ReadCache)
                     {
-                        // Find the hash index entry for the key in the main FKV.
-                        var hash = comparer.GetHashCode64(ref key);
-                        var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-
-                        entry = default;
-                        var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
-                        if (!tagExists)
-                            continue;
-
-                        // Traverse the chain of readcache entries for this key. 
-                        while (entry.ReadCache)
+                        for (var restartChain = true; restartChain; /* in loop */)
                         {
-                            var la = entry.Address & ~Constants.kReadCacheBitMask;
-                            var pa = readcache.GetPhysicalAddress(la);
-                            ref RecordInfo ri = ref readcache.GetInfo(pa);
+                            restartChain = false;
 
-                            // If the record is Invalid or its address is in the from/to HeadAddress range, unlink it from the chain.
-                            if (ri.Invalid || (la >= fromHeadAddress && la < toHeadAddress))
+                            // Find the hash index entry for the key in the main FKV.
+                            var hash = comparer.GetHashCode64(ref key);
+                            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+                            entry = default;
+                            var tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                            if (!tagExists)
+                                continue;
+
+                            // Traverse the chain of readcache entries for this key.
+                            long prevPhysicalAddress = Constants.kInvalidAddress;
+                            while (entry.ReadCache && !restartChain)
                             {
-                                if (ri.IsLocked)
+                                var la = entry.Address & ~Constants.kReadCacheBitMask;
+                                var pa = readcache.GetPhysicalAddress(la);
+                                ref RecordInfo ri = ref readcache.GetInfo(pa);
+
+                                // If the record is Invalid or its address is in the from/to HeadAddress range, unlink it from the chain.
+                                if (ri.Invalid || (la >= fromHeadAddress && la < toHeadAddress))
                                 {
-                                    // If it is not Invalid, we must Seal it so there is no possibility it will be missed while we're in the process
-                                    // of transferring it to the Lock Table. Use manualLocking as we want to transfer the locks, not drain them.
-                                    if (!ri.Invalid)
-                                        ri.Seal(manualLocking: true);
-
-                                    // Now get it into the lock table, so it is ready as soon as the CAS removes this record from the RC chain.
-                                    this.LockTable.TransferFrom(ref key, ri);
-                                }
-
-                                // Swap in the next entry in the chain, unless somee other thread has done it for us.
-                                // Note that this removes the entire leading readcache-entry set of records from the hash table pointer. 
-                                while (tagExists && entry.ReadCache)
-                                {
-                                    var updatedEntry = default(HashBucketEntry);
-                                    updatedEntry.Tag = tag;
-                                    updatedEntry.Address = ri.PreviousAddress;
-                                    updatedEntry.Pending = entry.Pending;
-                                    updatedEntry.Tentative = false;
-
-                                    if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
+                                    if (ri.IsLocked)
                                     {
-                                        entry.word = updatedEntry.word;
-                                        break;
+                                        // If it is not Invalid, we must Seal it so there is no possibility it will be missed while we're in the process
+                                        // of transferring it to the Lock Table. Use manualLocking as we want to transfer the locks, not drain them.
+                                        if (!ri.Invalid)
+                                        {
+                                            // If we fail to seal, it means there is another thread ahead of us, so break out of this key chain.
+                                            if (!ri.Seal(manualLocking: true))
+                                                break;
+                                        }
+
+                                        // Now get it into the lock table, so it is ready as soon as the CAS removes this record from the RC chain.
+                                        this.LockTable.TransferFrom(ref readcache.GetKey(pa), ri);
                                     }
 
-                                    tagExists = FindTag(hash, tag, ref bucket, ref slot, ref entry);
+                                    // Swap in the next entry in the chain. Because we may encounter a race where another thread swaps in a readcache
+                                    // record into the hash table entry (and if so that address would be greater than what we have now), we must restart
+                                    // the chain processing on thread conflicts (CAS failure). Similarly, another thread may have changed the previous
+                                    // readcache record's PreviousAddress.
+                                    if (prevPhysicalAddress == Constants.kInvalidAddress)
+                                    {
+                                        var updatedEntry = default(HashBucketEntry);
+                                        updatedEntry.Tag = tag;
+                                        updatedEntry.Address = ri.PreviousAddress;
+                                        updatedEntry.Pending = entry.Pending;
+                                        updatedEntry.Tentative = false;
+                                        if (entry.word != Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
+                                            restartChain = true;
+                                        entry.word = updatedEntry.word;
+                                    }
+                                    else
+                                    {
+                                        ref RecordInfo prevri = ref readcache.GetInfo(prevPhysicalAddress);
+                                        if (!prevri.TryUpdateAddress(ri.PreviousAddress))
+                                            restartChain = true;
+                                        entry.word = ri.PreviousAddress;
+                                    }
+                                }
+                                else
+                                {
+                                    prevPhysicalAddress = pa;
+                                    entry.word = ri.PreviousAddress;
                                 }
                             }
-                            else
-                                entry.word = ri.PreviousAddress;
                         }
                     }
                 }

@@ -217,7 +217,7 @@ namespace FASTER.core
         public bool TryUpdateAddress(long newPrevAddress)
         {
             var expectedWord = word;
-            RecordInfo newRI = default;
+            RecordInfo newRI = new() { word = word };
             newRI.PreviousAddress = newPrevAddress;
             var foundWord = Interlocked.CompareExchange(ref this.word, newRI.word, expectedWord);
             return foundWord == expectedWord;

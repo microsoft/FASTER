@@ -42,7 +42,7 @@ namespace FASTER.core
             public int GetHashCode(IHeapContainer<TKey> k) => (int)comparer.GetHashCode64(ref k.Get());
         }
 
-        readonly SafeConcurrentDictionary<IHeapContainer<TKey>, LockTableEntry<TKey>> dict;
+        readonly internal SafeConcurrentDictionary<IHeapContainer<TKey>, LockTableEntry<TKey>> dict;
         readonly IVariableLengthStruct<TKey> keyLen;
         readonly KeyComparer keyComparer;
         readonly SectorAlignedBufferPool bufferPool;
@@ -81,7 +81,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Unlock(ref TKey key, LockType lockType)
         {
-            if (Update(ref key, lte => { lte.lockRecordInfo.Unlock(lockType); return lte; }))
+            if (Update(ref key, lte => { lte.logRecordInfo.Unlock(lockType); return lte; }))
                 TryRemoveIfNoLocks(ref key);
             else
                 Debug.Fail("Trying to unlock a nonexistent key");
@@ -97,7 +97,9 @@ namespace FASTER.core
             {
                 keyContainer.Dispose();
                 Debug.Fail("Trying to Transfer to an existing key");
+                return;
             }
+            Interlocked.Increment(ref this.approxNumItems);
         }
 
         // Lock the LockTable record for the key if it exists, else add a Tentative record for it.
@@ -158,7 +160,7 @@ namespace FASTER.core
         // False is legit, as the record may have been removed between the time it was known to be here and the time Seal was called,
         // or this may be called by SealOrTentative.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TrySeal(ref TKey key, out bool exists)
+        internal bool TrySeal(ref TKey key, out bool exists)
         {
             using var lookupKey = GetKeyContainer(ref key);
             if (!dict.ContainsKey(lookupKey))
@@ -166,7 +168,7 @@ namespace FASTER.core
                 exists = false;
                 return true;
             }
-            exists = false;
+            exists = true;
             return Update(ref key, lte => { lte.lockRecordInfo.Seal(); return lte; });
         }
 
@@ -174,27 +176,7 @@ namespace FASTER.core
         internal void Unseal(ref TKey key)
         {
             if (!Update(ref key, lte => { lte.lockRecordInfo.Unseal(); return lte; }))
-                Debug.Fail("Trying to remove Unseal nonexistent key");
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TrySealOrTentative(ref TKey key, out bool tentative)
-        {
-            tentative = false;
-            if (this.TrySeal(ref key, out bool exists))
-                return true;
-            if (exists)
-                return false;
-
-            var keyContainer = GetKeyContainer(ref key);
-            RecordInfo lockRecordInfo = default;
-            lockRecordInfo.Tentative = tentative = true;
-            if (dict.TryAdd(keyContainer, new(keyContainer, default, lockRecordInfo)))
-                return true;
-
-            // Someone else already inserted a tentative record
-            keyContainer.Dispose();
-            return false;
+                Debug.Fail("Trying to Unseal nonexistent key");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -211,6 +193,9 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool Get(TKey key, out RecordInfo recordInfo) => Get(ref key, out recordInfo);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool ContainsKey(ref TKey key)
         {
             using var lookupKey = GetKeyContainer(ref key);
@@ -220,22 +205,19 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool ApplyToLogRecord(ref TKey key, ref RecordInfo logRecord)
         {
+            // This is called after the record has been CAS'd into the log or readcache, so this should not be allowed to fail.
             using var lookupKey = GetKeyContainer(ref key);
             if (dict.TryGetValue(lookupKey, out var lte))
             {
+                Debug.Assert(lte.lockRecordInfo.Sealed, "lockRecordInfo should have been Sealed already");
+
                 // If it's a Tentative record, ignore it--it will be removed by Lock() and retried against the inserted log record.
                 if (lte.lockRecordInfo.Tentative)
                     return true;
 
-                // If Sealing fails, we have to retry; it could mean that a pending read (readcache or copytotail) grabbed the locks
-                // before the Upsert/etc. got to them. In that case, the upsert must retry so those locks will be drained from the
-                // read entry. Note that Seal() momentarily xlocks the record being sealed, which in this case is the LockTable record;
-                // this does not affect the lock count of the contained record.
-                if (!lte.lockRecordInfo.Seal())
-                    return false;
-
                 logRecord.CopyLocksFrom(lte.logRecordInfo);
                 lte.lockRecordInfo.SetInvalid();
+                lte.lockRecordInfo.Unseal();
                 if (dict.TryRemove(lookupKey, out _))
                 {
                     Interlocked.Decrement(ref this.approxNumItems);

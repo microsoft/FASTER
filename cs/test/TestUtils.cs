@@ -3,7 +3,6 @@
 
 using NUnit.Framework;
 using System;
-using System.Diagnostics;
 using System.IO;
 using FASTER.core;
 using FASTER.devices;
@@ -17,7 +16,8 @@ namespace FASTER.test
         // Various categories used to group tests
         internal const string SmokeTestCategory = "Smoke";
         internal const string FasterKVTestCategory = "FasterKV";
-        internal const string LockableUnsafeContextCategory = "LockableUnsafeContext";
+        internal const string LockableUnsafeContextTestCategory = "LockableUnsafeContext";
+        internal const string ReadCacheTestCategory = "ReadCache";
 
         /// <summary>
         /// Delete a directory recursively

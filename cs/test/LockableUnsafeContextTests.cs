@@ -8,8 +8,9 @@ using System.Linq;
 using System.Threading;
 using FASTER.core;
 using NUnit.Framework;
+using FASTER.test.ReadCacheTests;
 
-namespace FASTER.test
+namespace FASTER.test.LockableUnsafeContext
 {
     // Functions for the "Simple lock transaction" case, e.g.:
     //  - Lock key1, key2, key3, keyResult
@@ -44,9 +45,12 @@ namespace FASTER.test
     class LockableUnsafeContextTests
     {
         const int numRecords = 1000;
+        const int transferToNewKey = 1010;
+        const int transferToExistingKey = 200;
+
         const int valueMult = 1_000_000;
 
-        private FasterKV<int, int> fkv;
+        private FasterKV<int, int> fht;
         private ClientSession<int, int, int, int, Empty, LockableUnsafeFunctions> session;
         private IDevice log;
 
@@ -68,9 +72,9 @@ namespace FASTER.test
                 }
             }
 
-            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
+            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
                                          supportsLocking: true );
-            session = fkv.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
+            session = fht.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
         }
 
         [TearDown]
@@ -78,8 +82,8 @@ namespace FASTER.test
         {
             session?.Dispose();
             session = null;
-            fkv?.Dispose();
-            fkv = null;
+            fht?.Dispose();
+            fht = null;
             log?.Dispose();
             log = null;
 
@@ -108,9 +112,9 @@ namespace FASTER.test
         void PrepareRecordLocation(FlushMode recordLocation)
         {
             if (recordLocation == FlushMode.ReadOnly)
-                this.fkv.Log.ShiftReadOnlyAddress(this.fkv.Log.TailAddress, wait: true);
+                this.fht.Log.ShiftReadOnlyAddress(this.fht.Log.TailAddress, wait: true);
             else if (recordLocation == FlushMode.OnDisk)
-                this.fkv.Log.FlushAndEvict(wait: true);
+                this.fht.Log.FlushAndEvict(wait: true);
         }
 
         static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext)
@@ -122,7 +126,7 @@ namespace FASTER.test
 
         void EnsureNoLocks()
         {
-            using var iter = this.fkv.Log.Scan(this.fkv.Log.BeginAddress, this.fkv.Log.TailAddress);
+            using var iter = this.fht.Log.Scan(this.fht.Log.BeginAddress, this.fht.Log.TailAddress);
             long count = 0;
             while (iter.GetNext(out var recordInfo, out var key, out var value))
             {
@@ -135,7 +139,7 @@ namespace FASTER.test
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextCategory)]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
         [Category(TestUtils.SmokeTestCategory)]
         public void InMemorySimpleLockTxnTest([Values] ResultLockTarget resultLockTarget, [Values] ReadCopyDestination readCopyDestination,
                                               [Values]FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] UpdateOp updateOp)
@@ -182,7 +186,7 @@ namespace FASTER.test
                         {
                             if (status == Status.PENDING)
                             {
-                                luContext.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                                luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                                 Assert.True(completedOutputs.Next());
                                 value24 = completedOutputs.Current.Output;
                                 Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
@@ -201,7 +205,7 @@ namespace FASTER.test
                         {
                             if (status == Status.PENDING)
                             {
-                                luContext.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                                luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                                 Assert.True(completedOutputs.Next());
                                 value51 = completedOutputs.Current.Output;
                                 Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
@@ -225,7 +229,7 @@ namespace FASTER.test
                         {
                             if (status == Status.PENDING)
                             {
-                                luContext.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                                luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                                 Assert.True(completedOutputs.Next());
                                 resultValue = completedOutputs.Current.Output;
                                 Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
@@ -266,7 +270,7 @@ namespace FASTER.test
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextCategory)]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
         [Category(TestUtils.SmokeTestCategory)]
         public void InMemoryLongLockTest([Values] ResultLockTarget resultLockTarget, [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] UpdateOp updateOp)
         {
@@ -291,7 +295,7 @@ namespace FASTER.test
                 if (flushMode == FlushMode.OnDisk)
                 {
                     Assert.AreEqual(Status.PENDING, status);
-                    luContext.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     (status, value24) = TestUtils.GetSinglePendingResult(completedOutputs);
                     Assert.AreEqual(Status.OK, status);
                     Assert.AreEqual(24 * valueMult, value24);
@@ -305,7 +309,7 @@ namespace FASTER.test
                 {
                     if (status == Status.PENDING)
                     {
-                        luContext.UnsafeCompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         Assert.True(completedOutputs.Next());
                         value51 = completedOutputs.Current.Output;
                         Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
@@ -351,7 +355,7 @@ namespace FASTER.test
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextCategory)]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
         [Category(TestUtils.SmokeTestCategory)]
         public void InMemoryDeleteTest([Values] ResultLockTarget resultLockTarget, [Values] ReadCopyDestination readCopyDestination,
                                        [Values(FlushMode.NoFlush, FlushMode.ReadOnly)] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
@@ -409,7 +413,7 @@ namespace FASTER.test
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextCategory)]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
         [Category(TestUtils.SmokeTestCategory)]
         public void StressLocks([Values(1, 8)] int numLockThreads, [Values(1, 8)] int numOpThreads)
         {
@@ -426,7 +430,7 @@ namespace FASTER.test
                 Dictionary<int, LockType> locks = new();
                 Random rng = new(tid + 101);
 
-                using var localSession = fkv.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
+                using var localSession = fht.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
                 using var luContext = localSession.GetLockableUnsafeContext();
                 luContext.ResumeThread();
 
@@ -451,7 +455,7 @@ namespace FASTER.test
             {
                 Random rng = new(tid + 101);
 
-                using var localSession = fkv.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
+                using var localSession = fht.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -482,6 +486,191 @@ namespace FASTER.test
                 threads[t].Join();
 
             EnsureNoLocks();
+        }
+
+        void AddLockTableEntry(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext, int key, bool immutable)
+        {
+            luContext.Lock(key, LockType.Exclusive);
+            var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
+
+            // Immutable locks in the ReadOnly region; it does NOT create a LockTable entry
+            if (immutable)
+            {
+                Assert.IsFalse(found);
+                return;
+            }
+            Assert.IsTrue(found);
+            Assert.IsTrue(recordInfo.IsLockedExclusive);
+        }
+
+        void VerifySplicedInKey(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext, int expectedKey)
+        {
+            // Scan to the end of the readcache chain and verify we inserted the value.
+            var (_, pa) = ChainTests.SkipReadCacheChain(fht, expectedKey);
+            var storedKey = fht.hlog.GetKey(pa);
+            Assert.AreEqual(expectedKey, storedKey);
+
+            // This is called after we've transferred from LockTable to log.
+            Assert.False(fht.LockTable.Get(expectedKey, out _));
+
+            // Verify we've transferred the expected locks.
+            ref RecordInfo recordInfo = ref fht.hlog.GetInfo(pa);
+            Assert.IsTrue(recordInfo.IsLockedExclusive);
+            Assert.IsFalse(recordInfo.IsLockedShared);
+
+            // Now unlock it; we're done.
+            luContext.Unlock(expectedKey, LockType.Exclusive);
+        }
+
+        [Test]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
+        [Category(TestUtils.SmokeTestCategory)]
+        public void TransferFromLockTableToCTTTest()
+        {
+            Populate();
+            fht.Log.FlushAndEvict(wait: true);
+
+            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var luContext = session.GetLockableUnsafeContext();
+            int input = 0, output = 0, key = transferToExistingKey;
+            RecordMetadata recordMetadata = default;
+            AddLockTableEntry(luContext, key, immutable:false);
+
+            var status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
+            Assert.AreEqual(Status.PENDING, status);
+            session.CompletePending(wait: true);
+
+            VerifySplicedInKey(luContext, key);
+        }
+
+        void PopulateAndEvict(bool immutable = false)
+        {
+            Populate();
+
+            if (immutable)
+                fht.Log.ShiftReadOnlyAddress(fht.Log.TailAddress, wait: true);
+            else
+                fht.Log.FlushAndEvict(true);
+        }
+
+        [Test]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
+        [Category(TestUtils.SmokeTestCategory)]
+        public void TransferFromLockTableToUpsertTest([Values] ChainTests.RecordRegion recordRegion)
+        {
+            PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
+
+            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var luContext = session.GetLockableUnsafeContext();
+            luContext.ResumeThread();
+
+            int key = -1;
+            try
+            {
+                if (recordRegion == ChainTests.RecordRegion.Immutable || recordRegion == ChainTests.RecordRegion.OnDisk)
+                {
+                    key = transferToExistingKey;
+                    AddLockTableEntry(luContext, key, recordRegion == ChainTests.RecordRegion.Immutable);
+                    var status = luContext.Upsert(key, key * valueMult);
+                    Assert.AreEqual(Status.OK, status);
+                }
+                else
+                {
+                    key = transferToNewKey;
+                    AddLockTableEntry(luContext, key, immutable: false);
+                    var status = luContext.Upsert(key, key * valueMult);
+                    Assert.AreEqual(Status.OK, status);
+                }
+            }
+            finally
+            {
+                luContext.SuspendThread();
+            }
+            VerifySplicedInKey(luContext, key);
+        }
+
+        [Test]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
+        [Category(TestUtils.SmokeTestCategory)]
+        public void TransferFromLockTableToRMWTest([Values] ChainTests.RecordRegion recordRegion)
+        {
+            PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
+
+            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var luContext = session.GetLockableUnsafeContext();
+            luContext.ResumeThread();
+
+            int key = -1;
+            try
+            {
+                if (recordRegion == ChainTests.RecordRegion.Immutable || recordRegion == ChainTests.RecordRegion.OnDisk)
+                {
+                    key = transferToExistingKey;
+                    AddLockTableEntry(luContext, key, recordRegion == ChainTests.RecordRegion.Immutable);
+                    var status = luContext.RMW(key, key * valueMult);
+                    Assert.AreEqual(recordRegion == ChainTests.RecordRegion.OnDisk ? Status.PENDING : Status.OK, status);
+                    luContext.CompletePending(wait: true);
+                }
+                else
+                {
+                    key = transferToNewKey;
+                    AddLockTableEntry(luContext, key, immutable: false);
+                    var status = luContext.RMW(key, key * valueMult);
+                    Assert.AreEqual(Status.NOTFOUND, status);
+                }
+            }
+            finally
+            {
+                luContext.SuspendThread();
+            }
+
+            VerifySplicedInKey(luContext, key);
+        }
+
+        [Test]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
+        [Category(TestUtils.SmokeTestCategory)]
+        public void TransferFromLockTableToDeleteTest([Values] ChainTests.RecordRegion recordRegion)
+        {
+            PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
+
+            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var luContext = session.GetLockableUnsafeContext();
+            luContext.ResumeThread();
+
+            int key = -1;
+            try
+            {
+                if (recordRegion == ChainTests.RecordRegion.Immutable || recordRegion == ChainTests.RecordRegion.OnDisk)
+                {
+                    key = transferToExistingKey;
+                    AddLockTableEntry(luContext, key, recordRegion == ChainTests.RecordRegion.Immutable);
+                    var status = luContext.Delete(key);
+                    Assert.AreEqual(Status.OK, status);
+                }
+                else
+                {
+                    key = transferToNewKey;
+                    AddLockTableEntry(luContext, key, immutable: false);
+                    var status = luContext.Delete(key);
+                    Assert.AreEqual(Status.OK, status);
+                }
+            }
+            finally
+            {
+                luContext.SuspendThread();
+            }
+
+            VerifySplicedInKey(luContext, key);
+        }
+
+        [Test]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
+        [Category(TestUtils.SmokeTestCategory)]
+        public void LockAndUnlockInLockTableOnlyTest()
+        {
+            // TODO this
+            // TODO: MemoryPageLockEvictionScan tests
         }
     }
 }
