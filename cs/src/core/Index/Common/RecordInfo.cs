@@ -338,7 +338,7 @@ namespace FASTER.core
         public void SetDirty() => word |= kDirtyBitMask;
         public void SetTombstone() => word |= kTombstoneBitMask;
         public void SetValid() => word |= kValidBitMask;
-        public void SetInvalid() => word &= ~kValidBitMask;
+        public void SetInvalid() => word &= ~(kValidBitMask | kTentativeBitMask);
 
         public bool Invalid => (word & kValidBitMask) == 0;
 

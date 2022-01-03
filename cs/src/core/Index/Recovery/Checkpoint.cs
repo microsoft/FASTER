@@ -97,6 +97,7 @@ namespace FASTER.core
         internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, long version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
+            _hybridLogCheckpoint.info.manualLockingActive = this.NumActiveLockingSessions > 0;
         }
 
         // #endregion

@@ -96,7 +96,7 @@ namespace FASTER.core
         #region Acquire and Dispose
         internal void Acquire()
         {
-            Interlocked.Increment(ref this.clientSession.fht.NumActiveLockingSessions);
+            this.clientSession.fht.IncrementNumLockingSessions();
             if (this.isAcquired)
                 throw new FasterException("Trying to acquire an already-acquired LockableUnsafeContext");
             this.isAcquired = true;
@@ -112,7 +112,7 @@ namespace FASTER.core
             if (TotalLockCount > 0)
                 throw new FasterException($"Disposing LockableUnsafeContext with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
             this.isAcquired = false;
-            Interlocked.Decrement(ref this.clientSession.fht.NumActiveLockingSessions);
+            this.clientSession.fht.DecrementNumLockingSessions();
         }
         #endregion Acquire and Dispose
 

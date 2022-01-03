@@ -115,6 +115,13 @@ namespace FASTER.core
         internal LockTable<Key> LockTable;
         internal long NumActiveLockingSessions = 0;
 
+        internal void IncrementNumLockingSessions()
+        {
+            _hybridLogCheckpoint.info.manualLockingActive = true;
+            Interlocked.Increment(ref this.NumActiveLockingSessions);
+        }
+        internal void DecrementNumLockingSessions() => --this.NumActiveLockingSessions;
+
         /// <summary>
         /// Create FasterKV instance
         /// </summary>

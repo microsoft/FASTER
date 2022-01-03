@@ -8,10 +8,10 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace FASTER.test
+namespace FASTER.test.LockTests
 {
     [TestFixture]
-    internal class LockTests
+    internal class BasicLockTests
     {
         internal class Functions : SimpleFunctions<int, int>
         {

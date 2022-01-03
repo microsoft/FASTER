@@ -157,8 +157,7 @@ namespace FASTER.core
             // If we make it here, the key was already removed.
         }
 
-        // False is legit, as the record may have been removed between the time it was known to be here and the time Seal was called,
-        // or this may be called by SealOrTentative.
+        // False is legit, as the record may have been removed between the time it was known to be here and the time Seal was called.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TrySeal(ref TKey key, out bool exists)
         {

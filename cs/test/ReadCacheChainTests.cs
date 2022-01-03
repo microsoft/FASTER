@@ -6,6 +6,7 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace FASTER.test.ReadCacheTests
 {
@@ -26,14 +27,17 @@ namespace FASTER.test.ReadCacheTests
         // Insert into chain.
         const int spliceInNewKey = highChainKey + mod * 2;
         const int spliceInExistingKey = highChainKey - mod;
-        const int immutableSplitKey = numKeys / 2; 
+        const int immutableSplitKey = numKeys / 2;
 
         // This is the record after the first readcache record we insert; it lets us limit the range to ReadCacheEvict
         // so we get outsplicing rather than successively overwriting the hash table entry on ReadCacheEvict.
         long readCacheHighEvictionAddress;
 
-        class ChainComparer : IFasterEqualityComparer<int>
+        internal class ChainComparer : IFasterEqualityComparer<int>
         {
+            int mod;
+            internal ChainComparer(int mod) => this.mod = mod;
+
             public bool Equals(ref int k1, ref int k2) => k1 == k2;
 
             public long GetHashCode64(ref int k) => k % mod;
@@ -47,7 +51,7 @@ namespace FASTER.test.ReadCacheTests
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/NativeReadCacheTests.log", deleteOnClose: true);
             fht = new FasterKV<int, int>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
-                comparer: new ChainComparer());
+                comparer: new ChainComparer(mod));
         }
 
         [TearDown]
@@ -225,7 +229,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(TestUtils.FasterKVTestCategory)]
         [Category(TestUtils.ReadCacheTestCategory)]
         [Category(TestUtils.SmokeTestCategory)]
-        public void DeleteTest()
+        public void DeleteCacheRecordTest()
         {
             PopulateAndEvict();
             CreateChain();
@@ -253,7 +257,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(TestUtils.FasterKVTestCategory)]
         [Category(TestUtils.ReadCacheTestCategory)]
         [Category(TestUtils.SmokeTestCategory)]
-        public void DeleteAllTest()
+        public void DeleteAllCacheRecordsTest()
         {
             PopulateAndEvict();
             CreateChain();
@@ -286,7 +290,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(TestUtils.FasterKVTestCategory)]
         [Category(TestUtils.ReadCacheTestCategory)]
         [Category(TestUtils.SmokeTestCategory)]
-        public void UpsertTest()
+        public void UpsertCacheRecordTest()
         {
             DoUpdateTest(useRMW: false);
         }
@@ -295,7 +299,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(TestUtils.FasterKVTestCategory)]
         [Category(TestUtils.ReadCacheTestCategory)]
         [Category(TestUtils.SmokeTestCategory)]
-        public void RMWTest()
+        public void RMWCacheRecordTest()
         {
             DoUpdateTest(useRMW: true);
         }
@@ -462,7 +466,7 @@ namespace FASTER.test.ReadCacheTests
             Dictionary<int, LockType> locks = new()
             {
                 { lowChainKey, LockType.Exclusive },
-                { midChainKey, LockType.Shared},
+                { midChainKey, LockType.Shared },
                 { highChainKey, LockType.Exclusive }
             };
 

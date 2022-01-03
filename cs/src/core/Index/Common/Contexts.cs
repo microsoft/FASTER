@@ -98,7 +98,7 @@ namespace FASTER.core
 
             internal const ushort kNoKey = 0x0100;
             internal const ushort kIsAsync = 0x0200;
-            internal const ushort kHasPrevTailAddress = 0x0400;
+            internal const ushort kHasPrevHighestKeyHashAddress = 0x0400;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal IHeapContainer<Key> DetachKey()
@@ -177,10 +177,10 @@ namespace FASTER.core
                 set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
             }
 
-            internal bool HasPrevTailAddress
+            internal bool HasPrevHighestKeyHashAddress
             {
-                get => (operationFlags & kHasPrevTailAddress) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kHasPrevTailAddress) : (ushort)(operationFlags & ~kHasPrevTailAddress);
+                get => (operationFlags & kHasPrevHighestKeyHashAddress) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kHasPrevHighestKeyHashAddress) : (ushort)(operationFlags & ~kHasPrevHighestKeyHashAddress);
             }
 
             public void Dispose()
@@ -307,11 +307,12 @@ namespace FASTER.core
         /// Begin address
         /// </summary>
         public long beginAddress;
+
         /// <summary>
         /// If true, there was at least one IFasterContext implementation active that did manual locking at some point during the checkpoint;
         /// these pages must be scanned for lock cleanup.
         /// </summary>
-        bool manualLockingActive;
+        public bool manualLockingActive;
 
         /// <summary>
         /// Commit tokens per session restored during Continue

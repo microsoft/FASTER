@@ -73,12 +73,12 @@ TODO: Add sample with `luContext.LocalCurrentEpoch`.
 This section covers the internal design and implementation of manual locking. Although Sealing a record is not strictly a lock, it is still part of this document because it is closely intertwined with [Record Transfers](#record-transfers).
 
 Manual locking and checking is integrated into `FASTERImpl.cs` methods:
-- The locking and unlocking are implemented in `InternalLock`
-- Other record operations that must consider locks are `InternalUpsert`, `InternalRead` and `InternalCompletePendingRead`, `InternalRMW` and `InternalCompletePendingRMW`, and `InternalDelete`. These modifications are exposed via the `Lock()` and `Unlock()`.
+- The locking and unlocking are implemented in `InternalLock`, which is called by the `Lock()` and `Unlock()` methods of `LockableUnsafeContext`.
+- Other record operations that must consider locks are `InternalUpsert`, `InternalRead` and `InternalCompletePendingRead`, `InternalRMW` and `InternalCompletePendingRMW`, and `InternalDelete`.
 
 Because epoch protection is done by user calls, LockableUnsafeContext methods call the internal ContextRead etc. methods, which are called by the API methods that do Resume and Suspend of epoch protection.
 
-At a high level, `Lock()` and `Unlock()` call `InternalLock()`. Locking does not issue PENDING operations to retrieve on-disk data, and locking/unlocking is designed to avoid pending I/O operations by use of a [`LockTable`](#locktable-overview) consisting of {`TKey`, `RecordInfo`} pairs, where `TKey` is the FasterKV Key type and `RecordInfo` is used to perform the locking/unlocking.
+At a high level, `Lock()` and `Unlock()` call `InternalLock()`. Locking does not issue PENDING operations to retrieve on-disk data, and locking/unlocking is designed to avoid pending I/O operations by use of a [`LockTable`](#locktable-overview) consisting of {`TKey`, `RecordInfo`} pairs, where `TKey` is the FasterKV Key type and `RecordInfo` is used to perform the locking/unlocking. If a record to be locked is not found in memory (above HeadAddress), then a record is created in the `LockTable`; if this record is subsequently read from the disk, the locks from the `LockTable` are applied (and the `LockTable` entry is removed).
 
 Locking and unlocking use bits in the `RecordInfo` header to obtain one exclusive lock or up to 64 shared locks. Because locking does not affect data, even records in the ReadOnly region may be locked and unlocked directly.
 
@@ -91,11 +91,13 @@ The following sections refer to the following two in the `RecordInfo`:
   - Sealing is done via `RecordInfo.Seal`. This is used in locking scenarios rather than a sequence of "CAS to set Sealed; test Sealed bit because the after-Seal locking is fuzzy; we don't know whether the record was CTT'd before or after a post-Seal lock, and thus we don't know if the transferred record "owns" our lock. `RecordInfo.Seal` does a CAS with both the XLock and Seal bits, then Unlocks the XLock bit; this ensures it works whether SupportsLocking is true or false. It returns true if successsful or false if another thread Sealed the record. However, `LockableUnsafeContext` must not try to lock as it owns the lock already.
 - **Invalid**: This is a well-known bit from v1 included here for clarity: its behavior is that the record is to be skipped, using its `.PreviousAddress` to move along the chain. This has relevance to some areas of [Record Transfers](#record-transfers), particularly with respect to the `ReadCache`.
 
-Additionally, the `SupportsLocking` flag has been moved from IFunctions to a `FasterKV` constructor argument. This value must be uniform across all asessions. It is only to control the locking done by FasterKV; this replaces the concept of user-controlled locking that was provided with the `IFunctions` methods for concurrent record access.
+Additionally, `IFunctions` has been modified:
+- The `SupportsLocking` flag has been moved from `IFunctions` to a `FasterKV` constructor argument. This value must be uniform across all asessions. It is only to control the locking done by FasterKV; this replaces the concept of user-controlled locking that was provided with the `IFunctions` methods for concurrent record access.
+- All locking methods on `IFunctions` have been removed; locking is now done internally only, using the `RecordInfo` bits, and controlled by `SupportsLocking`.
 
 ### LockTable Overview
 
-For records not found in memory, the `LockTable` is used. The semantics of `LockTable` entries are as follow. This is a conceptual view; implementation details are described in subsequent sections:
+For records not found in memory, the `LockTable` is used. The semantics of `LockTable` entries are as follow. This is a conceptual view; implementation details are described in subsequent sections.
 - On a `Lock` call, if the key is not found in memory, the `LockTable` is searched for the Key.
   - if the RecordInfo is in the `LockTable` it is locked as specified
   - else a new Tentative record is added and subsequently finalized as in [Insertion to LockTable due to Lock](#insertion-to-locktable-due-to-lock)
@@ -113,7 +115,7 @@ For records not found in memory, the `LockTable` is used. The semantics of `Lock
   - it removes the Seal from the entry in the `LockTable`, or deletes the entry if it was Tentative
 - Because `LockTable` use does not verify that the key actually exists (as it does not issue a pending operation to ensure the requested key, and not a collision, is found in the on-disk portion), it is possible that keys will exist in the `LockTable` that do not in fact exist in the log. This is fine; if we do more than `Lock` them, then they will be added to the log at that time, and the locks applied to them.
 
-We implement the `LockTable` with a `ConcurrentDictionary` because the use is expected to be very low--the vast majority of locks should not last long enough to be evicted from either the `ReadCache` or main memory. Thus, most operations on the `LockTable` will simply compare to `Count > 0`.
+We implement the `LockTable` with a `ConcurrentDictionary` because the use is expected to be very low--the vast majority of locks should not last long enough to be evicted from either the `ReadCache` or main memory. Thus, most operations on the `LockTable` will simply compare to an internal `approximateCount > 0`; the stock `Count` property locks all sub-tables within the `ConcurrentDictionary`.
 
 #### Insertion to LockTable due to Lock
 
@@ -251,7 +253,7 @@ We must clear in-memory records' lock bits during FoldOver recovery.
 
 ### FASTER Operations
 
-Following are the 4 FASTER operations and their flow for the various lock states.
+Following are the 4 FASTER data operations and Lock/Unlock, and their flow for the various lock states.
 
 Abbreviations:
 - LockOp: The `LockOperations` instance passed to one of the InternalXxx methods.

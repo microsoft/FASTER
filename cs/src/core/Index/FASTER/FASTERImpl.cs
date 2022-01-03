@@ -120,9 +120,13 @@ namespace FASTER.core
             #region Trace back for record in in-memory HybridLog
             HashBucketEntry entry = default;
 
+            // This tracks the highest address that a new record could be added after we call FindTag. This is the value after skipping readcache
+            // and before TraceBackForKeyMatch. It is an in-memory address (mutable or readonly), or the first on-disk address, or 0 (in which case
+            // we return NOTFOUND and this value is not used). InternalTryCopyToTail can stop its scan immediately above this address.
+            long prevHighestKeyHashAddress = Constants.kInvalidAddress;
+
             OperationStatus status;
             long logicalAddress;
-            long prevTailAddress = hlog.GetTailAddress();
             var useStartAddress = startAddress != Constants.kInvalidAddress && !pendingContext.HasMinAddress;
             bool tagExists;
             if (!useStartAddress)
@@ -162,6 +166,8 @@ namespace FASTER.core
                     else if (status != OperationStatus.SUCCESS)
                         return status;
                 }
+                if (prevHighestKeyHashAddress < logicalAddress)
+                    prevHighestKeyHashAddress = logicalAddress;
 
                 if (logicalAddress >= hlog.HeadAddress)
                 {
@@ -304,8 +310,8 @@ namespace FASTER.core
                 pendingContext.serialNum = lsn;
                 pendingContext.heldLatch = heldOperation;
 
-                pendingContext.HasPrevTailAddress = true;
-                pendingContext.recordInfo.PreviousAddress = prevTailAddress;
+                pendingContext.HasPrevHighestKeyHashAddress = true;
+                pendingContext.recordInfo.PreviousAddress = prevHighestKeyHashAddress;
             }
 #endregion
 
@@ -389,8 +395,6 @@ namespace FASTER.core
             {
                 prevHighestReadCacheLogicalAddress = logicalAddress;
                 SkipReadCache(ref logicalAddress, out lowestReadCachePhysicalAddress);
-                if (prevHighestReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
-                    prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
             }
             var latestLogicalAddress = logicalAddress;
 
@@ -687,9 +691,12 @@ namespace FASTER.core
                 
                 // Splice a non-tentative record into the readcache/mainlog gap.
                 success = rcri.TryUpdateAddress(newLogicalAddress);
-
-                // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
-                InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevHighestReadCacheLogicalAddress);
+                if (success)
+                {
+                    // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
+                    entry.word = bucket->bucket_entries[slot];
+                    InvalidateUpdatedRecordInReadCache(entry.Address, ref key, prevHighestReadCacheLogicalAddress);
+                }
             }
 
             if (success)
@@ -800,8 +807,6 @@ namespace FASTER.core
             {
                 prevHighestReadCacheLogicalAddress = logicalAddress;
                 SkipReadCache(ref logicalAddress, out lowestReadCachePhysicalAddress);
-                if (prevHighestReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
-                    prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
             }
             var latestLogicalAddress = logicalAddress;
 
@@ -1167,9 +1172,12 @@ namespace FASTER.core
 
                 // Splice a non-tentative record into the readcache/mainlog gap.
                 success = rcri.TryUpdateAddress(newLogicalAddress);
-
-                // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
-                InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevHighestReadCacheLogicalAddress);
+                if (success)
+                {
+                    // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
+                    entry.word = bucket->bucket_entries[slot];
+                    InvalidateUpdatedRecordInReadCache(entry.Address, ref key, prevHighestReadCacheLogicalAddress);
+                }
             }
 
             if (success)
@@ -1287,8 +1295,6 @@ namespace FASTER.core
             {
                 prevHighestReadCacheLogicalAddress = logicalAddress;
                 SkipReadCache(ref logicalAddress, out lowestReadCachePhysicalAddress);
-                if (prevHighestReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
-                    prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
             }
             var latestLogicalAddress = logicalAddress;
 
@@ -1494,9 +1500,12 @@ namespace FASTER.core
 
                     // Splice a non-tentative record into the readcache/mainlog gap.
                     success = rcri.TryUpdateAddress(newLogicalAddress);
-
-                    // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
-                    InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevHighestReadCacheLogicalAddress);
+                    if (success)
+                    {
+                        // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
+                        entry.word = bucket->bucket_entries[slot];
+                        InvalidateUpdatedRecordInReadCache(entry.Address, ref key, prevHighestReadCacheLogicalAddress);
+                    }
                 }
 
                 if (success)
@@ -2001,9 +2010,12 @@ namespace FASTER.core
 
                     // Splice a non-tentative record into the readcache/mainlog gap.
                     success = rcri.TryUpdateAddress(newLogicalAddress);
-
-                    // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
-                    InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevHighestReadCacheLogicalAddress);
+                    if (success)
+                    {
+                        // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
+                        entry.word = bucket->bucket_entries[slot];
+                        InvalidateUpdatedRecordInReadCache(entry.Address, ref key, prevHighestReadCacheLogicalAddress);
+                    }
                 }
 
                 if (success)
@@ -2409,7 +2421,7 @@ namespace FASTER.core
             var logicalAddress = entry.Address;
             var physicalAddress = default(long);
 
-            var prevTailAddress = pendingContext.recordInfo.PreviousAddress;
+            var prevHighestKeyKashAddress = pendingContext.recordInfo.PreviousAddress;
 
             long lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
             long prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
@@ -2417,8 +2429,8 @@ namespace FASTER.core
             {
                 prevHighestReadCacheLogicalAddress = logicalAddress;
                 SkipReadCache(ref logicalAddress, out lowestReadCachePhysicalAddress);
-                if (prevHighestReadCacheLogicalAddress == logicalAddress) // if there were no readcache records
-                    prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
+                if (prevHighestReadCacheLogicalAddress != logicalAddress)
+                    Debug.Assert(lowestReadCachePhysicalAddress > 0);
             }
             var latestLogicalAddress = logicalAddress;
 
@@ -2456,9 +2468,6 @@ namespace FASTER.core
 
             if (copyToReadCache)
             {
-                // Copy to readcache should just append at the tail (becoming the first, not last, readcache record in the chain).
-                lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
-
                 BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
                 ref RecordInfo recordInfo = ref readcache.GetInfo(newPhysicalAddress);
@@ -2494,10 +2503,10 @@ namespace FASTER.core
                 return OperationStatus.RETRY_NOW;
 
             bool success = true;
-            if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
+            if (copyToReadCache || (lowestReadCachePhysicalAddress == Constants.kInvalidAddress))
             {
                 // Insert as the first record in the hash chain--this can be either a readcache entry or a main-log entry
-                // when there are no readcache records.
+                // if there are no readcache records.
                 var updatedEntry = default(HashBucketEntry);
                 updatedEntry.Tag = tag;
                 updatedEntry.Address = newLogicalAddress & Constants.kAddressMask;
@@ -2509,32 +2518,43 @@ namespace FASTER.core
                 foundEntry.word = Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word);
                 success = foundEntry.word == entry.word;
 
-                if (success && UseReadCache && pendingContext.HasPrevTailAddress)
+                if (success && copyToReadCache && pendingContext.HasPrevHighestKeyHashAddress)
                 {
-                    // See if we have added a main-log entry from an update while we were inserting; if so, the new readcache
-                    // record is obsolete and must be Invalidated.
-                    ref RecordInfo rcri = ref readcache.GetInfo(newPhysicalAddress);
-                    var la = entry.Address;
-                    SkipReadCache(ref la, out _);
-                    for ( ; la >= prevTailAddress; /* incremented in loop */)
+                    // See if we have added a main-log entry for this key from an update while we were inserting the new readcache record;
+                    // if so, the new readcache record is obsolete and must be Invalidated.
+
+                    // Use the last readcache record in the chain to get the first non-readcache record in the chain. Note that this may be
+                    // different from latestLogicalAddress if a new record was inserted since then.
+                    var la = latestLogicalAddress;
+                    if (lowestReadCachePhysicalAddress != Constants.kInvalidAddress)
+                    {
+                        ref RecordInfo last_rcri = ref readcache.GetInfo(lowestReadCachePhysicalAddress);
+                        la = last_rcri.PreviousAddress;
+                    }
+                    ref RecordInfo new_rcri = ref readcache.GetInfo(newPhysicalAddress);
+
+                    // prevHighestKeyKashAddress may be either the first in-memory address or the first on-disk address at the time of Read(). 
+                    // We compare to > prevHighestKeyKashAddress because any new record would be added above that.
+                    while (la > prevHighestKeyKashAddress && la >= hlog.HeadAddress)
                     {
                         var pa = hlog.GetPhysicalAddress(la);
                         if (comparer.Equals(ref key, ref hlog.GetKey(pa)))
                         {
-                            rcri.SetInvalid();
+                            new_rcri.SetInvalid();
                             break;
                         }
                         la = hlog.GetInfo(pa).PreviousAddress;
                     }
-                    if (!rcri.Invalid)
+
+                    if (!new_rcri.Invalid)
                     {
-                        // prevTailAddress may have escaped to disk, so we must retry.
-                        if (prevTailAddress < hlog.HeadAddress)
+                        // An inserted record may have escaped to disk during the time of this Read/PENDING operation, in which case we must retry.
+                        if (la > prevHighestKeyKashAddress && la < hlog.HeadAddress)
                         {
-                            rcri.SetInvalid();
-                            return OperationStatus.RETRY_NOW;
+                            new_rcri.SetInvalid();
+                            return OperationStatus.RECORD_ON_DISK;
                         }
-                        rcri.Tentative = false;
+                        new_rcri.Tentative = false;
                     }
                 }
             }
@@ -2547,19 +2567,22 @@ namespace FASTER.core
 
                 // Splice a non-tentative record into the readcache/mainlog gap.
                 success = rcri.TryUpdateAddress(newLogicalAddress);
-
-                // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
-                InvalidateUpdatedRecordInReadCache(entry.word, ref key, prevHighestReadCacheLogicalAddress);
+                if (success)
+                {
+                    // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
+                    entry.word = bucket->bucket_entries[slot];
+                    InvalidateUpdatedRecordInReadCache(entry.Address, ref key, prevHighestReadCacheLogicalAddress);
+                }
             }
 
+            var log = copyToReadCache ? readcache : hlog;
             if (!success)
             {
-                if (!copyToReadCache) hlog.GetInfo(newPhysicalAddress).SetInvalid();
+                log.GetInfo(newPhysicalAddress).SetInvalid();
                 return OperationStatus.RETRY_NOW;
             }
             else
             {
-                var log = copyToReadCache ? readcache : hlog;
                 ref RecordInfo recordInfo = ref log.GetInfo(newPhysicalAddress);
 
                 if (lockTableEntryExists && !LockTable.ApplyToLogRecord(ref key, ref recordInfo))
@@ -2956,10 +2979,10 @@ namespace FASTER.core
             if (!entry.ReadCache)
                 return;
 
-            var physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
-
             while (logicalAddress != untilAddress)
             {
+                var physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
+
                 // Invalidate read cache entry if key found. This is called when an updated value has been inserted to the main log tail,
                 // so instead of waiting just invalidate and return.
                 ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
@@ -2970,7 +2993,6 @@ namespace FASTER.core
                 entry.word = logicalAddress;
                 if (!entry.ReadCache)
                     return;
-                physicalAddress = readcache.GetPhysicalAddress(logicalAddress & ~Constants.kReadCacheBitMask);
             }
         }
 
