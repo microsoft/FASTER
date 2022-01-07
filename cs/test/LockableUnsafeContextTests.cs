@@ -9,6 +9,8 @@ using System.Threading;
 using FASTER.core;
 using NUnit.Framework;
 using FASTER.test.ReadCacheTests;
+using System.Threading.Tasks;
+using System.Runtime.ExceptionServices;
 
 namespace FASTER.test.LockableUnsafeContext
 {
@@ -55,13 +57,18 @@ namespace FASTER.test.LockableUnsafeContext
         private IDevice log;
 
         [SetUp]
-        public void Setup()
-        {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+        public void Setup() => Setup(forRecovery: false);
 
-            log = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
+        public void Setup(bool forRecovery)
+        {
+            if (!forRecovery)
+            {
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            }
+            log = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "test.log"), deleteOnClose: false, recoverDevice: forRecovery);
 
             ReadCacheSettings readCacheSettings = default;
+            CheckpointSettings checkpointSettings = default;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCopyDestination dest)
@@ -70,15 +77,23 @@ namespace FASTER.test.LockableUnsafeContext
                         readCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
                     break;
                 }
+                if (arg is CheckpointType chktType)
+                {
+                    checkpointSettings = new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir };
+                    break;
+                }
             }
 
             fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
-                                         supportsLocking: true );
+                                            checkpointSettings: checkpointSettings,
+                                            supportsLocking: true);
             session = fht.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
         }
 
         [TearDown]
-        public void TearDown()
+        public void TearDown() => TearDown(forRecovery: false);
+
+        public void TearDown(bool forRecovery)
         {
             session?.Dispose();
             session = null;
@@ -87,8 +102,10 @@ namespace FASTER.test.LockableUnsafeContext
             log?.Dispose();
             log = null;
 
-            // Clean up log 
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            if (!forRecovery)
+            {
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            }
         }
 
         void Populate()
@@ -99,7 +116,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
         }
 
-        static void AssertIsLocked(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext, int key, LockType lockType) 
+        static void AssertIsLocked(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext, int key, LockType lockType)
             => AssertIsLocked(luContext, key, lockType == LockType.Exclusive, lockType == LockType.Shared);
 
         static void AssertIsLocked(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext, int key, bool xlock, bool slock)
@@ -142,7 +159,7 @@ namespace FASTER.test.LockableUnsafeContext
         [Category(TestUtils.LockableUnsafeContextTestCategory)]
         [Category(TestUtils.SmokeTestCategory)]
         public void InMemorySimpleLockTxnTest([Values] ResultLockTarget resultLockTarget, [Values] ReadCopyDestination readCopyDestination,
-                                              [Values]FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] UpdateOp updateOp)
+                                              [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] UpdateOp updateOp)
         {
             Populate();
             PrepareRecordLocation(flushMode);
@@ -534,7 +551,7 @@ namespace FASTER.test.LockableUnsafeContext
             using var luContext = session.GetLockableUnsafeContext();
             int input = 0, output = 0, key = transferToExistingKey;
             RecordMetadata recordMetadata = default;
-            AddLockTableEntry(luContext, key, immutable:false);
+            AddLockTableEntry(luContext, key, immutable: false);
 
             var status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
             Assert.AreEqual(Status.PENDING, status);
@@ -675,7 +692,7 @@ namespace FASTER.test.LockableUnsafeContext
 
             Dictionary<int, LockType> locks = new();
             var rng = new Random(101);
-            foreach (var key in Enumerable.Range( 0, numRecords).Select(ii => rng.Next(numRecords)))
+            foreach (var key in Enumerable.Range(0, numRecords).Select(ii => rng.Next(numRecords)))
                 locks[key] = (key & 1) == 0 ? LockType.Exclusive : LockType.Shared;
 
             // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
@@ -685,7 +702,7 @@ namespace FASTER.test.LockableUnsafeContext
             Assert.IsTrue(fht.LockTable.IsActive);
             Assert.AreEqual(locks.Count, fht.LockTable.dict.Count);
 
-            foreach (var key in locks.Keys)
+            foreach (var key in locks.Keys.OrderBy(k => -k))
             {
                 var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
                 Assert.IsTrue(found);
@@ -731,7 +748,7 @@ namespace FASTER.test.LockableUnsafeContext
             Assert.AreEqual(locks.Count, fht.LockTable.dict.Count);
 
             // Verify LockTable
-            foreach (var key in locks.Keys)
+            foreach (var key in locks.Keys.OrderBy(k => -k))
             {
                 var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
                 Assert.IsTrue(found);
@@ -759,6 +776,181 @@ namespace FASTER.test.LockableUnsafeContext
 
             Assert.IsFalse(fht.LockTable.IsActive);
             Assert.AreEqual(0, fht.LockTable.dict.Count);
+        }
+
+        [Test]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
+        [Category(TestUtils.CheckpointRestoreCategory)]
+        public async ValueTask CheckpointRecoverTest([Values] CheckpointType checkpointType, [Values] TestUtils.SyncMode syncMode)
+        {
+            Populate();
+
+            Dictionary<int, LockType> locks = new();
+            var rng = new Random(101);
+            foreach (var key in Enumerable.Range(0, numRecords / 5).Select(ii => rng.Next(numRecords)))
+                locks[key] = (key & 1) == 0 ? LockType.Exclusive : LockType.Shared;
+
+            Guid fullCheckpointToken;
+            bool success = true;
+            {
+                using var session = fht.NewSession(new SimpleFunctions<int, int>());
+                using var luContext = session.GetLockableUnsafeContext();
+
+                // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
+                foreach (var key in locks.Keys.OrderBy(k => k))
+                    luContext.Lock(key, locks[key]);
+
+                this.fht.Log.ShiftReadOnlyAddress(this.fht.Log.TailAddress, wait: true);
+
+                if (syncMode == TestUtils.SyncMode.Sync)
+                {
+                    this.fht.TakeFullCheckpoint(out fullCheckpointToken, checkpointType);
+                    await this.fht.CompleteCheckpointAsync();
+                }
+                else
+                    (success, fullCheckpointToken) = await fht.TakeFullCheckpointAsync(checkpointType);
+                Assert.IsTrue(success);
+
+                foreach (var key in locks.Keys.OrderBy(k => -k))
+                    luContext.Unlock(key, locks[key]);
+            }
+
+            TearDown(forRecovery: true);
+            Setup(forRecovery: true);
+
+            if (syncMode == TestUtils.SyncMode.Sync)
+                this.fht.Recover(fullCheckpointToken);
+            else
+                await this.fht.RecoverAsync(fullCheckpointToken);
+
+            {
+                using var luContext = this.session.GetLockableUnsafeContext();
+
+                foreach (var key in locks.Keys.OrderBy(k => k))
+                {
+                    var (exclusive, shared) = luContext.IsLocked(key);
+                    Assert.IsFalse(exclusive, $"key: {key}");
+                    Assert.IsFalse(shared, $"key: {key}");
+                }
+            }
+        }
+
+        const int numSecondaryReaderKeys = 1500;
+        const int checkpointFreq = 250;
+
+        [Test]
+        [Category(TestUtils.LockableUnsafeContextTestCategory)]
+        [Category(TestUtils.CheckpointRestoreCategory)]
+        async public Task SecondaryReaderTest([Values] TestUtils.SyncMode syncMode)
+        {
+            // This test is taken from the SecondaryReaderStore sample
+
+            var path = TestUtils.MethodTestDir;
+            TestUtils.DeleteDirectory(path, wait: true);
+
+            var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+
+            var primaryStore = new FasterKV<long, long>
+                (1L << 10,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20 },
+                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                );
+
+            var secondaryStore = new FasterKV<long, long>
+                (1L << 10,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20 },
+                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                );
+
+            // Use Task instead of Thread because this propagate exceptions back to this thread.
+            await Task.WhenAll(Task.Run(() => PrimaryWriter(primaryStore, syncMode)),
+                               Task.Run(() => SecondaryReader(secondaryStore, syncMode)));
+
+            log.Dispose();
+            TestUtils.DeleteDirectory(path, wait: true);
+        }
+
+        async static Task PrimaryWriter(FasterKV<long, long> primaryStore, TestUtils.SyncMode syncMode)
+        {
+            using var s1 = primaryStore.NewSession(new SimpleFunctions<long, long>());
+            using var luc1 = s1.GetLockableUnsafeContext();
+
+            // Upserting keys at primary starting from key 0
+            for (long key = 0; key < numSecondaryReaderKeys; key++)
+            {
+                if (key > 0 && key % checkpointFreq == 0)
+                {
+                    // Checkpointing primary until key {key - 1}
+                    if (syncMode == TestUtils.SyncMode.Sync)
+                    {
+                        primaryStore.TakeHybridLogCheckpoint(out _, CheckpointType.Snapshot);
+                        await primaryStore.CompleteCheckpointAsync().ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        var (success, _) = await primaryStore.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot).ConfigureAwait(false);
+                        Assert.IsTrue(success);
+                    }
+                    Thread.Sleep(10);
+                }
+
+                var status = s1.Upsert(ref key, ref key);
+                Assert.AreEqual(Status.OK, status);
+                luc1.Lock(key, LockType.Shared);
+            }
+
+            // Checkpointing primary until key {numSecondaryReaderOps - 1}
+            await primaryStore.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot).ConfigureAwait(false);
+
+            // Unlock everything before we Dispose() luc1
+            for (long key = 0; key < numSecondaryReaderKeys; key++)
+            {
+                luc1.Unlock(key, LockType.Shared);
+            }
+        }
+
+        async static Task SecondaryReader(FasterKV<long, long> secondaryStore, TestUtils.SyncMode syncMode)
+        {
+            using var s1 = secondaryStore.NewSession(new SimpleFunctions<long, long>());
+            using var luc1 = s1.GetLockableUnsafeContext();
+
+            long key = 0, output = 0;
+            while (true)
+            {
+                try
+                {
+                    // read-only recovery, no writing back undos
+                    if (syncMode == TestUtils.SyncMode.Sync)
+                        secondaryStore.Recover(undoNextVersion: false);
+                    else
+                        await secondaryStore.RecoverAsync(undoNextVersion: false).ConfigureAwait(false);
+                }
+                catch (FasterException)
+                {
+                    // Nothing to recover to at secondary, retrying
+                    Thread.Sleep(500);
+                    continue;
+                }
+
+                while (true)
+                {
+                    var status = s1.Read(ref key, ref output);
+                    if (status == Status.NOTFOUND)
+                    {
+                        // Key {key} not found at secondary; performing recovery to catch up
+                        Thread.Sleep(500);
+                        break;
+                    }
+                    Assert.AreEqual(key, output);
+                    var (xlock, slock) = luc1.IsLocked(key);
+                    Assert.IsFalse(xlock);
+                    Assert.IsFalse(slock);
+
+                    key++;
+                    if (key == numSecondaryReaderKeys)
+                        return;
+                }
+            }
         }
     }
 }

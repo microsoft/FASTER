@@ -119,7 +119,7 @@ We implement the `LockTable` with a `ConcurrentDictionary` because the use is ex
 
 #### Insertion to LockTable due to Lock
 
-This is the complementary side of [Insertion to LockTable due to Upsert](#insertion-to-locktable-due-to-upsert):
+This is the complementary side of [Insertion to LockTable due to Update](#insertion-to-locktable-due-to-update):
 
 When a thread doing `Lock()` looks for a key in the LockTable and cannot find it, it must do a Tentative insertion into the locktable, because it is possible that another thread CAS'd that key to the Tail of the log after the current thread had passed the hash table lookup:
 - If Lock() finds the key in memory:
@@ -142,9 +142,9 @@ When a thread doing `Lock()` looks for a key in the LockTable and cannot find it
     - if no, we can set locktable entry as final by removing the Tentative bit
       - Any waiting thread proceeds normally
 
-#### Insertion to LockTable due to Upsert
+#### Insertion to LockTable due to Update
 
-This is the complementary side of [Insertion to LockTable due to Lock](#insertion-to-locktable-due-to-lock) and applies RMW and Delete as well, when any of these append a record to the tail of the log (for brevity, Upsert is used). It is necessary so that threads that try to Lock() the Upsert()ed record as soon as it is CAS'd into the Log will not "split" locks between the log record and a `LockTable` entry. There is a bit of Catch-22 here; we cannot CAS in the non-Tentative log record before we have transferred the locks from a LockTable entry; but we must have a record on the log so that Lock() will not try to add a new entry, or lock an existing entry, while Upsert is in the process of creating the record and possibly transferring the locks from the `LockTable`.
+This is the complementary side of [Insertion to LockTable due to Lock](#insertion-to-locktable-due-to-lock) and applies to Upsert, RMW, and Delete, when any of these append a record to the tail of the log (for brevity, Update is used). It is necessary so that threads that try to Lock() the Upsert()ed record as soon as it is CAS'd into the Log will not "split" locks between the log record and a `LockTable` entry. There is a bit of Catch-22 here; we cannot CAS in the non-Tentative log record before we have transferred the locks from a LockTable entry; but we must have a record on the log so that Lock() will not try to add a new entry, or lock an existing entry, while Upsert is in the process of creating the record and possibly transferring the locks from the `LockTable`.
 
 For performance reasons, Upsert cannot do an operation on the `LockTable` for each added record; therefore, we defer the cost until the last possible point, where we know we have to do something with the `LockTable` (which is very rare).
 

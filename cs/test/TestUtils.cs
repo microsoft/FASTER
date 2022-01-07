@@ -20,6 +20,7 @@ namespace FASTER.test
         internal const string LockableUnsafeContextTestCategory = "LockableUnsafeContext";
         internal const string ReadCacheTestCategory = "ReadCache";
         internal const string LockTestCategory = "Locking";
+        internal const string CheckpointRestoreCategory = "CheckpointRestore";
 
         /// <summary>
         /// Delete a directory recursively
@@ -172,6 +173,8 @@ namespace FASTER.test
             VarLenBlittable,
             Generic
         }
+
+        internal enum SyncMode { Sync, Async };
 
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);

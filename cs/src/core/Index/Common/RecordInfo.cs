@@ -78,6 +78,8 @@ namespace FASTER.core
 
         public bool IsLockedShared => (word & kSharedLockMaskInWord) != 0;
 
+        public void ClearLocks() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
+
         public bool IsIntermediate => (word & (kTentativeBitMask | kSealedBitMask)) != 0;
 
         /// <summary>

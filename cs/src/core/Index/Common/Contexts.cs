@@ -405,6 +405,9 @@ namespace FASTER.core
             deltaTailAddress = long.Parse(value);
 
             value = reader.ReadLine();
+            manualLockingActive = bool.Parse(value);
+
+            value = reader.ReadLine();
             var numSessions = int.Parse(value);
 
             for (int i = 0; i < numSessions; i++)
@@ -512,6 +515,7 @@ namespace FASTER.core
                     writer.WriteLine(headAddress);
                     writer.WriteLine(beginAddress);
                     writer.WriteLine(deltaTailAddress);
+                    writer.WriteLine(manualLockingActive);
 
                     writer.WriteLine(checkpointTokens.Count);
                     foreach (var kvp in checkpointTokens)
@@ -562,6 +566,7 @@ namespace FASTER.core
             Debug.WriteLine("Head Address: {0}", headAddress);
             Debug.WriteLine("Begin Address: {0}", beginAddress);
             Debug.WriteLine("Delta Tail Address: {0}", deltaTailAddress);
+            Debug.WriteLine("Manual Locking Active: {0}", manualLockingActive);
             Debug.WriteLine("Num sessions recovered: {0}", continueTokens.Count);
             Debug.WriteLine("Recovered sessions: ");
             foreach (var sessionInfo in continueTokens.Take(10))
