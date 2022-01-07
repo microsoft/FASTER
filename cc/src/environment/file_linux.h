@@ -59,6 +59,9 @@ class File {
     }
   }
 
+  File(const File&) = delete;
+  File &operator=(const File&) = delete;
+
   /// Move constructor.
   File(File&& other)
     : fd_{ other.fd_ }
