@@ -53,6 +53,12 @@ class File {
   {
   }
 
+  ~File() {
+    if(owner_) {
+      core::Status s = Close();
+    }
+  }
+
   /// Move constructor.
   File(File&& other)
     : fd_{ other.fd_ }
@@ -66,12 +72,6 @@ class File {
 #endif
   {
     other.owner_ = false;
-  }
-
-  ~File() {
-    if(owner_) {
-      core::Status s = Close();
-    }
   }
 
   /// Move assignment operator.
