@@ -209,6 +209,21 @@ namespace FASTER.benchmark
             dash.Start();
 #endif
 
+            ClientSession<Key, Value, Input, Output, Empty, Functions> session = store.For(functions).NewSession<Functions>(null);
+            LockableUnsafeContext<Key, Value, Input, Output, Empty, Functions> luContext = session.GetLockableUnsafeContext();
+
+            (Key key, LockType kind) xlock = (new Key { value = long.MaxValue }, LockType.Exclusive);
+            (Key key, LockType kind) slock = (new Key { value = long.MaxValue - 1 }, LockType.Shared);
+            if (testLoader.Options.LockImpl == (int)LockImpl.Manual)
+            {
+                session = store.For(functions).NewSession<Functions>(null);
+                luContext = session.GetLockableUnsafeContext();
+
+                Console.WriteLine("Taking 2 manual locks");
+                luContext.Lock(xlock.key, xlock.kind);
+                luContext.Lock(slock.key, slock.kind);
+            }
+
             Thread[] workers = new Thread[testLoader.Options.ThreadCount];
 
             Console.WriteLine("Executing setup.");
@@ -308,6 +323,15 @@ namespace FASTER.benchmark
             {
                 worker.Join();
             }
+
+            if (testLoader.Options.LockImpl == (int)LockImpl.Manual)
+            {
+                luContext.Unlock(xlock.key, xlock.kind);
+                luContext.Unlock(slock.key, slock.kind);
+                luContext.Dispose();
+                session.Dispose();
+            }
+
             waiter.Reset();
 
 #if DASHBOARD

@@ -35,7 +35,8 @@ namespace FASTER.benchmark
         [Option('z', "locking", Required = false, Default = 0,
              HelpText = "Locking Implementation:" +
                         "\n    0 = None (default)" +
-                        "\n    1 = RecordInfo.SpinLock()")]
+                        "\n    1 = Ephemeral locking using RecordInfo.SpinLock()" +
+                        "\n    2 = Manual locking using LockableUnsafeContext")]
         public int LockImpl { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,

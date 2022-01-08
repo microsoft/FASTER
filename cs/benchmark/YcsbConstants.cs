@@ -14,8 +14,9 @@ namespace FASTER.benchmark
 
     enum LockImpl : byte
     {
-        None,
-        RecordInfo
+        None = 0,
+        Ephemeral = 1,
+        Manual = 2
     };
 
     enum AddressLineNum : int
