@@ -194,27 +194,31 @@ namespace FASTER.devices
         /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
-            if (this.blobs.TryRemove(segment, out BlobEntry blob))
+            CloudPageBlob pageBlob;
+            if (blobs.TryRemove(segment, out BlobEntry blob))
+                pageBlob = blob.PageBlob;
+            else
+                pageBlob = blobDirectory.GetPageBlobReference(GetSegmentBlobName(segment));
+            if (!pageBlob.Exists()) return;
+
+            if (underLease)
             {
-                CloudPageBlob pageBlob = blob.PageBlob;
+                BlobManager.ConfirmLeaseAsync().AsTask()
+                    .GetAwaiter()
+                    .GetResult();
+            }
 
-                if (this.underLease)
+            if (!BlobManager.CancellationToken.IsCancellationRequested)
+            {
+                var t = pageBlob.DeleteAsync(cancellationToken: BlobManager.CancellationToken);
+                t.GetAwaiter().OnCompleted(() => 
                 {
-                    this.BlobManager.ConfirmLeaseAsync().GetAwaiter().GetResult();  // REVIEW: this method cannot avoid GetAwaiter
-                }
-
-                if (!this.BlobManager.CancellationToken.IsCancellationRequested)
-                {
-                    var t = pageBlob.DeleteAsync(cancellationToken: this.BlobManager.CancellationToken);
-                    t.GetAwaiter().OnCompleted(() =>                                // REVIEW: this method cannot avoid GetAwaiter
+                    if (t.IsFaulted)
                     {
-                        if (t.IsFaulted)
-                        {
-                            this.BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
-                        }
-                        callback(result);
-                    });
-                }
+                        BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
+                    }
+                    callback(result);
+                });
             }
         }
 
