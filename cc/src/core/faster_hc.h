@@ -359,6 +359,7 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRead(IAsyncContext* ctxt, S
       context.async = true;
       return;
     }
+    result = status;
   }
 
   if (context->stage == ReadOperationStage::COLD_LOG_READ) {
