@@ -2337,9 +2337,9 @@ bool FasterKv<K, V, D>::CleanHashTableBuckets() {
   uint8_t version = resize_info_.version;
   Address begin_address = hlog.begin_address.load();
   uint64_t upper_bound;
-  if(chunk + 1 < grow_.num_chunks) {
-    // All chunks but the last chunk contain kGrowHashTableChunkSize elements.
-    upper_bound = kGrowHashTableChunkSize;
+  if(chunk + 1 < gc_.num_chunks) {
+    // All chunks but the last chunk contain kGcHashTableChunkSize elements.
+    upper_bound = kGcHashTableChunkSize;
   } else {
     // Last chunk might contain more or fewer elements.
     upper_bound = state_[version].size() - (chunk * kGcHashTableChunkSize);
