@@ -125,21 +125,30 @@ class AsyncPendingReadContext : public PendingContext<K> {
  public:
   typedef K key_t;
  protected:
-  AsyncPendingReadContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_, bool abort_if_tombstone_)
+  AsyncPendingReadContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_,
+                          bool abort_if_tombstone_, Address min_search_offset_, uint64_t num_compaction_truncs_)
     : PendingContext<key_t>(OperationType::Read, caller_context_, caller_callback_)
-    , abort_if_tombstone{ abort_if_tombstone_ } {
+    , abort_if_tombstone{ abort_if_tombstone_ }
+    , min_search_offset{ min_search_offset_ }
+    , num_compaction_truncs{ num_compaction_truncs_ } {
   }
   /// The deep copy constructor.
   AsyncPendingReadContext(AsyncPendingReadContext& other, IAsyncContext* caller_context)
     : PendingContext<key_t>(other, caller_context)
-    , abort_if_tombstone{ other.abort_if_tombstone } {
+    , abort_if_tombstone{ other.abort_if_tombstone }
+    , min_search_offset{ other.min_search_offset }
+    , num_compaction_truncs{ other.num_compaction_truncs } {
   }
  public:
   virtual void Get(const void* rec) = 0;
   virtual void GetAtomic(const void* rec) = 0;
 
-  // If true, Read will return ABORT (instead of NOT_FOUND), if record is tombstone
+  /// If true, Read will return ABORT (instead of NOT_FOUND), if record is tombstone
   bool abort_if_tombstone;
+  ///
+  Address min_search_offset;
+  ///
+  uint64_t num_compaction_truncs;
 };
 
 /// A synchronous Read() context preserves its type information.
@@ -151,8 +160,10 @@ class PendingReadContext : public AsyncPendingReadContext<typename RC::key_t> {
   typedef typename read_context_t::value_t value_t;
   typedef Record<key_t, value_t> record_t;
 
-  PendingReadContext(read_context_t& caller_context_, AsyncCallback caller_callback_, bool abort_if_tombstone_)
-    : AsyncPendingReadContext<key_t>(caller_context_, caller_callback_, abort_if_tombstone_) {
+  PendingReadContext(read_context_t& caller_context_, AsyncCallback caller_callback_,
+                      bool abort_if_tombstone_, Address min_search_offset_, uint64_t num_compaction_truncs_)
+    : AsyncPendingReadContext<key_t>(caller_context_, caller_callback_, abort_if_tombstone_,
+                                      min_search_offset_, num_compaction_truncs_) {
   }
   /// The deep copy constructor.
   PendingReadContext(PendingReadContext& other, IAsyncContext* caller_context_)

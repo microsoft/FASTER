@@ -112,7 +112,8 @@ class FasterKv {
     , disk{ filename, epoch_, config }
     , hlog{ filename.empty() /*hasNoBackingStorage*/, log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
     , system_state_{ Action::None, Phase::REST, 1 }
-    , num_pending_ios{ 0 } {
+    , num_pending_ios{ 0 }
+    , num_compaction_truncs{ 0 } {
     if(!Utility::IsPowerOfTwo(table_size)) {
       throw std::invalid_argument{ " Size is not a power of 2" };
     }
@@ -171,7 +172,7 @@ class FasterKv {
 
   /// Truncating the head of the log.
   bool ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
-                         GcState::complete_callback_t complete_callback);
+                         GcState::complete_callback_t complete_callback, bool after_compaction = false);
 
   /// Make the hash table larger.
   bool GrowIndex(GrowState::callback_t caller_callback);
@@ -206,7 +207,7 @@ class FasterKv {
 
  private:
   OperationStatus InternalContinuePendingRead(ExecutionContext& ctx,
-      AsyncIOContext& io_context);
+      AsyncIOContext& io_context, bool& log_truncated);
   OperationStatus InternalContinuePendingRmw(ExecutionContext& ctx,
       AsyncIOContext& io_context);
   OperationStatus InternalContinuePendingConditionalInsert(ExecutionContext& ctx,
@@ -352,6 +353,9 @@ class FasterKv {
 
   /// Global count of pending I/Os, used for throttling.
   std::atomic<uint64_t> num_pending_ios;
+
+  /// Global count of number of truncations after compaction
+  std::atomic<uint64_t> num_compaction_truncs;
 
   /// Space for two contexts per thread, stored inline.
   ThreadContext thread_contexts_[Thread::kMaxNumThreads];
@@ -601,7 +605,8 @@ inline Status FasterKv<K, V, D>::Read(RC& context, AsyncCallback callback,
   static_assert(alignof(value_t) == alignof(typename read_context_t::value_t),
                 "alignof(value_t) != alignof(typename read_context_t::value_t)");
 
-  pending_read_context_t pending_context{ context, callback, abort_if_tombstone };
+  pending_read_context_t pending_context{ context, callback, abort_if_tombstone,
+                                          Address::kInvalidAddress, num_compaction_truncs.load() };
   OperationStatus internal_status = InternalRead(pending_context);
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
@@ -740,9 +745,10 @@ inline void FasterKv<K, V, D>::CompleteIoPendingRequests(ExecutionContext& conte
     context.pending_ios.erase(pending_io);
 
     // Issue the continue command
+    bool log_truncated = false;
     OperationStatus internal_status;
     if(pending_context->type == OperationType::Read) {
-      internal_status = InternalContinuePendingRead(context, *io_context.get());
+      internal_status = InternalContinuePendingRead(context, *io_context.get(), log_truncated);
     } else if (pending_context->type == OperationType::RMW) {
       internal_status = InternalContinuePendingRmw(context, *io_context.get());
     } else {
@@ -763,6 +769,20 @@ inline void FasterKv<K, V, D>::CompleteIoPendingRequests(ExecutionContext& conte
       result = HandleOperationStatus(context, *pending_context.get(), internal_status,
                                      pending_context.async);
     }
+
+    if (log_truncated && result == Status::NotFound) {
+      // Logic for avoiding the false NOT_FOUND when performing Reads concurrent to CompactionLookup
+      async_pending_read_context_t* read_pending_context = static_cast<async_pending_read_context_t*>(
+          io_context->caller_context);
+
+      // Re-scan newly introduced log range (i.e. [expected_entry->address, tailAddress])
+      read_pending_context->min_search_offset = read_pending_context->entry.address();
+      read_pending_context->num_compaction_truncs = num_compaction_truncs.load();
+
+      result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
+                                     pending_context.async);
+    }
+
     if(!pending_context.async) {
       pending_context->caller_callback(pending_context->caller_context, result);
     }
@@ -842,6 +862,12 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     if(!pending_context.is_key_equal(record->key())) {
       address = TraceBackForKeyMatchCtxt(pending_context, record->header.previous_address(), head_address);
     }
+  }
+
+  if (pending_context.min_search_offset != Address::kInvalidAddress &&
+        pending_context.min_search_offset > address) {
+    // Found an record before the designated start of search range
+    return OperationStatus::NOT_FOUND;
   }
 
   switch(thread_ctx().phase) {
@@ -1648,28 +1674,47 @@ void FasterKv<K, V, D>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status res
 
 template <class K, class V, class D>
 OperationStatus FasterKv<K, V, D>::InternalContinuePendingRead(ExecutionContext& context,
-    AsyncIOContext& io_context) {
-  if(io_context.address >= hlog.begin_address.load()) {
-    async_pending_read_context_t* pending_context = static_cast<async_pending_read_context_t*>(
-          io_context.caller_context);
+    AsyncIOContext& io_context, bool& log_truncated) {
+
+  async_pending_read_context_t* pending_context = static_cast<async_pending_read_context_t*>(
+        io_context.caller_context);
+  log_truncated = pending_context->num_compaction_truncs < num_compaction_truncs.load();
+
+  OperationStatus op_status;
+  if (pending_context->min_search_offset != Address::kInvalidAddress &&
+      pending_context->min_search_offset > io_context.address) {
+        op_status = OperationStatus::NOT_FOUND;
+  }
+  else if (io_context.address >= hlog.begin_address.load()) {
+    // Address points to valid record
     record_t* record = reinterpret_cast<record_t*>(io_context.record.GetValidPointer());
-    if(record->header.tombstone) {
-      if (!pending_context->abort_if_tombstone) {
-        return (thread_ctx().version > context.version) ? OperationStatus::NOT_FOUND_UNMARK :
-              OperationStatus::NOT_FOUND;
-      }
-      else {
-        return (thread_ctx().version > context.version) ? OperationStatus::ABORTED_UNMARK :
-              OperationStatus::ABORTED;
-      }
+    if (record->header.tombstone) {
+      op_status = (pending_context->abort_if_tombstone)
+                    ? OperationStatus::ABORTED
+                    : OperationStatus::NOT_FOUND;
     }
-    pending_context->Get(record);
-    assert(!kCopyReadsToTail);
+    else {
+      pending_context->Get(record);
+      assert(!kCopyReadsToTail);
+      op_status = OperationStatus::SUCCESS;
+    }
+  }
+  else {
+    op_status = OperationStatus::NOT_FOUND; // Invalid address
+  }
+
+  if (op_status == OperationStatus::SUCCESS) {
     return (thread_ctx().version > context.version) ? OperationStatus::SUCCESS_UNMARK :
            OperationStatus::SUCCESS;
-  } else {
+  }
+  else if (op_status == OperationStatus::NOT_FOUND) {
     return (thread_ctx().version > context.version) ? OperationStatus::NOT_FOUND_UNMARK :
            OperationStatus::NOT_FOUND;
+  }
+  else {
+    assert(op_status == OperationStatus::ABORTED);
+    return (thread_ctx().version > context.version) ? OperationStatus::ABORTED_UNMARK :
+          OperationStatus::ABORTED;
   }
 }
 
@@ -3012,12 +3057,16 @@ Status FasterKv<K, V, D>::Recover(const Guid& index_token, const Guid& hybrid_lo
 template <class K, class V, class D>
 bool FasterKv<K, V, D>::ShiftBeginAddress(Address address,
     GcState::truncate_callback_t truncate_callback,
-    GcState::complete_callback_t complete_callback) {
+    GcState::complete_callback_t complete_callback,
+    bool after_compaction) {
   SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
   if(!system_state_.compare_exchange_strong(expected,
       SystemState{ Action::GC, Phase::REST, expected.version })) {
     // Can't start a GC while an action is already in progress.
     return false;
+  }
+  if (after_compaction) {
+    ++num_compaction_truncs;
   }
   hlog.begin_address.store(address);
   // Each active thread will notify the epoch when all pending I/Os have completed.
@@ -3139,7 +3188,8 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
       completed = true;
     };
     // TODO: delay if checkpointing
-    bool result = ShiftBeginAddress(Address(until_address), truncate_callback, complete_callback);
+    bool result = ShiftBeginAddress(Address(until_address), truncate_callback,
+                                    complete_callback, true);
     if (!result) return false;
 
     // block until truncation & hash index update finishes
@@ -3214,7 +3264,7 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
     record = pages.GetNextRecord(record_address);
     if (record == nullptr) { // No more records in this page
       if (!pending_records.empty()) {
-        // Shound not move to a new page, until all pending
+        // Should not move to a new page, until all pending
         // requests for this page have been completed
         goto complete_pending;
       }
