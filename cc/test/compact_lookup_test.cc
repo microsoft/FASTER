@@ -1599,6 +1599,95 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskConcurrentOps) {
   std::experimental::filesystem::remove_all("tmp_store");
 }
 
+TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
+  typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
+  typedef FasterKv<Key, LargeValue, disk_t> faster_t;
+
+  std::experimental::filesystem::create_directories("tmp_store");
+  // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
+  faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
+  static constexpr int numRecords = 50000;
+  static constexpr int num_read_threads = 32;
+
+  store.StartSession();
+  // Populate initial keys
+  for (size_t idx = 1; idx <= numRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_TRUE(false);
+    };
+    UpsertContext<Key, LargeValue> context{Key(idx), LargeValue(idx)};
+    Status result = store.Upsert(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+  store.CompletePending(true);
+  store.StopSession();
+
+  std::atomic<bool> stop{ false };
+
+  auto compaction_worker_func = [&store, &stop]() {
+    // perform compaction concurrently
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    store.StartSession();
+    uint64_t until_address = store.hlog.safe_read_only_address.control() / 16;
+    ASSERT_TRUE(
+      store.CompactWithLookup(until_address, true, 1));
+    ASSERT_EQ(until_address, store.hlog.begin_address.control());
+    store.StopSession();
+
+    stop.store(true);
+  };
+
+  auto read_worker_func = [&store, &stop](size_t start, size_t end) {
+    std::vector<uint64_t> keys;
+    for (uint64_t idx = start; idx <= end; idx++) {
+      keys.push_back(idx);
+    }
+    std::shuffle(keys.begin(), keys.end(), std::default_random_engine(start));
+
+    store.StartSession();
+
+    while (!stop.load()) {
+      // Reads should return newer values for non-deleted entries
+      for (size_t idx : keys) {
+        auto callback = [](IAsyncContext* ctxt, Status result) {
+          CallbackContext<ReadContext<Key, LargeValue>> context(ctxt);
+          ASSERT_TRUE(context->key().key > 0);
+          ASSERT_EQ(result, Status::Ok);
+        };
+        ReadContext<Key, LargeValue> context{ Key(idx) };
+        Status result = store.Read(context, callback, 1);
+        EXPECT_TRUE(result == Status::Ok || result == Status::Pending);
+
+        if (idx % 20 == 0) {
+          store.CompletePending(false);
+        }
+      }
+      store.CompletePending(true);
+    }
+    store.StopSession();
+  };
+
+  // launch threads
+  std::thread compaction_worker (compaction_worker_func);
+
+  std::vector<std::thread> read_threads;
+  for (int i = 0; i < num_read_threads; i++) {
+    // 1800 & 2372 are NOT *magic* numbers
+    // they are the start & end of the record keys in the last disk page
+    // that will be compacted -- it is much more likely (time-wise)
+    // for the race condition to be observed there
+    read_threads.emplace_back(read_worker_func, 1800, 2372);
+  }
+
+  // wait for them to exit
+  compaction_worker.join();
+  for (auto& t : read_threads) {
+    t.join();
+  }
+
+  std::experimental::filesystem::remove_all("tmp_store");
+}
+
 TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthKey) {
   using Key = VariableSizeKey;
   using ShallowKey = VariableSizeShallowKey;
@@ -1946,7 +2035,6 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthKey) {
 
   std::experimental::filesystem::remove_all("tmp_store");
 }
-
 
 TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthValue) {
   using Key = FixedSizeKey<uint32_t>;
