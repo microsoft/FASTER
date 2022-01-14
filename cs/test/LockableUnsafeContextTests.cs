@@ -10,14 +10,14 @@ using FASTER.core;
 using NUnit.Framework;
 using FASTER.test.ReadCacheTests;
 using System.Threading.Tasks;
-using System.Runtime.ExceptionServices;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test.LockableUnsafeContext
 {
     // Functions for the "Simple lock transaction" case, e.g.:
     //  - Lock key1, key2, key3, keyResult
     //  - Do some operation on value1, value2, value3 and write the result to valueResult
-    class LockableUnsafeFunctions : SimpleFunctions<int, int>
+    internal class LockableUnsafeFunctions : SimpleFunctions<int, int>
     {
         internal long deletedRecordAddress;
 
@@ -35,13 +35,28 @@ namespace FASTER.test.LockableUnsafeContext
         }
     }
 
+    internal class LockableUnsafeComparer : IFasterEqualityComparer<int>
+    {
+        internal int maxSleepMs;
+        readonly Random rng = new(101);
+
+        public bool Equals(ref int k1, ref int k2) => k1 == k2;
+
+        public long GetHashCode64(ref int k)
+        {
+            if (maxSleepMs > 0)
+                Thread.Sleep(rng.Next(maxSleepMs));
+            return Utility.GetHashCode(k);
+        }
+    }
+
     public enum ResultLockTarget { MutableLock, LockTable }
 
     public enum ReadCopyDestination { Tail, ReadCache }
 
     public enum FlushMode { NoFlush, ReadOnly, OnDisk }
 
-    public enum UpdateOp { Upsert, RMW }
+    public enum UpdateOp { Upsert, RMW, Delete }
 
     [TestFixture]
     class LockableUnsafeContextTests
@@ -51,6 +66,9 @@ namespace FASTER.test.LockableUnsafeContext
         const int transferToExistingKey = 200;
 
         const int valueMult = 1_000_000;
+
+        LockableUnsafeFunctions functions;
+        LockableUnsafeComparer comparer;
 
         private FasterKV<int, int> fht;
         private ClientSession<int, int, int, int, Empty, LockableUnsafeFunctions> session;
@@ -63,9 +81,9 @@ namespace FASTER.test.LockableUnsafeContext
         {
             if (!forRecovery)
             {
-                TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+                DeleteDirectory(MethodTestDir, wait: true);
             }
-            log = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "test.log"), deleteOnClose: false, recoverDevice: forRecovery);
+            log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false, recoverDevice: forRecovery);
 
             ReadCacheSettings readCacheSettings = default;
             CheckpointSettings checkpointSettings = default;
@@ -79,15 +97,18 @@ namespace FASTER.test.LockableUnsafeContext
                 }
                 if (arg is CheckpointType chktType)
                 {
-                    checkpointSettings = new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir };
+                    checkpointSettings = new CheckpointSettings { CheckpointDir = MethodTestDir };
                     break;
                 }
             }
 
+            comparer = new LockableUnsafeComparer();
+            functions = new LockableUnsafeFunctions();
+
             fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
-                                            checkpointSettings: checkpointSettings,
+                                            checkpointSettings: checkpointSettings, comparer: comparer,
                                             supportsLocking: true);
-            session = fht.For(new LockableUnsafeFunctions()).NewSession<LockableUnsafeFunctions>();
+            session = fht.For(functions).NewSession<LockableUnsafeFunctions>();
         }
 
         [TearDown]
@@ -104,16 +125,14 @@ namespace FASTER.test.LockableUnsafeContext
 
             if (!forRecovery)
             {
-                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+                DeleteDirectory(MethodTestDir);
             }
         }
 
         void Populate()
         {
             for (int key = 0; key < numRecords; key++)
-            {
                 Assert.AreNotEqual(Status.PENDING, session.Upsert(key, key * valueMult));
-            }
         }
 
         static void AssertIsLocked(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext, int key, LockType lockType)
@@ -156,10 +175,11 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
         public void InMemorySimpleLockTxnTest([Values] ResultLockTarget resultLockTarget, [Values] ReadCopyDestination readCopyDestination,
-                                              [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] UpdateOp updateOp)
+                                              [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase,
+                                              [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
             PrepareRecordLocation(flushMode);
@@ -287,9 +307,10 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
-        public void InMemoryLongLockTest([Values] ResultLockTarget resultLockTarget, [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] UpdateOp updateOp)
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void InMemoryLongLockTest([Values] ResultLockTarget resultLockTarget, [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase,
+                                         [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
             PrepareRecordLocation(flushMode);
@@ -313,7 +334,7 @@ namespace FASTER.test.LockableUnsafeContext
                 {
                     Assert.AreEqual(Status.PENDING, status);
                     luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                    (status, value24) = TestUtils.GetSinglePendingResult(completedOutputs);
+                    (status, value24) = GetSinglePendingResult(completedOutputs);
                     Assert.AreEqual(Status.OK, status);
                     Assert.AreEqual(24 * valueMult, value24);
                 }
@@ -372,8 +393,8 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
         public void InMemoryDeleteTest([Values] ResultLockTarget resultLockTarget, [Values] ReadCopyDestination readCopyDestination,
                                        [Values(FlushMode.NoFlush, FlushMode.ReadOnly)] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
@@ -430,8 +451,8 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
         public void StressLocks([Values(1, 8)] int numLockThreads, [Values(1, 8)] int numOpThreads)
         {
             Populate();
@@ -540,8 +561,8 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
         public void TransferFromLockTableToCTTTest()
         {
             Populate();
@@ -571,8 +592,8 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
         public void TransferFromLockTableToUpsertTest([Values] ChainTests.RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
@@ -607,8 +628,8 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
         public void TransferFromLockTableToRMWTest([Values] ChainTests.RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
@@ -645,8 +666,8 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
         public void TransferFromLockTableToDeleteTest([Values] ChainTests.RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
@@ -670,7 +691,8 @@ namespace FASTER.test.LockableUnsafeContext
                     key = transferToNewKey;
                     AddLockTableEntry(luContext, key, immutable: false);
                     var status = luContext.Delete(key);
-                    Assert.AreEqual(Status.OK, status);
+                    Assert.AreEqual(Status.NOTFOUND, status);
+                    luContext.Unlock(key, LockType.Exclusive);  // TODO Delete should do this
                 }
             }
             finally
@@ -678,12 +700,13 @@ namespace FASTER.test.LockableUnsafeContext
                 luContext.SuspendThread();
             }
 
-            VerifySplicedInKey(luContext, key);
+            if (recordRegion != ChainTests.RecordRegion.NotFound)
+                VerifySplicedInKey(luContext, key);
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
         public void LockAndUnlockInLockTableOnlyTest()
         {
             // For this, just don't load anything, and it will happen in lock table.
@@ -719,8 +742,168 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void TransferFromReadOnlyToUpdateRecordTest([Values] UpdateOp updateOp)
+        {
+            Populate();
+            this.fht.Log.ShiftReadOnlyAddress(this.fht.Log.TailAddress, wait: true);
+
+            using var luContext = session.GetLockableUnsafeContext();
+
+            const int key = 42;
+            luContext.Lock(key, LockType.Exclusive);
+
+            int getValue(int key) => key + valueMult;
+
+            luContext.ResumeThread();
+
+            try
+            {
+                var status = updateOp switch
+                {
+                    UpdateOp.Upsert => luContext.Upsert(key, getValue(key)),
+                    UpdateOp.RMW => luContext.RMW(key, getValue(key)),
+                    UpdateOp.Delete => luContext.Delete(key),
+                    _ => Status.ERROR
+                };
+                Assert.AreNotEqual(Status.ERROR, status, $"Unexpected UpdateOp {updateOp}");
+                Assert.AreEqual(Status.OK, status);
+
+                var (xlock, slock) = luContext.IsLocked(key);
+                Assert.IsTrue(xlock);
+                Assert.IsFalse(slock);
+            }
+            finally
+            {
+                luContext.SuspendThread();
+            }
+
+            luContext.Unlock(key, LockType.Exclusive);
+        }
+
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void LockNewRecordCompeteWithUpdateTest([Values(LockOperationType.Lock, LockOperationType.Unlock)] LockOperationType lockOp, [Values] UpdateOp updateOp)
+        {
+            const int numNewRecords = 100;
+
+            using var updateSession = fht.NewSession(new SimpleFunctions<int, int>());
+            using var lockSession = fht.NewSession(new SimpleFunctions<int, int>());
+
+            using var updateLuContext = updateSession.GetLockableUnsafeContext();
+            using var lockLuContext = lockSession.GetLockableUnsafeContext();
+
+            LockType getLockType(int key) => ((key & 1) == 0) ? LockType.Exclusive : LockType.Shared;
+            int getValue(int key) => key + valueMult;
+
+            // If we are testing Delete, then we need to have the records ON-DISK first; Delete is a no-op for unfound records.
+            if (updateOp == UpdateOp.Delete)
+            {
+                for (var key = numRecords; key < numRecords + numNewRecords; ++key)
+                    Assert.AreNotEqual(Status.PENDING, session.Upsert(key, key * valueMult));
+                fht.Log.FlushAndEvict(wait: true);
+            }
+
+            // Now populate the main area of the log.
+            Populate();
+
+            HashSet<int> locks = new();
+            void lockKey(int key)
+            {
+                lockLuContext.Lock(key, getLockType(key));
+                locks.Add(key);
+            }
+            void unlockKey(int key)
+            {
+                lockLuContext.Unlock(key, getLockType(key));
+                locks.Remove(key);
+            }
+
+            // If we are testing unlocking, then we need to lock first.
+            if (lockOp == LockOperationType.Unlock)
+            {
+                for (var key = numRecords; key < numRecords + numNewRecords; ++key)
+                    lockKey(key);
+            }
+
+            // Sleep at varying durations for each call to comparer.GetHashCode, which is called at the start of Lock/Unlock and Upsert/RMW/Delete.
+            comparer.maxSleepMs = 20;
+
+            for (var key = numRecords; key < numRecords + numNewRecords; ++key)
+            {
+                // Use Task instead of Thread because this propagates exceptions (such as Assert.* failures) back to this thread.
+                Task.WaitAll(Task.Run(() => locker(key)), Task.Run(() => updater(key)));
+                var (xlock, slock) = lockLuContext.IsLocked(key);
+                var expectedXlock = getLockType(key) == LockType.Exclusive && lockOp != LockOperationType.Unlock;
+                var expectedSlock = getLockType(key) == LockType.Shared && lockOp != LockOperationType.Unlock;
+                Assert.AreEqual(expectedXlock, xlock);
+                Assert.AreEqual(expectedSlock, slock);
+
+                if (lockOp == LockOperationType.Lock)
+                {
+                    // There should be no entries in the locktable now; they should all be on the RecordInfo.
+                    Assert.IsFalse(fht.LockTable.IsActive, $"count = {fht.LockTable.dict.Count}");
+                }
+                else
+                {
+                    // We are unlocking so should remove one record for each iteration.
+                    Assert.AreEqual(numNewRecords + numRecords - key - 1, fht.LockTable.dict.Count);
+                }
+            }
+
+            // Unlock all the keys we are expecting to unlock, which ensures all the locks were applied to RecordInfos as expected.
+            foreach (var key in locks.ToArray())
+                unlockKey(key);
+
+            void locker(int key)
+            {
+                try
+                {
+                    lockLuContext.ResumeThread();
+                    if (lockOp == LockOperationType.Lock)
+                        lockKey(key);
+                    else
+                        unlockKey(key);
+                }
+                finally
+                {
+                    lockLuContext.SuspendThread();
+                }
+            }
+
+            void updater(int key)
+            {
+                updateLuContext.ResumeThread();
+
+                try
+                {
+                    // Use the LuContext here even though we're not doing locking, because we don't want the ephemeral locks to be tried for this test
+                    // (the test will hang as we try to acquire the lock).
+                    var status = updateOp switch
+                    {
+                        UpdateOp.Upsert => updateLuContext.Upsert(key, getValue(key)),
+                        UpdateOp.RMW => updateLuContext.RMW(key, getValue(key)),
+                        UpdateOp.Delete => updateLuContext.Delete(key),
+                        _ => Status.ERROR
+                    };
+                    Assert.AreNotEqual(Status.ERROR, status, $"Unexpected UpdateOp {updateOp}");
+                    if (updateOp == UpdateOp.RMW)
+                        Assert.AreEqual(Status.NOTFOUND, status);
+                    else
+                        Assert.AreEqual(Status.OK, status);
+                }
+                finally
+                {
+                    updateLuContext.SuspendThread();
+                }
+            }
+        }
+
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
         public void EvictFromMainLogToLockTableTest()
         {
             Populate();
@@ -779,9 +962,9 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.CheckpointRestoreCategory)]
-        public async ValueTask CheckpointRecoverTest([Values] CheckpointType checkpointType, [Values] TestUtils.SyncMode syncMode)
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(CheckpointRestoreCategory)]
+        public async ValueTask CheckpointRecoverTest([Values] CheckpointType checkpointType, [Values] SyncMode syncMode)
         {
             Populate();
 
@@ -802,7 +985,7 @@ namespace FASTER.test.LockableUnsafeContext
 
                 this.fht.Log.ShiftReadOnlyAddress(this.fht.Log.TailAddress, wait: true);
 
-                if (syncMode == TestUtils.SyncMode.Sync)
+                if (syncMode == SyncMode.Sync)
                 {
                     this.fht.TakeFullCheckpoint(out fullCheckpointToken, checkpointType);
                     await this.fht.CompleteCheckpointAsync();
@@ -818,7 +1001,7 @@ namespace FASTER.test.LockableUnsafeContext
             TearDown(forRecovery: true);
             Setup(forRecovery: true);
 
-            if (syncMode == TestUtils.SyncMode.Sync)
+            if (syncMode == SyncMode.Sync)
                 this.fht.Recover(fullCheckpointToken);
             else
                 await this.fht.RecoverAsync(fullCheckpointToken);
@@ -839,14 +1022,14 @@ namespace FASTER.test.LockableUnsafeContext
         const int checkpointFreq = 250;
 
         [Test]
-        [Category(TestUtils.LockableUnsafeContextTestCategory)]
-        [Category(TestUtils.CheckpointRestoreCategory)]
-        async public Task SecondaryReaderTest([Values] TestUtils.SyncMode syncMode)
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(CheckpointRestoreCategory)]
+        async public Task SecondaryReaderTest([Values] SyncMode syncMode)
         {
             // This test is taken from the SecondaryReaderStore sample
 
-            var path = TestUtils.MethodTestDir;
-            TestUtils.DeleteDirectory(path, wait: true);
+            var path = MethodTestDir;
+            DeleteDirectory(path, wait: true);
 
             var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
 
@@ -862,15 +1045,15 @@ namespace FASTER.test.LockableUnsafeContext
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 
-            // Use Task instead of Thread because this propagate exceptions back to this thread.
+            // Use Task instead of Thread because this propagates exceptions (such as Assert.* failures) back to this thread.
             await Task.WhenAll(Task.Run(() => PrimaryWriter(primaryStore, syncMode)),
                                Task.Run(() => SecondaryReader(secondaryStore, syncMode)));
 
             log.Dispose();
-            TestUtils.DeleteDirectory(path, wait: true);
+            DeleteDirectory(path, wait: true);
         }
 
-        async static Task PrimaryWriter(FasterKV<long, long> primaryStore, TestUtils.SyncMode syncMode)
+        async static Task PrimaryWriter(FasterKV<long, long> primaryStore, SyncMode syncMode)
         {
             using var s1 = primaryStore.NewSession(new SimpleFunctions<long, long>());
             using var luc1 = s1.GetLockableUnsafeContext();
@@ -881,7 +1064,7 @@ namespace FASTER.test.LockableUnsafeContext
                 if (key > 0 && key % checkpointFreq == 0)
                 {
                     // Checkpointing primary until key {key - 1}
-                    if (syncMode == TestUtils.SyncMode.Sync)
+                    if (syncMode == SyncMode.Sync)
                     {
                         primaryStore.TakeHybridLogCheckpoint(out _, CheckpointType.Snapshot);
                         await primaryStore.CompleteCheckpointAsync().ConfigureAwait(false);
@@ -909,7 +1092,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
         }
 
-        async static Task SecondaryReader(FasterKV<long, long> secondaryStore, TestUtils.SyncMode syncMode)
+        async static Task SecondaryReader(FasterKV<long, long> secondaryStore, SyncMode syncMode)
         {
             using var s1 = secondaryStore.NewSession(new SimpleFunctions<long, long>());
             using var luc1 = s1.GetLockableUnsafeContext();
@@ -920,7 +1103,7 @@ namespace FASTER.test.LockableUnsafeContext
                 try
                 {
                     // read-only recovery, no writing back undos
-                    if (syncMode == TestUtils.SyncMode.Sync)
+                    if (syncMode == SyncMode.Sync)
                         secondaryStore.Recover(undoNextVersion: false);
                     else
                         await secondaryStore.RecoverAsync(undoNextVersion: false).ConfigureAwait(false);

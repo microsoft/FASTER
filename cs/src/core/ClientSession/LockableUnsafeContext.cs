@@ -130,8 +130,9 @@ namespace FASTER.core
             LockOperation lockOp = new(LockOperationType.Lock, lockType);
 
             OperationStatus status;
+            bool oneMiss = false;
             do
-                status = clientSession.fht.InternalLock(ref key, lockOp, out _, FasterSession, clientSession.ctx);
+                status = clientSession.fht.InternalLock(ref key, lockOp, ref oneMiss, out _);
             while (status == OperationStatus.RETRY_NOW);
             Debug.Assert(status == OperationStatus.SUCCESS);
 
@@ -160,8 +161,9 @@ namespace FASTER.core
             LockOperation lockOp = new(LockOperationType.Unlock, lockType);
 
             OperationStatus status;
+            bool oneMiss = false;
             do
-                status = clientSession.fht.InternalLock(ref key, lockOp, out _, FasterSession, clientSession.ctx);
+                status = clientSession.fht.InternalLock(ref key, lockOp, ref oneMiss, out _);
             while (status == OperationStatus.RETRY_NOW);
             Debug.Assert(status == OperationStatus.SUCCESS);
 
@@ -190,8 +192,9 @@ namespace FASTER.core
 
             OperationStatus status;
             RecordInfo lockInfo;
+            bool oneMiss = false;
             do
-                status = clientSession.fht.InternalLock(ref key, lockOp, out lockInfo, FasterSession, clientSession.ctx);
+                status = clientSession.fht.InternalLock(ref key, lockOp, ref oneMiss, out lockInfo);
             while (status == OperationStatus.RETRY_NOW);
             Debug.Assert(status == OperationStatus.SUCCESS);
             return (lockInfo.IsLockedExclusive, lockInfo.IsLockedShared);

@@ -154,7 +154,7 @@ When Upsert must append a new record:
   - Any thread seeing a Tentative record will spinwait until it's no longer Tentative, so no thread will try to lock this newly-CAS'd record.
 - Upsert checks the `LockTable` to see if there is an entry in it for this key.
   - If an entry is in the `LockTable`, then Upsert checks to see if it is marked Tentative.
-    - If so, then it is ignored; per [Insertion to LockTable due to Lock](#insertion-to-locktable-due-to-lock), it will be removed by the Lock() thread.
+    - If so, then we spinwait until it is no longer tentative; per [Insertion to LockTable due to Lock](#insertion-to-locktable-due-to-lock), it will be removed by the Lock() thread, or made final, depending on whether the Lock() thread saw the newly-Upserted record.
     - Otherwise, Upsert:
       - Applies the locks to its newly-CAS'd record (which is still Tentative)
       - Sets the LockTable entry Invalid and removes it
@@ -205,7 +205,7 @@ For record transfers involving the ReadCache, we have the following high-level c
   - Otherwise, we insplice between the final RC entry and the first main-log entry; we never splice into the middle of the RC prefix chain.
 - Even when there are RC entries in the hash chain, we must avoid latching because that would slow down all record-insertion operations (upsert, RMW of a new record, Delete of an on-disk record, etc.) as well as some Read situations.
 - "Insplicing" occurs when a new record is inserted into the main log after the end of the ReadCache prefix string.
-- "Outsplicing" occurs when a record is spliced out of the RC portion of the hash chain (main log records are never spliced out) because the value for that key must be updated, or because we are evicting records from the ReadCache. Outsplicing introduces concurrency considerations but we must support it; we cannot simply mark ReadCache entries as Invalid and leave them there, or the chain will grow without bound. For concurrency reasons we defer outsplicing to readcache eviction time, when readcache records are destroyed, as described below.
+- "Outsplicing" occurs when a record is spliced out of the RC portion of the hash chain (main log records are never spliced out) because the value for that key must be updated, or because we are evicting records from the ReadCache. We cannot simply mark ReadCache entries as Invalid and leave them there, or the chain will grow without bound. For concurrency reasons, outsplicing is "delayed"; we mark the readcache record as Invalid during normal operations, and defer actual record removal to readcache eviction time, as described below.
   - Insplicing: For splicing into the chain, we always CAS at the final RC entry rather than at the HashTable bucket slot (we never splice into the middle of the RC prefix chain).
     - Add the new record to the tail of main by pointing to the existing tail of in its `.PreviousAddress`.
     - CAS the existing final RC record to point to the new record (set its .PreviousAddress and CAS).
@@ -244,9 +244,9 @@ Transfers to the `LockTable` due to main log evictions are handled in the follow
 
 ### Recovery Considerations
 
-We must clear in-memory records' lock bits during FoldOver recovery. 
-- Add to checkpoint information an indication of whether any `LockableUnsafeContext` were active during the Checkpoint.
-- If this MRO indicator is true:
+We must clear in-memory records' lock bits during recovery. 
+- Add `RecoveryInfo.manualLockingActive`, an indication of whether any `LockableUnsafeContext` were active during the Checkpoint.
+- If this indicator is true:
   - Scan pages, clearing the locks of any records
     - These pages do not need to be flushed to disk
   - Ensure random reads and scans will NOT be flummoxed by the weird lock bits

@@ -41,7 +41,7 @@ namespace FASTER.core
                 info.Seal(manualLocking: true);
 
                 // Now get it into the lock table, so it is ready as soon as the record is removed.
-                this.store.LockTable.TransferFrom(ref key, info);
+                this.store.LockTable.TransferFromLogRecord(ref key, info);
             }
         }
 

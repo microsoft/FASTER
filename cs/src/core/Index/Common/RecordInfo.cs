@@ -129,6 +129,25 @@ namespace FASTER.core
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void LockExclusiveRaw()
+        {
+            // Acquire exclusive lock, without spin limit or considering Intermediate state
+            while (true)
+            {
+                long expected_word = word;
+                if ((expected_word & kExclusiveLockBitMask) == 0)
+                {
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
+                        break;
+                }
+                Thread.Yield();
+            }
+
+            // Wait for readers to drain
+            while ((word & kSharedLockMaskInWord) != 0) Thread.Yield();
+        }
+
         /// <summary>
         /// Take shared (read) lock on RecordInfo
         /// </summary>
@@ -166,6 +185,24 @@ namespace FASTER.core
                         break;
                 }
                 if (spinCount > 0 && --spinCount <= 0) return false;
+                Thread.Yield();
+            }
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool LockSharedRaw(int spinCount = 1)
+        {
+            // Acquire shared lock, without spin limit or considering Intermediate state
+            while (true)
+            {
+                long expected_word = word;
+                if (((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
+                    && (expected_word & kSharedLockMaskInWord) != kSharedLockMaskInWord) // shared lock is not full
+                {
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word + kSharedLockIncrement, expected_word))
+                        break;
+                }
                 Thread.Yield();
             }
             return true;
@@ -257,9 +294,26 @@ namespace FASTER.core
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetTentativeAtomic(bool value)
+        {
+            // Call this when locking may be done simultaneously
+            while (this.Tentative != value)
+            {
+                long expected_word = word;
+                long new_word = value ? (word | kTentativeBitMask) : (word & ~kTentativeBitMask);
+                long current_word = Interlocked.CompareExchange(ref word, new_word, expected_word);
+                if (expected_word == current_word)
+                    return;
+
+                // Tentative records should not be operated on by other threads.
+                Debug.Assert((word & kSealedBitMask) == 0 && !this.Invalid);
+                Thread.Yield();
+            }
+        }
+
         public bool Sealed => (word & kSealedBitMask) > 0;
 
-        // Ensure we have exclusive access before sealing.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Seal(bool manualLocking = false)
         {

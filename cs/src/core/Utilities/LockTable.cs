@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -15,7 +14,7 @@ namespace FASTER.core
     {
         internal IHeapContainer<TKey> key;
         internal RecordInfo logRecordInfo;  // in main log
-        internal RecordInfo lockRecordInfo; // in lock table; we have to Lock/Seal/Tentative the LockTable entry separately from logRecordInfo
+        internal RecordInfo lockRecordInfo; // in lock table; we have to Lock/Tentative the LockTable entry separately from logRecordInfo
 
         internal LockTableEntry(IHeapContainer<TKey> key, RecordInfo logRecordInfo, RecordInfo lockRecordInfo)
         {
@@ -24,9 +23,24 @@ namespace FASTER.core
             this.lockRecordInfo = lockRecordInfo;
         }
 
-        public bool Equals(LockTableEntry<TKey> k1, LockTableEntry<TKey> k2) => k1.logRecordInfo.Equals(k2.logRecordInfo);
+        public bool Equals(LockTableEntry<TKey> k1, LockTableEntry<TKey> k2)
+            => k1.logRecordInfo.Equals(k2.logRecordInfo) && k1.lockRecordInfo.Tentative == k2.lockRecordInfo.Tentative;
 
         public int GetHashCode(LockTableEntry<TKey> k) => (int)k.logRecordInfo.GetHashCode64();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void XLock() => this.lockRecordInfo.LockExclusiveRaw();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void XUnlock() { this.lockRecordInfo.UnlockExclusive();}
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SLock() => this.lockRecordInfo.LockSharedRaw();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SUnlock() { this.lockRecordInfo.UnlockShared(); }
+
+        public override string ToString() => $"{key}";
     }
 
     internal class LockTable<TKey>
@@ -65,130 +79,88 @@ namespace FASTER.core
         IHeapContainer<TKey> GetKeyContainer(ref TKey key) 
             => bufferPool is null ? new StandardHeapContainer<TKey>(ref key) : new VarLenHeapContainer<TKey>(ref key, keyLen, bufferPool);
 
-        // Provide our own implementation of "Update by lambda"
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool Update(ref TKey key, Func<LockTableEntry<TKey>, LockTableEntry<TKey>> updateFactory)
+        internal bool Unlock(ref TKey key, LockType lockType, out bool exists)
         {
-            using var keyContainer = GetKeyContainer(ref key);
-            while (dict.TryGetValue(keyContainer, out var lte))
-            {
-                if (dict.TryUpdate(keyContainer, updateFactory(lte), lte))
-                    return true;
-            }
+            var lookupKey = GetKeyContainer(ref key);
+            exists = dict.TryGetValue(lookupKey, out var lte);
+            if (exists)
+                return Unlock(lookupKey, lte, lockType);
             return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Unlock(ref TKey key, LockType lockType)
+        private bool Unlock(IHeapContainer<TKey> lookupKey, LockTableEntry<TKey> lte, LockType lockType)
         {
-            if (Update(ref key, lte => { lte.logRecordInfo.Unlock(lockType); return lte; }))
-                TryRemoveIfNoLocks(ref key);
-            else
-                Debug.Fail("Trying to unlock a nonexistent key");
+            bool result = false;
+            lte.SLock();
+            if (!lte.lockRecordInfo.Invalid)
+            {
+                lte.logRecordInfo.Unlock(lockType);
+                result = true;
+            }
+            lte.SUnlock();
+
+            if (!lte.logRecordInfo.IsLocked)
+            {
+                lte.XLock();
+                if (!lte.logRecordInfo.IsLocked && !lte.lockRecordInfo.Invalid)
+                    TryRemoveEntry(lookupKey);
+                lte.XUnlock();
+            }
+
+            return result;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void TransferFrom(ref TKey key, RecordInfo logRecordInfo)
+        internal void TransferFromLogRecord(ref TKey key, RecordInfo logRecordInfo)
         {
-            var keyContainer = GetKeyContainer(ref key);
+            var lookupKey = GetKeyContainer(ref key);
             RecordInfo newRec = default;
+            newRec.SetValid();
             newRec.CopyLocksFrom(logRecordInfo);
-            if (!dict.TryAdd(keyContainer, new(keyContainer, newRec, default)))
+            RecordInfo lockRec = default;
+            lockRec.SetValid();
+            Interlocked.Increment(ref this.approxNumItems);
+            if (!dict.TryAdd(lookupKey, new(lookupKey, newRec, lockRec)))
             {
-                keyContainer.Dispose();
+                Interlocked.Decrement(ref this.approxNumItems);
+                lookupKey.Dispose();
                 Debug.Fail("Trying to Transfer to an existing key");
                 return;
             }
-            Interlocked.Increment(ref this.approxNumItems);
         }
 
         // Lock the LockTable record for the key if it exists, else add a Tentative record for it.
-        // Returns true if the record was locked or tentative; else false (a Sealed or already-Tentative record was encountered)
+        // Returns true if the record was locked or tentative; else false (an already-Tentative record was encountered)
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool LockOrTentative(ref TKey key, LockType lockType, out bool tentative)
         {
             var keyContainer = GetKeyContainer(ref key);
             bool existingConflict = false;
             var lte = dict.AddOrUpdate(keyContainer,
-                key => {
+                key => {            // New Value
                     RecordInfo lockRecordInfo = default;
                     lockRecordInfo.Tentative = true;
+                    lockRecordInfo.SetValid();
                     RecordInfo logRecordInfo = default;
+                    logRecordInfo.SetValid();
                     existingConflict = !logRecordInfo.Lock(lockType);
                     Interlocked.Increment(ref this.approxNumItems);
                     return new(key, logRecordInfo, lockRecordInfo);
-                }, (key, lte) => {
-                    existingConflict = !lte.logRecordInfo.Lock(lockType);
-                    if (lte.lockRecordInfo.Sealed)
-                    {
+                }, (key, lte) => {  // Update Value
+                    if (lte.lockRecordInfo.Tentative)
                         existingConflict = true;
-                        lte.logRecordInfo.Unlock(lockType);
+                    else
+                    {
+                        lte.XLock();
+                        existingConflict = lte.lockRecordInfo.Invalid || !lte.logRecordInfo.Lock(lockType);
+                        lte.XUnlock();
                     }
                     return lte;
                 });
             tentative = lte.lockRecordInfo.Tentative;
             return !existingConflict;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearTentative(ref TKey key)
-        {
-            if (!Update(ref key, lte => { lte.lockRecordInfo.Tentative = false; return lte; }))
-                Debug.Fail("Trying to remove Tentative bit from nonexistent locktable entry");
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void TryRemoveIfNoLocks(ref TKey key)
-        {
-            using var lookupKey = GetKeyContainer(ref key);
-
-            // From https://devblogs.microsoft.com/pfxteam/little-known-gems-atomic-conditional-removals-from-concurrentdictionary/
-            while (dict.TryGetValue(lookupKey, out var lte))
-            {
-                if (lte.lockRecordInfo.IsLocked || lte.lockRecordInfo.Sealed || lte.logRecordInfo.IsLocked)
-                    return;
-                if (dict.TryRemoveConditional(lookupKey, lte))
-                {
-                    Interlocked.Decrement(ref this.approxNumItems);
-                    lte.key.Dispose();
-                    return;
-                }
-            }
-            // If we make it here, the key was already removed.
-        }
-
-        // False is legit, as the record may have been removed between the time it was known to be here and the time Seal was called.
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TrySeal(ref TKey key, out bool exists)
-        {
-            using var lookupKey = GetKeyContainer(ref key);
-            if (!dict.ContainsKey(lookupKey))
-            {
-                exists = false;
-                return true;
-            }
-            exists = true;
-            return Update(ref key, lte => { lte.lockRecordInfo.Seal(); return lte; });
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Unseal(ref TKey key)
-        {
-            if (!Update(ref key, lte => { lte.lockRecordInfo.Unseal(); return lte; }))
-                Debug.Fail("Trying to Unseal nonexistent key");
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool Get(ref TKey key, out RecordInfo recordInfo)
-        {
-            using var lookupKey = GetKeyContainer(ref key);
-            if (dict.TryGetValue(lookupKey, out var lte))
-            {
-                recordInfo = lte.logRecordInfo;
-                return true;
-            }
-            recordInfo = default;
-            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -202,31 +174,114 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool ApplyToLogRecord(ref TKey key, ref RecordInfo logRecord)
+        internal bool Get(ref TKey key, out RecordInfo recordInfo)
+        {
+            using var lookupKey = GetKeyContainer(ref key);
+            if (dict.TryGetValue(lookupKey, out var lte))
+            {
+                recordInfo = lte.logRecordInfo;
+                return !lte.lockRecordInfo.Invalid;
+            }
+            recordInfo = default;
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool ClearTentative(ref TKey key)
+        {
+            using var lookupKey = GetKeyContainer(ref key);
+
+            // False is legit, as other operations may have removed it.
+            if (!dict.TryGetValue(lookupKey, out var lte))
+                return false;
+            bool cleared = false;
+            lte.XLock();
+            if (lte.lockRecordInfo.Tentative && !lte.lockRecordInfo.Invalid)
+            {
+                lte.lockRecordInfo.SetTentativeAtomic(false);
+                cleared = true;
+            }
+            lte.XUnlock();
+            return cleared;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void UnlockOrRemoveTentative(ref TKey key, LockType lockType, bool wasTentative)
+        {
+            using var lookupKey = GetKeyContainer(ref key);
+            if (dict.TryGetValue(lookupKey, out var lte))
+            {
+                Debug.Assert(wasTentative == lte.lockRecordInfo.Tentative, "lockRecordInfo.Tentative was not as expected");
+
+                // We assume that we own the lock or placed the Tentative record, and a Tentative record may have legitimately been removed.
+                if (lte.lockRecordInfo.Tentative)
+                    RemoveIfTentative(lookupKey, lte);
+                else
+                    Unlock(lookupKey, lte, lockType);
+                return;
+            }
+
+            // A tentative record may have been removed by the other side of the 2-phase process.
+            if (!wasTentative)
+                Debug.Fail("Trying to UnlockOrRemoveTentative on nonexistent nonTentative key");
+        }
+
+        bool TryRemoveEntry(IHeapContainer<TKey> lookupKey)
+        {
+            if (dict.TryRemove(lookupKey, out var lte))
+            {
+                Interlocked.Decrement(ref this.approxNumItems);
+                lte.lockRecordInfo.SetInvalid();
+                lte.key.Dispose();
+                return true;
+            }
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool RemoveIfTentative(IHeapContainer<TKey> lookupKey, LockTableEntry<TKey> lte)
+        {
+            if (lte.lockRecordInfo.Dirty)
+                if (lte.lockRecordInfo.Filler) return false;
+            if (lte.lockRecordInfo.IsLocked)
+                if (lte.lockRecordInfo.Filler) return false;
+            if (!lte.lockRecordInfo.Tentative || lte.lockRecordInfo.Invalid)
+                return false;
+            lte.XLock();
+            if (lte.lockRecordInfo.Dirty)
+                if (lte.lockRecordInfo.Filler) return false;
+            
+            // If the record is Invalid, it was already removed.
+            var removed = lte.lockRecordInfo.Invalid || (lte.lockRecordInfo.Tentative && TryRemoveEntry(lookupKey));
+            lte.XUnlock();
+            return removed;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void TransferToLogRecord(ref TKey key, ref RecordInfo logRecord)
         {
             // This is called after the record has been CAS'd into the log or readcache, so this should not be allowed to fail.
             using var lookupKey = GetKeyContainer(ref key);
             if (dict.TryGetValue(lookupKey, out var lte))
             {
-                Debug.Assert(lte.lockRecordInfo.Sealed, "lockRecordInfo should have been Sealed already");
+                // If it's a Tentative record, wait for it to no longer be tentative.
+                while (lte.lockRecordInfo.Tentative)
+                    Thread.Yield();
+                
+                // If invalid, then the Lock thread called TryRemoveEntry and will retry, which will add the locks after the main-log record is no longer tentative.
+                if (lte.lockRecordInfo.Invalid)
+                    return;
 
-                // If it's a Tentative record, ignore it--it will be removed by Lock() and retried against the inserted log record.
-                if (lte.lockRecordInfo.Tentative)
-                    return true;
-
-                logRecord.CopyLocksFrom(lte.logRecordInfo);
-                lte.lockRecordInfo.SetInvalid();
-                lte.lockRecordInfo.Unseal();
-                if (dict.TryRemove(lookupKey, out _))
+                lte.XLock();
+                if (!lte.lockRecordInfo.Invalid)
                 {
-                    Interlocked.Decrement(ref this.approxNumItems);
-                    lte.key.Dispose();
+                    logRecord.CopyLocksFrom(lte.logRecordInfo);
+                    TryRemoveEntry(lookupKey);
                 }
-                lte.lockRecordInfo.Tentative = false;
+                lte.XUnlock();
             }
 
-            // No locks to apply, or we applied them all.
-            return true;
+            // If we're here, there were no locks to apply, or we applied them all.
         }
 
         public override string ToString() => this.dict.Count.ToString();
