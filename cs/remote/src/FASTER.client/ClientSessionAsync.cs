@@ -52,14 +52,14 @@ namespace FASTER.client
         /// <param name="input">Input</param>
         /// <param name="forceFlush">Force immediate flush of message buffer</param>
         /// <returns>Async result of RMW operation (status)</returns>
-        public async Task<Status> RMWAsync(Key key, Input input, bool forceFlush = true)
+        public Task<(Status, Output)> RMWAsync(Key key, Input input, bool forceFlush = true)
         {
             var tcs = new TaskCompletionSource<(Status, Output)>(TaskCreationOptions.RunContinuationsAsynchronously);
-            InternalRMW(MessageType.RMWAsync, ref key, ref input);
+            Output output = default;
+            InternalRMW(MessageType.RMWAsync, ref key, ref input, ref output);
             tcsQueue.Enqueue(tcs);
             if (forceFlush) Flush();
-            (var status, _) = await tcs.Task;
-            return status;
+            return tcs.Task;
         }
 
         /// <summary>

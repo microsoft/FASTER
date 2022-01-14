@@ -1,4 +1,5 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+﻿
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System.Threading;
@@ -17,31 +18,33 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         private FasterKV<AdId, NumClicks> fht3;
         private IDevice log;
         private int numOps;
-        private string checkpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints3";
+        private string checkpointDir;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/RecoverContinueTests.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/RecoverContinueTests.log", deleteOnClose: true);
+            checkpointDir = TestUtils.MethodTestDir + "/checkpoints3";
             Directory.CreateDirectory(checkpointDir);
 
             fht1 = new FasterKV
                 <AdId, NumClicks>
-                (128,
+                (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht2 = new FasterKV
                 <AdId, NumClicks>
-                (128,
+                (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
                 );
 
             fht3 = new FasterKV
                 <AdId, NumClicks>
-                (128,
+                (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
                 );
@@ -52,18 +55,22 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         [TearDown]
         public void TearDown()
         {
-            fht1.Dispose();
-            fht2.Dispose();
-            fht3.Dispose();
+            fht1?.Dispose();
+            fht2?.Dispose();
+            fht3?.Dispose();
             fht1 = null;
             fht2 = null;
             fht3 = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             TestUtils.DeleteDirectory(checkpointDir);
         }
 
         [Test]
         [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
         public async ValueTask RecoverContinueTest([Values]bool isAsync)
         {
             long sno = 0;
@@ -71,7 +78,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             var firstsession = fht1.For(new AdSimpleFunctions()).NewSession<AdSimpleFunctions>("first");
             IncrementAllValues(ref firstsession, ref sno);
             fht1.TakeFullCheckpoint(out _);
-            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             firstsession.Dispose();
 
             // Check if values after checkpoint are correct
@@ -91,10 +98,10 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             // Continue and increment values
             var continuesession = fht2.For(new AdSimpleFunctions()).ResumeSession<AdSimpleFunctions>("first", out CommitPoint cp);
             long newSno = cp.UntilSerialNo;
-            Assert.IsTrue(newSno == sno - 1);
+            Assert.AreEqual(sno - 1, newSno);
             IncrementAllValues(ref continuesession, ref sno);
             fht2.TakeFullCheckpoint(out _);
-            fht2.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht2.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             continuesession.Dispose();
 
             // Check if values after continue checkpoint are correct
@@ -110,7 +117,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
 
             var nextsession = fht3.For(new AdSimpleFunctions()).ResumeSession<AdSimpleFunctions>("first", out cp);
             long newSno2 = cp.UntilSerialNo;
-            Assert.IsTrue(newSno2 == sno - 1);
+            Assert.AreEqual(sno - 1, newSno2);
             CheckAllValues(ref nextsession, 2);
             nextsession.Dispose();
         }
@@ -130,7 +137,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
                     fht.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(outputArg.value.numClicks == value);
+                    Assert.AreEqual(value, outputArg.value.numClicks);
                 }
             }
 
@@ -158,8 +165,8 @@ namespace FASTER.test.recovery.sumstore.recover_continue
     {
         public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.numClicks == key.adId);
+            Assert.AreEqual(Status.OK, status);
+            Assert.AreEqual(key.adId, output.value.numClicks);
         }
 
         // Read functions
@@ -168,20 +175,20 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
         {
             value = input.numClicks;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output) => true;
 
-        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }

@@ -1,48 +1,50 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class BlittableIterationTests
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BlittableIterationTests.log", deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
+            path = TestUtils.MethodTestDir + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait:true);
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(path);
         }
 
         [Test]
         [Category("FasterKV")]
-        public void BlittableIterationTest1()
+        [Category("Smoke")]
+        public void BlittableIterationTest1([Values] TestUtils.DeviceType deviceType)
         {
+            string filename = path + "BlittableIterationTest1" + deviceType.ToString() + ".log";
+            log = TestUtils.CreateTestDevice(deviceType, filename);
+            fht = new FasterKV<KeyStruct, ValueStruct>
+                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
+
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
-            const int totalRecords = 2000;
+            const int totalRecords = 500;
             var start = fht.Log.TailAddress;
 
             for (int i = 0; i < totalRecords; i++)
@@ -57,12 +59,11 @@ namespace FASTER.test
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
-                Assert.IsTrue(iter.GetValue().vfield1 == iter.GetKey().kfield1);
+                Assert.AreEqual(iter.GetKey().kfield1, iter.GetValue().vfield1);
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords);
-
+            Assert.AreEqual(totalRecords, count);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -76,11 +77,11 @@ namespace FASTER.test
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
-                Assert.IsTrue(iter.GetValue().vfield1 == iter.GetKey().kfield1 * 2);
+                Assert.AreEqual(iter.GetKey().kfield1 * 2, iter.GetValue().vfield1);
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords);
+            Assert.AreEqual(totalRecords, count);
 
             for (int i = totalRecords/2; i < totalRecords; i++)
             {
@@ -97,7 +98,7 @@ namespace FASTER.test
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords);
+            Assert.AreEqual(totalRecords, count);
 
             for (int i = 0; i < totalRecords; i+=2)
             {
@@ -114,7 +115,7 @@ namespace FASTER.test
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords);
+            Assert.AreEqual(totalRecords, count);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
@@ -131,7 +132,7 @@ namespace FASTER.test
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords / 2);
+            Assert.AreEqual(totalRecords / 2, count);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -145,12 +146,11 @@ namespace FASTER.test
             while (iter.GetNext(out var recordInfo))
             {
                 count++;
-                Assert.IsTrue(iter.GetValue().vfield1 == iter.GetKey().kfield1 * 3);
+                Assert.AreEqual(iter.GetKey().kfield1 * 3, iter.GetValue().vfield1);
             }
             iter.Dispose();
 
-            Assert.IsTrue(count == totalRecords);
-
+            Assert.AreEqual(totalRecords, count);
         }
     }
 }

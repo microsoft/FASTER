@@ -9,39 +9,50 @@ using System.Buffers;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class MemoryLogCompactionTests
     {
         private FasterKV<ReadOnlyMemory<int>, Memory<int>> fht;
         private IDevice log;
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/MemoryLogCompactionTests1.log", deleteOnClose: true);
-            fht = new FasterKV<ReadOnlyMemory<int>, Memory<int>>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
+
+            path = TestUtils.MethodTestDir + "/";
+
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait: true);
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
+            log?.Dispose();
+            log = null;
+            TestUtils.DeleteDirectory(path);
         }
 
         [Test]
         [Category("FasterKV")]
-        public void MemoryLogCompactionTest1()
+        [Category("Compaction")]
+        public void MemoryLogCompactionTest1([Values] TestUtils.DeviceType deviceType)
         {
+
+            string filename = path + "MemoryLogCompactionTests1" + deviceType.ToString() + ".log";
+            log = TestUtils.CreateTestDevice(deviceType, filename);
+            fht = new FasterKV<ReadOnlyMemory<int>, Memory<int>>
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 12, PageSizeBits = 10, SegmentSizeBits = 22 });
+
             using var session = fht.For(new MemoryCompaction()).NewSession<MemoryCompaction>();
 
             var key = new Memory<int>(new int[20]);
             var value = new Memory<int>(new int[20]);
 
-            const int totalRecords = 2000;
+            const int totalRecords = 200; 
             var start = fht.Log.TailAddress;
 
             for (int i = 0; i < totalRecords; i++)
@@ -49,38 +60,38 @@ namespace FASTER.test
                 key.Span.Fill(i);
                 value.Span.Fill(i);
                 session.Upsert(key, value);
-                if (i < 50)
+                if (i < 5)  
                     session.Delete(key); // in-place delete
             }
 
-            for (int i = 50; i < 100; i++)
+            for (int i = 5; i < 10; i++)  
             {
                 key.Span.Fill(i);
                 value.Span.Fill(i);
                 session.Delete(key); // tombstone inserted
             }
 
-            // Compact 20% of log:
+            // Compact log
             var compactUntil = fht.Log.BeginAddress + (fht.Log.TailAddress - fht.Log.BeginAddress) / 5;
             compactUntil = session.Compact(compactUntil, true);
 
-            Assert.IsTrue(fht.Log.BeginAddress == compactUntil);
+            Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
-            // Read 2000 keys - all but first 100 (deleted) should be present
+            // Read total keys - all but first 5 (deleted) should be present
             for (int i = 0; i < totalRecords; i++)
             {
                 key.Span.Fill(i);
 
-                var (status, output) = session.Read(key, userContext: i < 100 ? 1 : 0);
+                var (status, output) = session.Read(key, userContext: i < 10 ? 1 : 0); 
                 if (status == Status.PENDING)
                     session.CompletePending(true);
                 else
                 {
-                    if (i < 100)
-                        Assert.IsTrue(status == Status.NOTFOUND);
+                    if (i < 10)
+                        Assert.AreEqual(Status.NOTFOUND, status);
                     else
                     {
-                        Assert.IsTrue(status == Status.OK);
+                        Assert.AreEqual(Status.OK, status);
                         Assert.IsTrue(output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(key.Span));
                         output.Item1.Dispose();
                     }
@@ -94,10 +105,10 @@ namespace FASTER.test
                 while (iter.GetNext(out RecordInfo recordInfo))
                 {
                     var k = iter.GetKey();
-                    Assert.IsTrue(k.Span[0] >= 100);
+                    Assert.GreaterOrEqual(k.Span[0], 10); 
                     count++;
                 }
-                Assert.IsTrue(count == 1900);
+                Assert.AreEqual(190, count); 
             }
 
             // Test iteration of all log records
@@ -107,20 +118,20 @@ namespace FASTER.test
                 while (iter.GetNext(out RecordInfo recordInfo))
                 {
                     var k = iter.GetKey();
-                    Assert.IsTrue(k.Span[0] >= 50);
+                    Assert.GreaterOrEqual(k.Span[0], 5);  
                     count++;
                 }
-                // Includes 1900 live records + 50 deleted records
-                Assert.IsTrue(count == 1950);
+                // Includes 190 live records + 5 deleted records
+                Assert.AreEqual(195, count);  
             }
         }
     }
 
     public class MemoryCompaction : MemoryFunctions<ReadOnlyMemory<int>, int, int>
     {
-        public override void RMWCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, int ctx, Status status)
+        public override void RMWCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
+            Assert.AreEqual(Status.OK, status);
         }
 
         public override void ReadCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status)
@@ -129,12 +140,12 @@ namespace FASTER.test
             {
                 if (ctx == 0)
                 {
-                    Assert.IsTrue(status == Status.OK);
+                    Assert.AreEqual(Status.OK, status);
                     Assert.IsTrue(output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(key.Span));
                 }
                 else
                 {
-                    Assert.IsTrue(status == Status.NOTFOUND);
+                    Assert.AreEqual(Status.NOTFOUND, status);
                 }
             }
             finally

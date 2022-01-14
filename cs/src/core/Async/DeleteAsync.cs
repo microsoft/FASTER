@@ -40,9 +40,6 @@ namespace FASTER.core
 
             /// <inheritdoc/>
             public void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext) { }
-
-            /// <inheritdoc/>
-            public Status GetStatus(DeleteAsyncResult<Input, Output, Context> asyncResult) => asyncResult.Status;
         }
 
         /// <summary>
@@ -78,7 +75,7 @@ namespace FASTER.core
 
             /// <summary>Complete the Delete operation, issuing additional I/O synchronously if needed.</summary>
             /// <returns>Status of Delete operation</returns>
-            public Status Complete() => this.Status != Status.PENDING ? this.Status : updateAsyncInternal.Complete();
+            public Status Complete() => this.Status != Status.PENDING ? this.Status : updateAsyncInternal.Complete().Status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

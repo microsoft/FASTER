@@ -95,7 +95,7 @@ For session operations, the user provides an instance of a type that implements 
 
 Apart from Key and Value, the IFunctions interface is defined on three additional types:
 1. `Input`: This is the type of input provided to FASTER when calling Read or RMW. It may be regarded as a parameter for the Read or RMW operation. For example, with RMW, it may be the delta being accumulated into the value.
-2. `Output`: This is the type of the output of a Read operation. The reader copies the relevant parts of the Value to Output.
+2. `Output`: This is the type of the output of a Read or RMW operation. The reader or updater copies the relevant parts of the Value to Output.
 3. `Context`: User-defined context for the operation. Use `Empty` if there is no context necesssary.
 
 `IFunctions<>` encapsulates all callbacks made by FASTER back to the caller, which are described next:
@@ -103,7 +103,7 @@ Apart from Key and Value, the IFunctions interface is defined on three additiona
 1. SingleReader and ConcurrentReader: These are used to read from the store values and copy them to Output. Single reader can assume that there are no concurrent operations on the record.
 2. SingleWriter and ConcurrentWriter: These are used to write values to the store, from a source value. Single writer can assume that there are no concurrent operations on the record.
 3. Completion callbacks: Called by FASTER when various operations complete after they have gone "pending" due to requiring IO.
-4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation.
+4. RMW Updaters: There are three updaters that the user specifies, InitialUpdater, InPlaceUpdater, and CopyUpdater. Together, they are used to implement the RMW operation and return the Output to the caller. There is also a NeedCopyUpdate() method that is called before appending a copied-and-updated record to the tail of the log; if it returns false, the record is not copied.
 5. Locking: There is one property and two methods; if the SupportsLocking property returns true, then FASTER will call Lock and Unlock within a try/finally in the four concurrent callback methods: ConcurrentReader, ConcurrentWriter, ConcurrentDeleter (new in IAdvancedFunctions), and InPlaceUpdater. FunctionsBase illustrates the default implementation of Lock and Unlock as an exclusive lock using a bit in RecordInfo.
 
 FASTER also support an advanced callback functions API with more hooks. See 
@@ -123,7 +123,7 @@ An equivalent, but more optimized API requires you to specify the Functions type
 var session = store.For(new Functions()).NewSession<Functions>();
 ```
 
-You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports synchronous versions of all operations, as well as async versions. While all methods exist in an async form, only read and RMW are generally expected to go async; upserts and deletes will only go async when it is necessary to wait on flush operations when appending records to the log. The basic forms of these operations are described below; additional overloads are available.
+You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports both synchronous and async versions of all operations. While all methods exist in an async form, only read and RMW are generally expected to go async; upserts and deletes will only go async when it is necessary to wait on flush operations when appending records to the log. The basic forms of these operations are described below; additional overloads are available.
 
 #### Read
 
@@ -157,15 +157,17 @@ while (r.Status == Status.PENDING)
 ```cs
 // Sync
 var status = session.RMW(ref key, ref input);
+var status = session.RMW(ref key, ref input, ref output);
 var status = session.RMW(ref key, ref input, context, serialNo);
 
 // Async with sync operation completion (completion may rarely go async)
 var status = (await session.RMWAsync(ref key, ref input)).Complete();
 
-// Fully async (completion may rarely go async)
+// Fully async (completion may rarely go async and require multiple iterations)
 var r = await session.RMWAsync(ref key, ref input);
 while (r.Status == Status.PENDING)
    r = await r.CompleteAsync();
+Console.WriteLine(r.Output);
 ```
 
 #### Delete
@@ -271,14 +273,13 @@ public static void Test()
 {
   using var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
   using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
-  using var s = store.NewSession(new SimpleFunctions<long, long>());
+  using var s = store.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
   long key = 1, value = 1, input = 10, output = 0;
   s.Upsert(ref key, ref value);
   s.Read(ref key, ref output);
   Debug.Assert(output == value);
   s.RMW(ref key, ref input);
-  s.RMW(ref key, ref input);
-  s.Read(ref key, ref output);
+  s.RMW(ref key, ref input, ref output);
   Debug.Assert(output == value + 20);
 }
 ```

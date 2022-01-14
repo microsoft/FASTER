@@ -141,6 +141,11 @@ namespace FASTER.core
         public long SerialNo => ctx.serialNum;
 
         /// <summary>
+        /// Current version number of the session
+        /// </summary>
+        public long Version => ctx.version;
+
+        /// <summary>
         /// Dispose session
         /// </summary>
         public void Dispose()
@@ -239,14 +244,35 @@ namespace FASTER.core
             return (Read(ref key, ref input, ref output, userContext, serialNo), output);
         }
 
-#if DEBUG
-        internal const string AdvancedOnlyMethodErr = "This method is not available on non-Advanced ClientSessions";
-
-        /// <summary>This method is not available for non-Advanced ClientSessions, because ReadCompletionCallback does not have RecordInfo.</summary>
-        [Obsolete(AdvancedOnlyMethodErr)]
-        public Status Read(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0) 
-            => throw new FasterException(AdvancedOnlyMethodErr);
-#endif // DEBUG;
+        /// <summary>
+        /// Read operation that accepts a <paramref name="recordInfo"/> ref argument to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
+        ///     and is updated with the record header for the found record (which contains previous address in the hash chain for this key; this can
+        ///     be used as <paramref name="recordInfo"/> in a subsequent call to iterate all records for <paramref name="key"/>).
+        /// </summary>
+        /// <param name="key">The key to look up</param>
+        /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
+        /// <param name="output">The location to place the retrieved value</param>
+        /// <param name="recordInfo">On input contains the address to start at in its <see cref="RecordInfo.PreviousAddress"/>; if this is Constants.kInvalidAddress, the
+        ///     search starts with the key as in other forms of Read. On output, receives a copy of the record's header, which can be passed
+        ///     in a subsequent call, thereby enumerating all records in a key's hash chain.</param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <remarks>This method on non-Advanced ClientSessions is not suitable for read loops, because ReadCompletionCallback does not have RecordInfo.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Read(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0)
+        {
+            if (SupportAsync) UnsafeResumeThread();
+            try
+            {
+                return fht.ContextRead(ref key, ref input, ref output, ref recordInfo, readFlags, userContext, FasterSession, serialNo, ctx);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
+        }
 
         /// <summary>
         /// Read operation that accepts an <paramref name="address"/> argument to lookup at, instead of a key.
@@ -366,13 +392,36 @@ namespace FASTER.core
             return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
         }
 
-#if DEBUG
-        /// <summary>For consistency with Read(.., ref RecordInfo, ...), this method is not available for non-Advanced ClientSessions.</summary>
-        [Obsolete(AdvancedOnlyMethodErr)]
+        /// <summary>
+        /// Async read operation that accepts a <paramref name="startAddress"/> to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
+        ///     and returns the <see cref="RecordInfo"/> for the found record (which contains previous address in the hash chain for this key; this can
+        ///     be used as <paramref name="startAddress"/> in a subsequent call to iterate all records for <paramref name="key"/>).
+        /// </summary>
+        /// <param name="key">The key to look up</param>
+        /// <param name="input">Input to help extract the retrieved value into output</param>
+        /// <param name="startAddress">Start at this address rather than the address in the hash table for <paramref name="key"/>"/></param>
+        /// <param name="readFlags">Flags for controlling operations within the read, such as ReadCache interaction</param>
+        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
+        /// <param name="serialNo">The serial number of the operation (used in recovery)</param>
+        /// <param name="cancellationToken">Token to cancel the operation</param>
+        /// <returns><see cref="ValueTask"/> wrapping <see cref="FasterKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
+        /// <remarks>The caller must await the return value to obtain the result, then call one of
+        ///     <list type="bullet">
+        ///     <item>result.<see cref="FasterKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
+        ///     <item>result.<see cref="FasterKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordInfo)"/></item>
+        ///     </list>
+        ///     to complete the read operation and obtain the result status, the output that is populated by the 
+        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record
+        ///     <para>This method on non-Advanced ClientSessions is not suitable for read loops, because ReadCompletionCallback does not have RecordInfo.</para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, long startAddress, ReadFlags readFlags = ReadFlags.None,
                                                                                                  Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
-            => throw new FasterException(AdvancedOnlyMethodErr);
-#endif
+        {
+            Debug.Assert(SupportAsync, NotAsyncSessionErr);
+            var operationFlags = FasterKV<Key, Value>.PendingContext<Input, Output, Context>.GetOperationFlags(readFlags);
+            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, startAddress, userContext, serialNo, cancellationToken, operationFlags);
+        }
 
         /// <summary>
         /// Async Read operation that accepts an <paramref name="address"/> argument to lookup at, instead of a key.
@@ -483,16 +532,17 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
+        public Status RMW(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.ContextRMW(ref key, ref input, userContext, FasterSession, serialNo, ctx);
+                return fht.ContextRMW(ref key, ref input, ref output, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
@@ -505,12 +555,46 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status RMW(Key key, Input input, out Output output, Context userContext = default, long serialNo = 0)
+        {
+            output = default;
+            return RMW(ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// RMW operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="userContext"></param>
+        /// <param name="serialNo"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status RMW(ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
+        {
+            Output output = default;
+            return RMW(ref key, ref input, ref output, userContext, serialNo);
+        }
+
+        /// <summary>
+        /// RMW operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
         /// <param name="userContext"></param>
         /// <param name="serialNo"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(Key key, Input input, Context userContext = default, long serialNo = 0)
-            => RMW(ref key, ref input, userContext, serialNo);
+        {
+            Output output = default;
+            return RMW(ref key, ref input, ref output, userContext, serialNo);
+        }
 
         /// <summary>
         /// Async RMW operation
@@ -628,7 +712,7 @@ namespace FASTER.core
         /// Experimental feature
         /// Checks whether specified record is present in memory
         /// (between HeadAddress and tail, or between fromAddress
-        /// and tail)
+        /// and tail), including tombstones.
         /// </summary>
         /// <param name="key">Key of the record.</param>
         /// <param name="logicalAddress">Logical address of record, if found</param>
@@ -856,6 +940,28 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Insert key and value with the record info preserved.
+        /// Succeed only if logical address of the key isn't greater than foundLogicalAddress; otherwise give up and return.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="recordInfo"></param>
+        /// <param name="foundLogicalAddress"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void CopyToTail(ref Key key, ref Value desiredValue, ref RecordInfo recordInfo, long foundLogicalAddress)
+        {
+            if (SupportAsync) UnsafeResumeThread();
+            try
+            {
+                fht.InternalCopyToTail(ref key, ref desiredValue, ref recordInfo, foundLogicalAddress, FasterSession, ctx, noReadCache: true);
+            }
+            finally
+            {
+                if (SupportAsync) UnsafeSuspendThread();
+            }
+        }
+
+        /// <summary>
         /// Iterator for all (distinct) live key-values stored in FASTER
         /// </summary>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
@@ -997,12 +1103,12 @@ namespace FASTER.core
                 }
             }
 
-            public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue)
-                => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue);
+            public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
+                => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
             {
-                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
+                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
             }
 
             public void DeleteCompletionCallback(ref Key key, Context ctx)
@@ -1020,31 +1126,31 @@ namespace FASTER.core
                 return _clientSession.variableLengthStruct.GetLength(ref t, ref input);
             }
 
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value)
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
             {
-                _clientSession.functions.InitialUpdater(ref key, ref input, ref value);
+                _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
                 => !this.SupportsLocking
-                    ? InPlaceUpdaterNoLock(ref key, ref input, ref value, ref recordInfo, address)
-                    : InPlaceUpdaterLock(ref key, ref input, ref value, ref recordInfo, address);
+                    ? InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address)
+                    : InPlaceUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
+            private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 recordInfo.Version = _clientSession.ctx.version;
-                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value);
+                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output);
             }
 
-            private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, long address)
+            private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 long context = 0;
                 this.Lock(ref recordInfo, ref key, ref value, LockType.Exclusive, ref context);
                 try
                 {
-                    return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref value, ref recordInfo, address);
+                    return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address);
                 }
                 finally
                 {
@@ -1057,9 +1163,9 @@ namespace FASTER.core
                 _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status);
             }
 
-            public void RMWCompletionCallback(ref Key key, ref Input input, Context ctx, Status status)
+            public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status)
             {
-                _clientSession.functions.RMWCompletionCallback(ref key, ref input, ctx, status);
+                _clientSession.functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
             }
 
             public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
@@ -1102,7 +1208,7 @@ namespace FASTER.core
             }
 
             public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-                => throw new NotImplementedException();
+                 => _clientSession.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
         }
     }
 }

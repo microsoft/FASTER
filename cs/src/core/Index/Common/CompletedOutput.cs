@@ -17,7 +17,7 @@ namespace FASTER.core
     /// <remarks>The session holds this list and returns an enumeration to the caller of an appropriate CompletePending overload. The session will handle
     /// disposing and clearing this list, but it is best if the caller calls Dispose() after processing the results, so the key, input, and heap containers
     /// are released as soon as possible.</remarks>
-    public class CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> : IDisposable
+    public sealed class CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> : IDisposable
     {
         internal const int kInitialAlloc = 32;
         internal const int kReallocMultuple = 2;
@@ -133,13 +133,11 @@ namespace FASTER.core
         {
             var tempKeyContainer = keyContainer;
             keyContainer = default;
-            if (tempKeyContainer is not null)
-                tempKeyContainer.Dispose();
+            tempKeyContainer?.Dispose();
 
             var tempInputContainer = inputContainer;
             inputContainer = default;
-            if (tempInputContainer is not null)
-                tempInputContainer.Dispose();
+            tempInputContainer?.Dispose();
 
             Output = default;
             Context = default;

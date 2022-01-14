@@ -291,6 +291,23 @@ namespace FASTER.core
             Utility.MonotonicUpdate(ref requestedCompletedUntilAddress, address, out _);
         }
 
+        /// <summary>
+        /// Mark iterator complete until the end of the record at specified
+        /// address. Info is not persisted until a subsequent commit operation
+        /// on the log. Note: this is slower than CompleteUntil() because the
+        /// record's length needs to be looked up first.
+        /// </summary>
+        /// <param name="recordStartAddress"></param>
+        /// <param name="token"></param>
+        /// <returns>The actual completion address (end address of the record)</returns>
+        public async ValueTask<long> CompleteUntilRecordAtAsync(long recordStartAddress, CancellationToken token = default)
+        {
+            int len = await fasterLog.ReadRecordLengthAsync(recordStartAddress, token: token);
+            long endAddress = recordStartAddress + headerSize + Align(len);
+            CompleteUntil(endAddress);
+            return endAddress;
+        }
+
         internal void UpdateCompletedUntilAddress(long address)
         {
             Utility.MonotonicUpdate(ref CompletedUntilAddress, address, out _);

@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -398,6 +399,12 @@ namespace FASTER.core
         /// <param name="localSegmentOffsets"></param>
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
 
+        private protected void VerifyCompatibleSectorSize(IDevice device)
+        {
+            if (this.sectorSize % device.SectorSize != 0)
+                throw new FasterException($"Allocator with sector size {sectorSize} cannot flush to device with sector size {device.SectorSize}");
+        }
+
         /// <summary>
         /// Delta flush
         /// </summary>
@@ -466,7 +473,7 @@ namespace FASTER.core
                 deltaLog.Seal(destOffset);
         }
 
-        internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage)
+        internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo)
         {
             if (log == null) return;
 
@@ -474,22 +481,49 @@ namespace FASTER.core
             long endLogicalAddress = GetStartLogicalAddress(endPage);
 
             log.Reset();
-            while (log.GetNext(out long physicalAddress, out int entryLength, out int type))
+            while (log.GetNext(out long physicalAddress, out int entryLength, out var type))
             {
-                if (type != 0) continue; // consider only delta records
-                long endAddress = physicalAddress + entryLength;
-                while (physicalAddress < endAddress)
+                switch (type)
                 {
-                    long address = *(long*)physicalAddress;
-                    physicalAddress += sizeof(long);
-                    int size = *(int*)physicalAddress;
-                    physicalAddress += sizeof(int);
-                    if (address >= startLogicalAddress && address < endLogicalAddress)
-                    {
-                        var destination = GetPhysicalAddress(address);
-                        Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
-                    }
-                    physicalAddress += size;
+                    case DeltaLogEntryType.DELTA:
+                        // Delta records
+                        long endAddress = physicalAddress + entryLength;
+                        while (physicalAddress < endAddress)
+                        {
+                            long address = *(long*)physicalAddress;
+                            physicalAddress += sizeof(long);
+                            int size = *(int*)physicalAddress;
+                            physicalAddress += sizeof(int);
+                            if (address >= startLogicalAddress && address < endLogicalAddress)
+                            {
+                                var destination = GetPhysicalAddress(address);
+                                Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
+                            }
+                            physicalAddress += size;
+                        }
+                        break;
+                    case DeltaLogEntryType.CHECKPOINT_METADATA:
+                        if (recoverTo != -1)
+                        {
+                            // Only read metadata if we need to stop at a specific version
+                            var metadata = new byte[entryLength];
+                            unsafe
+                            {
+                                fixed (byte* m = metadata)
+                                    Buffer.MemoryCopy((void*) physicalAddress, m, entryLength, entryLength);
+                            }
+
+                            HybridLogRecoveryInfo recoveryInfo = new();
+                            using StreamReader s = new(new MemoryStream(metadata));
+                            recoveryInfo.Initialize(s);
+                            // Finish recovery if only specific versions are requested
+                            if (recoveryInfo.version == recoverTo) return;
+                        }
+
+                        break;
+                    default:
+                        throw new FasterException("Unexpected entry type");
+                        
                 }
             }
         }
@@ -709,7 +743,10 @@ namespace FASTER.core
             SegmentBufferSize = 1 + (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             if (SegmentSize < PageSize)
-                throw new FasterException("Segment must be at least of page size");
+                throw new FasterException($"Segment ({SegmentSize}) must be at least of page size ({PageSize})");
+
+            if ((LogTotalSizeBits != 0) && (LogTotalSizeBytes < PageSize))
+                throw new FasterException($"Memory size ({LogTotalSizeBytes}) must be configured to be either 1 (i.e., 0 bits) or at least page size ({PageSize})");
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
 
@@ -739,7 +776,7 @@ namespace FASTER.core
         /// <param name="firstValidAddress"></param>
         protected void Initialize(long firstValidAddress)
         {
-            Debug.Assert(firstValidAddress <= PageSize);
+            Debug.Assert(firstValidAddress <= PageSize, $"firstValidAddress {firstValidAddress} shoulld be <= PageSize {PageSize}");
 
             bufferPool = new SectorAlignedBufferPool(1, sectorSize);
 
@@ -790,6 +827,8 @@ namespace FASTER.core
             if (ownedEpoch)
                 epoch.Dispose();
             bufferPool.Free();
+
+            this.FlushEvent.Dispose();
 
             OnReadOnlyObserver?.OnCompleted();
             OnEvictionObserver?.OnCompleted();
@@ -1717,18 +1756,12 @@ namespace FASTER.core
                     }
 
                     // Enqueue work in shared queue
-                    if (PendingFlush[index].Add(asyncResult))
+                    PendingFlush[index].Add(asyncResult);
+
+                    // Perform work from shared queue if possible
+                    if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
                     {
-                        // Perform work from shared queue if possible
-                        if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
-                        {
-                            WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
-                        }
-                    }
-                    else
-                    {
-                        // Could not add to pending flush list, treat as a failed write
-                        AsyncFlushPageCallback(1, 0, asyncResult);
+                        WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
                     }
                 }
                 else
@@ -1776,20 +1809,24 @@ namespace FASTER.core
         {
             int totalNumPages = (int)(endPage - startPage);
             completedSemaphore = new SemaphoreSlim(0);
-            var asyncResult = new PageAsyncFlushResult<Empty>
-            {
-                completedSemaphore = completedSemaphore,
-                count = totalNumPages
-            };
+            var flushCompletionTracker = new FlushCompletionTracker(completedSemaphore, totalNumPages);
             var localSegmentOffsets = new long[SegmentBufferSize];
 
             for (long flushPage = startPage; flushPage < endPage; flushPage++)
             {
-
+                long flushPageAddress = flushPage << LogPageSizeBits;
                 var pageSize = PageSize;
-
                 if (flushPage == endPage - 1)
-                    pageSize = (int)(endLogicalAddress - (flushPage << LogPageSizeBits));
+                    pageSize = (int)(endLogicalAddress - flushPageAddress);
+
+                var asyncResult = new PageAsyncFlushResult<Empty>
+                {
+                    flushCompletionTracker = flushCompletionTracker,
+                    page = flushPage,
+                    fromAddress = flushPageAddress,
+                    untilAddress = flushPageAddress + pageSize,
+                    count = 1
+                };
 
                 // Intended destination is flushPage
                 WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets);
@@ -1855,9 +1892,10 @@ namespace FASTER.core
                         }
                         else
                         {
-                            // Keys are not same. I/O is not complete
+                            // Keys are not same. I/O is not complete. Follow the chain to the previous record and issue a request for it if
+                            // it is in the range to resolve, else surface "not found".
                             ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
-                            if (ctx.logicalAddress >= BeginAddress)
+                            if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                             {
                                 ctx.record.Return();
                                 ctx.record = ctx.objBuffer = default;
@@ -1910,7 +1948,7 @@ namespace FASTER.core
                 {
                     if (errorCode != 0)
                     {
-                        errorList.Add(result.fromAddress);
+                        errorList.Add(result.fromAddress, errorCode);
                     }
                     Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
                     ShiftFlushedUntilAddress();

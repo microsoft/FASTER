@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
@@ -25,16 +25,20 @@ namespace FASTER.server
         /// <summary>
         /// Response object
         /// </summary>
-        protected ReusableObject<SeaaBuffer> responseObject;
+        protected SeaaBuffer responseObject;
 
         /// <summary>
         /// Bytes read
         /// </summary>
         protected int bytesRead;
 
-        private readonly NetworkSender messageManager;
+        /// <summary>
+        /// Message manager
+        /// </summary>
+        protected readonly NetworkSender messageManager;
+
         private readonly int serverBufferSize;
-        
+
 
         /// <summary>
         /// Create new instance
@@ -59,7 +63,7 @@ namespace FASTER.server
         /// <summary>
         /// Get response object
         /// </summary>
-        protected void GetResponseObject() { if (responseObject.obj == null) responseObject = messageManager.GetReusableSeaaBuffer(); }
+        protected void GetResponseObject() { if (responseObject == null) responseObject = messageManager.GetReusableSeaaBuffer(); }
 
         /// <summary>
         /// Send response
@@ -67,13 +71,15 @@ namespace FASTER.server
         /// <param name="size"></param>
         protected void SendResponse(int size)
         {
+            var _r = responseObject;
+            responseObject = null;
             try
             {
-                messageManager.Send(socket, responseObject, 0, size);
+                messageManager.Send(socket, _r, 0, size);
             }
             catch
             {
-                responseObject.Dispose();
+                messageManager.Return(_r);
             }
         }
 
@@ -84,25 +90,62 @@ namespace FASTER.server
         /// <param name="size"></param>
         protected void SendResponse(int offset, int size)
         {
+            var _r = responseObject;
+            responseObject = null;
             try
             {
-                messageManager.Send(socket, responseObject, offset, size);
+                messageManager.Send(socket, _r, offset, size);
             }
             catch
             {
-                responseObject.Dispose();
+                messageManager.Return(_r);
             }
         }
 
-        
+        /// <summary>
+        /// Publish an update to a key to all the subscribers of the key
+        /// </summary>
+        /// <param name="keyPtr"></param>
+        /// <param name="keyLength"></param>
+        /// <param name="valPtr"></param>
+        /// <param name="valLength"></param>
+        /// <param name="inputPtr"></param>
+        /// <param name="sid"></param>
+        public abstract unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
+
+        /// <summary>
+        /// Publish an update to a key to all the (prefix) subscribers of the key
+        /// </summary>
+        /// <param name="prefixPtr"></param>
+        /// <param name="prefixLength"></param>
+        /// <param name="keyPtr"></param>
+        /// <param name="keyLength"></param>
+        /// <param name="valPtr"></param>
+        /// <param name="valLength"></param>
+        /// <param name="inputPtr"></param>
+        /// <param name="sid"></param>
+        public abstract unsafe void PrefixPublish(byte* prefixPtr, int prefixLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
+
         /// <summary>
         /// Dispose
         /// </summary>
         public virtual void Dispose()
         {
             socket.Dispose();
-            if (responseObject.obj != null)
-                responseObject.Dispose();
+            var _r = responseObject;
+            if (_r != null)
+                messageManager.Return(_r);
+            messageManager.Dispose();
+        }
+
+        /// <summary>
+        /// Wait for ongoing outgoing calls to complete
+        /// </summary>
+        public virtual void CompleteSends()
+        {
+            var _r = responseObject;
+            if (_r != null)
+                messageManager.Return(_r);
             messageManager.Dispose();
         }
     }

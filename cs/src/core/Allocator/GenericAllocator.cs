@@ -21,7 +21,6 @@ namespace FASTER.core
         public Value value;
     }
 
-
     public unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
     {
         // Circular buffer definition
@@ -29,8 +28,8 @@ namespace FASTER.core
 
         // Object log related variables
         private readonly IDevice objectLogDevice;
-        // Size of object chunks beign written to storage
-        private const int ObjectBlockSize = 100 * (1 << 20);
+        // Size of object chunks being written to storage
+        private readonly int ObjectBlockSize = 100 * (1 << 20);
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
         // Record sizes
@@ -274,6 +273,9 @@ namespace FASTER.core
             (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
+            base.VerifyCompatibleSectorSize(device);
+            base.VerifyCompatibleSectorSize(objectLogDevice);
+            
             bool epochTaken = false;
             if (!epoch.ThisInstanceProtected())
             {
@@ -302,8 +304,6 @@ namespace FASTER.core
                     epoch.Suspend();
             }
         }
-
-
 
         internal override void ClearPage(long page, int offset)
         {
@@ -413,6 +413,7 @@ namespace FASTER.core
 
             for (int i=start/recordSize; i<end/recordSize; i++)
             {
+                long endPosition = 0;
                 if (!src[i].info.Invalid)
                 {
                     if (KeyHasObjects())
@@ -423,6 +424,7 @@ namespace FASTER.core
                         key_address->Address = pos;
                         key_address->Size = (int)(ms.Position - pos);
                         addr.Add((long)key_address);
+                        endPosition = pos + key_address->Size;
                     }
 
                     if (ValueHasObjects() && !src[i].info.Tombstone)
@@ -433,10 +435,11 @@ namespace FASTER.core
                         value_address->Address = pos;
                         value_address->Size = (int)(ms.Position - pos);
                         addr.Add((long)value_address);
+                        endPosition = pos + value_address->Size;
                     }
                 }
 
-                if (ms.Position > ObjectBlockSize || i == (end / recordSize) - 1)
+                if (endPosition > ObjectBlockSize || i == (end / recordSize) - 1)
                 {
                     var memoryStreamLength = (int)ms.Position;
 
@@ -741,7 +744,7 @@ namespace FASTER.core
         }
 
 
-        #region Page handlers for objects
+#region Page handlers for objects
         /// <summary>
         /// Deseialize part of page from stream
         /// </summary>
@@ -835,8 +838,9 @@ namespace FASTER.core
         {
             long minObjAddress = long.MaxValue;
             long maxObjAddress = long.MinValue;
+            bool done = false;
 
-            while (ptr < untilptr)
+            while (!done && (ptr < untilptr))
             {
                 ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
 
@@ -847,15 +851,13 @@ namespace FASTER.core
                         var key_addr = GetKeyAddressInfo((long)raw + ptr);
                         var addr = key_addr->Address;
 
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
-                        {
-                            break;
-                        }
-
                         if (addr < minObjAddress) minObjAddress = addr;
                         addr += key_addr->Size;
                         if (addr > maxObjAddress) maxObjAddress = addr;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                            done = true;
                     }
 
 
@@ -864,15 +866,13 @@ namespace FASTER.core
                         var value_addr = GetValueAddressInfo((long)raw + ptr);
                         var addr = value_addr->Address;
 
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
-                        {
-                            break;
-                        }
-
                         if (addr < minObjAddress) minObjAddress = addr;
                         addr += value_addr->Size;
                         if (addr > maxObjAddress) maxObjAddress = addr;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                            done = true;
                     }
                 }
                 ptr += GetRecordSize(ptr).Item2;
@@ -981,7 +981,7 @@ namespace FASTER.core
         {
             return SerializerSettings.valueSerializer != null;
         }
-        #endregion
+#endregion
 
         public override IHeapContainer<Key> GetKeyContainer(ref Key key) => new StandardHeapContainer<Key>(ref key);
         public override IHeapContainer<Value> GetValueContainer(ref Value value) => new StandardHeapContainer<Value>(ref value);

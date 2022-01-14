@@ -123,9 +123,17 @@ namespace FASTER.core
     public sealed class SectorAlignedBufferPool
     {
         /// <summary>
-        /// Disable buffer pool
+        /// Disable buffer pool.
+        /// This static option should be enabled on program entry, and not modified once FASTER is instantiated.
         /// </summary>
         public static bool Disabled = false;
+
+        /// <summary>
+        /// Unpin objects when they are returned to the pool, so that we do not hold pinned objects long term.
+        /// If set, we will unpin when objects are returned and re-pin when objects are returned from the pool.
+        /// This static option should be enabled on program entry, and not modified once FASTER is instantiated.
+        /// </summary>
+        public static bool UnpinOnReturn = false;
 
         private const int levels = 32;
         private readonly int recordSize;
@@ -164,7 +172,14 @@ namespace FASTER.core
             page.valid_offset = 0;
             Array.Clear(page.buffer, 0, page.buffer.Length);
             if (!Disabled)
+            {
+                if (UnpinOnReturn)
+                {
+                    page.handle.Free();
+                    page.handle = default;
+                }
                 queue[page.level].Enqueue(page);
+            }
             else
             {
                 page.handle.Free();
@@ -210,6 +225,12 @@ namespace FASTER.core
 
             if (!Disabled && queue[index].TryDequeue(out SectorAlignedMemory page))
             {
+                if (UnpinOnReturn)
+                {
+                    page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
+                    page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
+                    page.offset = (int)((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
+                }
                 return page;
             }
 
@@ -239,7 +260,8 @@ namespace FASTER.core
                 if (queue[i] == null) continue;
                 while (queue[i].TryDequeue(out SectorAlignedMemory result))
                 {
-                    result.handle.Free();
+                    if (!UnpinOnReturn)
+                        result.handle.Free();
                     result.buffer = null;
                 }
             }

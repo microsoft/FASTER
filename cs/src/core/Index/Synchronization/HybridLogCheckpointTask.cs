@@ -12,32 +12,35 @@ namespace FASTER.core
     /// </summary>
     internal abstract class HybridLogCheckpointOrchestrationTask : ISynchronizationTask
     {
+        private long lastVersion;
         /// <inheritdoc />
         public virtual void GlobalBeforeEnteringState<Key, Value>(SystemState next,
             FasterKV<Key, Value> faster)
         {
-            switch (next.phase)
+            switch (next.Phase)
             {
                 case Phase.PREPARE:
+                    lastVersion = faster.systemState.Version;
                     if (faster._hybridLogCheckpoint.IsDefault())
                     {
                         faster._hybridLogCheckpointToken = Guid.NewGuid();
-                        faster.InitializeHybridLogCheckpoint(faster._hybridLogCheckpointToken, next.version);
+                        faster.InitializeHybridLogCheckpoint(faster._hybridLogCheckpointToken, next.Version);
                     }
-                    faster._hybridLogCheckpoint.info.version = next.version;
+                    faster._hybridLogCheckpoint.info.version = next.Version;
                     faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.startLogicalAddress);
                     break;
                 case Phase.WAIT_FLUSH:
                     faster._hybridLogCheckpoint.info.headAddress = faster.hlog.HeadAddress;
                     faster._hybridLogCheckpoint.info.beginAddress = faster.hlog.BeginAddress;
-                    faster._hybridLogCheckpoint.info.nextVersion = next.version;
+                    faster._hybridLogCheckpoint.info.nextVersion = next.Version;
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     CollectMetadata(next, faster);
                     faster.WriteHybridLogMetaInfo();
+                    faster.lastVersion = lastVersion;
                     break;
                 case Phase.REST:
-                    faster._hybridLogCheckpoint.Reset();
+                    faster._hybridLogCheckpoint.Dispose();
                     var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                     faster.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });
                     faster.checkpointTcs = nextTcs;
@@ -61,7 +64,7 @@ namespace FASTER.core
             lock (faster._activeSessions)
                 // write dormant sessions to checkpoint
                 foreach (var kvp in faster._activeSessions)
-                    kvp.Value.AtomicSwitch(next.version - 1);
+                    kvp.Value.AtomicSwitch(next.Version - 1);
         }
 
         /// <inheritdoc />
@@ -80,7 +83,7 @@ namespace FASTER.core
             CancellationToken token = default)
             where FasterSession : IFasterSession
         {
-            if (current.phase != Phase.PERSISTENCE_CALLBACK) return;
+            if (current.Phase != Phase.PERSISTENCE_CALLBACK) return;
 
             if (ctx != null)
             {
@@ -90,10 +93,10 @@ namespace FASTER.core
                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                 }
 
-                faster.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.version);
+                faster.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
             }
 
-            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.version))
+            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.Version))
                 faster.GlobalStateMachineStep(current);
         }
     }
@@ -111,13 +114,11 @@ namespace FASTER.core
         {
             base.GlobalBeforeEnteringState(next, faster);
 
-            if (next.phase == Phase.PREPARE)
+            if (next.Phase == Phase.PREPARE)
             {
-                faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
-                faster._lastSnapshotCheckpoint.deltaLog?.Dispose();
-                faster._lastSnapshotCheckpoint = default;
+                faster._lastSnapshotCheckpoint.Dispose();
             }
-            if (next.phase != Phase.WAIT_FLUSH) return;
+            if (next.Phase != Phase.WAIT_FLUSH) return;
 
             faster.hlog.ShiftReadOnlyToTail(out var tailAddress,
                 out faster._hybridLogCheckpoint.flushedSemaphore);
@@ -136,7 +137,7 @@ namespace FASTER.core
         {
             base.OnThreadState(current, prev, faster, ctx, fasterSession, valueTasks, token);
 
-            if (current.phase != Phase.WAIT_FLUSH) return;
+            if (current.Phase != Phase.WAIT_FLUSH) return;
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
             {
@@ -157,9 +158,9 @@ namespace FASTER.core
             }
 
             if (ctx != null)
-                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.version);
+                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
 
-            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.version))
+            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
         }
     }
@@ -174,12 +175,10 @@ namespace FASTER.core
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
         {
-            switch (next.phase)
+            switch (next.Phase)
             {
                 case Phase.PREPARE:
-                    faster._lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
-                    faster._lastSnapshotCheckpoint.deltaLog?.Dispose();
-                    faster._lastSnapshotCheckpoint = default;
+                    faster._lastSnapshotCheckpoint.Dispose();
                     base.GlobalBeforeEnteringState(next, faster);
                     faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.FlushedUntilAddress;
                     faster._hybridLogCheckpoint.info.useSnapshotFile = 1;
@@ -220,7 +219,7 @@ namespace FASTER.core
                     // update flushed-until address to the latest
                     faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
                     base.GlobalBeforeEnteringState(next, faster);
-                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
+                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint.Transfer();
                     break;
                 default:
                     base.GlobalBeforeEnteringState(next, faster);
@@ -239,7 +238,7 @@ namespace FASTER.core
         {
             base.OnThreadState(current, prev, faster, ctx, fasterSession, valueTasks, token);
 
-            if (current.phase != Phase.WAIT_FLUSH) return;
+            if (current.Phase != Phase.WAIT_FLUSH) return;
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
             {
@@ -261,9 +260,9 @@ namespace FASTER.core
             }
 
             if (ctx != null)
-                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.version);
+                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
 
-            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.version))
+            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
         }
     }
@@ -278,13 +277,13 @@ namespace FASTER.core
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
         {
-            switch (next.phase)
+            switch (next.Phase)
             {
                 case Phase.PREPARE:
                     faster._hybridLogCheckpoint = faster._lastSnapshotCheckpoint;
                     base.GlobalBeforeEnteringState(next, faster);
                     faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.FlushedUntilAddress;
-                    faster._hybridLogCheckpoint.prevVersion = next.version;
+                    faster._hybridLogCheckpoint.prevVersion = next.Version;
                     break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, faster);
@@ -311,7 +310,8 @@ namespace FASTER.core
                     CollectMetadata(next, faster);
                     faster.WriteHybridLogIncrementalMetaInfo(faster._hybridLogCheckpoint.deltaLog);
                     faster._hybridLogCheckpoint.info.deltaTailAddress = faster._hybridLogCheckpoint.deltaLog.TailAddress;
-                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint;
+                    faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint.Transfer();
+                    faster._hybridLogCheckpoint.Dispose();
                     break;
             }
         }
@@ -327,7 +327,7 @@ namespace FASTER.core
         {
             base.OnThreadState(current, prev, faster, ctx, fasterSession, valueTasks, token);
 
-            if (current.phase != Phase.WAIT_FLUSH) return;
+            if (current.Phase != Phase.WAIT_FLUSH) return;
 
             if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
             {
@@ -349,9 +349,9 @@ namespace FASTER.core
             }
 
             if (ctx != null)
-                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.version);
+                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
 
-            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.version))
+            if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
         }
     }
@@ -382,16 +382,16 @@ namespace FASTER.core
         public override SystemState NextState(SystemState start)
         {
             var result = SystemState.Copy(ref start);
-            switch (start.phase)
+            switch (start.Phase)
             {
                 case Phase.WAIT_PENDING:
-                    result.phase = Phase.WAIT_FLUSH;
+                    result.Phase = Phase.WAIT_FLUSH;
                     break;
                 case Phase.WAIT_FLUSH:
-                    result.phase = Phase.PERSISTENCE_CALLBACK;
+                    result.Phase = Phase.PERSISTENCE_CALLBACK;
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
-                    result.phase = Phase.REST;
+                    result.Phase = Phase.REST;
                     break;
                 default:
                     result = base.NextState(start);

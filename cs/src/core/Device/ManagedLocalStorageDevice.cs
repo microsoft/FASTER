@@ -417,8 +417,11 @@ namespace FASTER.core
             {
                 logHandle.Item1.Dispose();
                 logHandle.Item2.Dispose();
-                File.Delete(GetSegmentName(segment));
             }
+            try
+            {
+                File.Delete(GetSegmentName(segment));
+            } catch { }
         }
 
         /// <summary>

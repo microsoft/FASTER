@@ -194,25 +194,31 @@ namespace FASTER.devices
         /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
-            if (this.blobs.TryRemove(segment, out BlobEntry blob))
+            CloudPageBlob pageBlob;
+            if (blobs.TryRemove(segment, out BlobEntry blob))
+                pageBlob = blob.PageBlob;
+            else
+                pageBlob = blobDirectory.GetPageBlobReference(GetSegmentBlobName(segment));
+            if (!pageBlob.Exists()) return;
+
+            if (underLease)
             {
-                CloudPageBlob pageBlob = blob.PageBlob;
+                BlobManager.ConfirmLeaseAsync().AsTask()
+                    .GetAwaiter()
+                    .GetResult();
+            }
 
-                if (this.underLease)
+            if (!BlobManager.CancellationToken.IsCancellationRequested)
+            {
+                var t = pageBlob.DeleteAsync(cancellationToken: BlobManager.CancellationToken);
+                t.GetAwaiter().OnCompleted(() => 
                 {
-                    this.BlobManager.ConfirmLeaseAsync().GetAwaiter().GetResult();  // REVIEW: this method cannot avoid GetAwaiter
-                }
-
-                if (!this.BlobManager.CancellationToken.IsCancellationRequested)
-                {
-                    var t = pageBlob.DeleteAsync(cancellationToken: this.BlobManager.CancellationToken);
-                    t.GetAwaiter().GetResult();                                     // REVIEW: this method cannot avoid GetAwaiter
                     if (t.IsFaulted)
                     {
-                        this.BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
+                        BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
                     }
                     callback(result);
-                }
+                });
             }
         }
 
@@ -363,10 +369,10 @@ namespace FASTER.devices
                 throw exception;
             }
 
-            this.ReadFromBlobUnsafeAsync(blobEntry.PageBlob, (long)sourceAddress, (long)destinationAddress, readLength)
-                  .ContinueWith((Task t) =>
-                  {
-                      if (t.IsFaulted)
+            var t = this.ReadFromBlobUnsafeAsync(blobEntry.PageBlob, (long)sourceAddress, (long)destinationAddress, readLength);
+            t.GetAwaiter().OnCompleted(() =>                                // REVIEW: this method cannot avoid GetAwaiter
+            {
+                if (t.IsFaulted)
                       {
                           Debug.WriteLine("AzureStorageDevice.ReadAsync Returned (Failure)");
                           callback(uint.MaxValue, readLength, context);
@@ -400,7 +406,7 @@ namespace FASTER.devices
 
                     // If no blob exists for the segment, we must first create the segment asynchronouly. (Create call takes ~70 ms by measurement)
                     // After creation is done, we can call write.
-                    var _ = entry.CreateAsync(size, pageBlob);
+                    entry.CreateAsync(size, pageBlob).GetAwaiter().GetResult();     // REVIEW: this method cannot avoid GetAwaiter
                 }
                 // Otherwise, some other thread beat us to it. Okay to use their blobs.
                 blobEntry = blobs[segmentId];
@@ -422,20 +428,22 @@ namespace FASTER.devices
 
         private unsafe void WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
-            this.WriteToBlobAsync(blob, sourceAddress, (long)destinationAddress, numBytesToWrite)
-                .ContinueWith((Task t) =>
+            Debug.WriteLine($"AzureStorageDevice.WriteToBlobAsync Called target={blob.Name}");
+
+            var t = this.WriteToBlobAsync(blob, sourceAddress, (long)destinationAddress, numBytesToWrite);
+            t.GetAwaiter().OnCompleted(() =>                                // REVIEW: this method cannot avoid GetAwaiter
+            {
+                if (t.IsFaulted)
                 {
-                    if (t.IsFaulted)
-                    {
-                        Debug.WriteLine("AzureStorageDevice.WriteAsync Returned (Failure)");
-                        callback(uint.MaxValue, numBytesToWrite, context);
-                    }
-                    else
-                    {
-                        Debug.WriteLine("AzureStorageDevice.WriteAsync Returned");
-                        callback(0, numBytesToWrite, context);
-                    }
-                });
+                    Debug.WriteLine("AzureStorageDevice.WriteAsync Returned (Failure)");
+                    callback(uint.MaxValue, numBytesToWrite, context);
+                }
+                else
+                {
+                    Debug.WriteLine("AzureStorageDevice.WriteAsync Returned");
+                    callback(0, numBytesToWrite, context);
+                }
+            });
         }
 
         private async Task WriteToBlobAsync(CloudPageBlob blob, IntPtr sourceAddress, long destinationAddress, uint numBytesToWrite)

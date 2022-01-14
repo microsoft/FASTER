@@ -779,6 +779,181 @@ TEST(CLASS, Rmw) {
   store.StopSession();
 }
 
+TEST(CLASS, Rmw_Large) {
+  class Key {
+   public:
+    Key(uint64_t key)
+      : key_{ key } {
+    }
+
+    inline static constexpr uint32_t size() {
+      return static_cast<uint32_t>(sizeof(Key));
+    }
+    inline KeyHash GetHash() const {
+      std::hash<uint64_t> hash_fn;
+      return KeyHash{ hash_fn(key_) };
+    }
+
+    /// Comparison operators.
+    inline bool operator==(const Key& other) const {
+      return key_ == other.key_;
+    }
+    inline bool operator!=(const Key& other) const {
+      return key_ != other.key_;
+    }
+
+   private:
+    uint64_t key_;
+  };
+
+  class RmwContext;
+
+  class Value {
+   public:
+    Value()
+      : counter_{ 0 }
+      , junk_{ 1 } {
+    }
+
+    inline static constexpr uint32_t size() {
+      return static_cast<uint32_t>(sizeof(Value));
+    }
+
+    friend class RmwContext;
+
+   private:
+    std::atomic<uint64_t> counter_;
+    uint8_t junk_[8016];
+  };
+  static_assert(sizeof(Value) == 8024, "sizeof(Value) != 8024");
+  static_assert(alignof(Value) == 8, "alignof(Value) != 8");
+
+  class RmwContext : public IAsyncContext {
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    RmwContext(Key key, uint64_t incr)
+      : key_{ key }
+      , incr_{ incr }
+      , val_{ 0 } {
+    }
+
+    /// Copy (and deep-copy) constructor.
+    RmwContext(const RmwContext& other)
+      : key_{ other.key_ }
+      , incr_{ other.incr_ }
+      , val_{ other.val_ } {
+    }
+
+    inline const Key& key() const {
+      return key_;
+    }
+    inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return sizeof(value_t);
+    }
+    inline void RmwInitial(Value& value) {
+      value.counter_ = incr_;
+      val_ = value.counter_;
+    }
+    inline void RmwCopy(const Value& old_value, Value& value) {
+      value.counter_ = old_value.counter_ + incr_;
+      val_ = value.counter_;
+    }
+    inline bool RmwAtomic(Value& value) {
+      val_ = value.counter_.fetch_add(incr_) + incr_;
+      return true;
+    }
+
+    inline uint64_t val() const {
+      return val_;
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+   private:
+    Key key_;
+    uint64_t incr_;
+
+    uint64_t val_;
+  };
+
+  std::experimental::filesystem::create_directories("logs");
+
+  typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t;
+  FasterKv<Key, Value, disk_t> store { 2048, (1 << 20) * 192, "logs", 0.4 };
+
+  Guid session_id = store.StartSession();
+
+  constexpr size_t kNumRecords = 50000;
+
+  // Initial RMW.
+  static std::atomic<uint64_t> records_touched{ 0 };
+  for(size_t idx = 0; idx < kNumRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      CallbackContext<RmwContext> context{ ctxt };
+      ASSERT_EQ(Status::Ok, result);
+      ASSERT_EQ(3, context->val());
+      ++records_touched;
+    };
+
+    if(idx % 256 == 0) {
+      store.Refresh();
+    }
+
+    RmwContext context{ Key{ idx }, 3 };
+    Status result = store.Rmw(context, callback, 1);
+    if(result == Status::Ok) {
+      ASSERT_EQ(3, context.val());
+      ++records_touched;
+    } else {
+      ASSERT_EQ(Status::Pending, result);
+    }
+  }
+
+  bool result = store.CompletePending(true);
+  ASSERT_TRUE(result);
+  ASSERT_EQ(kNumRecords, records_touched.load());
+
+  // Second RMW.
+  records_touched = 0;
+  for(size_t idx = kNumRecords; idx > 0; --idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      CallbackContext<RmwContext> context{ ctxt };
+      ASSERT_EQ(Status::Ok, result);
+      ASSERT_EQ(8, context->val());
+      ++records_touched;
+    };
+
+    if(idx % 256 == 0) {
+      store.Refresh();
+    }
+
+    RmwContext context{ Key{ idx - 1 }, 5 };
+    Status result = store.Rmw(context, callback, 1);
+    if(result == Status::Ok) {
+      ASSERT_EQ(8, context.val()) << idx - 1;
+      ++records_touched;
+    } else {
+      ASSERT_EQ(Status::Pending, result);
+    }
+  }
+
+  ASSERT_LT(records_touched.load(), kNumRecords);
+  result = store.CompletePending(true);
+  ASSERT_TRUE(result);
+  ASSERT_EQ(kNumRecords, records_touched.load());
+
+  store.StopSession();
+}
+
 TEST(CLASS, Rmw_Concurrent) {
   class Key {
    public:
@@ -996,6 +1171,263 @@ TEST(CLASS, Rmw_Concurrent) {
 
   // 8 pages!
   FasterKv<Key, Value, disk_t> store{ 262144, 268435456, "logs", 0.5 };
+
+  // Initial RMW.
+  std::deque<std::thread> threads{};
+  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+    threads.emplace_back(rmw_worker, &store, 7);
+  }
+  for(auto& thread : threads) {
+    thread.join();
+  }
+
+  // Read.
+  threads.clear();
+  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+    threads.emplace_back(read_worker1, &store, idx);
+  }
+  for(auto& thread : threads) {
+    thread.join();
+  }
+
+  // Second RMW.
+  threads.clear();
+  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+    threads.emplace_back(rmw_worker, &store, 6);
+  }
+  for(auto& thread : threads) {
+    thread.join();
+  }
+
+  // Read again.
+  threads.clear();
+  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+    threads.emplace_back(read_worker2, &store, idx);
+  }
+  for(auto& thread : threads) {
+    thread.join();
+  }
+}
+
+TEST(CLASS, Rmw_Concurrent_Large) {
+  class Key {
+   public:
+    Key(uint64_t key)
+      : key_{ key } {
+    }
+
+    inline static constexpr uint32_t size() {
+      return static_cast<uint32_t>(sizeof(Key));
+    }
+    inline KeyHash GetHash() const {
+      std::hash<uint64_t> hash_fn;
+      return KeyHash{ hash_fn(key_) };
+    }
+
+    /// Comparison operators.
+    inline bool operator==(const Key& other) const {
+      return key_ == other.key_;
+    }
+    inline bool operator!=(const Key& other) const {
+      return key_ != other.key_;
+    }
+
+   private:
+    uint64_t key_;
+  };
+
+  class RmwContext;
+  class ReadContext;
+
+  class Value {
+   public:
+    Value()
+      : counter_{ 0 }
+      , junk_{ 1 } {
+    }
+
+    inline static constexpr uint32_t size() {
+      return static_cast<uint32_t>(sizeof(Value));
+    }
+
+    friend class RmwContext;
+    friend class ReadContext;
+
+   private:
+    std::atomic<uint64_t> counter_;
+    uint8_t junk_[8016];
+  };
+  static_assert(sizeof(Value) == 8024, "sizeof(Value) != 8024");
+  static_assert(alignof(Value) == 8, "alignof(Value) != 8");
+
+  class RmwContext : public IAsyncContext {
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    RmwContext(Key key, uint64_t incr)
+      : key_{ key }
+      , incr_{ incr } {
+    }
+
+    /// Copy (and deep-copy) constructor.
+    RmwContext(const RmwContext& other)
+      : key_{ other.key_ }
+      , incr_{ other.incr_ } {
+    }
+
+    inline const Key& key() const {
+      return key_;
+    }
+    inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    inline static constexpr uint32_t value_size(const Value& old_value) {
+      return sizeof(value_t);
+    }
+    inline void RmwInitial(Value& value) {
+      value.counter_ = incr_;
+    }
+    inline void RmwCopy(const Value& old_value, Value& value) {
+      value.counter_ = old_value.counter_ + incr_;
+    }
+    inline bool RmwAtomic(Value& value) {
+      value.counter_.fetch_add(incr_);
+      return true;
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+   private:
+    Key key_;
+    uint64_t incr_;
+  };
+
+  class ReadContext : public IAsyncContext {
+   public:
+    typedef Key key_t;
+    typedef Value value_t;
+
+    ReadContext(Key key)
+      : key_{ key } {
+    }
+
+    /// Copy (and deep-copy) constructor.
+    ReadContext(const ReadContext& other)
+      : key_{ other.key_ } {
+    }
+
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const Key& key() const {
+      return key_;
+    }
+
+    inline void Get(const Value& value) {
+      counter = value.counter_.load(std::memory_order_acquire);
+    }
+    inline void GetAtomic(const Value& value) {
+      counter = value.counter_.load();
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+   private:
+    Key key_;
+   public:
+    uint64_t counter;
+  };
+
+  typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t;
+  static constexpr size_t kNumRecords = 50000;
+  static constexpr size_t kNumThreads = 2;
+
+  auto rmw_worker = [](FasterKv<Key, Value, disk_t>* store_, uint64_t incr) {
+    Guid session_id = store_->StartSession();
+    for(size_t idx = 0; idx < kNumRecords; ++idx) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<RmwContext> context{ ctxt };
+        ASSERT_EQ(Status::Ok, result);
+      };
+
+      if(idx % 256 == 0) {
+        store_->Refresh();
+      }
+
+      RmwContext context{ Key{ idx }, incr };
+      Status result = store_->Rmw(context, callback, 1);
+      if(result != Status::Ok) {
+        ASSERT_EQ(Status::Pending, result);
+      }
+    }
+    bool result = store_->CompletePending(true);
+    ASSERT_TRUE(result);
+    store_->StopSession();
+  };
+
+  auto read_worker1 = [](FasterKv<Key, Value, disk_t>* store_, size_t thread_idx) {
+    Guid session_id = store_->StartSession();
+    for(size_t idx = 0; idx < kNumRecords / kNumThreads; ++idx) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<ReadContext> context{ ctxt };
+        ASSERT_EQ(Status::Ok, result);
+        ASSERT_EQ(7 * kNumThreads, context->counter);
+      };
+
+      if(idx % 256 == 0) {
+        store_->Refresh();
+      }
+
+      ReadContext context{ Key{ thread_idx* (kNumRecords / kNumThreads) + idx } };
+      Status result = store_->Read(context, callback, 1);
+      if(result == Status::Ok) {
+        ASSERT_EQ(7 * kNumThreads, context.counter);
+      } else {
+        ASSERT_EQ(Status::Pending, result);
+      }
+    }
+    bool result = store_->CompletePending(true);
+    ASSERT_TRUE(result);
+    store_->StopSession();
+  };
+
+  auto read_worker2 = [](FasterKv<Key, Value, disk_t>* store_, size_t thread_idx) {
+    Guid session_id = store_->StartSession();
+    for(size_t idx = 0; idx < kNumRecords / kNumThreads; ++idx) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<ReadContext> context{ ctxt };
+        ASSERT_EQ(Status::Ok, result);
+        ASSERT_EQ(13 * kNumThreads, context->counter);
+      };
+
+      if(idx % 256 == 0) {
+        store_->Refresh();
+      }
+
+      ReadContext context{ Key{ thread_idx* (kNumRecords / kNumThreads) + idx } };
+      Status result = store_->Read(context, callback, 1);
+      if(result == Status::Ok) {
+        ASSERT_EQ(13 * kNumThreads, context.counter);
+      } else {
+        ASSERT_EQ(Status::Pending, result);
+      }
+    }
+    bool result = store_->CompletePending(true);
+    ASSERT_TRUE(result);
+    store_->StopSession();
+  };
+
+  std::experimental::filesystem::create_directories("logs");
+
+  // 192 MB in memory -- rest on disk
+  FasterKv<Key, Value, disk_t> store { 2048, (1 << 20) * 192, "logs", 0.4 };
 
   // Initial RMW.
   std::deque<std::thread> threads{};

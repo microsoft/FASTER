@@ -2,16 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 using FASTER.devices;
-using System.Diagnostics;
 
 namespace FASTER.test
 {
@@ -19,48 +12,49 @@ namespace FASTER.test
     internal class BasicStorageFASTERTests
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
-        public const string EMULATED_STORAGE_STRING = "UseDevelopmentStorage=true;";
-        public const string TEST_CONTAINER = "test";
 
         [Test]
         [Category("FasterKV")]
         public void LocalStorageWriteRead()
         {
-            TestDeviceWriteRead(Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BasicDiskFASTERTests.log", deleteOnClose: true));
+            TestDeviceWriteRead(Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests.log", deleteOnClose: true));
         }
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void PageBlobWriteRead()
         {
-            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
-                TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "PageBlobWriteRead", "BasicDiskFASTERTests"));
+            TestUtils.IgnoreIfNotRunningAzureTests();
+            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests"));
         }
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void PageBlobWriteReadWithLease()
         {
-            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
-                TestDeviceWriteRead(new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "PageBlobWriteRead", "BasicDiskFASTERTests",null,true,true));
+            TestUtils.IgnoreIfNotRunningAzureTests();
+            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests",null,true,true));
         }
-
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void TieredWriteRead()
         {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             IDevice tested;
-            IDevice localDevice = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
-            if ("yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")))
+            IDevice localDevice = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
+            if (TestUtils.IsRunningAzureTests)
             {
-                IDevice cloudDevice = new AzureStorageDevice(EMULATED_STORAGE_STRING, TEST_CONTAINER, "TieredWriteRead", "BasicDiskFASTERTests");
+                IDevice cloudDevice = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests");
                 tested = new TieredStorageDevice(1, localDevice, cloudDevice);
             }
             else
             {
                 // If no Azure is enabled, just use another disk
-                IDevice localDevice2 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
+                IDevice localDevice2 = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
                 tested = new TieredStorageDevice(1, localDevice, localDevice2);
 
             }
@@ -69,10 +63,11 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public void ShardedWriteRead()
         {
-            IDevice localDevice1 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BasicDiskFASTERTests1.log", deleteOnClose: true, capacity: 1 << 30);
-            IDevice localDevice2 = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
+            IDevice localDevice1 = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests1.log", deleteOnClose: true, capacity: 1 << 30);
+            IDevice localDevice2 = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
             var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1, localDevice2));
             TestDeviceWriteRead(device);
         }
@@ -119,13 +114,13 @@ namespace FASTER.test
                 {
                     if (i < 100)
                     {
-                        Assert.IsTrue(output.value.vfield1 == value.vfield1 + 1);
-                        Assert.IsTrue(output.value.vfield2 == value.vfield2 + 1);
+                        Assert.AreEqual(value.vfield1 + 1, output.value.vfield1);
+                        Assert.AreEqual(value.vfield2 + 1, output.value.vfield2);
                     }
                     else
                     {
-                        Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                        Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                        Assert.AreEqual(value.vfield1, output.value.vfield1);
+                        Assert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                 }
             }
@@ -134,6 +129,7 @@ namespace FASTER.test
             fht.Dispose();
             fht = null;
             log.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
     }
 }

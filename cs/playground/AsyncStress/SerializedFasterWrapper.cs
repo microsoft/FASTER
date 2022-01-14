@@ -95,6 +95,7 @@ namespace AsyncStress
                 }
             }
             Interlocked.Add(ref pendingCount, await updater.CompleteAsync(await task.ConfigureAwait(false)));
+            _sessionPool.Return(session);
         }
 
         public void Update<TUpdater, TAsyncResult>(TUpdater updater, Key key, Value value)

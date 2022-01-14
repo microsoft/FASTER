@@ -15,33 +15,47 @@ namespace FASTER.server
     /// <typeparam name="Functions"></typeparam>
     /// <typeparam name="ParameterSerializer"></typeparam>
     public sealed class FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer> : ISessionProvider
-            where Functions : IFunctions<Key, Value, Input, Output, long>
+            where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
             where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly FasterKV<Key, Value> store;
         readonly Func<WireFormat, Functions> functionsGen;
         readonly ParameterSerializer serializer;
         readonly MaxSizeSettings maxSizeSettings;
+        readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker;
+        readonly SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker;
 
         /// <summary>
         /// Create FasterKV backend
         /// </summary>
         /// <param name="store"></param>
         /// <param name="functionsGen"></param>
+        /// <param name="subscribeKVBroker"></param>
+        /// <param name="subscribeBroker"></param>
         /// <param name="serializer"></param>
         /// <param name="maxSizeSettings"></param>
-        public FasterKVProvider(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
+        public FasterKVProvider(FasterKV<Key, Value> store, Func<WireFormat, Functions> functionsGen, SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> subscribeKVBroker = null, SubscribeBroker<Key, Value, IKeySerializer<Key>> subscribeBroker = null, ParameterSerializer serializer = default, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
             this.functionsGen = functionsGen;
             this.serializer = serializer;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
+            this.subscribeKVBroker = subscribeKVBroker;
+            this.subscribeBroker = subscribeBroker;
         }
 
         /// <inheritdoc />
         public IServerSession GetSession(WireFormat wireFormat, Socket socket)
         {
-            return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>(socket, store, functionsGen(wireFormat), serializer, maxSizeSettings);
+            switch (wireFormat)
+            {
+                case WireFormat.WebSocket:
+                    return new WebsocketServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
+                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker);
+                default:
+                    return new BinaryServerSession<Key, Value, Input, Output, Functions, ParameterSerializer>
+                        (socket, store, functionsGen(wireFormat), serializer, maxSizeSettings, subscribeKVBroker, subscribeBroker);
+            }
         }
     }
 }

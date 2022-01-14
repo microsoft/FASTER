@@ -38,6 +38,11 @@ namespace FASTER.core
         public long logicalAddress;
 
         /// <summary>
+        /// Minimum Logical address to resolve Key in
+        /// </summary>
+        public long minAddress;
+
+        /// <summary>
         /// Record buffer
         /// </summary>
         public SectorAlignedMemory record;

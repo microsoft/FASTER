@@ -10,6 +10,22 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// The type of a record in the delta (incremental) log
+    /// </summary>
+    public enum DeltaLogEntryType : int
+    {
+        /// <summary>
+        /// The entry is a delta record
+        /// </summary>
+        DELTA,
+
+        /// <summary>
+        /// The entry is checkpoint metadata
+        /// </summary>
+        CHECKPOINT_METADATA
+    }
+    
     [StructLayout(LayoutKind.Explicit, Size = DeltaLog.HeaderSize)]
     struct DeltalogHeader
     {
@@ -18,7 +34,7 @@ namespace FASTER.core
         [FieldOffset(8)]
         public int Length;
         [FieldOffset(12)]
-        public int Type;
+        public DeltaLogEntryType Type;
     }
 
     /// <summary>
@@ -177,14 +193,14 @@ namespace FASTER.core
         /// <param name="entryLength"></param>
         /// <param name="type"></param>
         /// <returns></returns>
-        public unsafe bool GetNext(out long physicalAddress, out int entryLength, out int type)
+        public unsafe bool GetNext(out long physicalAddress, out int entryLength, out DeltaLogEntryType type)
         {
             while (true)
             {
                 physicalAddress = 0;
                 entryLength = 0;
                 currentAddress = nextAddress;
-                type = 0;
+                type = DeltaLogEntryType.DELTA;
 
                 var _currentPage = currentAddress >> LogPageSizeBits;
                 var _currentFrame = _currentPage % frameSize;
@@ -264,7 +280,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe static void SetBlockHeader(int length, int type, byte* dest)
+        private unsafe static void SetBlockHeader(int length, DeltaLogEntryType type, byte* dest)
         {
             ref var header = ref GetHeader((long)dest);
             header.Length = length;
@@ -301,7 +317,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="entryLength">Entry length</param>
         /// <param name="type">Optional record type</param>
-        public unsafe void Seal(int entryLength, int type = 0)
+        public unsafe void Seal(int entryLength, DeltaLogEntryType type = DeltaLogEntryType.DELTA)
         {
             if (entryLength > 0)
             {

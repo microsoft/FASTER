@@ -2,56 +2,56 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class GenericFASTERScanTests
     {
         private FasterKV<MyKey, MyValue> fht;
         private IDevice log, objlog;
-        const int totalRecords = 2000;
+        const int totalRecords = 250;
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericFASTERScanTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericFASTERScanTests.obj.log", deleteOnClose: true);
+            path = TestUtils.MethodTestDir + "/";
 
-            fht = new FasterKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9 },
-                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                );
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait: true);
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
-            objlog.Dispose();
-        }
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
 
+            TestUtils.DeleteDirectory(path);
+        }
 
         [Test]
         [Category("FasterKV")]
-        public void DiskWriteScanBasicTest()
+        [Category("Smoke")]
+        public void DiskWriteScanBasicTest([Values] TestUtils.DeviceType deviceType)
         {
-            using var session = fht.For(new MyFunctions()).NewSession<MyFunctions>();
+            log = TestUtils.CreateTestDevice(deviceType, $"{path}DiskWriteScanBasicTest_{deviceType}.log");
+            objlog = TestUtils.CreateTestDevice(deviceType, $"{path}DiskWriteScanBasicTest_{deviceType}.obj.log");
+            fht = new (128,
+                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
+                      checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
+                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
+                      );
 
-            var s = fht.Log.Subscribe(new LogObserver());
+            using var session = fht.For(new MyFunctions()).NewSession<MyFunctions>();
+            using var s = fht.Log.Subscribe(new LogObserver());
 
             var start = fht.Log.TailAddress;
             for (int i = 0; i < totalRecords; i++)
@@ -59,35 +59,32 @@ namespace FASTER.test
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
                 session.Upsert(ref _key, ref _value, Empty.Default, 0);
-                if (i % 100 == 0) fht.Log.FlushAndEvict(true);
+                if (i % 100 == 0)
+                    fht.Log.FlushAndEvict(true);
             }
             fht.Log.FlushAndEvict(true);
+
             using (var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.SinglePageBuffering))
             {
-
-                int val = 0;
-                while (iter.GetNext(out RecordInfo recordInfo, out MyKey key, out MyValue value))
+                int val;
+                for (val = 0; iter.GetNext(out RecordInfo recordInfo, out MyKey key, out MyValue value); ++val)
                 {
-                    Assert.IsTrue(key.key == val);
-                    Assert.IsTrue(value.value == val);
-                    val++;
+                    Assert.AreEqual(val, key.key, $"log scan 1: key");
+                    Assert.AreEqual(val, value.value, $"log scan 1: value");
                 }
-                Assert.IsTrue(totalRecords == val);
+                Assert.AreEqual(val, totalRecords, $"log scan 1: totalRecords");
             }
 
             using (var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.DoublePageBuffering))
             {
-                int val = 0;
-                while (iter.GetNext(out RecordInfo recordInfo, out MyKey key, out MyValue value))
+                int val;
+                for (val = 0; iter.GetNext(out RecordInfo recordInfo, out MyKey key, out MyValue value); ++val)
                 {
-                    Assert.IsTrue(key.key == val);
-                    Assert.IsTrue(value.value == val);
-                    val++;
+                    Assert.AreEqual(val, key.key, $"log scan 2: key");
+                    Assert.AreEqual(val, value.value, $"log scan 2: value");
                 }
-                Assert.IsTrue(totalRecords == val);
+                Assert.AreEqual(val, totalRecords, $"log scan 2: totalRecords");
             }
-
-            s.Dispose();
         }
 
         class LogObserver : IObserver<IFasterScanIterator<MyKey, MyValue>>
@@ -96,7 +93,7 @@ namespace FASTER.test
 
             public void OnCompleted()
             {
-                Assert.IsTrue(val == totalRecords);
+                Assert.AreEqual(val == totalRecords, $"LogObserver.OnCompleted: totalRecords");
             }
 
             public void OnError(Exception error)
@@ -107,8 +104,8 @@ namespace FASTER.test
             {
                 while (iter.GetNext(out _, out MyKey key, out MyValue value))
                 {
-                    Assert.IsTrue(key.key == val);
-                    Assert.IsTrue(value.value == val);
+                    Assert.AreEqual(val, key.key, $"LogObserver.OnNext: key");
+                    Assert.AreEqual(val, value.value, $"LogObserver.OnNext: value");
                     val++;
                 }
             }

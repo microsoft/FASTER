@@ -4,50 +4,28 @@
 using System;
 using System.Threading;
 using CommandLine;
-using ServerOptions;
-using FASTER.core;
+using FasterServerOptions;
 using FASTER.server;
-using FASTER.common;
+using System.Diagnostics;
 
-namespace VarLenServer
+namespace FasterVarLenServer
 {
     /// <summary>
-    /// Server for variable-length keys and values.
+    /// Sample server for variable-length keys and values.
     /// </summary>
     class Program
     {
         static void Main(string[] args)
         {
-            VarLenServer(args);
-        }
+            Trace.Listeners.Add(new ConsoleTraceListener());
 
-
-        static void VarLenServer(string[] args)
-        {
             Console.WriteLine("FASTER variable-length KV server");
 
             ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
             if (result.Tag == ParserResultType.NotParsed) return;
             var opts = result.MapResult(o => o, xs => new Options());
 
-            opts.GetSettings(out var logSettings, out var checkpointSettings, out var indexSize);
-
-            // Create a new instance of the FasterKV, customized for variable-length blittable data (represented by SpanByte)
-            // With SpanByte, keys and values are stored inline in the FASTER log as [ 4 byte length | payload ]
-            var store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
-            if (opts.Recover) store.Recover();
-
-            // This variable-length session provider can be used with compatible clients such as VarLenClient
-            var provider = new FasterKVProvider<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteSerializer>(store, wp => new SpanByteFunctionsForServer<long>(wp), new SpanByteSerializer());
-
-            // Create server
-            var server = new FasterServer(opts.Address, opts.Port);
-
-            // Register provider as backend provider for WireFormat.DefaultFixedLenKV
-            // You can register multiple providers with the same server, with different wire protocol specifications
-            server.Register(WireFormat.DefaultVarLenKV, provider);
-
-            // Start server
+            using var server = new VarLenServer(opts.GetServerOptions());
             server.Start();
             Console.WriteLine("Started server");
 

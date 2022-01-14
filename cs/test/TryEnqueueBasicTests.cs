@@ -1,19 +1,12 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
+
 using System;
-using System.Buffers;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
 
-
 namespace FASTER.test
 {
-
     //** Fundamental basic test for TryEnqueue that covers all the parameters in TryEnqueue
     //** Other tests in FasterLog.cs provide more coverage for TryEnqueue
 
@@ -22,7 +15,7 @@ namespace FASTER.test
     {
         private FasterLog log;
         private IDevice device;
-        private string path = Path.GetTempPath() + "TryEnqueueTests/";
+        private string path;
         static readonly byte[] entry = new byte[100];
 
         public enum TryEnqueueIteratorType
@@ -43,35 +36,44 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            // Clean up log files from previous test runs in case they weren't cleaned up
-            try {  new DirectoryInfo(path).Delete(true);  }
-            catch {} 
+            path = TestUtils.MethodTestDir + "/";
 
-            // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "TryEnqueue", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait: true);
         }
 
         [TearDown]
         public void TearDown()
         {
-            log.Dispose();
-            device.Dispose();
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
 
             // Clean up log files
-            try { new DirectoryInfo(path).Delete(true); }
-            catch { }
+            TestUtils.DeleteDirectory(path);
         }
 
 
        [Test]
        [Category("FasterLog")]
        [Category("Smoke")]
-        public void TryEnqueueBasicTest([Values] TryEnqueueIteratorType iteratorType)
+        public void TryEnqueueBasicTest([Values] TryEnqueueIteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
         {
             int entryLength = 50;
             int numEntries = 10000; 
             int entryFlag = 9999;
+
+            // Create devices \ log for test
+            string filename = path + "TryEnqueue" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+
+#if WINDOWS
+            // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
+            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
+                return;
+#endif
 
             // Reduce SpanBatch to make sure entry fits on page
             if (iteratorType == TryEnqueueIteratorType.SpanBatch)
@@ -87,7 +89,6 @@ namespace FASTER.test
             }
 
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
-
 
             // TryEnqueue but set each Entry in a way that can differentiate between entries
             for (int i = 0; i < numEntries; i++)
@@ -125,7 +126,7 @@ namespace FASTER.test
                 }
 
                 // Verify each Enqueue worked
-                Assert.IsTrue(appendResult == true, "Fail - TryEnqueue failed with a 'false' result for entry:" + i.ToString());
+                Assert.IsTrue(appendResult, "Fail - TryEnqueue failed with a 'false' result for entry: " + i.ToString());
 
                 // logical address has new entry every x bytes which is one entry less than the TailAddress
                 if (iteratorType == TryEnqueueIteratorType.SpanBatch)
@@ -133,14 +134,11 @@ namespace FASTER.test
                 else
                     ExpectedOutAddress = log.TailAddress - 104;
 
-                Assert.IsTrue(logicalAddress == ExpectedOutAddress, "Fail - returned LogicalAddr: " + logicalAddress.ToString() + " is not equal to Expected LogicalAddr: " + ExpectedOutAddress.ToString());
+                Assert.AreEqual(ExpectedOutAddress, logicalAddress);
             }
 
             // Commit to the log
             log.Commit(true);
-
-            // flag to make sure data has been checked 
-            bool datacheckrun = false;
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
@@ -150,23 +148,19 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        // set check flag to show got in here
-                        datacheckrun = true;
-
                         // Span Batch only added first entry several times so have separate verification
                         if (iteratorType == TryEnqueueIteratorType.SpanBatch)
-                            Assert.IsTrue(result[0] == (byte)entryFlag, "Fail - Result[0]:"+result[0].ToString()+"  entryFlag:"+entryFlag);  
+                            Assert.AreEqual((byte)entryFlag, result[0]);
                         else
-                            Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result["+ currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                            Assert.AreEqual((byte)entryFlag, result[currentEntry]);
 
                         currentEntry++;
                     }
                 }
             }
 
-            // if data verification was skipped, then pop a fail
-            if (datacheckrun == false)
-                Assert.Fail("Failure -- data loop after log.Scan never entered so wasn't verified. ");
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, currentEntry);
         }
 
     }
