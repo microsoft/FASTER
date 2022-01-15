@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace FASTER.core
 {
     /// <summary>
-    /// Faster Operations implementation that allows manual control of record locking and epoch management. For advanced use only.
+    /// Faster Context implementation that allows manual control of record locking and epoch management. For advanced use only.
     /// </summary>
     public sealed class LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, IDisposable
         where Functions : IFunctions<Key, Value, Input, Output, Context>
@@ -208,7 +208,7 @@ namespace FASTER.core
 
         #endregion Key Locking
 
-        #region IFasterOperations
+        #region IFasterContext
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -468,7 +468,7 @@ namespace FASTER.core
             clientSession.fht.InternalRefresh(clientSession.ctx, FasterSession);
         }
 
-        #endregion IFasterOperations
+        #endregion IFasterContext
 
         #region IFasterSession
 

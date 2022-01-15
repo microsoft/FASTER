@@ -7,8 +7,9 @@ namespace FASTER.benchmark
 {
     enum BenchmarkType : byte
     {
-        Ycsb,
+        Ycsb = 0,
         SpanByte,
+        ClientSession,
         ConcurrentDictionaryYcsb
     };
 

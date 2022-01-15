@@ -1,8 +1,7 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -11,188 +10,112 @@ using System.Threading.Tasks;
 namespace FASTER.core
 {
     /// <summary>
-    /// Thread-independent session interface to FASTER
+    /// Faster Operations implementation that allows manual control of record epoch management. For advanced use only.
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="Input"></typeparam>
-    /// <typeparam name="Output"></typeparam>
-    /// <typeparam name="Context"></typeparam>
-    /// <typeparam name="Functions"></typeparam>
-    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IFasterContext<Key, Value, Input, Output, Context>, IDisposable
+    public sealed class UnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, IDisposable
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        internal readonly FasterKV<Key, Value> fht;
-
-        internal readonly bool SupportAsync = false;
-        internal readonly FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx;
-        internal CommitPoint LatestCommitPoint;
-
-        internal readonly Functions functions;
-        internal readonly IVariableLengthStruct<Value, Input> variableLengthStruct;
-        internal readonly IVariableLengthStruct<Input> inputVariableLengthStruct;
-
-        internal CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs;
+        readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
 
         internal readonly InternalFasterSession FasterSession;
+        bool isAcquired;
 
-        UnsafeContext<Key, Value, Input, Output, Context, Functions> uContext;
-        LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> luContext;
-
-        internal const string NotAsyncSessionErr = "Session does not support async operations";
-
-        internal ClientSession(
-            FasterKV<Key, Value> fht,
-            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
-            Functions functions,
-            bool supportAsync,
-            SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
+        void CheckAcquired()
         {
-            this.fht = fht;
-            this.ctx = ctx;
-            this.functions = functions;
-            SupportAsync = supportAsync;
-            LatestCommitPoint = new CommitPoint { UntilSerialNo = -1, ExcludedSerialNos = null };
-            FasterSession = new InternalFasterSession(this);
-
-            this.variableLengthStruct = sessionVariableLengthStructSettings?.valueLength;
-            if (this.variableLengthStruct == default)
-            {
-                UpdateVarlen(ref this.variableLengthStruct);
-
-                if ((this.variableLengthStruct == default) && (fht.hlog is VariableLengthBlittableAllocator<Key, Value> allocator))
-                {
-                    Debug.WriteLine("Warning: Session did not specify Input-specific functions for variable-length values via IVariableLengthStruct<Value, Input>");
-                    this.variableLengthStruct = new DefaultVariableLengthStruct<Value, Input>(allocator.ValueLength);
-                }
-            }
-            else
-            {
-                if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
-                    Debug.WriteLine("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
-            }
-
-            this.inputVariableLengthStruct = sessionVariableLengthStructSettings?.inputLength;
-
-            if (inputVariableLengthStruct == default)
-            {
-                if (typeof(Input) == typeof(SpanByte))
-                {
-                    inputVariableLengthStruct = new SpanByteVarLenStruct() as IVariableLengthStruct<Input>;
-                }
-                else if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Input).GetGenericArguments()[0]))
-                {
-                    var m = typeof(MemoryVarLenStruct<>).MakeGenericType(typeof(Input).GetGenericArguments());
-                    object o = Activator.CreateInstance(m);
-                    inputVariableLengthStruct = o as IVariableLengthStruct<Input>;
-                }
-                else if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(typeof(Input).GetGenericArguments()[0]))
-                {
-                    var m = typeof(ReadOnlyMemoryVarLenStruct<>).MakeGenericType(typeof(Input).GetGenericArguments());
-                    object o = Activator.CreateInstance(m);
-                    inputVariableLengthStruct = o as IVariableLengthStruct<Input>;
-                }
-            }
-
-            // Session runs on a single thread
-            if (!supportAsync)
-                UnsafeResumeThread();
+            if (!isAcquired)
+                throw new FasterException("Method call on not-acquired UnsafeContext");
         }
 
-        private void UpdateVarlen(ref IVariableLengthStruct<Value, Input> variableLengthStruct)
+        internal UnsafeContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
-            if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
-                return;
-
-            if (typeof(Value) == typeof(SpanByte) && typeof(Input) == typeof(SpanByte))
-            {
-                variableLengthStruct = new SpanByteVarLenStructForSpanByteInput() as IVariableLengthStruct<Value, Input>;
-            }
-            else if (typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
-            {
-                if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(Memory<>)) && typeof(Input).GetGenericArguments()[0] == typeof(Value).GetGenericArguments()[0])
-                {
-                    var m = typeof(MemoryVarLenStructForMemoryInput<>).MakeGenericType(typeof(Value).GetGenericArguments());
-                    object o = Activator.CreateInstance(m);
-                    variableLengthStruct = o as IVariableLengthStruct<Value, Input>;
-                }
-                else if (typeof(Input).IsGenericType && (typeof(Input).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && typeof(Input).GetGenericArguments()[0] == typeof(Value).GetGenericArguments()[0])
-                {
-                    var m = typeof(MemoryVarLenStructForReadOnlyMemoryInput<>).MakeGenericType(typeof(Value).GetGenericArguments());
-                    object o = Activator.CreateInstance(m);
-                    variableLengthStruct = o as IVariableLengthStruct<Value, Input>;
-                }
-            }
+            this.clientSession = clientSession;
+            FasterSession = new InternalFasterSession(clientSession);
         }
 
         /// <summary>
-        /// Get session ID
+        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
         /// </summary>
-        public string ID { get { return ctx.guid; } }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ResumeThread()
+        {
+            CheckAcquired();
+            clientSession.UnsafeResumeThread();
+        }
 
         /// <summary>
-        /// Next sequential serial no for session (current serial no + 1)
+        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
         /// </summary>
-        public long NextSerialNo => ctx.serialNum + 1;
+        /// <param name="resumeEpoch">Epoch that the session resumed on; can be saved to see if epoch has changed</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ResumeThread(out int resumeEpoch)
+        {
+            CheckAcquired();
+            clientSession.UnsafeResumeThread(out resumeEpoch);
+        }
 
         /// <summary>
-        /// Current serial no for session
+        /// Suspend session on current thread
         /// </summary>
-        public long SerialNo => ctx.serialNum;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SuspendThread()
+        {
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            clientSession.UnsafeSuspendThread();
+        }
 
         /// <summary>
-        /// Current version number of the session
+        /// Current epoch of the session
         /// </summary>
-        public long Version => ctx.version;
+        public int LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
 
         /// <summary>
-        /// Dispose session
+        /// Synchronously complete outstanding pending synchronous operations.
+        /// Async operations must be completed individually.
+        /// </summary>
+        /// <param name="wait">Wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
+            => this.clientSession.UnsafeCompletePending(this.FasterSession, false, wait, spinWaitForCommit);
+
+        /// <summary>
+        /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
+        /// Assumes epoch protection is managed by user. Async operations must be completed individually.
+        /// </summary>
+        /// <param name="completedOutputs">Outputs completed by this operation</param>
+        /// <param name="wait">Wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+            => this.clientSession.UnsafeCompletePendingWithOutputs(this.FasterSession, out completedOutputs, wait, spinWaitForCommit);
+
+        #region Acquire and Dispose
+        internal void Acquire()
+        {
+            if (this.isAcquired)
+                throw new FasterException("Trying to acquire an already-acquired UnsafeContext");
+            this.isAcquired = true;
+        }
+
+        /// <summary>
+        /// Does not actually dispose of anything; asserts the epoch has been suspended
         /// </summary>
         public void Dispose()
         {
-            this.completedOutputs?.Dispose();
-            CompletePending(true);
-            fht.DisposeClientSession(ID);
-
-            // Session runs on a single thread
-            if (!SupportAsync)
-                UnsafeSuspendThread();
+            if (LightEpoch.AnyInstanceProtected())
+                throw new FasterException("Disposing UnsafeContext with a protected epoch; must call UnsafeSuspendThread");
+            this.isAcquired = false;
         }
+        #endregion Acquire and Dispose
 
-        /// <summary>
-        /// Return a new interface to Faster operations that supports manual epoch control.
-        /// </summary>
-        public UnsafeContext<Key, Value, Input, Output, Context, Functions> GetUnsafeContext()
-        {
-            this.uContext ??= new (this);
-            this.uContext.Acquire();
-            return this.uContext;
-        }
+        #region IFasterContext
 
-        /// <summary>
-        /// Return a new interface to Faster operations that supports manual locking and epoch control.
-        /// </summary>
-        public LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> GetLockableUnsafeContext()
-        {
-            this.luContext ??= new(this);
-            this.luContext.Acquire();
-            return this.luContext;
-        }
-
-        #region IFasterOperations
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return fht.ContextRead(ref key, ref input, ref output, userContext, FasterSession, serialNo, ctx);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            return clientSession.fht.ContextRead(ref key, ref input, ref output, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
@@ -233,64 +156,50 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, ref RecordMetadata recordMetadata, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return fht.ContextRead(ref key, ref input, ref output, ref recordMetadata, readFlags, userContext, FasterSession, serialNo, ctx);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            return clientSession.fht.ContextRead(ref key, ref input, ref output, ref recordMetadata, readFlags, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref Input input, ref Output output, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return fht.ContextReadAtAddress(address, ref input, ref output, readFlags, userContext, FasterSession, serialNo, ctx);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            return clientSession.fht.ContextReadAtAddress(address, ref input, ref output, readFlags, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
-            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, userContext, serialNo, cancellationToken);
+            Debug.Assert(!LightEpoch.AnyInstanceProtected());
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, Constants.kInvalidAddress, userContext, serialNo, cancellationToken);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
-            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
+            Debug.Assert(!LightEpoch.AnyInstanceProtected());
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
+            Debug.Assert(!LightEpoch.AnyInstanceProtected());
             Input input = default;
-            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, userContext, serialNo, token);
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, Constants.kInvalidAddress, userContext, serialNo, token);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Context context = default, long serialNo = 0, CancellationToken token = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
+            Debug.Assert(!LightEpoch.AnyInstanceProtected());
             Input input = default;
-            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -298,9 +207,9 @@ namespace FASTER.core
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, long startAddress, ReadFlags readFlags = ReadFlags.None,
                                                                                                  Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
+            Debug.Assert(!LightEpoch.AnyInstanceProtected());
             var operationFlags = FasterKV<Key, Value>.PendingContext<Input, Output, Context>.GetOperationFlags(readFlags);
-            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, startAddress, userContext, serialNo, cancellationToken, operationFlags);
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, startAddress, userContext, serialNo, cancellationToken, operationFlags);
         }
 
         /// <inheritdoc/>
@@ -308,49 +217,36 @@ namespace FASTER.core
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Input input, ReadFlags readFlags = ReadFlags.None,
                                                                                                           Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
+            Debug.Assert(!LightEpoch.AnyInstanceProtected());
             Key key = default;
             var operationFlags = FasterKV<Key, Value>.PendingContext<Input, Output, Context>.GetOperationFlags(readFlags, noKey: true);
-            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, address, userContext, serialNo, cancellationToken, operationFlags);
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, address, userContext, serialNo, cancellationToken, operationFlags);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0)
         {
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
             Input input = default;
             Output output = default;
-            return Upsert(ref key, ref input, ref desiredValue, ref output, userContext, serialNo);
+            return Upsert(ref key, ref input, ref desiredValue, ref output, out _, userContext, serialNo);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, userContext, FasterSession, serialNo, ctx);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            return clientSession.fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext, FasterSession, serialNo, ctx);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            return clientSession.fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
@@ -375,16 +271,14 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
-            return fht.UpsertAsync(this.FasterSession, this.ctx, ref key, ref input, ref desiredValue, userContext, serialNo, token);
+            Debug.Assert(!LightEpoch.AnyInstanceProtected());
+            return clientSession.fht.UpsertAsync(FasterSession, clientSession.ctx, ref key, ref input, ref desiredValue, userContext, serialNo, token);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-        {
-            return UpsertAsync(ref key, ref desiredValue, userContext, serialNo, token);
-        }
+            => UpsertAsync(ref key, ref desiredValue, userContext, serialNo, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -393,22 +287,15 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0) 
+        public Status RMW(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
             => RMW(ref key, ref input, ref output, out _, userContext, serialNo);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref Key key, ref Input input, ref Output output, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return fht.ContextRMW(ref key, ref input, ref output, out recordMetadata, userContext, FasterSession, serialNo, ctx);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            return clientSession.fht.ContextRMW(ref key, ref input, ref output, out recordMetadata, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
@@ -439,8 +326,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
-            return fht.RmwAsync(this.FasterSession, this.ctx, ref key, ref input, context, serialNo, token);
+            Debug.Assert(!LightEpoch.AnyInstanceProtected());
+            return clientSession.fht.RmwAsync(FasterSession, clientSession.ctx, ref key, ref input, context, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -452,15 +339,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref Key key, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return fht.ContextDelete(ref key, userContext, FasterSession, serialNo, ctx);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            return clientSession.fht.ContextDelete(ref key, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
@@ -472,8 +352,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
-            return fht.DeleteAsync(this.FasterSession, this.ctx, ref key, userContext, serialNo, token);
+            Debug.Assert(!LightEpoch.AnyInstanceProtected());
+            return clientSession.fht.DeleteAsync(FasterSession, clientSession.ctx, ref key, userContext, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -484,325 +364,11 @@ namespace FASTER.core
         /// <inheritdoc/>
         public void Refresh()
         {
-            if (SupportAsync) UnsafeResumeThread();
-            fht.InternalRefresh(ctx, FasterSession);
-            if (SupportAsync) UnsafeSuspendThread();
+            Debug.Assert(!LightEpoch.AnyInstanceProtected());
+            clientSession.fht.InternalRefresh(clientSession.ctx, FasterSession);
         }
 
-        #endregion IFasterOperations
-
-        #region Pending Operations
-
-        /// <summary>
-        /// Get list of pending requests (for current session)
-        /// </summary>
-        /// <returns></returns>
-        public IEnumerable<long> GetPendingRequests()
-        {
-            foreach (var kvp in ctx.prevCtx?.ioPendingRequests)
-                yield return kvp.Value.serialNum;
-
-            foreach (var val in ctx.prevCtx?.retryRequests)
-                yield return val.serialNum;
-
-            foreach (var kvp in ctx.ioPendingRequests)
-                yield return kvp.Value.serialNum;
-
-            foreach (var val in ctx.retryRequests)
-                yield return val.serialNum;
-        }
-
-        /// <summary>
-        /// Synchronously complete outstanding pending synchronous operations.
-        /// Async operations must be completed individually.
-        /// </summary>
-        /// <param name="wait">Wait for all pending operations on session to complete</param>
-        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
-        /// <returns>True if all pending operations have completed, false otherwise</returns>
-        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
-            => CompletePending(false, wait, spinWaitForCommit);
-
-        /// <summary>
-        /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
-        /// Async operations must be completed individually.
-        /// </summary>
-        /// <param name="completedOutputs">Outputs completed by this operation</param>
-        /// <param name="wait">Wait for all pending operations on session to complete</param>
-        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
-        /// <returns>True if all pending operations have completed, false otherwise</returns>
-        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-        {
-            InitializeCompletedOutputs();
-            var result = CompletePending(true, wait, spinWaitForCommit);
-            completedOutputs = this.completedOutputs;
-            return result;
-        }
-
-        /// <summary>
-        /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
-        /// Assumes epoch protection is managed by user. Async operations must be completed individually.
-        /// </summary>
-        internal bool UnsafeCompletePendingWithOutputs<FasterSession>(FasterSession fasterSession, out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            InitializeCompletedOutputs();
-            var result = UnsafeCompletePending(fasterSession, true, wait, spinWaitForCommit);
-            completedOutputs = this.completedOutputs;
-            return result;
-        }
-
-        private void InitializeCompletedOutputs()
-        {
-            if (this.completedOutputs is null)
-                this.completedOutputs = new CompletedOutputIterator<Key, Value, Input, Output, Context>();
-            else
-                this.completedOutputs.Dispose();
-        }
-
-        internal bool CompletePending(bool getOutputs, bool wait, bool spinWaitForCommit)
-        {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return UnsafeCompletePending(FasterSession, getOutputs, wait, spinWaitForCommit);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
-        }
-
-        internal bool UnsafeCompletePending<FasterSession>(FasterSession fasterSession, bool getOutputs, bool wait, bool spinWaitForCommit)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            var requestedOutputs = getOutputs ? this.completedOutputs : default;
-            var result = fht.InternalCompletePending(ctx, fasterSession, wait, requestedOutputs);
-            if (spinWaitForCommit)
-            {
-                if (wait != true)
-                {
-                    throw new FasterException("Can spin-wait for commit (checkpoint completion) only if wait is true");
-                }
-                do
-                {
-                    fht.InternalCompletePending(ctx, fasterSession, wait, requestedOutputs);
-                    if (fht.InRestPhase())
-                    {
-                        fht.InternalCompletePending(ctx, fasterSession, wait, requestedOutputs);
-                        return true;
-                    }
-                } while (wait);
-            }
-            return result;
-        }
-
-        /// <summary>
-        /// Complete all pending synchronous FASTER operations.
-        /// Async operations must be completed individually.
-        /// </summary>
-        /// <returns></returns>
-        public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
-            => CompletePendingAsync(false, waitForCommit, token);
-
-        /// <summary>
-        /// Complete all pending synchronous FASTER operations, returning outputs for the completed operations.
-        /// Async operations must be completed individually.
-        /// </summary>
-        /// <returns>Outputs completed by this operation</returns>
-        public async ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
-        {
-            InitializeCompletedOutputs();
-            await CompletePendingAsync(true, waitForCommit, token).ConfigureAwait(false);
-            return this.completedOutputs;
-        }
-
-        private async ValueTask CompletePendingAsync(bool getOutputs, bool waitForCommit = false, CancellationToken token = default)
-        {
-            token.ThrowIfCancellationRequested();
-
-            if (fht.epoch.ThisInstanceProtected())
-                throw new NotSupportedException("Async operations not supported over protected epoch");
-
-            // Complete all pending operations on session
-            await fht.CompletePendingAsync(this.FasterSession, this.ctx, token, getOutputs ? this.completedOutputs : null).ConfigureAwait(false);
-
-            // Wait for commit if necessary
-            if (waitForCommit)
-                await WaitForCommitAsync(token).ConfigureAwait(false);
-        }
-
-        /// <summary>
-        /// Check if at least one synchronous request is ready for CompletePending to be called on
-        /// Returns completed immediately if there are no outstanding synchronous requests
-        /// </summary>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        public async ValueTask ReadyToCompletePendingAsync(CancellationToken token = default)
-        {
-            token.ThrowIfCancellationRequested();
-
-            if (fht.epoch.ThisInstanceProtected())
-                throw new NotSupportedException("Async operations not supported over protected epoch");
-
-            await fht.ReadyToCompletePendingAsync(this.ctx, token).ConfigureAwait(false);
-        }
-
-        #endregion Pending Operations
-
-        #region Other Operations
-
-        /// <summary>
-        /// Wait for commit of all operations completed until the current point in session.
-        /// Does not itself issue checkpoint/commits.
-        /// </summary>
-        /// <returns></returns>
-        public async ValueTask WaitForCommitAsync(CancellationToken token = default)
-        {
-            token.ThrowIfCancellationRequested();
-
-            if (!ctx.prevCtx.pendingReads.IsEmpty || !ctx.pendingReads.IsEmpty)
-                throw new FasterException("Make sure all async operations issued on this session are awaited and completed first");
-
-            // Complete all pending sync operations on session
-            await CompletePendingAsync(token: token).ConfigureAwait(false);
-
-            var task = fht.CheckpointTask;
-            CommitPoint localCommitPoint = LatestCommitPoint;
-            if (localCommitPoint.UntilSerialNo >= ctx.serialNum && localCommitPoint.ExcludedSerialNos?.Count == 0)
-                return;
-
-            while (true)
-            {
-                await task.WithCancellationAsync(token).ConfigureAwait(false);
-                Refresh();
-
-                task = fht.CheckpointTask;
-                localCommitPoint = LatestCommitPoint;
-                if (localCommitPoint.UntilSerialNo >= ctx.serialNum && localCommitPoint.ExcludedSerialNos?.Count == 0)
-                    break;
-            }
-        }
-
-        /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
-        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
-        /// </summary>
-        /// <param name="compactUntilAddress">Compact log until this address</param>
-        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <returns>Address until which compaction was done</returns>
-        public long Compact(long compactUntilAddress, CompactionType compactionType = CompactionType.Scan)
-            => Compact(compactUntilAddress, compactionType, default(DefaultCompactionFunctions<Key, Value>));
-
-        /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
-        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
-        /// </summary>
-        /// <param name="untilAddress">Compact log until this address</param>
-        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
-        /// <returns>Address until which compaction was done</returns>
-        public long Compact<CompactionFunctions>(long untilAddress, CompactionType compactionType, CompactionFunctions compactionFunctions)
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
-            => fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, untilAddress, compactionType,  new SessionVariableLengthStructSettings<Value, Input> { valueLength = variableLengthStruct, inputLength = inputVariableLengthStruct });
-
-        /// <summary>
-        /// Copy key and value to tail, succeed only if key is known to not exist in between expectedLogicalAddress and tail.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="expectedLogicalAddress">Address of existing key (or upper bound)</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus CopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long expectedLogicalAddress)
-        {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return fht.InternalCopyToTail(ref key, ref input, ref desiredValue, ref output, expectedLogicalAddress, FasterSession, ctx, noReadCache: true);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
-        }
-
-        /// <summary>
-        /// Experimental feature
-        /// Checks whether specified record is present in memory
-        /// (between HeadAddress and tail, or between fromAddress
-        /// and tail), including tombstones.
-        /// </summary>
-        /// <param name="key">Key of the record.</param>
-        /// <param name="logicalAddress">Logical address of record, if found</param>
-        /// <param name="fromAddress">Look until this address</param>
-        /// <returns>Status</returns>
-        internal Status ContainsKeyInMemory(ref Key key, out long logicalAddress, long fromAddress = -1)
-        {
-            if (SupportAsync) UnsafeResumeThread();
-            try
-            {
-                return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, out logicalAddress, fromAddress);
-            }
-            finally
-            {
-                if (SupportAsync) UnsafeSuspendThread();
-            }
-        }
-
-        /// <summary>
-        /// Iterator for all (distinct) live key-values stored in FASTER
-        /// </summary>
-        /// <param name="untilAddress">Report records until this address (tail by default)</param>
-        /// <returns>FASTER iterator</returns>
-        public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1)
-        {
-            if (!SupportAsync)
-                throw new FasterException("Do not perform iteration using a threadAffinitized session");
-
-            if (untilAddress == -1)
-                untilAddress = fht.Log.TailAddress;
-
-            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress);
-        }
-
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// Call SuspendThread before any async op
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeResumeThread()
-        {
-            fht.epoch.Resume();
-            fht.InternalRefresh(ctx, FasterSession);
-        }
-
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
-        /// <param name="resumeEpoch">Epoch that session resumes on; can be saved to see if epoch has changed</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeResumeThread(out int resumeEpoch)
-        {
-            fht.epoch.Resume(out resumeEpoch);
-            fht.InternalRefresh(ctx, FasterSession);
-        }
-
-        /// <summary>
-        /// Suspend session on current thread
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeSuspendThread()
-        {
-            fht.epoch.Suspend();
-        }
-
-        void IClientSession.AtomicSwitch(long version)
-        {
-            fht.AtomicSwitch(ctx, ctx.prevCtx, version, fht._hybridLogCheckpoint.info.checkpointTokens);
-        }
-
-        #endregion Other Operations
+        #endregion IFasterContext
 
         #region IFasterSession
 

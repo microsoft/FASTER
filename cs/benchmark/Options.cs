@@ -12,7 +12,8 @@ namespace FASTER.benchmark
         HelpText = "Benchmark to run:" +
                         "\n    0 = YCSB" +
                         "\n    1 = YCSB with SpanByte" +
-                        "\n    2 = ConcurrentDictionary")]
+                        "\n    2 = YCSB with ClientSession" +
+                        "\n    3 = ConcurrentDictionary")]
         public int Benchmark { get; set; }
 
         [Option('t', "threads", Required = false, Default = 8,
