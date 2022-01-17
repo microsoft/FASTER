@@ -184,7 +184,7 @@ namespace FASTER.core
         /// Determines if the key is locked. Note this value may be obsolete as soon as it returns.
         /// </summary>
         /// <param name="key">The key to lock</param>
-        public (bool exclusive, bool shared) IsLocked(ref Key key)
+        public (bool exclusive, byte shared) IsLocked(ref Key key)
         {
             CheckAcquired();
 
@@ -197,14 +197,14 @@ namespace FASTER.core
                 status = clientSession.fht.InternalLock(ref key, lockOp, ref oneMiss, out lockInfo);
             while (status == OperationStatus.RETRY_NOW);
             Debug.Assert(status == OperationStatus.SUCCESS);
-            return (lockInfo.IsLockedExclusive, lockInfo.IsLockedShared);
+            return (lockInfo.IsLockedExclusive, lockInfo.NumLockedShared);
         }
 
         /// <summary>
         /// Determines if the key is locked. Note this value may be obsolete as soon as it returns.
         /// </summary>
         /// <param name="key">The key to lock</param>
-        public (bool exclusive, bool shared) IsLocked(Key key) => IsLocked(ref key);
+        public (bool exclusive, byte shared) IsLocked(Key key) => IsLocked(ref key);
 
         #endregion Key Locking
 

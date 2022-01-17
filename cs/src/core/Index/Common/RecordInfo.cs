@@ -76,11 +76,13 @@ namespace FASTER.core
 
         public bool IsLockedExclusive => (word & kExclusiveLockBitMask) != 0;
 
-        public bool IsLockedShared => (word & kSharedLockMaskInWord) != 0;
+        public byte NumLockedShared => (byte)((word & kSharedLockMaskInWord) >> kLockShiftInWord);
 
         public void ClearLocks() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
 
-        public bool IsIntermediate => (word & (kTentativeBitMask | kSealedBitMask)) != 0;
+        public bool IsIntermediate => IsIntermediateWord(word);
+
+        private static bool IsIntermediateWord(long word) => (word & (kTentativeBitMask | kSealedBitMask)) != 0;
 
         /// <summary>
         /// Take exclusive (write) lock on RecordInfo
@@ -112,9 +114,9 @@ namespace FASTER.core
             // Acquire exclusive lock (readers may still be present; we'll drain them later)
             while (true)
             {
-                if (IsIntermediate)
-                    return false;
                 long expected_word = word;
+                if (IsIntermediateWord(expected_word))
+                    return false;
                 if ((expected_word & kExclusiveLockBitMask) == 0)
                 {
                     if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
@@ -175,9 +177,9 @@ namespace FASTER.core
             // Acquire shared lock
             while (true)
             {
-                if (IsIntermediate)
-                    return false;
                 long expected_word = word;
+                if (IsIntermediateWord(expected_word))
+                    return false;
                 if (((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
                     && (expected_word & kSharedLockMaskInWord) != kSharedLockMaskInWord) // shared lock is not full
                 {
@@ -226,9 +228,9 @@ namespace FASTER.core
             while (true)
             {
                 // Even though we own the lock here, it might be in the process of eviction, which seals it
-                if (IsIntermediate)
-                    return false;
                 long expected_word = word;
+                if (IsIntermediateWord(expected_word))
+                    return false;
                 if ((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
                 {
                     var new_word = expected_word | kExclusiveLockBitMask;
@@ -249,7 +251,7 @@ namespace FASTER.core
         public void CopyLocksFrom(RecordInfo other)
         {
             word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
-            word |= (other.word & (kExclusiveLockBitMask | kSharedLockMaskInWord));
+            word |= other.word & (kExclusiveLockBitMask | kSharedLockMaskInWord);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -321,11 +323,13 @@ namespace FASTER.core
             long sealBits = manualLocking ? kSealedBitMask : kExclusiveLockBitMask | kSealedBitMask;
             while (true)
             {
-                if (IsIntermediate)
+                long expected_word = word;
+
+                // If someone else sealed this, we fail this attempt.
+                if (IsIntermediateWord(expected_word) || ((expected_word & kValidBitMask) == 0))
                     return false;
-                if ((word & sealBits) == 0)
+                if ((expected_word & sealBits) == 0)
                 {
-                    long expected_word = word;
                     long new_word = word | sealBits;
                     long current_word = Interlocked.CompareExchange(ref word, new_word, expected_word);
                     if (expected_word == current_word)
@@ -336,7 +340,6 @@ namespace FASTER.core
                         return true;
                     }
 
-                    // If someone else sealed this, we fail this attempt.
                     if ((word & kSealedBitMask) > 0 || this.Invalid)
                         return false;
                 }
