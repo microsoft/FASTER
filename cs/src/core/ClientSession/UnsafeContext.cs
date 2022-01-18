@@ -429,63 +429,21 @@ namespace FASTER.core
 
             #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
-
-                if (this.SupportsLocking)
-                {
-                    // Lock ephemerally before we CAS into the log; Unlocked in PostSingleWriterLock.
-                    recordInfo.SetLockExclusiveBit();
-                }
-            }
+            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                if (!this.SupportsLocking)
-                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
-                else
-                    PostSingleWriterLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void PostSingleWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) 
                 => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void PostSingleWriterLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                // Lock was taken in SingleWriterLock
-                try
-                {
-                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-            {
-                _clientSession.functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
-
-                if (this.SupportsPostOperations && this.SupportsLocking)
-                {
-                    // Lock ephemerally before we CAS into the log; Unlocked in PostSingleWriterLock.
-                    recordInfo.SetLockExclusiveBit();
-                }
-            }
+            public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
             {
                 // TODO: Placeholder for indexing
-
-                if (this.SupportsLocking)
-                    recordInfo.UnlockExclusive();
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -535,45 +493,12 @@ namespace FASTER.core
                 => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
-
-                if (this.SupportsLocking)
-                {
-                    // Lock ephemerally before we CAS into the log; Unlocked in PostInitialUpdaterLock.
-                    recordInfo.SetLockExclusiveBit();
-                }
-            }
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                if (!this.SupportsLocking)
-                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref recordInfo, address);
-                else
-                    PostInitialUpdaterLock(ref key, ref input, ref value, ref output, ref recordInfo, address);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void PostInitialUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void PostInitialUpdaterLock(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                // Lock was taken in InitialUpdaterLock
-                try
-                {
-                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref recordInfo, address);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
-            }
+            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             #endregion InitialUpdater
 
             #region CopyUpdater
@@ -582,45 +507,12 @@ namespace FASTER.core
                 => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
-
-                if (this.SupportsLocking)
-                {
-                    // Lock ephemerally before we CAS into the log. Unlocked in PostInitialUpdaterLock.
-                    recordInfo.SetLockExclusiveBit();
-                }
-            }
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                return !this.SupportsLocking
-                    ? PostCopyUpdaterNoLock(ref key, ref input, ref output, ref oldValue, ref newValue, ref recordInfo, address)
-                    : PostCopyUpdaterLock(ref key, ref input, ref output, ref oldValue, ref newValue, ref recordInfo, address);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool PostCopyUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue, ref RecordInfo recordInfo, long address)
-            {
-                return _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool PostCopyUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value oldValue, ref Value newValue, ref RecordInfo recordInfo, long address)
-            {
-                // Lock was taken in CopyUpdaterLock
-                try
-                {
-                    // KeyIndexes do not need notification of in-place updates because the key does not change.
-                    return !recordInfo.Tombstone && PostCopyUpdaterNoLock(ref key, ref input, ref output, ref oldValue, ref newValue, ref recordInfo, address);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
-            }
+            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
             #endregion CopyUpdater
 
             #region InPlaceUpdater
@@ -669,12 +561,8 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address)
             {
-                // There is no value to lock here, so we take a RecordInfo lock in InternalDelete and release it here.
                 recordInfo.SetDirty();
-
                 _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
-                if (this.SupportsLocking)
-                    recordInfo.UnlockExclusive();
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

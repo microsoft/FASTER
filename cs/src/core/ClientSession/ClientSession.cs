@@ -871,24 +871,13 @@ namespace FASTER.core
                 => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-            {
-                _clientSession.functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
-
-                if (this.SupportsPostOperations && this.SupportsLocking)
-                {
-                    // Lock ephemerally before we CAS into the log; Unlocked in PostSingleWriterLock.
-                    recordInfo.SetLockExclusiveBit();
-                }
-            }
+            public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
             {
                 // TODO: Placeholder for indexing
-
-                if (this.SupportsPostOperations && this.SupportsLocking)
-                    recordInfo.UnlockExclusive();
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
