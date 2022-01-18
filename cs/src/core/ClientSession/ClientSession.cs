@@ -908,6 +908,27 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            {
+                _clientSession.functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
+
+                if (this.SupportsPostOperations && this.SupportsLocking)
+                {
+                    // Lock ephemerally before we CAS into the log; Unlocked in PostSingleWriterLock.
+                    recordInfo.SetLockExclusiveBit();
+                }
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            {
+                // TODO: Placeholder for indexing
+
+                if (this.SupportsPostOperations && this.SupportsLocking)
+                    recordInfo.UnlockExclusive();
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 lockFailed = false;

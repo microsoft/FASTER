@@ -62,8 +62,7 @@ namespace FASTER.core
 
         #region Upserts
         /// <summary>
-        /// Non-concurrent writer; called on an Upsert that does not find the key so does an insert or finds the key's record in the immutable region so does a read/copy/update (RCU),
-        /// or when copying reads fetched from disk to either read cache or tail of log.
+        /// Non-concurrent writer; called on an Upsert that does not find the key so does an insert or finds the key's record in the immutable region so does a read/copy/update (RCU).
         /// </summary>
         /// <param name="key">The key for this record</param>
         /// <param name="input">The user input to be used for computing <paramref name="dst"/></param>
@@ -95,9 +94,19 @@ namespace FASTER.core
         /// <param name="dst">The location where <paramref name="src"/> is to be copied; because this method is called only for in-place updates, there is a previous value there.</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
-        /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing"/></param>
+        /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing</param>
         /// <returns>True if the value was written, else false</returns>
         bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
+
+        /// <summary>
+        /// Basic copy operation used in maintenance operations such as copying reads fetched from disk to either read cache or tail of log.
+        /// </summary>
+        /// <param name="key">The key for this record</param>
+        /// <param name="src">The previous value to be copied/updated</param>
+        /// <param name="dst">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
+        /// <param name="recordInfo">A reference to the header of the record</param>
+        /// <param name="address">The logical address of the record being copied to</param>
+        void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
 
         /// <summary>
         /// Upsert completion

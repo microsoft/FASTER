@@ -36,8 +36,17 @@ namespace FASTER.test.LockTests
             internal readonly ManualResetEventSlim mres = new();
             readonly Random rng = new(101);
 
+            // CopyWriter takes no Input
+            internal Input readCacheInput;
+
             public Functions() : base(true)
             {
+            }
+
+            public override void CopyWriter(ref int key, ref int src, ref int dst, ref RecordInfo recordInfo, long address)
+            {
+                int output = default;
+                SingleWriter(ref key, ref readCacheInput, ref src, ref dst, ref output, ref recordInfo, address);
             }
 
             public override void SingleWriter(ref int key, ref Input input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address)
@@ -137,12 +146,12 @@ namespace FASTER.test.LockTests
                 key =>
                 {
                     var sleepFlag = (iter % 5 == 0) ? LockFunctionFlags.None : LockFunctionFlags.SleepAfterEventOperation;
-                    Input input = new() { flags = LockFunctionFlags.SetEvent | sleepFlag, sleepRangeMs = 10 };
+                    functions.readCacheInput = new() { flags = LockFunctionFlags.SetEvent | sleepFlag, sleepRangeMs = 10 };
                     int output = 0;
                     RecordMetadata recordMetadata = default;
 
                     // This will copy to ReadCache, and the test is trying to cause a race with the above Upsert.
-                    var status = session.Read(ref key, ref input, ref output, ref recordMetadata);
+                    var status = session.Read(ref key, ref functions.readCacheInput, ref output, ref recordMetadata);
 
                     // If the Upsert completed before the Read started, we may Read() the Upserted value.
                     if (status == Status.OK)

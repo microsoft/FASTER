@@ -2474,8 +2474,8 @@ namespace FASTER.core
                 // Initial readcache entry is tentative.
                 recordInfo.Tentative = true;
                 readcache.Serialize(ref key, newPhysicalAddress);
-                fasterSession.SingleWriter(ref key, ref input, ref value,
-                                        ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
+                fasterSession.CopyWriter(ref key, ref value,
+                                        ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                         ref recordInfo, Constants.kInvalidAddress); // We do not expose readcache addresses
             }
             else
@@ -2488,8 +2488,8 @@ namespace FASTER.core
                                 tombstone: false, dirty: true,
                                 latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
-                fasterSession.SingleWriter(ref key, ref input, ref value,
-                                        ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
+                fasterSession.CopyWriter(ref key, ref value,
+                                        ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                         ref recordInfo, newLogicalAddress);
             }
 
@@ -2581,8 +2581,8 @@ namespace FASTER.core
 
                 pendingContext.recordInfo = recordInfo;
                 pendingContext.logicalAddress = copyToReadCache ? Constants.kInvalidAddress /* We do not expose readcache addresses */ : newLogicalAddress;
-                fasterSession.PostSingleWriter(ref key, ref input, ref value,
-                                        ref log.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
+                fasterSession.PostCopyWriter(ref key, ref value,
+                                        ref log.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                         ref recordInfo, pendingContext.logicalAddress);
                 return OperationStatus.SUCCESS;
             }

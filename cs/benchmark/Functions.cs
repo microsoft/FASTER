@@ -66,6 +66,12 @@ namespace FASTER.benchmark
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+        {
+            dst = src;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
         {
             dst = src;

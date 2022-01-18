@@ -42,6 +42,8 @@ namespace FASTER.core
         #region Upserts
         void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
         void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
+        void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
+        void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
         bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed);
         void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx);
         #endregion Upserts
