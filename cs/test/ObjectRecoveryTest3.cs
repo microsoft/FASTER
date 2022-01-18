@@ -45,7 +45,7 @@ namespace FASTER.test.recovery.objects
             Read(session1, context, false, iterations);
             session1.Dispose();
 
-            h.TakeHybridLogCheckpoint(out Guid token, checkpointType);
+            h.TryInitiateHybridLogCheckpoint(out Guid token, checkpointType);
             h.CompleteCheckpointAsync().GetAwaiter().GetResult();
             tokens.Add((iterations, token));
             Destroy(log, objlog, h);
@@ -112,7 +112,7 @@ namespace FASTER.test.recovery.objects
 
                 if (i % 1000 == 0 && i > 0)
                 {
-                    fht.TakeHybridLogCheckpoint(out Guid token, checkpointType);
+                    fht.TryInitiateHybridLogCheckpoint(out Guid token, checkpointType);
                     fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
                     tokens.Add((i, token));
                 }

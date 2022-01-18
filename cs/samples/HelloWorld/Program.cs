@@ -126,7 +126,7 @@ namespace HelloWorld
 
                 // Take checkpoint so data is persisted for recovery
                 Console.WriteLine("Taking full checkpoint");
-                store.TakeFullCheckpoint(out _, CheckpointType.Snapshot);
+                store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot);
                 store.CompleteCheckpointAsync().GetAwaiter().GetResult();
             }
             else

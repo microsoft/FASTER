@@ -60,7 +60,7 @@ namespace FASTER.test.largeobjects
             }
             session1.Dispose();
 
-            fht1.TakeFullCheckpoint(out Guid token, checkpointType);
+            fht1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             fht1.Dispose();
             log.Dispose();

@@ -57,7 +57,7 @@ namespace FASTER.test.recovery.sumstore
             Populate(this.original.Faster);
 
             // Take checkpoint from original to start the clone from
-            Assert.IsTrue(this.original.Faster.TakeFullCheckpoint(out var checkpointGuid, CheckpointType.FoldOver));
+            Assert.IsTrue(this.original.Faster.TryInitiateFullCheckpoint(out var checkpointGuid, CheckpointType.FoldOver));
             this.original.Faster.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
             // Sanity check against original

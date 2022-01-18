@@ -1014,7 +1014,7 @@ namespace FASTER.test.LockableUnsafeContext
 
                 if (syncMode == SyncMode.Sync)
                 {
-                    this.fht.TakeFullCheckpoint(out fullCheckpointToken, checkpointType);
+                    this.fht.TryInitiateFullCheckpoint(out fullCheckpointToken, checkpointType);
                     await this.fht.CompleteCheckpointAsync();
                 }
                 else
@@ -1093,7 +1093,7 @@ namespace FASTER.test.LockableUnsafeContext
                     // Checkpointing primary until key {key - 1}
                     if (syncMode == SyncMode.Sync)
                     {
-                        primaryStore.TakeHybridLogCheckpoint(out _, CheckpointType.Snapshot);
+                        primaryStore.TryInitiateHybridLogCheckpoint(out _, CheckpointType.Snapshot);
                         await primaryStore.CompleteCheckpointAsync().ConfigureAwait(false);
                     }
                     else

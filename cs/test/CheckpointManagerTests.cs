@@ -69,23 +69,23 @@ namespace FASTER.test
                     switch (checkpointType)
                     {
                         case 0:
-                            fht.TakeHybridLogCheckpoint(out result, CheckpointType.FoldOver);
+                            fht.TryInitiateHybridLogCheckpoint(out result, CheckpointType.FoldOver);
                             logCheckpoints.Add(result, 0);
                             break;
                         case 1:
-                            fht.TakeHybridLogCheckpoint(out result, CheckpointType.Snapshot);
+                            fht.TryInitiateHybridLogCheckpoint(out result, CheckpointType.Snapshot);
                             logCheckpoints.Add(result, 0);
                             break;
                         case 2:
-                            fht.TakeIndexCheckpoint(out result);
+                            fht.TryInitiateIndexCheckpoint(out result);
                             indexCheckpoints.Add(result, 0);
                             break;
                         case 3:
-                            fht.TakeFullCheckpoint(out result, CheckpointType.FoldOver);
+                            fht.TryInitiateFullCheckpoint(out result, CheckpointType.FoldOver);
                             fullCheckpoints.Add(result, 0);
                             break;
                         case 4:
-                            fht.TakeFullCheckpoint(out result, CheckpointType.Snapshot);
+                            fht.TryInitiateFullCheckpoint(out result, CheckpointType.Snapshot);
                             fullCheckpoints.Add(result, 0);
                             break;
                         default:

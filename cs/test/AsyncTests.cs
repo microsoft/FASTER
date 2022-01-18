@@ -73,12 +73,12 @@ namespace FASTER.test.async
             }
 
             // does not require session
-            fht1.TakeFullCheckpoint(out _, checkpointType);
+            fht1.TryInitiateFullCheckpoint(out _, checkpointType);
             await fht1.CompleteCheckpointAsync();
 
             s2.CompletePending(true,false);
 
-            fht1.TakeFullCheckpoint(out Guid token, checkpointType);
+            fht1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             await fht1.CompleteCheckpointAsync();
 
             s2.Dispose();

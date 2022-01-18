@@ -120,7 +120,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             if (testCommitCookie)
                 fht1.CommitCookie = commitCookie;
-            fht1.TakeFullCheckpoint(out Guid token, checkpointType);
+            fht1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
@@ -182,7 +182,7 @@ namespace FASTER.test.recovery.sumstore.simple
                 value.numClicks = key;
                 session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
             }
-            fht1.TakeFullCheckpoint(out Guid token, checkpointType);
+            fht1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
@@ -238,7 +238,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             fht1.Log.ShiftBeginAddress(address);
 
-            fht1.TakeFullCheckpoint(out Guid token, CheckpointType.FoldOver);
+            fht1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
