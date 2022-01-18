@@ -385,8 +385,6 @@ namespace FASTER.core
             #region IFunctions - Optional features supported
             public bool SupportsLocking => _clientSession.fht.SupportsLocking;
 
-            public bool SupportsPostOperations => _clientSession.functions.SupportsPostOperations;
-
             public bool IsManualLocking => false;
             #endregion IFunctions - Optional features supported
 
@@ -435,7 +433,7 @@ namespace FASTER.core
             {
                 _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
-                if (this.SupportsPostOperations && this.SupportsLocking)
+                if (this.SupportsLocking)
                 {
                     // Lock ephemerally before we CAS into the log; Unlocked in PostSingleWriterLock.
                     recordInfo.SetLockExclusiveBit();
@@ -445,8 +443,6 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                if (!this.SupportsPostOperations)
-                    return;
                 if (!this.SupportsLocking)
                     PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
                 else
@@ -454,10 +450,8 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void PostSingleWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
-            }
+            private void PostSingleWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void PostSingleWriterLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
@@ -524,7 +518,7 @@ namespace FASTER.core
             {
                 _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
 
-                if (this.SupportsPostOperations && this.SupportsLocking)
+                if (this.SupportsLocking)
                 {
                     // Lock ephemerally before we CAS into the log; Unlocked in PostInitialUpdaterLock.
                     recordInfo.SetLockExclusiveBit();
@@ -534,8 +528,6 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                if (!this.SupportsPostOperations)
-                    return;
                 if (!this.SupportsLocking)
                     PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref recordInfo, address);
                 else
@@ -573,7 +565,7 @@ namespace FASTER.core
             {
                 _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
 
-                if (this.SupportsPostOperations && this.SupportsLocking)
+                if (this.SupportsLocking)
                 {
                     // Lock ephemerally before we CAS into the log. Unlocked in PostInitialUpdaterLock.
                     recordInfo.SetLockExclusiveBit();
@@ -583,8 +575,6 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
             {
-                if (!this.SupportsPostOperations)
-                    return true;
                 return !this.SupportsLocking
                     ? PostCopyUpdaterNoLock(ref key, ref input, ref output, ref oldValue, ref newValue, ref recordInfo, address)
                     : PostCopyUpdaterLock(ref key, ref input, ref output, ref oldValue, ref newValue, ref recordInfo, address);
@@ -661,11 +651,13 @@ namespace FASTER.core
                 // There is no value to lock here, so we take a RecordInfo lock in InternalDelete and release it here.
                 recordInfo.SetDirty();
 
-                if (this.SupportsPostOperations)
-                    _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
+                _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
                 if (this.SupportsLocking)
                     recordInfo.UnlockExclusive();
             }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { value = default; }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address, out bool lockFailed)
@@ -706,6 +698,12 @@ namespace FASTER.core
             public void DeleteCompletionCallback(ref Key key, Context ctx)
                 => _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
             #endregion IFunctions - Deletes
+
+            #region Key and Value management
+            public void DisposeKey(ref Key key) { _clientSession.functions.DisposeKey(ref key); }
+
+            public void DisposeValue(ref Value value) { _clientSession.functions.DisposeValue(ref value); }
+            #endregion Key and Value management
 
             #region IFunctions - Checkpointing
             public void CheckpointCompletionCallback(string guid, CommitPoint commitPoint)

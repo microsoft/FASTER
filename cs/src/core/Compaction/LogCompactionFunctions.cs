@@ -14,14 +14,14 @@ namespace FASTER.core
             _functions = functions;
         }
 
-        public bool SupportsPostOperations => false;
-
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
 
         /// <summary>
         /// No reads during compaction
         /// </summary>
         public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
+
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { value = default; }
 
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
@@ -68,5 +68,9 @@ namespace FASTER.core
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
 
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx) { }
+
+        public void DisposeKey(ref Key key) { }
+
+        public void DisposeValue(ref Value value) { }
     }
 }

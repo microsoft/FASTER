@@ -18,8 +18,6 @@ namespace FASTER.benchmark
             this.postOps = postOps;
         }
 
-        public bool SupportsPostOperations => this.postOps;
-
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
         }
@@ -55,6 +53,8 @@ namespace FASTER.benchmark
             dst.value = value;
             return true;
         }
+
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { value = default; }
 
         public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) => true;
 
@@ -103,5 +103,13 @@ namespace FASTER.benchmark
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
+
+        public void DisposeKey(ref Key key) { }
+
+        /// <summary>
+        /// Dispose the value; for example, in evicted log records. FASTER assumes deep-copy semantics such as cloning or refcounting. 
+        /// </summary>
+        /// <param name="value"></param>
+        public void DisposeValue(ref Value value) { }
     }
 }

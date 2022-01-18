@@ -485,8 +485,6 @@ namespace FASTER.core
             #region IFunctions - Optional features supported
             public bool SupportsLocking => false;       // We only lock explicitly in Lock/Unlock, which are longer-duration locks.
 
-            public bool SupportsPostOperations => true; // We need this for user record locking, but check for user's setting before calling user code
-
             public bool IsManualLocking => true;
             #endregion IFunctions - Optional features supported
 
@@ -513,17 +511,12 @@ namespace FASTER.core
 
             #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
-            }
+            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                if (_clientSession.functions.SupportsPostOperations)
-                    _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
-            }
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
@@ -544,17 +537,12 @@ namespace FASTER.core
                 => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
-            }
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                if (_clientSession.functions.SupportsPostOperations)
-                    _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
-            }
+            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
             #endregion InitialUpdater
 
             #region CopyUpdater
@@ -567,11 +555,8 @@ namespace FASTER.core
                 => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
-            {
-                return !_clientSession.functions.SupportsPostOperations
-                    || _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
-            }
+            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
             #endregion CopyUpdater
 
             #region InPlaceUpdater
@@ -591,11 +576,11 @@ namespace FASTER.core
 
             #region IFunctions - Deletes
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address)
-            {
-                if (_clientSession.functions.SupportsPostOperations)
-                    _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
-            }
+            public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { value = default; }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) 
+                => _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address, out bool lockFailed)
@@ -608,6 +593,12 @@ namespace FASTER.core
             public void DeleteCompletionCallback(ref Key key, Context ctx)
                 => _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
             #endregion IFunctions - Deletes
+
+            #region Key and Value management
+            public void DisposeKey(ref Key key) { _clientSession.functions.DisposeKey(ref key); }
+
+            public void DisposeValue(ref Value value) { _clientSession.functions.DisposeValue(ref value); }
+            #endregion Key and Value management
 
             #region IFunctions - Checkpointing
             public void CheckpointCompletionCallback(string guid, CommitPoint commitPoint)

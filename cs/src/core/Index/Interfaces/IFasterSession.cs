@@ -28,8 +28,6 @@ namespace FASTER.core
         #region Optional features supported by this implementation
         bool SupportsLocking { get; }
 
-        bool SupportsPostOperations { get; }
-
         bool IsManualLocking { get; }
         #endregion Optional features supported by this implementation
 
@@ -67,10 +65,16 @@ namespace FASTER.core
         #endregion RMWs
 
         #region Deletes
+        void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address);
         void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address);
         bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address, out bool lockFailed);
         void DeleteCompletionCallback(ref Key key, Context ctx);
         #endregion Deletes
+
+        #region Key and Value management
+        void DisposeKey(ref Key key);
+        void DisposeValue(ref Value value);
+        #endregion Key and Value management
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 

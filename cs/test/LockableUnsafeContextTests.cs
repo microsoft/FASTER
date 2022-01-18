@@ -21,8 +21,6 @@ namespace FASTER.test.LockableUnsafeContext
     {
         internal long deletedRecordAddress;
 
-        public override bool SupportsPostOperations => true;
-
         public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, long address)
         {
             deletedRecordAddress = address;

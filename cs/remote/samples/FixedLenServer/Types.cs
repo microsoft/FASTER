@@ -116,8 +116,6 @@ namespace FasterFixedLenServer
             output.value = newValue;
         }
 
-        public bool SupportsPostOperations => false;
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
@@ -127,10 +125,16 @@ namespace FasterFixedLenServer
 
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
 
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
+
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
 
         public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) => true;
+
+        public void DisposeKey(ref Key key) { }
+
+        public void DisposeValue(ref Value value) { }
     }
 }
