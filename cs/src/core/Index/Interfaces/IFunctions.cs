@@ -13,16 +13,6 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public interface IFunctions<Key, Value, Input, Output, Context>
     {
-        #region Optional features supported by this implementation
-        /// <summary>
-        /// Whether this Functions instance supports operations on records after they have been successfully appended to the log. For example,
-        /// after <see cref="CopyUpdater(ref Key, ref Input, ref Value, ref Value, ref Output, ref RecordInfo, long)"/> copies a list,
-        /// <see cref="PostCopyUpdater(ref Key, ref Input, ref Value, ref Value, ref Output, ref RecordInfo, long)"/> can add items to it. 
-        /// </summary>
-        /// <remarks>Once the record has been appended it is visible to other sessions, so locking will be done per <see cref="FasterKV{Key, Value}.SupportsLocking"/></remarks>
-        bool SupportsPostOperations { get; }
-        #endregion Optional features supported by this implementation
-
         #region Reads
         /// <summary>
         /// Non-concurrent reader. 
@@ -215,6 +205,17 @@ namespace FASTER.core
 
         #region Deletes
         /// <summary>
+        /// Single deleter; called on an Delete that does not find the record in the mutable range and so inserts a new record.
+        /// </summary>
+        /// <param name="key">The key for the record to be deleted</param>
+        /// <param name="value">The value for the record being deleted; because this method is called only for in-place updates, there is a previous value there. Usually this is ignored or assigned 'default'.</param>
+        /// <param name="recordInfo">A reference to the header of the record</param>
+        /// <param name="address">The logical address of the record being deleted; used as a RecordId by indexing</param>
+        /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
+        /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
+        void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address);
+
+        /// <summary>
         /// Called after a record marking a Delete (with Tombstone set) has been successfully inserted at the tail of the log.
         /// </summary>
         /// <param name="key">The key for the record that was deleted</param>
@@ -242,6 +243,20 @@ namespace FASTER.core
         /// <param name="ctx">The application context passed through the pending operation</param>
         void DeleteCompletionCallback(ref Key key, Context ctx);
         #endregion Deletes
+
+        #region Key and Value management
+        /// <summary>
+        /// Dispose the key; for example, in evicted log records. FASTER assumes deep-copy semantics such as cloning or refcounting. 
+        /// </summary>
+        /// <param name="key"></param>
+        void DisposeKey(ref Key key);
+
+        /// <summary>
+        /// Dispose the value; for example, in evicted log records. FASTER assumes deep-copy semantics such as cloning or refcounting. 
+        /// </summary>
+        /// <param name="value"></param>
+        void DisposeValue(ref Value value);
+        #endregion Key and Value management
 
         #region Checkpointing
         /// <summary>

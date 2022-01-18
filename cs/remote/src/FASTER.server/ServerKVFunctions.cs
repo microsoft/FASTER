@@ -11,8 +11,6 @@ namespace FASTER.server
         private readonly Functions functions;
         private readonly FasterKVServerSessionBase<Output> serverNetworkSession;
 
-        public bool SupportsPostOperations => true;
-
         public ServerKVFunctions(Functions functions, FasterKVServerSessionBase<Output> serverNetworkSession)
         {
             this.functions = functions;
@@ -21,6 +19,9 @@ namespace FASTER.server
 
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
             => functions.CheckpointCompletionCallback(sessionId, commitPoint);
+
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+            => functions.SingleDeleter(ref key, ref value, ref recordInfo, address);
 
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
@@ -78,5 +79,9 @@ namespace FASTER.server
 
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, long ctx)
             => functions.UpsertCompletionCallback(ref key, ref input, ref value, ctx);
+
+        public void DisposeKey(ref Key key) { functions.DisposeKey(ref key); }
+
+        public void DisposeValue(ref Value value) { functions.DisposeValue(ref value); }
     }
 }

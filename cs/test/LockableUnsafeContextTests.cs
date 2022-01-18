@@ -21,8 +21,6 @@ namespace FASTER.test.LockableUnsafeContext
     {
         internal long deletedRecordAddress;
 
-        public override bool SupportsPostOperations => true;
-
         public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, long address)
         {
             deletedRecordAddress = address;
@@ -135,14 +133,11 @@ namespace FASTER.test.LockableUnsafeContext
                 Assert.AreNotEqual(Status.PENDING, session.Upsert(key, key * valueMult));
         }
 
-        static void AssertIsLocked(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext, int key, LockType lockType)
-            => AssertIsLocked(luContext, key, lockType == LockType.Exclusive, lockType == LockType.Shared);
-
         static void AssertIsLocked(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext, int key, bool xlock, bool slock)
         {
             var (isX, isS) = luContext.IsLocked(key);
             Assert.AreEqual(xlock, isX, "xlock mismatch");
-            Assert.AreEqual(slock, isS, "slock mismatch");
+            Assert.AreEqual(slock, isS > 0, "slock mismatch");
         }
 
         void PrepareRecordLocation(FlushMode recordLocation)
@@ -167,7 +162,7 @@ namespace FASTER.test.LockableUnsafeContext
             while (iter.GetNext(out var recordInfo, out var key, out var value))
             {
                 ++count;
-                Assert.False(recordInfo.IsLocked, $"Unexpected Locked record: {(recordInfo.IsLockedShared ? "S" : "")} {(recordInfo.IsLockedExclusive ? "X" : "")}");
+                Assert.False(recordInfo.IsLocked, $"Unexpected Locked record: {(recordInfo.NumLockedShared > 0 ? "S" : "")} {(recordInfo.IsLockedExclusive ? "X" : "")}");
             }
 
             // We delete some records so just make sure the test worked.
@@ -227,7 +222,7 @@ namespace FASTER.test.LockableUnsafeContext
                                 Assert.True(completedOutputs.Next());
                                 value24 = completedOutputs.Current.Output;
                                 Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
-                                Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedShared);
+                                Assert.Less(0, completedOutputs.Current.RecordMetadata.RecordInfo.NumLockedShared);
                                 Assert.False(completedOutputs.Next());
                                 completedOutputs.Dispose();
                             }
@@ -246,7 +241,7 @@ namespace FASTER.test.LockableUnsafeContext
                                 Assert.True(completedOutputs.Next());
                                 value51 = completedOutputs.Current.Output;
                                 Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
-                                Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedShared);
+                                Assert.Less(0, completedOutputs.Current.RecordMetadata.RecordInfo.NumLockedShared);
                                 Assert.False(completedOutputs.Next());
                                 completedOutputs.Dispose();
                             }
@@ -270,7 +265,7 @@ namespace FASTER.test.LockableUnsafeContext
                                 Assert.True(completedOutputs.Next());
                                 resultValue = completedOutputs.Current.Output;
                                 Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
-                                Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedShared);
+                                Assert.AreEqual(0, completedOutputs.Current.RecordMetadata.RecordInfo.NumLockedShared);
                                 Assert.False(completedOutputs.Next());
                                 completedOutputs.Dispose();
                             }
@@ -351,7 +346,7 @@ namespace FASTER.test.LockableUnsafeContext
                         Assert.True(completedOutputs.Next());
                         value51 = completedOutputs.Current.Output;
                         Assert.True(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedExclusive);
-                        Assert.False(completedOutputs.Current.RecordMetadata.RecordInfo.IsLockedShared);
+                        Assert.AreEqual(0, completedOutputs.Current.RecordMetadata.RecordInfo.NumLockedShared);
                         Assert.False(completedOutputs.Next());
                         completedOutputs.Dispose();
                     }
@@ -554,7 +549,7 @@ namespace FASTER.test.LockableUnsafeContext
             // Verify we've transferred the expected locks.
             ref RecordInfo recordInfo = ref fht.hlog.GetInfo(pa);
             Assert.IsTrue(recordInfo.IsLockedExclusive);
-            Assert.IsFalse(recordInfo.IsLockedShared);
+            Assert.AreEqual(0, recordInfo.NumLockedShared);
 
             // Now unlock it; we're done.
             luContext.Unlock(expectedKey, LockType.Exclusive);
@@ -731,7 +726,7 @@ namespace FASTER.test.LockableUnsafeContext
                 Assert.IsTrue(found);
                 var lockType = locks[key];
                 Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
-                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
+                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.NumLockedShared > 0);
 
                 luContext.Unlock(key, lockType);
                 Assert.IsFalse(fht.LockTable.Get(key, out _));
@@ -772,7 +767,7 @@ namespace FASTER.test.LockableUnsafeContext
 
                 var (xlock, slock) = luContext.IsLocked(key);
                 Assert.IsTrue(xlock);
-                Assert.IsFalse(slock);
+                Assert.AreEqual(0, slock);
             }
             finally
             {
@@ -835,11 +830,11 @@ namespace FASTER.test.LockableUnsafeContext
             {
                 // Use Task instead of Thread because this propagates exceptions (such as Assert.* failures) back to this thread.
                 Task.WaitAll(Task.Run(() => locker(key)), Task.Run(() => updater(key)));
-                var (xlock, slock) = lockLuContext.IsLocked(key);
+                var (xlock, slockCount) = lockLuContext.IsLocked(key);
                 var expectedXlock = getLockType(key) == LockType.Exclusive && lockOp != LockOperationType.Unlock;
                 var expectedSlock = getLockType(key) == LockType.Shared && lockOp != LockOperationType.Unlock;
                 Assert.AreEqual(expectedXlock, xlock);
-                Assert.AreEqual(expectedSlock, slock);
+                Assert.AreEqual(expectedSlock, slockCount > 0);
 
                 if (lockOp == LockOperationType.Lock)
                 {
@@ -904,6 +899,36 @@ namespace FASTER.test.LockableUnsafeContext
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
+        public void MultiSharedLockTest()
+        {
+            Populate();
+
+            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var luContext = session.GetLockableUnsafeContext();
+
+            const int key = 42;
+            var maxLocks = 63;
+
+            for (var ii = 0; ii < maxLocks; ++ii)
+            {
+                luContext.Lock(key, LockType.Shared);
+                var (xlock, slockCount) = luContext.IsLocked(key);
+                Assert.IsFalse(xlock);
+                Assert.AreEqual(ii + 1, slockCount);
+            }
+
+            for (var ii = 0; ii < maxLocks; ++ii)
+            {
+                luContext.Unlock(key, LockType.Shared);
+                var (xlock, slockCount) = luContext.IsLocked(key);
+                Assert.IsFalse(xlock);
+                Assert.AreEqual(maxLocks - ii - 1, slockCount);
+            }
+        }
+
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
         public void EvictFromMainLogToLockTableTest()
         {
             Populate();
@@ -937,7 +962,7 @@ namespace FASTER.test.LockableUnsafeContext
                 Assert.IsTrue(found);
                 var lockType = locks[key];
                 Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
-                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
+                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.NumLockedShared > 0);
 
                 // Just a little more testing of Read/CTT transferring from LockTable
                 int input = 0, output = 0, localKey = key;
@@ -947,14 +972,14 @@ namespace FASTER.test.LockableUnsafeContext
                 session.CompletePending(wait: true);
 
                 Assert.IsFalse(fht.LockTable.Get(key, out _));
-                var (isLockedExclusive, isLockedShared) = luContext.IsLocked(localKey);
+                var (isLockedExclusive, numLockedShared) = luContext.IsLocked(localKey);
                 Assert.AreEqual(lockType == LockType.Exclusive, isLockedExclusive);
-                Assert.AreEqual(lockType != LockType.Exclusive, isLockedShared);
+                Assert.AreEqual(lockType != LockType.Exclusive, numLockedShared > 0);
 
                 luContext.Unlock(key, lockType);
-                (isLockedExclusive, isLockedShared) = luContext.IsLocked(localKey);
+                (isLockedExclusive, numLockedShared) = luContext.IsLocked(localKey);
                 Assert.IsFalse(isLockedExclusive);
-                Assert.IsFalse(isLockedShared);
+                Assert.AreEqual(0, numLockedShared);
             }
 
             Assert.IsFalse(fht.LockTable.IsActive);
@@ -987,7 +1012,7 @@ namespace FASTER.test.LockableUnsafeContext
 
                 if (syncMode == SyncMode.Sync)
                 {
-                    this.fht.TakeFullCheckpoint(out fullCheckpointToken, checkpointType);
+                    this.fht.TryInitiateFullCheckpoint(out fullCheckpointToken, checkpointType);
                     await this.fht.CompleteCheckpointAsync();
                 }
                 else
@@ -1011,9 +1036,9 @@ namespace FASTER.test.LockableUnsafeContext
 
                 foreach (var key in locks.Keys.OrderBy(k => k))
                 {
-                    var (exclusive, shared) = luContext.IsLocked(key);
+                    var (exclusive, numShared) = luContext.IsLocked(key);
                     Assert.IsFalse(exclusive, $"key: {key}");
-                    Assert.IsFalse(shared, $"key: {key}");
+                    Assert.AreEqual(0, numShared, $"key: {key}");
                 }
             }
         }
@@ -1066,7 +1091,7 @@ namespace FASTER.test.LockableUnsafeContext
                     // Checkpointing primary until key {key - 1}
                     if (syncMode == SyncMode.Sync)
                     {
-                        primaryStore.TakeHybridLogCheckpoint(out _, CheckpointType.Snapshot);
+                        primaryStore.TryInitiateHybridLogCheckpoint(out _, CheckpointType.Snapshot);
                         await primaryStore.CompleteCheckpointAsync().ConfigureAwait(false);
                     }
                     else
@@ -1127,7 +1152,7 @@ namespace FASTER.test.LockableUnsafeContext
                     Assert.AreEqual(key, output);
                     var (xlock, slock) = luc1.IsLocked(key);
                     Assert.IsFalse(xlock);
-                    Assert.IsFalse(slock);
+                    Assert.AreEqual(0, slock);
 
                     key++;
                     if (key == numSecondaryReaderKeys)

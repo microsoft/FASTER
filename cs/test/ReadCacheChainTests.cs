@@ -485,7 +485,7 @@ namespace FASTER.test.ReadCacheTests
                 Assert.IsTrue(found);
                 var lockType = locks[key];
                 Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
-                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
+                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.NumLockedShared > 0);
 
                 luContext.Unlock(key, lockType);
                 Assert.IsFalse(fht.LockTable.Get(key, out recordInfo));
@@ -533,7 +533,7 @@ namespace FASTER.test.ReadCacheTests
                 Assert.IsTrue(found);
                 var lockType = locks[key];
                 Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
-                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
+                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.NumLockedShared > 0);
             }
 
             fht.Log.FlushAndEvict(wait: true);
@@ -546,9 +546,9 @@ namespace FASTER.test.ReadCacheTests
                 session.CompletePending(wait: true);
 
                 var lockType = locks[key];
-                var (exclusive, shared) = luContext.IsLocked(key);
+                var (exclusive, sharedCount) = luContext.IsLocked(key);
                 Assert.AreEqual(lockType == LockType.Exclusive, exclusive);
-                Assert.AreEqual(lockType != LockType.Exclusive, shared);
+                Assert.AreEqual(lockType != LockType.Exclusive, sharedCount > 0);
 
                 luContext.Unlock(key, lockType);
                 Assert.IsFalse(fht.LockTable.Get(key, out _));

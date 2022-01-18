@@ -61,7 +61,7 @@ namespace FASTER.core
         /// </param>
         /// <returns>Whether we successfully initiated the checkpoint (initiation mayfail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to await completion.</returns>
-        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1);
+        public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1);
 
         /// <summary>
         /// Take full (index + log) checkpoint of FASTER asynchronously
@@ -85,7 +85,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token">Token describing checkpoint</param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to await completion.</returns>
-        bool TakeIndexCheckpoint(out Guid token);
+        bool TryInitiateIndexCheckpoint(out Guid token);
 
         /// <summary>
         /// Take asynchronous checkpoint of FASTER index only (not log)
@@ -111,7 +111,7 @@ namespace FASTER.core
         /// </param>
         /// <returns>Whether we successfully initiated the checkpoint (initiation mayfail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to await completion.</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false, long targetVersion = -1);
+        public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false, long targetVersion = -1);
 
         /// <summary>
         /// Initiate checkpoint of FASTER log only (not index)

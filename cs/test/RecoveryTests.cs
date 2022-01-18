@@ -104,7 +104,7 @@ namespace FASTER.test.recovery.sumstore
             if ((opNum + 1) % checkpointInterval == 0)
             {
                 Guid token;
-                while (!fht.TakeFullCheckpoint(out token, CheckpointType.Snapshot)) { }
+                while (!fht.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot)) { }
                 logTokens.Add(token);
                 indexTokens.Add(token);
                 fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -120,12 +120,12 @@ namespace FASTER.test.recovery.sumstore
             Guid token;
             if (checkpointNum % 2 == 1)
             {
-                while (!fht.TakeHybridLogCheckpoint(out token, CheckpointType.Snapshot)) { }
+                while (!fht.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot)) { }
                 logTokens.Add(token);
             }
             else
             {
-                while (!fht.TakeIndexCheckpoint(out token)) { }
+                while (!fht.TryInitiateIndexCheckpoint(out token)) { }
                 indexTokens.Add(token);
             }
             fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -448,7 +448,7 @@ namespace FASTER.test.recovery.sumstore
             }
             else
             {
-                while (!fht.TakeFullCheckpoint(out this.logToken, CheckpointType.Snapshot)) { }
+                while (!fht.TryInitiateFullCheckpoint(out this.logToken, CheckpointType.Snapshot)) { }
                 fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             }
             this.indexToken = this.logToken;

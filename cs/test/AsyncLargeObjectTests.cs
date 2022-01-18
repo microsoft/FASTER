@@ -60,7 +60,7 @@ namespace FASTER.test.async
                 }
             }
 
-            fht1.TakeFullCheckpoint(out Guid token, checkpointType);
+            fht1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             await fht1.CompleteCheckpointAsync();
 
             fht1.Dispose();

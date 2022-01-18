@@ -299,7 +299,7 @@ namespace FASTER.core
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
-        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1)
+        public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1)
         {
             ISynchronizationTask backend;
             if (checkpointType == CheckpointType.FoldOver)
@@ -338,7 +338,7 @@ namespace FASTER.core
         public async ValueTask<(bool success, Guid token)> TakeFullCheckpointAsync(CheckpointType checkpointType,
             CancellationToken cancellationToken = default, long targetVersion = -1)
         {
-            var success = TakeFullCheckpoint(out Guid token, checkpointType, targetVersion);
+            var success = TryInitiateFullCheckpoint(out Guid token, checkpointType, targetVersion);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
@@ -351,7 +351,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token">Checkpoint token</param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
-        public bool TakeIndexCheckpoint(out Guid token)
+        public bool TryInitiateIndexCheckpoint(out Guid token)
         {
             var result = StartStateMachine(new IndexSnapshotStateMachine());
             token = _indexCheckpointToken;
@@ -372,7 +372,7 @@ namespace FASTER.core
         /// </returns>
         public async ValueTask<(bool success, Guid token)> TakeIndexCheckpointAsync(CancellationToken cancellationToken = default)
         {
-            var success = TakeIndexCheckpoint(out Guid token);
+            var success = TryInitiateIndexCheckpoint(out Guid token);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
@@ -392,7 +392,7 @@ namespace FASTER.core
         /// number is -1, checkpoint will unconditionally create a new version. 
         /// </param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
+        public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
             long targetVersion = -1)
         {
             ISynchronizationTask backend;
@@ -435,7 +435,7 @@ namespace FASTER.core
         public async ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType,
             bool tryIncremental = false, CancellationToken cancellationToken = default, long targetVersion = -1)
         {
-            var success = TakeHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental, targetVersion);
+            var success = TryInitiateHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental, targetVersion);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);

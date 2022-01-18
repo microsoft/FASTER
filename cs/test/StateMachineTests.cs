@@ -323,7 +323,7 @@ namespace FASTER.test.statemachine
 
             s2.Dispose();
 
-            fht1.TakeHybridLogCheckpoint(out _, CheckpointType.FoldOver);
+            fht1.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             // We should be in REST, 3
@@ -454,7 +454,7 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
 
             // Take index checkpoint for recovery purposes
-            fht1.TakeIndexCheckpoint(out _);
+            fht1.TryInitiateIndexCheckpoint(out _);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             // Index checkpoint does not update version, so
@@ -480,7 +480,7 @@ namespace FASTER.test.statemachine
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
 
-            fht1.TakeHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
+            fht1.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));

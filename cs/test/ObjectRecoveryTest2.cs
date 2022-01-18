@@ -46,7 +46,7 @@ namespace FASTER.test.recovery.objects
             Read(session1, context, false);
             session1.Dispose();
 
-            h.TakeFullCheckpoint(out _, checkpointType);
+            h.TryInitiateFullCheckpoint(out _, checkpointType);
             h.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             Destroy(log, objlog, h);
@@ -109,7 +109,7 @@ namespace FASTER.test.recovery.objects
 
                 if (i % 100 == 0)
                 {
-                    fht.TakeFullCheckpoint(out _, checkpointType);
+                    fht.TryInitiateFullCheckpoint(out _, checkpointType);
                     fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                 }
             }

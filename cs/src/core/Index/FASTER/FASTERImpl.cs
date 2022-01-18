@@ -712,9 +712,10 @@ namespace FASTER.core
             // CAS failed - let user dispose similar to a deleted record
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
-            // First set Invalid to true so that ConcurrentDeleter knows to dispose key as well
+
             recordInfo.SetInvalid();
-            fasterSession.ConcurrentDeleter(ref insertedKey, ref insertedValue, ref recordInfo, newLogicalAddress, out _);
+            fasterSession.DisposeKey(ref insertedKey);
+            fasterSession.DisposeValue(ref insertedValue);
             if (WriteDefaultOnDelete)
             {
                 insertedKey = default;
@@ -1457,6 +1458,7 @@ namespace FASTER.core
                                latestLogicalAddress);
                 recordInfo.Tentative = true;
                 hlog.Serialize(ref key, newPhysicalAddress);
+                fasterSession.SingleDeleter(ref key, ref hlog.GetValue(newPhysicalAddress), ref recordInfo, newLogicalAddress);
 
                 bool success = true;
                 if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)

@@ -27,9 +27,6 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public virtual bool SupportsPostOperations => this.postOps;
-
-        /// <inheritdoc/>
         public virtual bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
         /// <inheritdoc/>
         public virtual bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
@@ -58,8 +55,12 @@ namespace FASTER.core
         public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
         /// <inheritdoc/>
+        public virtual void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { value = default; }
         public virtual void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
         public virtual bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) => true;
+
+        public virtual void DisposeKey(ref Key key) { }
+        public virtual void DisposeValue(ref Value value) { }
 
         /// <inheritdoc/>
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }

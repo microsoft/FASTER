@@ -10,7 +10,7 @@ namespace FASTER.core
 {
     // We need to duplicate the Key because we can't get to the key object of the dictionary to Return() it.
     // This is a class rather than a struct because a struct would update a copy.
-    internal class LockTableEntry<TKey> : IEqualityComparer<LockTableEntry<TKey>>
+    internal class LockTableEntry<TKey>
     {
         internal IHeapContainer<TKey> key;
         internal RecordInfo logRecordInfo;  // in main log
@@ -22,11 +22,6 @@ namespace FASTER.core
             this.logRecordInfo = logRecordInfo;
             this.lockRecordInfo = lockRecordInfo;
         }
-
-        public bool Equals(LockTableEntry<TKey> k1, LockTableEntry<TKey> k2)
-            => k1.logRecordInfo.Equals(k2.logRecordInfo) && k1.lockRecordInfo.Tentative == k2.lockRecordInfo.Tentative;
-
-        public int GetHashCode(LockTableEntry<TKey> k) => (int)k.logRecordInfo.GetHashCode64();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void XLock() => this.lockRecordInfo.LockExclusiveRaw();
@@ -42,6 +37,11 @@ namespace FASTER.core
 
         public override string ToString() => $"{key}";
     }
+
+    // TODO: abstract base or interface for additional implementations (or "DI" a test wrapper)
+    // TODO: internal IHeapContainer<TKey> key; causes an object allocation each time. we need:
+    //      Non-Varlen: a specialized LockTableEntry that just uses Key directly
+    //      Varlen: a shared heap container abstraction that shares a single buffer pool allocator and allocates, frees into it, returning a struct wrapper.
 
     internal class LockTable<TKey>
     {
