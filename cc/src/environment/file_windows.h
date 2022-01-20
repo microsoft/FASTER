@@ -52,6 +52,15 @@ class File {
   {
   }
 
+  ~File() {
+    if(owner_) {
+      core::Status s = Close();
+    }
+  }
+
+  File(const File&) = delete;
+  File &operator=(const File&) = delete;
+
   /// Move constructor.
   File(File&& other)
     : file_handle_{ other.file_handle_ }
@@ -65,12 +74,6 @@ class File {
 #endif
   {
     other.owner_ = false;
-  }
-
-  ~File() {
-    if(owner_) {
-      core::Status s = Close();
-    }
   }
 
   /// Move assignment operator.
