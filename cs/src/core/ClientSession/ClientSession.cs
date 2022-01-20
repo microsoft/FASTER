@@ -877,7 +877,7 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
             {
-                // TODO: Placeholder for indexing
+                _clientSession.functions.PostCopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

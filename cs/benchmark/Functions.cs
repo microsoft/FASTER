@@ -101,6 +101,8 @@ namespace FASTER.benchmark
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
 
+        public void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { }
+
         public void DisposeKey(ref Key key) { }
 
         /// <summary>

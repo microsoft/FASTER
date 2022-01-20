@@ -29,6 +29,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
         public virtual void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => dst = src;
+        public virtual void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { }
 
         /// <inheritdoc/>
         public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
