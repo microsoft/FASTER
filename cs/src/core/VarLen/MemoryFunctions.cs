@@ -16,8 +16,7 @@ namespace FASTER.core
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
-        /// <param name="locking">Whether we lock values before concurrent operations (implemented using a spin lock on length header bit)</param>
-        public MemoryFunctions(MemoryPool<T> memoryPool = default, bool locking = false) : base(locking)
+        public MemoryFunctions(MemoryPool<T> memoryPool = default)
         {
             this.memoryPool = memoryPool ?? MemoryPool<T>.Shared;
         }
@@ -29,16 +28,16 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
+        public override void CopyWriter(ref Key key, ref Memory<T> src, ref Memory<T> dst, ref RecordInfo recordInfo, long address)
+        {
+            src.CopyTo(dst);
+        }
+
+        /// <inheritdoc/>
         public override bool ConcurrentWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
         {
-            // We can write the source (src) data to the existing destination (dst) in-place, 
-            // only if there is sufficient space
-            if (recordInfo.Sealed)
-                return false;
-
             if (dst.Length < src.Length)
             {
-                recordInfo.Sealed = true;
                 return false;
             }
 

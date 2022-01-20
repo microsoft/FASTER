@@ -9,17 +9,6 @@ namespace FASTER.benchmark
 {
     public struct Functions : IFunctions<Key, Value, Input, Output, Empty>
     {
-        readonly bool locking;
-        readonly bool postOps;
-
-        public Functions(bool locking, bool postOps)
-        {
-            this.locking = locking;
-            this.postOps = postOps;
-        }
-
-        public bool SupportsPostOperations => this.postOps;
-
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
         }
@@ -56,11 +45,19 @@ namespace FASTER.benchmark
             return true;
         }
 
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { value = default; }
+
         public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) => true;
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+        {
+            dst = src;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
         {
             dst = src;
         }
@@ -104,22 +101,12 @@ namespace FASTER.benchmark
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
 
-        public bool SupportsLocking => locking;
+        public void DisposeKey(ref Key key) { }
 
-        public void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) => recordInfo.LockExclusive();
-
-        public void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) => recordInfo.UnlockExclusive();
-
-        public bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockExclusive(spinCount);
-
-        public void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) => recordInfo.LockShared();
-
-        public bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext)
-        {
-            recordInfo.UnlockShared();
-            return true;
-        }
-
-        public bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => recordInfo.TryLockShared(spinCount);
+        /// <summary>
+        /// Dispose the value; for example, in evicted log records. FASTER assumes deep-copy semantics such as cloning or refcounting. 
+        /// </summary>
+        /// <param name="value"></param>
+        public void DisposeValue(ref Value value) { }
     }
 }

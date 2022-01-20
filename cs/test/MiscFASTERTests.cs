@@ -120,26 +120,31 @@ namespace FASTER.test
 
                 var key = default(KeyStruct);
                 var value = default(ValueStruct);
+                var input = default(InputStruct);
+                var output = default(OutputStruct);
 
                 key = new KeyStruct() { kfield1 = 1, kfield2 = 2 };
                 value = new ValueStruct() { vfield1 = 1000, vfield2 = 2000 };
 
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata1);
 
                 value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata2);
+
+                Assert.Greater(recordMetadata2.Address, recordMetadata1.Address);
 
                 var recordCount = 0;
                 using (var iterator = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
                 {
+                    // We now seal before copying and unseal/set to Invalid after copying, so we only get one record.
                     while (iterator.GetNext(out var info))
                     {
                         recordCount++;
                     }
                 }
 
-                Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount, 2);
-                Assert.AreEqual(2, recordCount);
+                Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount);
+                Assert.AreEqual(1, recordCount);
             }
             finally
             {

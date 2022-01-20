@@ -3,12 +3,12 @@
 
 using NUnit.Framework;
 using System;
-using System.Diagnostics;
 using System.IO;
 using FASTER.core;
 using FASTER.devices;
 using System.Threading;
 using System.Runtime.InteropServices;
+using System.Linq;
 
 namespace FASTER.test
 {
@@ -17,6 +17,10 @@ namespace FASTER.test
         // Various categories used to group tests
         internal const string SmokeTestCategory = "Smoke";
         internal const string FasterKVTestCategory = "FasterKV";
+        internal const string LockableUnsafeContextTestCategory = "LockableUnsafeContext";
+        internal const string ReadCacheTestCategory = "ReadCache";
+        internal const string LockTestCategory = "Locking";
+        internal const string CheckpointRestoreCategory = "CheckpointRestore";
 
         /// <summary>
         /// Delete a directory recursively
@@ -170,6 +174,8 @@ namespace FASTER.test
             Generic
         }
 
+        internal enum SyncMode { Sync, Async };
+
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
 
@@ -181,6 +187,36 @@ namespace FASTER.test
             Assert.IsFalse(completedOutputs.Next());
             completedOutputs.Dispose();
             return result;
+        }
+
+        internal static void DoTwoThreadTest(int count, Action<int> first, Action<int> second, Action<int> verification, int randSleepRangeMs = -1)
+        {
+            Thread[] threads = new Thread[2];
+
+            var rng = new Random(101);
+            for (var iter = 0; iter < count; ++iter)
+            {
+                var arg = rng.Next(count);
+                threads[0] = new Thread(() => first(arg));
+                threads[1] = new Thread(() => second(arg));
+
+                var doSleep = randSleepRangeMs >= 0;
+                for (int t = 0; t < threads.Length; t++)
+                {
+                    if (doSleep)
+                    {
+                        if (randSleepRangeMs > 0)
+                            Thread.Sleep(rng.Next(10));
+                        else
+                            Thread.Yield();
+                    }
+                    threads[t].Start();
+                }
+                for (int t = 0; t < threads.Length; t++)
+                    threads[t].Join();
+
+                verification(arg);
+            }
         }
     }
 }

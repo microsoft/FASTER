@@ -24,7 +24,7 @@ namespace FASTER.test
                 psdAddress = Constants.kInvalidAddress;
             }
 
-            internal PostFunctions() : base(locking: false, postOps: true) { }
+            internal PostFunctions() : base() { }
 
             public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address) { this.pswAddress = address; }
 

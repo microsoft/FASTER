@@ -111,9 +111,9 @@ namespace FASTER.test.recovery.objectstore
                 if ((i + 1) % checkpointInterval == 0)
                 {
                     if (first)
-                        while (!fht.TakeFullCheckpoint(out token, CheckpointType.Snapshot)) ;
+                        while (!fht.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot)) ;
                     else
-                        while (!fht.TakeFullCheckpoint(out _, CheckpointType.Snapshot)) ;
+                        while (!fht.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot)) ;
 
                     fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
 

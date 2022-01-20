@@ -8,17 +8,13 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace FASTER.test
+namespace FASTER.test.LockTests
 {
     [TestFixture]
-    internal class LockTests
+    internal class BasicLockTests
     {
         internal class Functions : SimpleFunctions<int, int>
         {
-            public Functions() : base(true)
-            {
-            }
-
             static bool Increment(ref int dst)
             {
                 ++dst;
@@ -39,7 +35,7 @@ namespace FASTER.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
-            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null });
+            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, supportsLocking: true );
             session = fkv.For(new Functions()).NewSession<Functions>();
         }
 
@@ -65,6 +61,7 @@ namespace FASTER.test
                 RecordInfo recordInfo = new();
                 RecordInfo* ri = &recordInfo;
 
+                // We are not sealing in this test, so there is no need to check the return
                 XLockTest(() => ri->LockExclusive(), () => ri->UnlockExclusive());
                 SLockTest(() => ri->LockShared(), () => ri->UnlockShared());
                 XSLockTest(() => ri->LockExclusive(), () => ri->UnlockExclusive(), () => ri->LockShared(), () => ri->UnlockShared());

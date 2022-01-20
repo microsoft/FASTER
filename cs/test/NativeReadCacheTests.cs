@@ -4,7 +4,7 @@
 using FASTER.core;
 using NUnit.Framework;
 
-namespace FASTER.test
+namespace FASTER.test.ReadCacheTests
 {
     [TestFixture]
     internal class NativeReadCacheTests

@@ -14,14 +14,14 @@ namespace FASTER.core
             _functions = functions;
         }
 
-        public bool SupportsPostOperations => false;
-
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
 
         /// <summary>
         /// No reads during compaction
         /// </summary>
         public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
+
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { value = default; }
 
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
@@ -65,16 +65,18 @@ namespace FASTER.core
         /// </summary>
         public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) 
             => _functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
+
+        public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            => _functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
+
+        public void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { }
 
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx) { }
 
-        public bool SupportsLocking => false;
-        public void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) { }
-        public void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) { }
-        public bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => true;
-        public void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext) { }
-        public bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) => true;
-        public bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1) => true;
+        public void DisposeKey(ref Key key) { }
+
+        public void DisposeValue(ref Value value) { }
     }
 }

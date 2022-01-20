@@ -116,7 +116,7 @@ namespace FASTER.core
 
         /// <summary>
         /// Start a new client session with FASTER.
-        /// For performance reasons, please use FasterKV&lt;Key, Value&gt;.For(functions).NewSession&lt;Functions&gt;(...) instead of this overload.
+        /// For performance reasons, please use <see cref="FasterKV{Key, Value}.For{Input, Output, Context}(IFunctions{Key, Value, Input, Output, Context})"/> instead of this overload.
         /// </summary>
         /// <param name="functions">Callback functions</param>
         /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>

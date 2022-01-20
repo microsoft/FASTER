@@ -111,7 +111,7 @@ namespace FASTER.core
                     // Read record from cached page memory
                     var page = currentPage % hlog.BufferSize;
 
-                    if (hlog.values[page][offset].info.Invalid)
+                    if (hlog.values[page][offset].info.SkipOnScan)
                     {
                         epoch?.Suspend();
                         continue;
@@ -126,7 +126,7 @@ namespace FASTER.core
 
                 var currentFrame = currentPage % frameSize;
 
-                if (frame.GetInfo(currentFrame, offset).Invalid)
+                if (frame.GetInfo(currentFrame, offset).SkipOnScan)
                 {
                     epoch?.Suspend();
                     continue;

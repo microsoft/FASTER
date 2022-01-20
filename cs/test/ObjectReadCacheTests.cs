@@ -4,7 +4,7 @@
 using FASTER.core;
 using NUnit.Framework;
 
-namespace FASTER.test
+namespace FASTER.test.ReadCacheTests
 {
     [TestFixture]
     internal class ObjectReadCacheTests
@@ -137,7 +137,7 @@ namespace FASTER.test
                 var value = new MyValue { value = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.AreEqual(Status.OK, status);
+                Assert.AreEqual(Status.OK, status, $"key = {key1.key}");
                 Assert.AreEqual(value.value, output.value.value);
             }
         }

@@ -7,15 +7,17 @@ namespace FASTER.benchmark
 {
     enum BenchmarkType : byte
     {
-        Ycsb,
+        Ycsb = 0,
         SpanByte,
+        ClientSession,
         ConcurrentDictionaryYcsb
     };
 
     enum LockImpl : byte
     {
-        None,
-        RecordInfo
+        None = 0,
+        Ephemeral = 1,
+        Manual = 2
     };
 
     enum AddressLineNum : int

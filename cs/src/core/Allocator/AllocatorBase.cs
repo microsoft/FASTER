@@ -245,6 +245,11 @@ namespace FASTER.core
         internal IObserver<IFasterScanIterator<Key, Value>> OnEvictionObserver;
 
         /// <summary>
+        /// Observer for locked records getting evicted from memory (page closed)
+        /// </summary>
+        internal IObserver<IFasterScanIterator<Key, Value>> OnLockEvictionObserver;
+
+        /// <summary>
         /// The "event" to be waited on for flush completion by the initiator of an operation
         /// </summary>
         internal CompletionEvent FlushEvent;
@@ -688,9 +693,15 @@ namespace FASTER.core
         /// </summary>
         /// <param name="beginAddress">Begin address</param>
         /// <param name="endAddress">End address</param>
+        internal abstract void MemoryPageLockEvictionScan(long beginAddress, long endAddress);
+
+        /// <summary>
+        /// Scan page guaranteed to be in memory
+        /// </summary>
+        /// <param name="beginAddress">Begin address</param>
+        /// <param name="endAddress">End address</param>
         internal abstract void MemoryPageScan(long beginAddress, long endAddress);
         #endregion
-
 
         /// <summary>
         /// Instantiate base allocator
@@ -1262,8 +1273,17 @@ namespace FASTER.core
         /// </summary>
         private void OnPagesReadyToClose(long oldHeadAddress, long newHeadAddress)
         {
-            if (ReadCache && (newHeadAddress > HeadAddress))
-                EvictCallback(HeadAddress, newHeadAddress);
+            if (newHeadAddress > HeadAddress)
+            {
+                if (ReadCache)
+                    EvictCallback(HeadAddress, newHeadAddress);
+                for (long closePageAddress = HeadAddress & ~PageSizeMask; closePageAddress < newHeadAddress; closePageAddress += PageSize)
+                {
+                    long start = HeadAddress > closePageAddress ? HeadAddress : closePageAddress;
+                    long end = newHeadAddress < closePageAddress + PageSize ? newHeadAddress : closePageAddress + PageSize;
+                    MemoryPageLockEvictionScan(start, end);
+                }
+            }
 
             if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out oldHeadAddress))
             {

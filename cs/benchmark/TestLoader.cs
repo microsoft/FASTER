@@ -105,6 +105,10 @@ namespace FASTER.benchmark
                     FasterSpanByteYcsbBenchmark.CreateKeyVectors(this, out this.init_span_keys, out this.txn_span_keys);
                     LoadData(this, this.init_span_keys, this.txn_span_keys, new FasterSpanByteYcsbBenchmark.KeySetter());
                     break;
+                case BenchmarkType.ClientSession:
+                    FASTER_ClientSessionYcsbBenchmark.CreateKeyVectors(this, out this.init_keys, out this.txn_keys);
+                    LoadData(this, this.init_keys, this.txn_keys, new FASTER_YcsbBenchmark.KeySetter());
+                    break;
                 case BenchmarkType.ConcurrentDictionaryYcsb:
                     ConcurrentDictionary_YcsbBenchmark.CreateKeyVectors(this, out this.init_keys, out this.txn_keys);
                     LoadData(this, this.init_keys, this.txn_keys, new ConcurrentDictionary_YcsbBenchmark.KeySetter());
@@ -369,7 +373,7 @@ namespace FASTER.benchmark
             {
                 Console.WriteLine($"Checkpointing FasterKV to {this.BackupPath} for fast restart");
                 var sw = Stopwatch.StartNew();
-                store.TakeFullCheckpoint(out _, CheckpointType.Snapshot);
+                store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot);
                 store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                 sw.Stop();
                 Console.WriteLine($"  Completed checkpoint in {(double)sw.ElapsedMilliseconds / 1000:N3} seconds");

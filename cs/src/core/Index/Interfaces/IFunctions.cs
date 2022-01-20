@@ -13,23 +13,6 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public interface IFunctions<Key, Value, Input, Output, Context>
     {
-        #region Optional features supported by this implementation
-        /// <summary>
-        /// Whether this Functions instance supports locking. Iff so, FASTER will call <see cref="LockExclusive(ref RecordInfo, ref Key, ref Value, ref long)"/> 
-        /// or <see cref="LockShared(ref RecordInfo, ref Key, ref Value, ref long)"/> to lock the record as appropriate, and 
-        /// <see cref="UnlockExclusive(ref RecordInfo, ref Key, ref Value, long)"/> or <see cref="UnlockShared(ref RecordInfo, ref Key, ref Value, long)"/> to match.
-        /// </summary>
-        bool SupportsLocking { get; }
-
-        /// <summary>
-        /// Whether this Functions instance supports operations on records after they have been successfully appended to the log. For example,
-        /// after <see cref="CopyUpdater(ref Key, ref Input, ref Value, ref Value, ref Output, ref RecordInfo, long)"/> copies a list,
-        /// <see cref="PostCopyUpdater(ref Key, ref Input, ref Value, ref Value, ref Output, ref RecordInfo, long)"/> can add items to it. 
-        /// </summary>
-        /// <remarks>Once the record has been appended it is visible to other sessions, so locking will be done per <see cref="SupportsLocking"/></remarks>
-        bool SupportsPostOperations { get; }
-        #endregion Optional features supported by this implementation
-
         #region Reads
         /// <summary>
         /// Non-concurrent reader. 
@@ -69,8 +52,7 @@ namespace FASTER.core
 
         #region Upserts
         /// <summary>
-        /// Non-concurrent writer; called on an Upsert that does not find the key so does an insert or finds the key's record in the immutable region so does a read/copy/update (RCU),
-        /// or when copying reads fetched from disk to either read cache or tail of log.
+        /// Non-concurrent writer; called on an Upsert that does not find the key so does an insert or finds the key's record in the immutable region so does a read/copy/update (RCU).
         /// </summary>
         /// <param name="key">The key for this record</param>
         /// <param name="input">The user input to be used for computing <paramref name="dst"/></param>
@@ -102,9 +84,19 @@ namespace FASTER.core
         /// <param name="dst">The location where <paramref name="src"/> is to be copied; because this method is called only for in-place updates, there is a previous value there.</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
-        /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing"/></param>
+        /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing</param>
         /// <returns>True if the value was written, else false</returns>
         bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
+
+        /// <summary>
+        /// Basic copy operation used in maintenance operations such as copying reads fetched from disk to either read cache or tail of log.
+        /// </summary>
+        /// <param name="key">The key for this record</param>
+        /// <param name="src">The previous value to be copied/updated</param>
+        /// <param name="dst">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
+        /// <param name="recordInfo">A reference to the header of the record</param>
+        /// <param name="address">The logical address of the record being copied to</param>
+        void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
 
         /// <summary>
         /// Upsert completion
@@ -213,6 +205,17 @@ namespace FASTER.core
 
         #region Deletes
         /// <summary>
+        /// Single deleter; called on an Delete that does not find the record in the mutable range and so inserts a new record.
+        /// </summary>
+        /// <param name="key">The key for the record to be deleted</param>
+        /// <param name="value">The value for the record being deleted; because this method is called only for in-place updates, there is a previous value there. Usually this is ignored or assigned 'default'.</param>
+        /// <param name="recordInfo">A reference to the header of the record</param>
+        /// <param name="address">The logical address of the record being deleted; used as a RecordId by indexing</param>
+        /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
+        /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
+        void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address);
+
+        /// <summary>
         /// Called after a record marking a Delete (with Tombstone set) has been successfully inserted at the tail of the log.
         /// </summary>
         /// <param name="key">The key for the record that was deleted</param>
@@ -241,91 +244,19 @@ namespace FASTER.core
         void DeleteCompletionCallback(ref Key key, Context ctx);
         #endregion Deletes
 
-        #region Locking
+        #region Key and Value management
         /// <summary>
-        /// User-provided exclusive-lock call, defaulting to no-op. A default implementation is available via <see cref="RecordInfo.LockExclusive()"/>.
+        /// Dispose the key; for example, in evicted log records. FASTER assumes deep-copy semantics such as cloning or refcounting. 
         /// </summary>
-        /// <param name="recordInfo">The header for the current record</param>
-        /// <param name="key">The key for the current record</param>
-        /// <param name="value">The value for the current record</param>
-        /// <param name="lockContext">Context-specific information; will be passed to <see cref="UnlockExclusive(ref RecordInfo, ref Key, ref Value, long)"/></param>
-        /// <remarks>
-        /// This is called only for records guaranteed to be in the mutable range.
-        /// </remarks>
-        void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext);
+        /// <param name="key"></param>
+        void DisposeKey(ref Key key);
 
         /// <summary>
-        /// User-provided exclusive unlock call, defaulting to no-op. A default exclusive implementation is available via <see cref="RecordInfo.UnlockExclusive()"/>.
+        /// Dispose the value; for example, in evicted log records. FASTER assumes deep-copy semantics such as cloning or refcounting. 
         /// </summary>
-        /// <param name="recordInfo">The header for the current record</param>
-        /// <param name="key">The key for the current record</param>
-        /// <param name="value">The value for the current record</param>
-        /// <param name="lockContext">The context returned from <see cref="LockExclusive(ref RecordInfo, ref Key, ref Value, ref long)"/></param>
-        /// <remarks>
-        /// This is called only for records guaranteed to be in the mutable range.
-        /// </remarks>
-        void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext);
-
-        /// <summary>
-        /// User-provided try-exclusive-lock call, defaulting to no-op. A default implementation is available via <see cref="RecordInfo.TryLockExclusive(int)"/>.
-        /// </summary>
-        /// <param name="recordInfo">The header for the current record</param>
-        /// <param name="key">The key for the current record</param>
-        /// <param name="value">The value for the current record</param>
-        /// <param name="lockContext">Context-specific information; will be passed to <see cref="UnlockExclusive(ref RecordInfo, ref Key, ref Value, long)"/></param>
-        /// <param name="spinCount">The number of times to spin in a try/yield loop until giving up; default is once</param>
-        /// <remarks>
-        /// This is called only for records guaranteed to be in the mutable range.
-        /// </remarks>
-        /// <returns>
-        /// True if the lock was acquired, else false.
-        /// </returns>
-        bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1);
-
-        /// <summary>
-        /// User-provided shared-lock call, defaulting to no-op. A default implementation is available via <see cref="RecordInfo.LockShared()"/>.
-        /// </summary>
-        /// <param name="recordInfo">The header for the current record</param>
-        /// <param name="key">The key for the current record</param>
-        /// <param name="value">The value for the current record</param>
-        /// <param name="lockContext">Context-specific information; will be passed to <see cref="UnlockShared(ref RecordInfo, ref Key, ref Value, long)"/></param>
-        /// <remarks>
-        /// This is called only for records guaranteed to be in the mutable range.
-        /// </remarks>
-        void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext);
-
-        /// <summary>
-        /// User-provided shared-unlock call, defaulting to no-op. A default exclusive implementation is available via <see cref="RecordInfo.UnlockShared()"/>.
-        /// </summary>
-        /// <param name="recordInfo">The header for the current record</param>
-        /// <param name="key">The key for the current record</param>
-        /// <param name="value">The value for the current record</param>
-        /// <param name="lockContext">The context returned from <see cref="LockShared(ref RecordInfo, ref Key, ref Value, ref long)"/></param>
-        /// <remarks>
-        /// This is called only for records guaranteed to be in the mutable range.
-        /// </remarks>
-        /// <returns>
-        /// True if no inconsistencies detected. Otherwise, the lock and user's callback are reissued.
-        /// Currently this is handled only for <see cref="ConcurrentReader(ref Key, ref Input, ref Value, ref Output, ref RecordInfo, long)"/>.
-        /// </returns>
-        bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext);
-
-        /// <summary>
-        /// User-provided try-shared-lock call, defaulting to no-op. A default implementation is available via <see cref="RecordInfo.TryLockShared(int)"/>.
-        /// </summary>
-        /// <param name="recordInfo">The header for the current record</param>
-        /// <param name="key">The key for the current record</param>
-        /// <param name="value">The value for the current record</param>
-        /// <param name="lockContext">Context-specific information; will be passed to <see cref="UnlockExclusive(ref RecordInfo, ref Key, ref Value, long)"/></param>
-        /// <param name="spinCount">The number of times to spin in a try/yield loop until giving up; default is once</param>
-        /// <remarks>
-        /// This is called only for records guaranteed to be in the mutable range.
-        /// </remarks>
-        /// <returns>
-        /// True if the lock was acquired, else false.
-        /// </returns>
-        bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1);
-        #endregion Locking
+        /// <param name="value"></param>
+        void DisposeValue(ref Value value);
+        #endregion Key and Value management
 
         #region Checkpointing
         /// <summary>

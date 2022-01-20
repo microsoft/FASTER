@@ -47,8 +47,7 @@ namespace FASTER.benchmark
             txn_keys_ = t_keys_;
             numaStyle = testLoader.Options.NumaStyle;
             readPercent = testLoader.Options.ReadPercent;
-            var lockImpl = testLoader.LockImpl;
-            functions = new Functions(lockImpl != LockImpl.None, testLoader.Options.PostOps);
+            functions = new Functions();
 
 #if DASHBOARD
             statsWritten = new AutoResetEvent[threadCount];
@@ -76,11 +75,11 @@ namespace FASTER.benchmark
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<Key, Value>
                     (testLoader.MaxKey / 4, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath });
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, supportsLocking: testLoader.LockImpl == LockImpl.Ephemeral);
             else
                 store = new FasterKV<Key, Value>
                     (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath });
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, supportsLocking: testLoader.LockImpl == LockImpl.Ephemeral);
         }
 
         internal void Dispose()
@@ -116,60 +115,63 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            var session = store.For(functions).NewSession<Functions>(null, !testLoader.Options.NoThreadAffinity);
+            var session = store.For(functions).NewSession<Functions>(null);
+            var uContext = session.GetUnsafeContext();
+            uContext.ResumeThread();
 
-            while (!done)
+            try
             {
-                long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
-                while (chunk_idx >= TxnCount)
+                while (!done)
                 {
-                    if (chunk_idx == TxnCount)
-                        idx_ = 0;
-                    chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
-                }
-
-                for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
-                {
-                    Op op;
-                    int r = (int)rng.Generate(100);
-                    if (r < readPercent)
-                        op = Op.Read;
-                    else if (readPercent >= 0)
-                        op = Op.Upsert;
-                    else
-                        op = Op.ReadModifyWrite;
-
-                    if (idx % 512 == 0)
+                    long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
+                    while (chunk_idx >= TxnCount)
                     {
-                        if (!testLoader.Options.NoThreadAffinity)
-                            session.Refresh();
-                        session.CompletePending(false);
+                        if (chunk_idx == TxnCount)
+                            idx_ = 0;
+                        chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                     }
 
-                    switch (op)
+                    for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
                     {
-                        case Op.Upsert:
-                            {
-                                session.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
-                                ++writes_done;
-                                break;
-                            }
-                        case Op.Read:
-                            {
-                                session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
-                                ++reads_done;
-                                break;
-                            }
-                        case Op.ReadModifyWrite:
-                            {
-                                session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
-                                ++writes_done;
-                                break;
-                            }
-                        default:
-                            throw new InvalidOperationException("Unexpected op: " + op);
+                        Op op;
+                        int r = (int)rng.Generate(100);
+                        if (r < readPercent)
+                            op = Op.Read;
+                        else if (readPercent >= 0)
+                            op = Op.Upsert;
+                        else
+                            op = Op.ReadModifyWrite;
+
+                        if (idx % 512 == 0)
+                        {
+                            uContext.Refresh();
+                            uContext.CompletePending(false);
+                        }
+
+                        switch (op)
+                        {
+                            case Op.Upsert:
+                                {
+                                    uContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
+                                    ++writes_done;
+                                    break;
+                                }
+                            case Op.Read:
+                                {
+                                    uContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
+                                    ++reads_done;
+                                    break;
+                                }
+                            case Op.ReadModifyWrite:
+                                {
+                                    uContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
+                                    ++writes_done;
+                                    break;
+                                }
+                            default:
+                                throw new InvalidOperationException("Unexpected op: " + op);
+                        }
                     }
-                }
 
 #if DASHBOARD
                 count += (int)kChunkSize;
@@ -186,9 +188,16 @@ namespace FASTER.benchmark
                     statsWritten[thread_idx].Set();
                 }
 #endif
+                }
+
+                uContext.CompletePending(true);
+            }
+            finally
+            {
+                uContext.SuspendThread();
             }
 
-            session.CompletePending(true);
+            uContext.Dispose();
             session.Dispose();
 
             sw.Stop();
@@ -208,6 +217,21 @@ namespace FASTER.benchmark
             var dash = new Thread(() => DoContinuousMeasurements());
             dash.Start();
 #endif
+
+            ClientSession<Key, Value, Input, Output, Empty, Functions> session = default;
+            LockableUnsafeContext<Key, Value, Input, Output, Empty, Functions> luContext = default;
+
+            (Key key, LockType kind) xlock = (new Key { value = long.MaxValue }, LockType.Exclusive);
+            (Key key, LockType kind) slock = (new Key { value = long.MaxValue - 1 }, LockType.Shared);
+            if (testLoader.Options.LockImpl == (int)LockImpl.Manual)
+            {
+                session = store.For(functions).NewSession<Functions>(null);
+                luContext = session.GetLockableUnsafeContext();
+
+                Console.WriteLine("Taking 2 manual locks");
+                luContext.Lock(xlock.key, xlock.kind);
+                luContext.Lock(slock.key, slock.kind);
+            }
 
             Thread[] workers = new Thread[testLoader.Options.ThreadCount];
 
@@ -288,7 +312,7 @@ namespace FASTER.benchmark
                     if (checkpointTaken < swatch.ElapsedMilliseconds / testLoader.Options.PeriodicCheckpointMilliseconds)
                     {
                         long start = swatch.ElapsedTicks;
-                        if (store.TakeHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType, testLoader.Options.PeriodicCheckpointTryIncremental))
+                        if (store.TryInitiateHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType, testLoader.Options.PeriodicCheckpointTryIncremental))
                         {
                             store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                             var timeTaken = (swatch.ElapsedTicks - start) / TimeSpan.TicksPerMillisecond;
@@ -308,6 +332,15 @@ namespace FASTER.benchmark
             {
                 worker.Join();
             }
+
+            if (testLoader.Options.LockImpl == (int)LockImpl.Manual)
+            {
+                luContext.Unlock(xlock.key, xlock.kind);
+                luContext.Unlock(slock.key, slock.kind);
+                luContext.Dispose();
+                session.Dispose();
+            }
+
             waiter.Reset();
 
 #if DASHBOARD
@@ -332,7 +365,9 @@ namespace FASTER.benchmark
 
             waiter.Wait();
 
-            var session = store.For(functions).NewSession<Functions>(null, !testLoader.Options.NoThreadAffinity);
+            var session = store.For(functions).NewSession<Functions>(null);
+            var uContext = session.GetUnsafeContext();
+            uContext.ResumeThread();
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -341,26 +376,28 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            Value value = default;
-
-            for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
-                chunk_idx < InitCount;
-                chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize)
+            try
             {
-                for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize; ++idx)
+                Value value = default;
+
+                for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
+                    chunk_idx < InitCount;
+                    chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize)
                 {
-                    if (idx % 256 == 0)
+                    for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize; ++idx)
                     {
-                        session.Refresh();
-
-                        if (idx % 65536 == 0)
+                        if (idx % 256 == 0)
                         {
-                            session.CompletePending(false);
-                        }
-                    }
+                            uContext.Refresh();
 
-                    session.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
-                }
+                            if (idx % 65536 == 0)
+                            {
+                                uContext.CompletePending(false);
+                            }
+                        }
+
+                        uContext.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
+                    }
 #if DASHBOARD
                 count += (int)kChunkSize;
 
@@ -375,9 +412,14 @@ namespace FASTER.benchmark
                     statsWritten[thread_idx].Set();
                 }
 #endif
+                }
+                uContext.CompletePending(true);
             }
-
-            session.CompletePending(true);
+            finally
+            {
+                uContext.SuspendThread();
+            }
+            uContext.Dispose();
             session.Dispose();
         }
 

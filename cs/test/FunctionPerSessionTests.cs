@@ -28,7 +28,7 @@ namespace FASTER.test
             value.ReferenceCount = 1;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty outpu, ref RecordInfo recordInfo, long addresst)
+        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, long address)
         {
             Interlocked.Increment(ref InPlaceCount);
 

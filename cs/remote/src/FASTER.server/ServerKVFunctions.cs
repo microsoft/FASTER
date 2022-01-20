@@ -11,10 +11,6 @@ namespace FASTER.server
         private readonly Functions functions;
         private readonly FasterKVServerSessionBase<Output> serverNetworkSession;
 
-        public bool SupportsLocking => functions.SupportsLocking;
-
-        public bool SupportsPostOperations => true;
-
         public ServerKVFunctions(Functions functions, FasterKVServerSessionBase<Output> serverNetworkSession)
         {
             this.functions = functions;
@@ -23,6 +19,9 @@ namespace FASTER.server
 
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
             => functions.CheckpointCompletionCallback(sessionId, commitPoint);
+
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+            => functions.SingleDeleter(ref key, ref value, ref recordInfo, address);
 
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
@@ -78,30 +77,14 @@ namespace FASTER.server
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
 
+        public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            => functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
+
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, long ctx)
             => functions.UpsertCompletionCallback(ref key, ref input, ref value, ctx);
 
-        public void LockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext)
-            => functions.LockExclusive(ref recordInfo, ref key, ref value, ref lockContext);
+        public void DisposeKey(ref Key key) { functions.DisposeKey(ref key); }
 
-        /// <inheritdoc />
-        public void UnlockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext)
-            => functions.UnlockExclusive(ref recordInfo, ref key, ref value, lockContext);
-
-        /// <inheritdoc />
-        public bool TryLockExclusive(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1)
-            => functions.TryLockExclusive(ref recordInfo, ref key, ref value, ref lockContext, spinCount);
-
-        /// <inheritdoc />
-        public void LockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext)
-            => functions.LockShared(ref recordInfo, ref key, ref value, ref lockContext);
-
-        /// <inheritdoc />
-        public bool UnlockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, long lockContext) 
-            => functions.UnlockShared(ref recordInfo, ref key, ref value, lockContext);
-
-        /// <inheritdoc />
-        public bool TryLockShared(ref RecordInfo recordInfo, ref Key key, ref Value value, ref long lockContext, int spinCount = 1)
-            => functions.TryLockShared(ref recordInfo, ref key, ref value, ref lockContext, spinCount);
+        public void DisposeValue(ref Value value) { functions.DisposeValue(ref value); }
     }
 }

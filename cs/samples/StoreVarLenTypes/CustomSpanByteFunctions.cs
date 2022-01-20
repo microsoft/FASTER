@@ -13,7 +13,7 @@ namespace StoreVarLenTypes
     public sealed class CustomSpanByteFunctions : SpanByteFunctions_ByteArrayOutput<byte>
     {
         /// <inheritdoc/>
-        public CustomSpanByteFunctions(bool locking = false) : base(locking) { }
+        public CustomSpanByteFunctions() : base() { }
 
         // Read completion callback
         public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref byte[] output, byte ctx, Status status, RecordMetadata recordMetadata)
