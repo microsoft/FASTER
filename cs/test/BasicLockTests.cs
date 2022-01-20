@@ -15,10 +15,6 @@ namespace FASTER.test.LockTests
     {
         internal class Functions : SimpleFunctions<int, int>
         {
-            public Functions() : base(true)
-            {
-            }
-
             static bool Increment(ref int dst)
             {
                 ++dst;

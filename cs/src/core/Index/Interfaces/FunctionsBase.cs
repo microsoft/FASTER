@@ -17,15 +17,6 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public abstract class FunctionsBase<Key, Value, Input, Output, Context> : IFunctions<Key, Value, Input, Output, Context>
     {
-        protected readonly bool locking;
-        protected readonly bool postOps;
-
-        protected FunctionsBase(bool locking = false, bool postOps = false)
-        {
-            this.locking = locking;
-            this.postOps = postOps;
-        }
-
         /// <inheritdoc/>
         public virtual bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
         /// <inheritdoc/>
@@ -82,8 +73,6 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public class SimpleFunctions<Key, Value, Context> : FunctionsBase<Key, Value, Value, Value, Context>
     {
-        public SimpleFunctions(bool locking = false, bool postOps = false) : base(locking, postOps) { }
-
         private readonly Func<Value, Value, Value> merger;
         public SimpleFunctions() => merger = (l, r) => l;
         public SimpleFunctions(Func<Value, Value, Value> merger) => this.merger = merger;
@@ -130,7 +119,6 @@ namespace FASTER.core
     public class SimpleFunctions<Key, Value> : SimpleFunctions<Key, Value, Empty>
     {
         public SimpleFunctions() : base() { }
-        public SimpleFunctions(bool locking = false, bool postOps = false) : base(locking, postOps) { }
         public SimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
     }
 }

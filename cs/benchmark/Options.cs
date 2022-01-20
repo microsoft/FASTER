@@ -76,10 +76,6 @@ namespace FASTER.benchmark
             HelpText = "Do not use thread affinitization in experiment")]
         public bool NoThreadAffinity { get; set; }
 
-        [Option("post", Required = false, Default = false,
-            HelpText = "Support post-append operations")]
-        public bool PostOps { get; set; }
-
         [Option("chkptms", Required = false, Default = 0,
             HelpText = "If > 0, the number of milliseconds between checkpoints in experiment (else checkpointing is not done")]
         public int PeriodicCheckpointMilliseconds { get; set; }
@@ -102,8 +98,9 @@ namespace FASTER.benchmark
         {
             static string boolStr(bool value) => value ? "y" : "n";
             return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockImpl}; i: {IterationCount};"
-                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; noaff: {boolStr(this.NoThreadAffinity)}; post: {boolStr(this.PostOps)};"
-                        + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")}; chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
+                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; noaff: {boolStr(this.NoThreadAffinity)};"
+                        + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
+                        + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
         }
     }
 }

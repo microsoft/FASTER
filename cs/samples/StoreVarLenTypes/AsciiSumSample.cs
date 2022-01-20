@@ -24,15 +24,16 @@ namespace StoreVarLenTypes
             using var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
 
             // Create store
-            // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer
+            // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer.
+            // For this test we require record-level locking
             using var store = new FasterKV<SpanByte, SpanByte>(
                 size: 1L << 20,
-                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
+                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 }, supportsLocking: true);
 
             // Create session for ASCII sums. We require two callback function types to be provided:
-            //    AsciiSumSpanByteFunctions implements RMW callback functions; we require record-level locking
+            //    AsciiSumSpanByteFunctions implements RMW callback functions
             //    AsciiSumVLS implements the callback for computing the length of the result new value, given an old value and an input
-            using var s = store.For(new AsciiSumSpanByteFunctions(locking: true)).NewSession<AsciiSumSpanByteFunctions>
+            using var s = store.For(new AsciiSumSpanByteFunctions()).NewSession<AsciiSumSpanByteFunctions>
                 (sessionVariableLengthStructSettings: new SessionVariableLengthStructSettings<SpanByte, SpanByte> { valueLength = new AsciiSumVLS() });
 
             // Create key

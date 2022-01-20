@@ -15,8 +15,8 @@ namespace StoreVarLenTypes
         where T : unmanaged
     {
         /// <inheritdoc/>
-        public CustomMemoryFunctions(MemoryPool<T> memoryPool = default, bool locking = false)
-            : base(memoryPool, locking) { }
+        public CustomMemoryFunctions(MemoryPool<T> memoryPool = default)
+            : base(memoryPool) { }
 
         /// <inheritdoc/>
         public override void ReadCompletionCallback(ref ReadOnlyMemory<T> key, ref Memory<T> input, ref (IMemoryOwner<T>, int) output, T ctx, Status status, RecordMetadata recordMetadata)

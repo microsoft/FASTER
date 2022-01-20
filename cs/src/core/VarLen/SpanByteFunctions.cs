@@ -10,13 +10,6 @@ namespace FASTER.core
     /// </summary>
     public class SpanByteFunctions<Key, Output, Context> : FunctionsBase<Key, SpanByte, SpanByte, Output, Context>
     {
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        /// <param name="locking"></param>
-        /// <param name="postOps"></param>
-        public SpanByteFunctions(bool locking = false, bool postOps = false) : base(locking, postOps) { }
-
         /// <inheritdoc />
         public override void SingleWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref RecordInfo recordInfo, long address)
         {
@@ -73,9 +66,7 @@ namespace FASTER.core
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
-        /// <param name="locking"></param>
-        /// <param name="postOps"></param>
-        public SpanByteFunctions(MemoryPool<byte> memoryPool = default, bool locking = false, bool postOps = false) : base(locking, postOps)
+        public SpanByteFunctions(MemoryPool<byte> memoryPool = default)
         {
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
@@ -100,12 +91,6 @@ namespace FASTER.core
     /// </summary>
     public class SpanByteFunctions_ByteArrayOutput<Context> : SpanByteFunctions<SpanByte, byte[], Context>
     {
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        /// <param name="locking"></param>
-        public SpanByteFunctions_ByteArrayOutput(bool locking = false) : base(locking) { }
-
         /// <inheritdoc />
         public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst, ref RecordInfo recordInfo, long address)
         {

@@ -57,7 +57,6 @@ class Result : System.IComparable, System.IEquatable[Object] {
     [int]$ReadPercent
     [uint]$ThreadCount
     [uint]$LockMode
-    [uint]$PostOpsMode
     [uint]$Iterations
     [bool]$SmallData
     [bool]$SmallMemory
@@ -82,7 +81,6 @@ class Result : System.IComparable, System.IEquatable[Object] {
                 "r" { $this.ReadPercent = $value }
                 "t" { $this.ThreadCount = $value }
                 "z" { $this.LockMode = $value }
-                "post" { $this.PostOpsMode = $value -eq "y"  }
                 "i" { $this.Iterations = $value }
                 "sd" { $this.SmallData = $value -eq "y" }
                 "sm" { $this.SmallMemory = $value -eq "y"  }
@@ -101,7 +99,6 @@ class Result : System.IComparable, System.IEquatable[Object] {
         $this.ReadPercent = $other.ReadPercent
         $this.ThreadCount = $other.ThreadCount
         $this.LockMode = $other.LockMode
-        $this.PostOpsMode = $other.PostOpsMode
         $this.Iterations = $other.Iterations
         $this.SmallData = $other.SmallData
         $this.SmallMemory = $other.SmallMemory
@@ -169,7 +166,6 @@ class Result : System.IComparable, System.IEquatable[Object] {
          -and $this.ReadPercent -eq $other.ReadPercent
          -and $this.ThreadCount -eq $other.ThreadCount
          -and $this.LockMode -eq $other.LockMode
-         -and $this.PostOpsMode -eq $other.PostOpsMode
          -and $this.Iterations -eq $other.Iterations
          -and $this.SmallData -eq $other.SmallData
          -and $this.SmallMemory -eq $other.SmallMemory
@@ -181,7 +177,7 @@ class Result : System.IComparable, System.IEquatable[Object] {
     }
 
     [int] GetHashCode() {
-        return ($this.Numa, $this.Distribution, $this.ReadPercent, $this.ThreadCount, $this.LockMode, $this.PostOpsMode,
+        return ($this.Numa, $this.Distribution, $this.ReadPercent, $this.ThreadCount, $this.LockMode,
                 $this.Iterations, $this.SmallData, $this.SmallMemory, $this.SyntheticData,
                 $this.NoAff, $this.ChkptMs, $this.ChkptType, $this.ChkptIncr).GetHashCode();
     }
@@ -284,7 +280,6 @@ function RenameProperties([System.Object[]]$results) {
                 ReadPercent,
                 ThreadCount,
                 LockMode,
-                PostOpsMode,
                 Iterations,
                 SmallData,
                 SmallMemory,

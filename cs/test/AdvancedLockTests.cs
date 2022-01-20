@@ -39,10 +39,6 @@ namespace FASTER.test.LockTests
             // CopyWriter takes no Input
             internal Input readCacheInput;
 
-            public Functions() : base(true)
-            {
-            }
-
             public override void CopyWriter(ref int key, ref int src, ref int dst, ref RecordInfo recordInfo, long address)
             {
                 int output = default;
