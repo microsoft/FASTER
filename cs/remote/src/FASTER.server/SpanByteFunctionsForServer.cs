@@ -20,7 +20,7 @@ namespace FASTER.server
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
-        public SpanByteFunctionsForServer(MemoryPool<byte> memoryPool = default) : base(true)
+        public SpanByteFunctionsForServer(MemoryPool<byte> memoryPool = default)
         {
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
