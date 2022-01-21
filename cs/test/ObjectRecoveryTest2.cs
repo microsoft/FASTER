@@ -246,7 +246,7 @@ namespace FASTER.test.recovery.objects
             return true;
         }
 
-        public override void SingleWriter(WriteReason reason, ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address) => dst = src;
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address, WriteReason reason) => dst = src;
 
         public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
         {

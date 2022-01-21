@@ -662,7 +662,7 @@ namespace FASTER.core
             hlog.Serialize(ref key, newPhysicalAddress);
             ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
 
-            fasterSession.SingleWriter(WriteReason.Upsert, ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress);
+            fasterSession.SingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress, WriteReason.Upsert);
 
             bool success = true;
             if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
@@ -703,7 +703,7 @@ namespace FASTER.core
                     LockTable.TransferToLogRecord(ref key, ref recordInfo);
                 recordInfo.SetTentativeAtomic(false);
 
-                fasterSession.PostSingleWriter(WriteReason.Upsert, ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress);
+                fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress, WriteReason.Upsert);
                 pendingContext.recordInfo = recordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
                 return OperationStatus.SUCCESS;
@@ -2472,9 +2472,9 @@ namespace FASTER.core
                 // Initial readcache entry is tentative.
                 recordInfo.Tentative = true;
                 readcache.Serialize(ref key, newPhysicalAddress);
-                fasterSession.SingleWriter(reason, ref key, ref input, ref value,
+                fasterSession.SingleWriter(ref key, ref input, ref value,
                                         ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
-                                        ref recordInfo, Constants.kInvalidAddress); // We do not expose readcache addresses
+                                        ref recordInfo, Constants.kInvalidAddress, reason); // We do not expose readcache addresses
             }
             else
             {
@@ -2486,9 +2486,9 @@ namespace FASTER.core
                                 tombstone: false, dirty: true,
                                 latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
-                fasterSession.SingleWriter(reason, ref key, ref input, ref value,
+                fasterSession.SingleWriter(ref key, ref input, ref value,
                                         ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
-                                        ref recordInfo, newLogicalAddress);
+                                        ref recordInfo, newLogicalAddress, reason);
             }
 
             bool success = true;
@@ -2579,9 +2579,9 @@ namespace FASTER.core
 
                 pendingContext.recordInfo = recordInfo;
                 pendingContext.logicalAddress = copyToReadCache ? Constants.kInvalidAddress /* We do not expose readcache addresses */ : newLogicalAddress;
-                fasterSession.PostSingleWriter(reason, ref key, ref input, ref value,
+                fasterSession.PostSingleWriter(ref key, ref input, ref value,
                                         ref log.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
-                                        ref recordInfo, pendingContext.logicalAddress);
+                                        ref recordInfo, pendingContext.logicalAddress, reason);
                 return OperationStatus.SUCCESS;
             }
 #endregion

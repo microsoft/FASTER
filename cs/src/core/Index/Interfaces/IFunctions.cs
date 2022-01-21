@@ -54,7 +54,6 @@ namespace FASTER.core
         /// <summary>
         /// Non-concurrent writer; called on an Upsert that does not find the key so does an insert or finds the key's record in the immutable region so does a read/copy/update (RCU).
         /// </summary>
-        /// <param name="reason">The operation for which this write is being done</param>
         /// <param name="key">The key for this record</param>
         /// <param name="input">The user input to be used for computing <paramref name="dst"/></param>
         /// <param name="src">The previous value to be copied/updated</param>
@@ -62,12 +61,12 @@ namespace FASTER.core
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
         /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing</param>
-        void SingleWriter(WriteReason reason, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
+        /// <param name="reason">The operation for which this write is being done</param>
+        void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason);
 
         /// <summary>
         /// Called after SingleWriter when a record containing an upsert of a new key has been successfully inserted at the tail of the log.
         /// </summary>
-        /// <param name="reason">The operation for which this write is being done</param>
         /// <param name="key">The key for this record</param>
         /// <param name="input">The user input that was used to compute <paramref name="dst"/></param>
         /// <param name="src">The previous value to be copied/updated</param>
@@ -75,7 +74,8 @@ namespace FASTER.core
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
         /// <param name="address">The logical address of the record being written; used as a RecordId by indexing</param>
-        void PostSingleWriter(WriteReason reason, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
+        /// <param name="reason">The operation for which this write is being done</param>
+        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason);
 
         /// <summary>
         /// Concurrent writer; called on an Upsert that finds the record in the mutable range.

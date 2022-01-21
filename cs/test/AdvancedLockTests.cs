@@ -38,7 +38,7 @@ namespace FASTER.test.LockTests
 
             internal Input readCacheInput;
 
-            public override void SingleWriter(WriteReason reason, ref int key, ref Input input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address)
+            public override void SingleWriter(ref int key, ref Input input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address, WriteReason reason)
             {
                 // In the wait case we are waiting for a signal that something else has completed, e.g. a pending Read, by the thread with SetEvent.
                 if ((input.flags & LockFunctionFlags.WaitForEvent) != 0)

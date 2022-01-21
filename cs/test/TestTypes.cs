@@ -201,7 +201,7 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(WriteReason reason, ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref RecordInfo recordInfo, long address) => dst = src;
+        public override void SingleWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref RecordInfo recordInfo, long address, WriteReason reason) => dst = src;
 
         public override bool ConcurrentWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref RecordInfo recordInfo, long address)
         {
