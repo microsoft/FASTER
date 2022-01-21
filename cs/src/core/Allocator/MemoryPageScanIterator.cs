@@ -37,9 +37,9 @@ namespace FASTER.core
 
         public long NextAddress => pageStartAddress + (offset + 1) * recordSize;
 
-        public long BeginAddress => start;
+        public long BeginAddress => pageStartAddress + start * recordSize;
 
-        public long EndAddress => end;
+        public long EndAddress => pageStartAddress + end * recordSize;
 
         public void Dispose()
         {
