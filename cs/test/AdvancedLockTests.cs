@@ -85,7 +85,7 @@ namespace FASTER.test.LockTests
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, ReadCacheSettings = readCacheSettings},
-                comparer: new ChainTests.ChainComparer(mod), supportsLocking: true);
+                comparer: new ChainTests.ChainComparer(mod), disableLocking: false);
             session = fkv.For(new Functions()).NewSession<Functions>();
         }
 

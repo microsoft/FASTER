@@ -45,8 +45,7 @@ namespace FASTER.test.SingleWriter
             functions = new SingleWriterTestFunctions();
 
             ReadCacheSettings readCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
-            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings, CopyReadsToTail = CopyReadsToTail.FromStorage },
-                                            supportsLocking: true);
+            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings, CopyReadsToTail = CopyReadsToTail.FromStorage });
             session = fht.For(functions).NewSession<SingleWriterTestFunctions>();
         }
 

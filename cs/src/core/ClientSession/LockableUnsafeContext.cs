@@ -464,7 +464,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public void Refresh()
         {
-            Debug.Assert(!LightEpoch.AnyInstanceProtected());
+            Debug.Assert(LightEpoch.AnyInstanceProtected());
             clientSession.fht.InternalRefresh(clientSession.ctx, FasterSession);
         }
 
@@ -483,7 +483,7 @@ namespace FASTER.core
             }
 
             #region IFunctions - Optional features supported
-            public bool SupportsLocking => false;       // We only lock explicitly in Lock/Unlock, which are longer-duration locks.
+            public bool DisableLocking => true;       // We only lock explicitly in Lock/Unlock, which are longer-duration locks.
 
             public bool IsManualLocking => true;
             #endregion IFunctions - Optional features supported

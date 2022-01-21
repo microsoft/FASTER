@@ -13,64 +13,6 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    /// <summary>
-    /// Flags for the Read-by-address methods
-    /// </summary>
-    /// <remarks>Note: must be kept in sync with corresponding PendingContext k* values</remarks>
-    [Flags]
-    public enum ReadFlags
-    {
-        /// <summary>
-        /// Default read operation
-        /// </summary>
-        None = 0,
-
-        /// <summary>
-        /// Skip the ReadCache when reading, including not inserting to ReadCache when pending reads are complete.
-        /// May be used with ReadAtAddress, to avoid copying earlier versions.
-        /// </summary>
-        SkipReadCache = 0x00000001,
-
-        /// <summary>
-        /// The minimum address at which to resolve the Key; return <see cref="Status.NOTFOUND"/> if the key is not found at this address or higher
-        /// </summary>
-        MinAddress = 0x00000002,
-
-        /// <summary>
-        /// Force a copy to tail if we read from immutable or on-disk. If this and ReadCache are both specified, ReadCache wins.
-        /// This avoids log pollution for read-mostly workloads. Used mostly in conjunction with 
-        /// <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions}"/> locking.
-        /// </summary>
-        CopyToTail = 0x00000004,
-
-        /// <summary>
-        /// Skip copying to tail even if the FasterKV constructore specifed it. May be used with ReadAtAddress, to avoid copying earlier versions.
-        /// </summary>
-        SkipCopyToTail = 0x00000008,
-
-        /// <summary>
-        /// Utility to combine these flags. May be used with ReadAtAddress, to avoid copying earlier versions.
-        /// </summary>
-        SkipCopyReads = SkipReadCache | SkipCopyToTail,
-    }
-
-    /// <summary>
-    /// The reason a SingleWriter was performed
-    /// </summary>
-    public enum WriteReason
-    {
-        /// <summary>A new record appended by Upsert</summary>
-        Upsert, 
-
-        /// <summary>Copying a read from disk to the tail of the log</summary>
-        CopyToTail,
-
-        /// <summary>Copying a read from disk to the read cache</summary>
-        CopyToReadCache,
-
-        /// <summary>The user called Compact()</summary>
-        Compaction
-    }
 
     public partial class FasterKV<Key, Value> : FasterBase,
         IFasterKV<Key, Value>
@@ -129,7 +71,7 @@ namespace FASTER.core
 
         internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
-        internal bool SupportsLocking;
+        internal bool DisableLocking;
         internal LockTable<Key> LockTable;
         internal long NumActiveLockingSessions = 0;
 
@@ -149,7 +91,7 @@ namespace FASTER.core
                 fasterKVConfig.GetIndexSizeCacheLines(), fasterKVConfig.GetLogSettings(), 
                 fasterKVConfig.GetCheckpointSettings(), fasterKVConfig.GetSerializerSettings(), 
                 fasterKVConfig.EqualityComparer, fasterKVConfig.GetVariableLengthStructSettings(),
-                fasterKVConfig.TryRecoverLatest, fasterKVConfig.SupportsLocking)
+                fasterKVConfig.TryRecoverLatest, fasterKVConfig.DisableLocking)
         { }
 
         /// <summary>
@@ -162,11 +104,11 @@ namespace FASTER.core
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
-        /// <param name="supportsLocking">Whether FASTER takes read and write locks on records</param>
+        /// <param name="disableLocking">Whether FASTER takes read and write locks on records</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool supportsLocking = false)
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableLocking = false)
         {
             if (comparer != null)
                 this.comparer = comparer;
@@ -189,7 +131,7 @@ namespace FASTER.core
                 }
             }
 
-            this.SupportsLocking = supportsLocking;
+            this.DisableLocking = disableLocking;
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();

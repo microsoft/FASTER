@@ -364,7 +364,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public void Refresh()
         {
-            Debug.Assert(!LightEpoch.AnyInstanceProtected());
+            Debug.Assert(LightEpoch.AnyInstanceProtected());
             clientSession.fht.InternalRefresh(clientSession.ctx, FasterSession);
         }
 
@@ -383,7 +383,7 @@ namespace FASTER.core
             }
 
             #region IFunctions - Optional features supported
-            public bool SupportsLocking => _clientSession.fht.SupportsLocking;
+            public bool DisableLocking => _clientSession.fht.DisableLocking;
 
             public bool IsManualLocking => false;
             #endregion IFunctions - Optional features supported
@@ -396,7 +396,7 @@ namespace FASTER.core
             public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 lockFailed = false;
-                return !this.SupportsLocking
+                return this.DisableLocking
                                    ? _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address)
                                    : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo, address, out lockFailed);
             }
@@ -440,7 +440,7 @@ namespace FASTER.core
             public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 lockFailed = false;
-                return !this.SupportsLocking
+                return this.DisableLocking
                                    ? ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address)
                                    : ConcurrentWriterLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, out lockFailed);
             }
@@ -510,7 +510,7 @@ namespace FASTER.core
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 lockFailed = false;
-                return !this.SupportsLocking
+                return this.DisableLocking
                                    ? InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address)
                                    : InPlaceUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, address, out lockFailed);
             }
@@ -562,7 +562,7 @@ namespace FASTER.core
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 lockFailed = false;
-                return (!this.SupportsLocking)
+                return this.DisableLocking
                                    ? ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address)
                                    : ConcurrentDeleterLock(ref key, ref value, ref recordInfo, address, out lockFailed);
             }
