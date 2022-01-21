@@ -16,22 +16,26 @@ namespace FASTER.core
     class MemoryPageScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
     {
         readonly Record<Key, Value>[] page;
+        readonly long pageStartAddress;
+        readonly int recordSize;
         readonly int start, end;
         int offset;
         
 
-        public MemoryPageScanIterator(Record<Key, Value>[] page, int start, int end)
+        public MemoryPageScanIterator(Record<Key, Value>[] page, int start, int end, long pageStartAddress, int recordSize)
         {
             this.page = new Record<Key, Value>[page.Length];
             Array.Copy(page, start, this.page, start, end - start);
             offset = start - 1;
             this.start = start;
             this.end = end;
+            this.pageStartAddress = pageStartAddress;
+            this.recordSize = recordSize;
         }
 
-        public long CurrentAddress => offset;
+        public long CurrentAddress => pageStartAddress + offset * recordSize;
 
-        public long NextAddress => offset + 1;
+        public long NextAddress => pageStartAddress + (offset + 1) * recordSize;
 
         public long BeginAddress => start;
 

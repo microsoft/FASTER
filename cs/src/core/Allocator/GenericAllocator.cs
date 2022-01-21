@@ -1039,10 +1039,11 @@ namespace FASTER.core
         private void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
+            long pageStartAddress = beginAddress & ~PageSizeMask;
             int start = (int)(beginAddress & PageSizeMask) / recordSize;
             int count = (int)(endAddress - beginAddress) / recordSize;
             int end = start + count;
-            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end);
+            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end, pageStartAddress, recordSize);
             Debug.Assert(epoch.ThisInstanceProtected());
             try
             {
