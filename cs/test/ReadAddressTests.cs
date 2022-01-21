@@ -100,7 +100,7 @@ namespace FASTER.test.readaddress
             public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => false;
 
             // Record addresses
-            public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+            public override void SingleWriter(WriteReason reason, ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 dst = src;
                 this.lastWriteAddress = address;

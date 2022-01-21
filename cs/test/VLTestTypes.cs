@@ -121,7 +121,7 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(WriteReason reason, ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, long address)
         {
             src.CopyTo(ref dst);
         }
@@ -166,7 +166,7 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(WriteReason reason, ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, long address)
         {
             src.CopyTo(ref dst);
         }

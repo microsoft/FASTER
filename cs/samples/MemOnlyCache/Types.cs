@@ -59,16 +59,10 @@ namespace MemOnlyCache
             return true;
         }
 
-        public override void PostSingleWriter(ref CacheKey key, ref CacheValue input, ref CacheValue src, ref CacheValue dst, ref CacheValue output, ref RecordInfo recordInfo, long address)
+        public override void PostSingleWriter(WriteReason reason, ref CacheKey key, ref CacheValue input, ref CacheValue src, ref CacheValue dst, ref CacheValue output, ref RecordInfo recordInfo, long address)
         {
             dst = src;
             sizeTracker.AddTrackedSize(key.GetSize + src.GetSize);
-        }
-
-        public override void PostCopyWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst, ref RecordInfo recordInfo, long address)
-        {
-            dst = src;
-            sizeTracker.AddTrackedSize(dst.GetSize);
         }
 
         public override bool ConcurrentDeleter(ref CacheKey key, ref CacheValue value, ref RecordInfo recordInfo, long address)

@@ -82,12 +82,8 @@ namespace FasterFixedLenServer
             return true;
         }
 
-        // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => dst = src;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) => dst = src;
+        public void SingleWriter(WriteReason reason, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) => dst = src;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
@@ -132,9 +128,7 @@ namespace FasterFixedLenServer
 
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
-        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
-
-        public void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { }
+        public void PostSingleWriter(WriteReason reason, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
 
         public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) => true;
 

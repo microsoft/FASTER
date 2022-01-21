@@ -241,7 +241,7 @@ namespace FASTER.core
                     if (CopyReadsToTail == CopyReadsToTail.FromReadOnly && !pendingContext.SkipCopyReadsToTail)
                     {
                         var container = hlog.GetValueContainer(ref hlog.GetValue(physicalAddress));
-                        InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref container.Get(), ref output, logicalAddress, fasterSession, sessionCtx);
+                        InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref container.Get(), ref output, logicalAddress, fasterSession, sessionCtx, WriteReason.Upsert);
                         container.Dispose();
                     }
                     return OperationStatus.SUCCESS;
@@ -662,7 +662,7 @@ namespace FASTER.core
             hlog.Serialize(ref key, newPhysicalAddress);
             ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
 
-            fasterSession.SingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress);
+            fasterSession.SingleWriter(WriteReason.Upsert, ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress);
 
             bool success = true;
             if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
@@ -703,7 +703,7 @@ namespace FASTER.core
                     LockTable.TransferToLogRecord(ref key, ref recordInfo);
                 recordInfo.SetTentativeAtomic(false);
 
-                fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress);
+                fasterSession.PostSingleWriter(WriteReason.Upsert, ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, newLogicalAddress);
                 pendingContext.recordInfo = recordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
                 return OperationStatus.SUCCESS;
@@ -1841,7 +1841,7 @@ namespace FASTER.core
             long logicalAddress = pendingContext.entry.Address;
             
             InternalTryCopyToTail(opCtx, ref pendingContext, ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), 
-                                 ref pendingContext.output, logicalAddress, fasterSession, currentCtx, noReadCache: pendingContext.CopyReadsToTail);
+                                 ref pendingContext.output, logicalAddress, fasterSession, currentCtx, pendingContext.CopyReadsToTail ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
         }
 
         /// <summary>
@@ -2352,13 +2352,13 @@ namespace FASTER.core
                                             long expectedLogicalAddress,
                                             FasterSession fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx,
-                                            bool noReadCache)
+                                            WriteReason reason)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         { 
             OperationStatus internalStatus;
             PendingContext<Input, Output, Context>  pendingContext = default;
             do
-                internalStatus = InternalTryCopyToTail(currentCtx, ref pendingContext, ref key, ref input, ref value, ref output, expectedLogicalAddress, fasterSession, currentCtx, noReadCache);
+                internalStatus = InternalTryCopyToTail(currentCtx, ref pendingContext, ref key, ref input, ref value, ref output, expectedLogicalAddress, fasterSession, currentCtx, reason);
             while (internalStatus == OperationStatus.RETRY_NOW);
             return internalStatus;
         }
@@ -2367,7 +2367,7 @@ namespace FASTER.core
         /// Helper function for trying to copy existing immutable records (at foundLogicalAddress) to the tail,
         /// used in <see cref="InternalRead{Input, Output, Context, Functions}(ref Key, ref Input, ref Output, long, ref Context, ref PendingContext{Input, Output, Context}, Functions, FasterExecutionContext{Input, Output, Context}, long)"/>
         /// <see cref="InternalContinuePendingReadCopyToTail{Input, Output, Context, FasterSession}(FasterExecutionContext{Input, Output, Context}, AsyncIOContext{Key, Value}, ref PendingContext{Input, Output, Context}, FasterSession, FasterExecutionContext{Input, Output, Context})"/>,
-        /// and <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}.CopyToTail(ref Key, ref Input, ref Value, ref Output, long)"/>
+        /// and <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}.CompactionCopyToTail(ref Key, ref Input, ref Value, ref Output, long)"/>
         /// 
         /// Succeed only if the record for the same key hasn't changed.
         /// </summary>
@@ -2385,11 +2385,7 @@ namespace FASTER.core
         /// </param>
         /// <param name="fasterSession"></param>
         /// <param name="currentCtx"></param>
-        /// <param name="noReadCache">
-        /// If true, it won't clutter read cache. 
-        /// Otherwise, it still checks UseReadCache to determine whether to buffer in read cache.
-        /// It is useful in Compact.
-        /// </param>
+        /// <param name="reason">The reason for this operation.</param>
         /// <returns>
         /// RETRY_NOW: failed CAS, so no copy done
         /// RECORD_ON_DISK: unable to determine if record present beyond expectedLogicalAddress, so no copy done
@@ -2402,7 +2398,7 @@ namespace FASTER.core
                                         long expectedLogicalAddress,
                                         FasterSession fasterSession,
                                         FasterExecutionContext<Input, Output, Context> currentCtx,
-                                        bool noReadCache = false)
+                                        WriteReason reason)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var bucket = default(HashBucket*);
@@ -2461,7 +2457,7 @@ namespace FASTER.core
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
 
             long newLogicalAddress, newPhysicalAddress;
-            bool copyToReadCache = !noReadCache && UseReadCache;
+            bool copyToReadCache = UseReadCache && reason == WriteReason.CopyToReadCache;
 
             if (copyToReadCache)
             {
@@ -2476,8 +2472,8 @@ namespace FASTER.core
                 // Initial readcache entry is tentative.
                 recordInfo.Tentative = true;
                 readcache.Serialize(ref key, newPhysicalAddress);
-                fasterSession.CopyWriter(ref key, ref value,
-                                        ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+                fasterSession.SingleWriter(reason, ref key, ref input, ref value,
+                                        ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                         ref recordInfo, Constants.kInvalidAddress); // We do not expose readcache addresses
             }
             else
@@ -2490,8 +2486,8 @@ namespace FASTER.core
                                 tombstone: false, dirty: true,
                                 latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
-                fasterSession.CopyWriter(ref key, ref value,
-                                        ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+                fasterSession.SingleWriter(reason, ref key, ref input, ref value,
+                                        ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                         ref recordInfo, newLogicalAddress);
             }
 
@@ -2583,8 +2579,8 @@ namespace FASTER.core
 
                 pendingContext.recordInfo = recordInfo;
                 pendingContext.logicalAddress = copyToReadCache ? Constants.kInvalidAddress /* We do not expose readcache addresses */ : newLogicalAddress;
-                fasterSession.PostCopyWriter(ref key, ref value,
-                                        ref log.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+                fasterSession.PostSingleWriter(reason, ref key, ref input, ref value,
+                                        ref log.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                         ref recordInfo, pendingContext.logicalAddress);
                 return OperationStatus.SUCCESS;
             }

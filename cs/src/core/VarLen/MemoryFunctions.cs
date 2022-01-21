@@ -22,13 +22,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override void SingleWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
-        {
-            src.CopyTo(dst);
-        }
-
-        /// <inheritdoc/>
-        public override void CopyWriter(ref Key key, ref Memory<T> src, ref Memory<T> dst, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(WriteReason reason, ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
         {
             src.CopyTo(dst);
         }

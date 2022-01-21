@@ -11,7 +11,7 @@ namespace FASTER.core
     public class SpanByteFunctions<Key, Output, Context> : FunctionsBase<Key, SpanByte, SpanByte, Output, Context>
     {
         /// <inheritdoc />
-        public override void SingleWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(WriteReason reason, ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref RecordInfo recordInfo, long address)
         {
             src.CopyTo(ref dst);
         }
