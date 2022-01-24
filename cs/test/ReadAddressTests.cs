@@ -100,7 +100,7 @@ namespace FASTER.test.readaddress
             public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => false;
 
             // Record addresses
-            public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+            public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason)
             {
                 dst = src;
                 this.lastWriteAddress = address;
@@ -170,7 +170,8 @@ namespace FASTER.test.readaddress
                     logSettings: logSettings,
                     checkpointSettings: new CheckpointSettings { CheckpointDir = $"{this.testDir}/CheckpointDir" },
                     serializerSettings: null,
-                    comparer: new Key.Comparer()
+                    comparer: new Key.Comparer(),
+                    disableLocking: true
                     );
             }
 

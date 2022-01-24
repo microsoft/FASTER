@@ -51,13 +51,7 @@ namespace FASTER.benchmark
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
-        {
-            dst = src;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason)
         {
             dst = src;
         }
@@ -99,7 +93,7 @@ namespace FASTER.benchmark
 
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
-        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason) { }
 
         public void DisposeKey(ref Key key) { }
 

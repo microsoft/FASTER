@@ -41,18 +41,18 @@ namespace FASTER.test.InputOutputParameterTests
             /// <inheritdoc/>
             public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address)
             {
-                SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+                SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, WriteReason.Upsert);
                 return true;
             }
             /// <inheritdoc/>
-            public override void SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address)
+            public override void SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address, WriteReason reason)
             {
                 lastWriteAddress = address;
                 dst = output = src * input;
             }
 
             /// <inheritdoc/>
-            public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address)
+            public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address, WriteReason reasons)
             {
                 Assert.AreEqual(lastWriteAddress, address);
                 Assert.AreEqual(key * input, dst);

@@ -13,23 +13,25 @@ namespace FASTER.core
         /// </summary>
         /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
+        /// <param name="input">Input for SingleWriter</param>
+        /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
         /// <returns>Address until which compaction was done</returns>
-        internal long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
+        internal long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             return compactionType switch
             {
-                CompactionType.Scan => CompactScan<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, untilAddress, sessionVariableLengthStructSettings),
-                CompactionType.Lookup => CompactLookup<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, untilAddress, sessionVariableLengthStructSettings),
+                CompactionType.Scan => CompactScan<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, sessionVariableLengthStructSettings),
+                CompactionType.Lookup => CompactLookup<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, sessionVariableLengthStructSettings),
                 _ => throw new FasterException("Invalid compaction type"),
             };
         }
 
-        private long CompactLookup<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings)
+        private long CompactLookup<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
@@ -38,9 +40,6 @@ namespace FASTER.core
 
             var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
             using var fhtSession = For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>(sessionVariableLengthStructSettings: sessionVariableLengthStructSettings);
-
-            Input input = default;
-            Output output = default;
 
             using (var iter1 = Log.Scan(Log.BeginAddress, untilAddress))
             {
@@ -85,7 +84,7 @@ namespace FASTER.core
                             if ((status == Status.OK) || (status == Status.NOTFOUND && recordMetadata.Address >= iter1.NextAddress))
                                 break;
                             
-                            copyStatus = fhtSession.CopyToTail(ref key, ref input, ref value, ref output, checkedAddress);
+                            copyStatus = fhtSession.CompactionCopyToTail(ref key, ref input, ref value, ref output, checkedAddress);
                             recordMetadata.RecordInfo.PreviousAddress = checkedAddress;
                         } while (copyStatus == OperationStatus.RECORD_ON_DISK);
                     }
@@ -98,7 +97,7 @@ namespace FASTER.core
             return untilAddress;
         }
 
-        private long CompactScan<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings)
+        private long CompactScan<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
@@ -148,8 +147,6 @@ namespace FASTER.core
                 if (untilAddress < scanUntil)
                     LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
 
-                Input input = default;
-                Output output = default;
                 using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
                 while (iter3.GetNext(out var recordInfo))
                 {
@@ -176,7 +173,7 @@ namespace FASTER.core
                             }
                             // As long as there's no record of the same key whose address is >= untilAddress (scan boundary),
                             // we are safe to copy the old record to the tail.
-                            copyStatus = fhtSession.CopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1);
+                            copyStatus = fhtSession.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1);
                         } while (copyStatus == OperationStatus.RECORD_ON_DISK);
                     }
                 }

@@ -304,7 +304,24 @@ namespace FASTER.core
         /// <returns>Address until which compaction was done</returns>
         public long Compact<Input, Output, Context, Functions>(Functions functions, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
-            => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, compactionType, sessionVariableLengthStructSettings);
+        {
+            return Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, compactionType, sessionVariableLengthStructSettings);
+        }
+
+        /// <summary>
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
+        /// </summary>
+        /// <param name="functions">Functions used to manage key-values during compaction</param>
+        /// <param name="input">Input for SingleWriter</param>
+        /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
+        /// <param name="untilAddress">Compact log until this address</param>
+        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
+        /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
+        /// <returns>Address until which compaction was done</returns>
+        public long Compact<Input, Output, Context, Functions>(Functions functions, ref Input input, ref Output output, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, ref input, ref output, untilAddress, compactionType, sessionVariableLengthStructSettings);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
@@ -319,6 +336,27 @@ namespace FASTER.core
         public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
-            => fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, untilAddress, compactionType, sessionVariableLengthStructSettings);
+        {
+            Input input = default;
+            Output output = default;
+            return Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType, sessionVariableLengthStructSettings);
+        }
+
+        /// <summary>
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
+        /// </summary>
+        /// <param name="functions">Functions used to manage key-values during compaction</param>
+        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>)</param>
+        /// <param name="input">Input for SingleWriter</param>
+        /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
+        /// <param name="untilAddress">Compact log until this address</param>
+        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
+        /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
+        /// <returns>Address until which compaction was done</returns>
+        public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
+            => fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType, sessionVariableLengthStructSettings);
     }
 }

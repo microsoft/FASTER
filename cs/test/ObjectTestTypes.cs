@@ -109,7 +109,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address, WriteReason reason)
         {
             dst = src;
         }
@@ -168,7 +168,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref MyValue key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(ref MyValue key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address, WriteReason reason)
         {
             dst = src;
         }
@@ -237,7 +237,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address, WriteReason reason)
         {
             dst = src;
         }
@@ -281,7 +281,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref int key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(ref int key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address, WriteReason reason)
         {
             dst = src;
         }
@@ -355,7 +355,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyLargeValue src, ref MyLargeValue dst, ref MyLargeOutput output, ref RecordInfo recordInfo, long address)
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyLargeValue src, ref MyLargeValue dst, ref MyLargeOutput output, ref RecordInfo recordInfo, long address, WriteReason reason)
         {
             dst = src;
         }

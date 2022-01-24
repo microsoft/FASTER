@@ -26,7 +26,7 @@ namespace FASTER.core
     internal interface IFasterSession<Key, Value, Input, Output, Context> : IFasterSession, IVariableLengthStruct<Value, Input>
     {
         #region Optional features supported by this implementation
-        bool SupportsLocking { get; }
+        bool DisableLocking { get; }
 
         bool IsManualLocking { get; }
         #endregion Optional features supported by this implementation
@@ -38,10 +38,8 @@ namespace FASTER.core
         #endregion reads
 
         #region Upserts
-        void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
-        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
-        void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
-        void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
+        void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason);
+        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason);
         bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed);
         void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx);
         #endregion Upserts

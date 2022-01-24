@@ -72,13 +72,10 @@ namespace FASTER.server
         public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             => functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
-        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
-            => functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason)
+            => functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, reason);
 
-        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
-
-        public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-            => functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason) { }
 
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, long ctx)
             => functions.UpsertCompletionCallback(ref key, ref input, ref value, ctx);

@@ -690,8 +690,20 @@ namespace FASTER.core
         /// <param name="compactUntilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact(long compactUntilAddress, CompactionType compactionType = CompactionType.Scan)
+        public long Compact(long compactUntilAddress, CompactionType compactionType = CompactionType.Scan) 
             => Compact(compactUntilAddress, compactionType, default(DefaultCompactionFunctions<Key, Value>));
+
+        /// <summary>
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
+        /// </summary>
+        /// <param name="input">Input for SingleWriter</param>
+        /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
+        /// <param name="compactUntilAddress">Compact log until this address</param>
+        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
+        /// <returns>Address until which compaction was done</returns>
+        public long Compact(ref Input input, ref Output output, long compactUntilAddress, CompactionType compactionType = CompactionType.Scan)
+            => Compact(ref input, ref output, compactUntilAddress, compactionType, default(DefaultCompactionFunctions<Key, Value>));
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
@@ -703,7 +715,29 @@ namespace FASTER.core
         /// <returns>Address until which compaction was done</returns>
         public long Compact<CompactionFunctions>(long untilAddress, CompactionType compactionType, CompactionFunctions compactionFunctions)
             where CompactionFunctions : ICompactionFunctions<Key, Value>
-            => fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, untilAddress, compactionType,  new SessionVariableLengthStructSettings<Value, Input> { valueLength = variableLengthStruct, inputLength = inputVariableLengthStruct });
+        {
+            Input input = default;
+            Output output = default;
+            return fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType, 
+                    new SessionVariableLengthStructSettings<Value, Input> { valueLength = variableLengthStruct, inputLength = inputVariableLengthStruct });
+        }
+
+        /// <summary>
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
+        /// </summary>
+        /// <param name="input">Input for SingleWriter</param>
+        /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
+        /// <param name="untilAddress">Compact log until this address</param>
+        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
+        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
+        /// <returns>Address until which compaction was done</returns>
+        public long Compact<CompactionFunctions>(ref Input input, ref Output output, long untilAddress, CompactionType compactionType, CompactionFunctions compactionFunctions)
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
+        {
+            return fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType,
+                    new SessionVariableLengthStructSettings<Value, Input> { valueLength = variableLengthStruct, inputLength = inputVariableLengthStruct });
+        }
 
         /// <summary>
         /// Copy key and value to tail, succeed only if key is known to not exist in between expectedLogicalAddress and tail.
@@ -714,12 +748,12 @@ namespace FASTER.core
         /// <param name="desiredValue"></param>
         /// <param name="expectedLogicalAddress">Address of existing key (or upper bound)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus CopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long expectedLogicalAddress)
+        internal OperationStatus CompactionCopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long expectedLogicalAddress)
         {
             if (SupportAsync) UnsafeResumeThread();
             try
             {
-                return fht.InternalCopyToTail(ref key, ref input, ref desiredValue, ref output, expectedLogicalAddress, FasterSession, ctx, noReadCache: true);
+                return fht.InternalCopyToTail(ref key, ref input, ref desiredValue, ref output, expectedLogicalAddress, FasterSession, ctx, WriteReason.Compaction);
             }
             finally
             {
@@ -817,7 +851,7 @@ namespace FASTER.core
             }
 
             #region IFunctions - Optional features supported
-            public bool SupportsLocking => _clientSession.fht.SupportsLocking;
+            public bool DisableLocking => _clientSession.fht.DisableLocking;
 
             public bool IsManualLocking => false;
             #endregion IFunctions - Optional features supported
@@ -830,7 +864,7 @@ namespace FASTER.core
             public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 lockFailed = false;
-                return !this.SupportsLocking
+                return this.DisableLocking
                                    ? _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address)
                                    : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo, address, out lockFailed);
             }
@@ -863,28 +897,18 @@ namespace FASTER.core
 
             #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason) 
+                => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, reason);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-            {
-                // TODO: Placeholder for indexing
-            }
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason) 
+                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, reason);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 lockFailed = false;
-                return !this.SupportsLocking
+                return this.DisableLocking
                                    ? ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address)
                                    : ConcurrentWriterLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, out lockFailed);
             }
@@ -954,7 +978,7 @@ namespace FASTER.core
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 lockFailed = false;
-                return !this.SupportsLocking
+                return this.DisableLocking
                                    ? InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, address)
                                    : InPlaceUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, address, out lockFailed);
             }
@@ -1007,7 +1031,7 @@ namespace FASTER.core
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 lockFailed = false;
-                return (!this.SupportsLocking)
+                return this.DisableLocking
                                    ? ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, address)
                                    : ConcurrentDeleterLock(ref key, ref value, ref recordInfo, address, out lockFailed);
             }

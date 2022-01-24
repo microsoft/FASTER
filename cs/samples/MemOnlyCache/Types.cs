@@ -59,7 +59,7 @@ namespace MemOnlyCache
             return true;
         }
 
-        public override void SingleWriter(ref CacheKey key, ref CacheValue input, ref CacheValue src, ref CacheValue dst, ref CacheValue output, ref RecordInfo recordInfo, long address)
+        public override void PostSingleWriter(ref CacheKey key, ref CacheValue input, ref CacheValue src, ref CacheValue dst, ref CacheValue output, ref RecordInfo recordInfo, long address, WriteReason reason)
         {
             dst = src;
             sizeTracker.AddTrackedSize(key.GetSize + src.GetSize);

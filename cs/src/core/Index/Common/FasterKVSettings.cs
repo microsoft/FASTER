@@ -24,7 +24,7 @@ namespace FASTER.core
         /// <summary>
         /// Whether FASTER takes read and write locks on records
         /// </summary>
-        public bool SupportsLocking = true;
+        public bool DisableLocking = false;
 
         /// <summary>
         /// Device used for main hybrid log
@@ -185,7 +185,7 @@ namespace FASTER.core
             var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(MemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
-            retStr += $"; mutable fraction: {MutableFraction}; supports locking: {(SupportsLocking ? "yes" : "no")}";
+            retStr += $"; mutable fraction: {MutableFraction}; supports locking: {(DisableLocking ? "no" : "yes")}";
             retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
             if (ReadCacheEnabled)
                 retStr += $"; rc memory: {Utility.PrettySize(ReadCacheMemorySize)}; rc page: {Utility.PrettySize(ReadCachePageSize)}";
