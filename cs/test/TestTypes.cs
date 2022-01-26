@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using System.Threading;
 using FASTER.core;
 using NUnit.Framework;
@@ -202,9 +201,9 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref RecordInfo recordInfo, long address) => dst = src;
+        public override void SingleWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref RecordInfo recordInfo, long address, WriteReason reason) => dst = src;
 
-        public override bool ConcurrentWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref RecordInfo recordInfo, long address)
         {
             Interlocked.Increment(ref _concurrentWriterCallCount);
             return false;

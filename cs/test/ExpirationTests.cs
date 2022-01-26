@@ -413,12 +413,12 @@ namespace FASTER.test.Expiration
             }
 
             // Upsert functions
-            public override void SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
+            public override void SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, long address, WriteReason reason)
             {
                 src.CopyTo(ref dst);
             }
 
-            public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref RecordInfo recordInfo, long address)
+            public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, long address)
             {
                 src.CopyTo(ref dst);
                 return true;

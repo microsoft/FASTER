@@ -47,7 +47,7 @@ namespace FASTER.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        private byte[] GetByteArray(int i)
+        private static byte[] GetByteArray(int i)
         {
             return BitConverter.GetBytes(i);
         }

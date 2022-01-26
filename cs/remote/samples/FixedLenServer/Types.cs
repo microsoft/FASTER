@@ -55,9 +55,6 @@ namespace FasterFixedLenServer
 
     public struct Functions : IFunctions<Key, Value, Input, Output, long>
     {
-        // No locking needed for atomic types such as Value
-        public bool SupportsLocking => false;
-
         // Callbacks
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status, RecordMetadata recordMetadata) { }
 
@@ -85,12 +82,11 @@ namespace FasterFixedLenServer
             return true;
         }
 
-        // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => dst = src;
+        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason) => dst = src;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
         {
             dst = src;
             return true;
@@ -122,10 +118,22 @@ namespace FasterFixedLenServer
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
-        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) { }
+        public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output) => true;
 
-        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => true;
+        public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
+
+        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
+
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { }
+
+        public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
+
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason) { }
 
         public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) => true;
+
+        public void DisposeKey(ref Key key) { }
+
+        public void DisposeValue(ref Value value) { }
     }
 }

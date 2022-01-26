@@ -39,19 +39,19 @@ namespace FASTER.test.recovery.objects
             [Values]bool isAsync)
         {
             this.iterations = iterations;
-            Prepare(checkpointType, out _, out _, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context);
+            Prepare(out _, out _, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context);
 
             var session1 = h.For(new MyFunctions()).NewSession<MyFunctions>();
-            Write(session1, context, h);
+            Write(session1, context, h, checkpointType);
             Read(session1, context, false);
             session1.Dispose();
 
-            h.TakeFullCheckpoint(out _);
+            h.TryInitiateFullCheckpoint(out _, checkpointType);
             h.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             Destroy(log, objlog, h);
 
-            Prepare(checkpointType, out _, out _, out log, out objlog, out h, out context);
+            Prepare(out _, out _, out log, out objlog, out h, out context);
 
             if (isAsync)
                 await h.RecoverAsync();
@@ -65,7 +65,7 @@ namespace FASTER.test.recovery.objects
             Destroy(log, objlog, h);
         }
 
-        private void Prepare(CheckpointType checkpointType, out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context)
+        private void Prepare(out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context)
         {
             logPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests.log");
             objPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests_HEAP.log");
@@ -84,8 +84,7 @@ namespace FASTER.test.recovery.objects
                 },
                 new CheckpointSettings()
                 {
-                    CheckpointDir = Path.Combine(FasterFolderPath, "check-points"),
-                    CheckPointType = checkpointType
+                    CheckpointDir = Path.Combine(FasterFolderPath, "check-points")
                 },
                 new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
              );
@@ -100,7 +99,7 @@ namespace FASTER.test.recovery.objects
             objlog.Dispose();
         }
 
-        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue> fht)
+        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue> fht, CheckpointType checkpointType)
         {
             for (int i = 0; i < iterations; i++)
             {
@@ -110,7 +109,7 @@ namespace FASTER.test.recovery.objects
 
                 if (i % 100 == 0)
                 {
-                    fht.TakeFullCheckpoint(out _);
+                    fht.TryInitiateFullCheckpoint(out _, checkpointType);
                     fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                 }
             }
@@ -247,7 +246,7 @@ namespace FASTER.test.recovery.objects
             return true;
         }
 
-        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address) => dst = src;
+        public override void SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address, WriteReason reason) => dst = src;
 
         public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
         {
@@ -255,7 +254,7 @@ namespace FASTER.test.recovery.objects
             return true;
         }
 
-        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, long address)
         {
             if (src == null)
                 return false;

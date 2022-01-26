@@ -13,9 +13,10 @@ namespace FASTER.server
         /// <summary>
         /// Consume the message incoming on the wire
         /// </summary>
-        /// <param name="buf">Byte buffer</param>
-        /// <returns>How many bytes were consumed</returns>
-        int TryConsumeMessages(byte[] buf);
+        /// <param name="reqBuffer"></param>
+        /// <param name="bytesReceived"></param>
+        /// <returns></returns>
+        unsafe int TryConsumeMessages(byte* reqBuffer, int bytesReceived);
 
         /// <summary>
         /// Hook for caller to indicate how many additional bytes were read

@@ -166,7 +166,7 @@ namespace SumStore
             {
                 Thread.Sleep(checkpointInterval);
 
-                fht.TakeFullCheckpoint(out Guid token);
+                fht.TryInitiateFullCheckpoint(out Guid token, CheckpointType.Snapshot);
 
                 fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
 

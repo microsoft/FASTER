@@ -559,7 +559,7 @@ namespace FASTER.test.recovery
             }
 
             var version1 = fht1.CurrentVersion;
-            var _result1 = fht1.TakeHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
+            var _result1 = fht1.TryInitiateHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
             await fht1.CompleteCheckpointAsync();
 
             Assert.IsTrue(_result1);
@@ -571,7 +571,7 @@ namespace FASTER.test.recovery
             }
 
             var version2 = fht1.CurrentVersion;
-            var _result2 = fht1.TakeHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
+            var _result2 = fht1.TryInitiateHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
             await fht1.CompleteCheckpointAsync();
 
             Assert.IsTrue(_result2);

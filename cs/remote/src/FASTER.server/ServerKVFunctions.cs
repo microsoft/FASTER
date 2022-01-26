@@ -11,10 +11,6 @@ namespace FASTER.server
         private readonly Functions functions;
         private readonly FasterKVServerSessionBase<Output> serverNetworkSession;
 
-        public bool SupportsLocking => functions.SupportsLocking;
-
-        public bool SupportsPostOperations => true;
-
         public ServerKVFunctions(Functions functions, FasterKVServerSessionBase<Output> serverNetworkSession)
         {
             this.functions = functions;
@@ -24,6 +20,9 @@ namespace FASTER.server
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
             => functions.CheckpointCompletionCallback(sessionId, commitPoint);
 
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+            => functions.SingleDeleter(ref key, ref value, ref recordInfo, address);
+
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
         public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
@@ -32,8 +31,8 @@ namespace FASTER.server
         public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             => functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
-        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-            => functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+            => functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
 
         public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output)
             => functions.NeedInitialUpdate(ref key, ref input, ref output);
@@ -73,18 +72,16 @@ namespace FASTER.server
         public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             => functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
-        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-            => functions.SingleWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
+        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason)
+            => functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, reason);
 
-        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { }
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason) { }
 
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, long ctx)
             => functions.UpsertCompletionCallback(ref key, ref input, ref value, ctx);
 
-        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
-            => functions.Lock(ref recordInfo, ref key, ref value, lockType, ref lockContext);
+        public void DisposeKey(ref Key key) { functions.DisposeKey(ref key); }
 
-        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
-            => functions.Unlock(ref recordInfo, ref key, ref value, lockType, lockContext);
+        public void DisposeValue(ref Value value) { functions.DisposeValue(ref value); }
     }
 }

@@ -242,6 +242,7 @@ namespace FASTER.core
             threadEntryIndexCount++;
         }
 
+        internal int LocalCurrentEpoch => (*(tableAligned + threadEntryIndex)).localCurrentEpoch;
 
         /// <summary>
         /// Thread releases its epoch entry
@@ -286,6 +287,16 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Thread resumes its epoch entry
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Resume(out int resumeEpoch)
+        {
+            Acquire();
+            resumeEpoch = ProtectAndDrain();
+        }
+
+        /// <summary>
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>
@@ -309,7 +320,7 @@ namespace FASTER.core
         {
             int PriorEpoch = BumpCurrentEpoch() - 1;
 
-            int i = 0, j = 0;
+            int i = 0;
             while (true)
             {
                 if (drainList[i].epoch == int.MaxValue)
@@ -343,11 +354,7 @@ namespace FASTER.core
                 {
                     ProtectAndDrain();
                     i = 0;
-                    if (++j == 500)
-                    {
-                        j = 0;
-                        Debug.WriteLine("Delay finding a free entry in the drain list");
-                    }
+                    Thread.Yield();
                 }
             }
 
@@ -474,9 +481,9 @@ namespace FASTER.core
         /// <param name="version">Version</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Mark(int markerIdx, int version)
+        public void Mark(int markerIdx, long version)
         {
-            (*(tableAligned + threadEntryIndex)).markers[markerIdx] = version;
+            (*(tableAligned + threadEntryIndex)).markers[markerIdx] = (int)version;
         }
 
         /// <summary>
@@ -487,7 +494,7 @@ namespace FASTER.core
         /// <param name="version">Version</param>
         /// <returns>Whether complete</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CheckIsComplete(int markerIdx, int version)
+        public bool CheckIsComplete(int markerIdx, long version)
         {
             // check if all threads have reported complete
             for (int index = 1; index <= kTableSize; ++index)
@@ -496,7 +503,7 @@ namespace FASTER.core
                 int fc_version = (*(tableAligned + index)).markers[markerIdx];
                 if (0 != entry_epoch)
                 {
-                    if (fc_version != version && entry_epoch < int.MaxValue)
+                    if ((fc_version != (int)version) && (entry_epoch < int.MaxValue))
                     {
                         return false;
                     }

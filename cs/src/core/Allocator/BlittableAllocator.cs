@@ -109,6 +109,7 @@ namespace FASTER.core
                 }
             }
             handles = null;
+            ptrHandle.Free();
             pointers = null;
             values = null;
             overflowPagePool.Dispose();
@@ -338,10 +339,15 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        internal override void MemoryPageLockEvictionScan(long beginAddress, long endAddress) => MemoryPageScan(beginAddress, endAddress, OnLockEvictionObserver);
+
+        /// <inheritdoc />
+        internal override void MemoryPageScan(long beginAddress, long endAddress) => MemoryPageScan(beginAddress, endAddress, OnEvictionObserver);
+
+        internal void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
             using var iter = new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
-            OnEvictionObserver?.OnNext(iter);
+            observer?.OnNext(iter);
         }
 
         /// <summary>

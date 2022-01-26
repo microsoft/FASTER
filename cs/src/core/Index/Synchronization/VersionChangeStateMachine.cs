@@ -125,7 +125,7 @@ namespace FASTER.core
     /// </summary>
     internal class VersionChangeStateMachine : SynchronizationStateMachineBase
     {
-        private long targetVersion;
+        private readonly long targetVersion;
 
         /// <summary>
         /// Construct a new VersionChangeStateMachine with the given tasks. Does not load any tasks by default.
@@ -154,12 +154,6 @@ namespace FASTER.core
                     break;
                 case Phase.PREPARE:
                     nextState.Phase = Phase.IN_PROGRESS;
-                    // FASTER records only store a few bits of version number, and we need to ensure that
-                    // the next version is distinguishable from the last in those bits.
-                    // If they are not distinguishable, simply increment target version to resolve this
-                    if (((targetVersion - start.Version) & RecordInfo.kVersionMaskInInteger) == 0)
-                        targetVersion++;
-
                     // TODO: Move to long for system state as well. 
                     SetToVersion(targetVersion == -1 ? start.Version + 1 : targetVersion);
                     nextState.Version = (int) ToVersion();

@@ -50,8 +50,7 @@ namespace FASTER.benchmark
             txn_keys_ = t_keys_;
             numaStyle = testLoader.Options.NumaStyle;
             readPercent = testLoader.Options.ReadPercent;
-            var lockImpl = testLoader.LockImpl;
-            functions = new FunctionsSB(lockImpl != LockImpl.None);
+            functions = new FunctionsSB();
 
 #if DASHBOARD
             statsWritten = new AutoResetEvent[threadCount];
@@ -71,16 +70,16 @@ namespace FASTER.benchmark
             for (int i = 0; i < 8; i++)
                 input_[i].value = i;
 
-            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: true);
+            device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<SpanByte, SpanByte>
                     (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 },
-                    new CheckpointSettings { CheckPointType = CheckpointType.Snapshot, CheckpointDir = testLoader.BackupPath });
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableLocking: testLoader.LockImpl != LockImpl.Ephemeral);
             else
                 store = new FasterKV<SpanByte, SpanByte>
                     (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizeBits = 35 },
-                    new CheckpointSettings { CheckPointType = CheckpointType.Snapshot, CheckpointDir = testLoader.BackupPath });
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableLocking: testLoader.LockImpl != LockImpl.Ephemeral);
         }
 
         internal void Dispose()
@@ -293,7 +292,7 @@ namespace FASTER.benchmark
                     if (checkpointTaken < swatch.ElapsedMilliseconds / testLoader.Options.PeriodicCheckpointMilliseconds)
                     {
                         long start = swatch.ElapsedTicks;
-                        if (store.TakeHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType, testLoader.Options.PeriodicCheckpointTryIncremental))
+                        if (store.TryInitiateHybridLogCheckpoint(out _, testLoader.Options.PeriodicCheckpointType, testLoader.Options.PeriodicCheckpointTryIncremental))
                         {
                             store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                             var timeTaken = (swatch.ElapsedTicks - start) / TimeSpan.TicksPerMillisecond;

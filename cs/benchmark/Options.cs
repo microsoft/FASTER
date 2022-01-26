@@ -12,7 +12,8 @@ namespace FASTER.benchmark
         HelpText = "Benchmark to run:" +
                         "\n    0 = YCSB" +
                         "\n    1 = YCSB with SpanByte" +
-                        "\n    2 = ConcurrentDictionary")]
+                        "\n    2 = YCSB with ClientSession" +
+                        "\n    3 = ConcurrentDictionary")]
         public int Benchmark { get; set; }
 
         [Option('t', "threads", Required = false, Default = 8,
@@ -35,7 +36,8 @@ namespace FASTER.benchmark
         [Option('z', "locking", Required = false, Default = 0,
              HelpText = "Locking Implementation:" +
                         "\n    0 = None (default)" +
-                        "\n    1 = RecordInfo.SpinLock()")]
+                        "\n    1 = Ephemeral locking using RecordInfo.SpinLock()" +
+                        "\n    2 = Manual locking using LockableUnsafeContext")]
         public int LockImpl { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,
@@ -97,7 +99,8 @@ namespace FASTER.benchmark
             static string boolStr(bool value) => value ? "y" : "n";
             return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockImpl}; i: {IterationCount};"
                         + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; noaff: {boolStr(this.NoThreadAffinity)};"
-                        + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")}; chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
+                        + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
+                        + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
         }
     }
 }

@@ -36,13 +36,13 @@ namespace FASTER.test.async
             fht1 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = testPath, CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = testPath }
                 );
 
             fht2 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = testPath, CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = testPath }
                 );
 
             int numOps = 5000;
@@ -73,12 +73,12 @@ namespace FASTER.test.async
             }
 
             // does not require session
-            fht1.TakeFullCheckpoint(out _);
+            fht1.TryInitiateFullCheckpoint(out _, checkpointType);
             await fht1.CompleteCheckpointAsync();
 
             s2.CompletePending(true,false);
 
-            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             await fht1.CompleteCheckpointAsync();
 
             s2.Dispose();

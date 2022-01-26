@@ -14,14 +14,14 @@ namespace FASTER.core
             _functions = functions;
         }
 
-        public bool SupportsPostOperations => false;
-
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
 
         /// <summary>
         /// No reads during compaction
         /// </summary>
         public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
+
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { value = default; }
 
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
@@ -34,7 +34,7 @@ namespace FASTER.core
         /// For compaction, we never perform concurrent writes as rolled over data defers to
         /// newly inserted data for the same key.
         /// </summary>
-        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => true;
+        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) => true;
 
         public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) { }
         
@@ -63,13 +63,15 @@ namespace FASTER.core
         /// <summary>
         /// Write compacted live value to store
         /// </summary>
-        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => _functions.SingleWriter(ref key, ref input, ref src, ref dst, ref recordInfo, address);
-        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { }
+        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason) 
+            => _functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, reason);
+
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason) { }
 
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx) { }
 
-        public bool SupportsLocking => false;
-        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext) { }
-        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext) => true;
+        public void DisposeKey(ref Key key) { }
+
+        public void DisposeValue(ref Value value) { }
     }
 }

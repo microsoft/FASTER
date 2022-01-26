@@ -34,7 +34,7 @@ namespace FASTER.test.statemachine
             fht1 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
         }
 
@@ -323,7 +323,7 @@ namespace FASTER.test.statemachine
 
             s2.Dispose();
 
-            fht1.TakeHybridLogCheckpoint(out _);
+            fht1.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             // We should be in REST, 3
@@ -399,7 +399,7 @@ namespace FASTER.test.statemachine
         [TestCase]
         [Category("FasterKV")]
         [Category("CheckpointRestore")]
-        public void VersionChangeRollOverTest()
+        public void VersionChangeTest()
         {
             var toVersion = 1 + (1 << 14);
             Prepare(out var f, out var s1, out var s2, toVersion);
@@ -411,13 +411,13 @@ namespace FASTER.test.statemachine
             s2.Refresh();
             s1.Refresh();
 
-            // We should now be in IN_PROGRESS, toVersion + 1 (because of rollover of 13 bit short version)
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, toVersion + 1), fht1.SystemState));
+            // We should now be in IN_PROGRESS, toVersion
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, toVersion), fht1.SystemState));
 
             s2.Refresh();
 
             // We should be in WAIT_FLUSH, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, toVersion + 1), fht1.SystemState));
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, toVersion), fht1.SystemState));
 
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
@@ -428,11 +428,11 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(f.checkpointCallbackExpectation == 0);
 
             // We should be in PERSISTENCE_CALLBACK, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, toVersion + 1), fht1.SystemState));
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, toVersion), fht1.SystemState));
 
             s2.Refresh();
 
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, toVersion + 1), fht1.SystemState));
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, toVersion), fht1.SystemState));
 
 
             // Dispose session s2; does not move state machine forward
@@ -454,7 +454,7 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
 
             // Take index checkpoint for recovery purposes
-            fht1.TakeIndexCheckpoint(out _);
+            fht1.TryInitiateIndexCheckpoint(out _);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             // Index checkpoint does not update version, so
@@ -480,7 +480,7 @@ namespace FASTER.test.statemachine
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
 
-            fht1.TakeHybridLogCheckpoint(out _, toVersion);
+            fht1.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
@@ -496,7 +496,7 @@ namespace FASTER.test.statemachine
                 <AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir + "/statemachinetest", CheckPointType = CheckpointType.FoldOver }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir + "/statemachinetest" }
                 );
 
             fht2.Recover(); // sync, does not require session

@@ -94,8 +94,8 @@ namespace FASTER.core
         /// </summary>
         public struct ReadAsyncResult<Input, Output, Context>
         {
-            internal readonly Status status;
-            internal readonly Output output;
+            private readonly Status status;
+            private readonly Output output;
             readonly RecordMetadata recordMetadata;
 
             internal readonly ReadAsyncInternal<Input, Output, Context> readAsyncInternal;
@@ -151,7 +151,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<ReadAsyncResult<Input, Output, Context>> ReadAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx,
-            ref Key key, ref Input input, long startAddress, Context context, long serialNo, CancellationToken token, byte operationFlags = 0)
+            ref Key key, ref Input input, long startAddress, Context context, long serialNo, CancellationToken token, ushort operationFlags = 0)
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             pcontext.SetOperationFlags(operationFlags, startAddress);
@@ -161,8 +161,10 @@ namespace FASTER.core
             fasterSession.UnsafeResumeThread();
             try
             {
-                OperationStatus internalStatus = InternalRead(ref key, ref input, ref output, startAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
-                Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+                OperationStatus internalStatus;
+                do
+                    internalStatus = InternalRead(ref key, ref input, ref output, startAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
+                while (internalStatus == OperationStatus.RETRY_NOW);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);
 
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)

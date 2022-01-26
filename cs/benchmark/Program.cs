@@ -12,8 +12,8 @@ namespace FASTER.benchmark
 
         public static void Main(string[] args)
         {
-            TestLoader testLoader = new();
-            if (!testLoader.Parse(args))
+            TestLoader testLoader = new(args);
+            if (testLoader.error)
                 return;
 
             TestStats testStats = new(testLoader.Options);
@@ -29,19 +29,32 @@ namespace FASTER.benchmark
                 switch (testLoader.BenchmarkType)
                 {
                     case BenchmarkType.Ycsb:
-                        var yTest = new FASTER_YcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
-                        testStats.AddResult(yTest.Run(testLoader));
-                        yTest.Dispose();
+                        {
+                            var tester = new FASTER_YcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
+                            testStats.AddResult(tester.Run(testLoader));
+                            tester.Dispose();
+                        }
                         break;
                     case BenchmarkType.SpanByte:
-                        var sTest = new FasterSpanByteYcsbBenchmark(testLoader.init_span_keys, testLoader.txn_span_keys, testLoader);
-                        testStats.AddResult(sTest.Run(testLoader));
-                        sTest.Dispose();
+                        {
+                            var tester = new FasterSpanByteYcsbBenchmark(testLoader.init_span_keys, testLoader.txn_span_keys, testLoader);
+                            testStats.AddResult(tester.Run(testLoader));
+                            tester.Dispose();
+                        }
+                        break;
+                    case BenchmarkType.ClientSession:
+                        {
+                            var tester = new FASTER_ClientSessionYcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
+                            testStats.AddResult(tester.Run(testLoader));
+                            tester.Dispose();
+                        }
                         break;
                     case BenchmarkType.ConcurrentDictionaryYcsb:
-                        var cTest = new ConcurrentDictionary_YcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
-                        testStats.AddResult(cTest.Run(testLoader));
-                        cTest.Dispose();
+                        {
+                            var tester = new ConcurrentDictionary_YcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
+                            testStats.AddResult(tester.Run(testLoader));
+                            tester.Dispose();
+                        }
                         break;
                     default:
                         throw new ApplicationException("Unknown benchmark type");

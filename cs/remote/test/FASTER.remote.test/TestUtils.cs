@@ -33,7 +33,7 @@ namespace FASTER.remote.test
                 Recover = tryRecover,
                 IndexSize = "1m",
             };
-            return new FixedLenServer<long, long, long, long, SimpleFunctions<long, long, long>>(opts, e => new SimpleFunctions<long, long, long>(merger));
+            return new FixedLenServer<long, long, long, long, SimpleFunctions<long, long, long>>(opts, () => new SimpleFunctions<long, long, long>(merger), disableLocking: true);
         }
 
         /// <summary>

@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using FASTER.core;
 using NUnit.Framework;
 
-namespace FASTER.test
+namespace FASTER.test.ReadCacheTests
 {
     [TestFixture]
     internal class RandomReadCacheTest
@@ -32,7 +32,7 @@ namespace FASTER.test
 
             public override void ReadCompletionCallback(ref SpanByte key, ref long input, ref long output, Context context, Status status, RecordMetadata recordMetadata)
             {
-                Assert.AreEqual(status, Status.OK);
+                Assert.AreEqual(Status.OK, status);
                 Assert.AreEqual(input, output);
                 context.Status = status;
             }

@@ -39,7 +39,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
-        public void MemoryLogCompactionTest1([Values] TestUtils.DeviceType deviceType)
+        public void MemoryLogCompactionTest1([Values] TestUtils.DeviceType deviceType, [Values] CompactionType compactionType)
         {
 
             string filename = path + "MemoryLogCompactionTests1" + deviceType.ToString() + ".log";
@@ -73,7 +73,8 @@ namespace FASTER.test
 
             // Compact log
             var compactUntil = fht.Log.BeginAddress + (fht.Log.TailAddress - fht.Log.BeginAddress) / 5;
-            compactUntil = session.Compact(compactUntil, true);
+            compactUntil = session.Compact(compactUntil, compactionType);
+            fht.Log.Truncate();
 
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
@@ -83,9 +84,7 @@ namespace FASTER.test
                 key.Span.Fill(i);
 
                 var (status, output) = session.Read(key, userContext: i < 10 ? 1 : 0); 
-                if (status == Status.PENDING)
-                    session.CompletePending(true);
-                else
+                if (status != Status.PENDING)
                 {
                     if (i < 10)
                         Assert.AreEqual(Status.NOTFOUND, status);
@@ -97,6 +96,7 @@ namespace FASTER.test
                     }
                 }
             }
+            session.CompletePending(true);
 
             // Test iteration of distinct live keys
             using (var iter = session.Iterate())

@@ -17,6 +17,7 @@ namespace FasterVarLenServer
     {
         static void Main(string[] args)
         {
+            Environment.SetEnvironmentVariable("DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS", "1");
             Trace.Listeners.Add(new ConsoleTraceListener());
 
             Console.WriteLine("FASTER variable-length KV server");

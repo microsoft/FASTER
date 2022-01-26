@@ -36,7 +36,7 @@ namespace FASTER.core
 
     internal class SerializedFasterExecutionContext
     {
-        internal int version;
+        internal long version;
         internal long serialNum;
         internal string guid;
 
@@ -56,7 +56,7 @@ namespace FASTER.core
         public void Load(StreamReader reader)
         {
             string value = reader.ReadLine();
-            version = int.Parse(value);
+            version = long.Parse(value);
 
             guid = reader.ReadLine();
             value = reader.ReadLine();
@@ -78,23 +78,27 @@ namespace FASTER.core
 
             // Some additional information about the previous attempt
             internal long id;
-            internal int version;
+            internal long version;
             internal long logicalAddress;
             internal long serialNum;
             internal HashBucketEntry entry;
             internal LatchOperation heldLatch;
 
-            internal byte operationFlags;
+            internal ushort operationFlags;
             internal RecordInfo recordInfo;
             internal long minAddress;
+            internal LockOperation lockOperation;
 
-            // Note: Must be kept in sync with corresponding ReadFlags enum values
-            internal const byte kSkipReadCache = 0x01;
-            internal const byte kMinAddress = 0x02;
+            // BEGIN Must be kept in sync with corresponding ReadFlags enum values
+            internal const ushort kSkipReadCache = 0x0001;
+            internal const ushort kMinAddress = 0x0002;
+            internal const ushort kCopyReadsToTail = 0x0004;
+            internal const ushort kSkipCopyReadsToTail = 0x0008;
+            // END  Must be kept in sync with corresponding ReadFlags enum values
 
-            internal const byte kNoKey = 0x10;
-            internal const byte kSkipCopyReadsToTail = 0x20;
-            internal const byte kIsAsync = 0x40;
+            internal const ushort kNoKey = 0x0100;
+            internal const ushort kIsAsync = 0x0200;
+            internal const ushort kHasPrevHighestKeyHashAddress = 0x0400;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal IHeapContainer<Key> DetachKey()
@@ -113,11 +117,11 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static byte GetOperationFlags(ReadFlags readFlags, bool noKey = false)
+            internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey = false)
             {
-                Debug.Assert((byte)ReadFlags.SkipReadCache == kSkipReadCache);
-                Debug.Assert((byte)ReadFlags.MinAddress == kMinAddress);
-                byte flags = (byte)(readFlags & (ReadFlags.SkipReadCache | ReadFlags.MinAddress));
+                Debug.Assert((ushort)ReadFlags.SkipReadCache == kSkipReadCache);
+                Debug.Assert((ushort)ReadFlags.MinAddress == kMinAddress);
+                ushort flags = (ushort)(readFlags & (ReadFlags.SkipReadCache | ReadFlags.MinAddress | ReadFlags.CopyToTail | ReadFlags.SkipCopyToTail));
                 if (noKey) flags |= kNoKey;
 
                 // This is always set true for the Read overloads (Reads by address) that call this method.
@@ -130,7 +134,7 @@ namespace FASTER.core
                 => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), address);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(byte flags, long address)
+            internal void SetOperationFlags(ushort flags, long address)
             {
                 this.operationFlags = flags;
                 if (this.HasMinAddress)
@@ -140,31 +144,43 @@ namespace FASTER.core
             internal bool NoKey
             {
                 get => (operationFlags & kNoKey) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kNoKey) : (byte)(operationFlags & ~kNoKey);
+                set => operationFlags = value ? (ushort)(operationFlags | kNoKey) : (ushort)(operationFlags & ~kNoKey);
             }
 
             internal bool SkipReadCache
             {
                 get => (operationFlags & kSkipReadCache) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kSkipReadCache) : (byte)(operationFlags & ~kSkipReadCache);
+                set => operationFlags = value ? (ushort)(operationFlags | kSkipReadCache) : (ushort)(operationFlags & ~kSkipReadCache);
             }
 
             internal bool HasMinAddress
             {
                 get => (operationFlags & kMinAddress) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kMinAddress) : (byte)(operationFlags & ~kMinAddress);
+                set => operationFlags = value ? (ushort)(operationFlags | kMinAddress) : (ushort)(operationFlags & ~kMinAddress);
+            }
+
+            internal bool CopyReadsToTail
+            {
+                get => (operationFlags & kCopyReadsToTail) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kCopyReadsToTail) : (ushort)(operationFlags & ~kCopyReadsToTail);
             }
 
             internal bool SkipCopyReadsToTail
             {
                 get => (operationFlags & kSkipCopyReadsToTail) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kSkipCopyReadsToTail) : (byte)(operationFlags & ~kSkipCopyReadsToTail);
+                set => operationFlags = value ? (ushort)(operationFlags | kSkipCopyReadsToTail) : (ushort)(operationFlags & ~kSkipCopyReadsToTail);
             }
 
             internal bool IsAsync
             {
                 get => (operationFlags & kIsAsync) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kIsAsync) : (byte)(operationFlags & ~kIsAsync);
+                set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
+            }
+
+            internal bool HasPrevHighestKeyHashAddress
+            {
+                get => (operationFlags & kHasPrevHighestKeyHashAddress) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kHasPrevHighestKeyHashAddress) : (ushort)(operationFlags & ~kHasPrevHighestKeyHashAddress);
             }
 
             public void Dispose()
@@ -221,6 +237,8 @@ namespace FASTER.core
                     await readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
             }
 
+            public bool InNewVersion => phase < Phase.REST;
+
             public FasterExecutionContext<Input, Output, Context> prevCtx;
         }
     }
@@ -246,7 +264,7 @@ namespace FASTER.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        const int CheckpointVersion = 2;
+        const int CheckpointVersion = 4;
 
         /// <summary>
         /// Guid
@@ -259,11 +277,11 @@ namespace FASTER.core
         /// <summary>
         /// Version
         /// </summary>
-        public int version;
+        public long version;
         /// <summary>
         /// Next Version
         /// </summary>
-        public int nextVersion;
+        public long nextVersion;
         /// <summary>
         /// Flushed logical address; indicates the latest immutable address on the main FASTER log at recovery time.
         /// </summary>
@@ -291,6 +309,12 @@ namespace FASTER.core
         public long beginAddress;
 
         /// <summary>
+        /// If true, there was at least one IFasterContext implementation active that did manual locking at some point during the checkpoint;
+        /// these pages must be scanned for lock cleanup.
+        /// </summary>
+        public bool manualLockingActive;
+
+        /// <summary>
         /// Commit tokens per session restored during Continue
         /// </summary>
         public ConcurrentDictionary<string, CommitPoint> continueTokens;
@@ -316,7 +340,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token"></param>
         /// <param name="_version"></param>
-        public void Initialize(Guid token, int _version)
+        public void Initialize(Guid token, long _version)
         {
             guid = token;
             useSnapshotFile = 0;
@@ -354,10 +378,10 @@ namespace FASTER.core
             useSnapshotFile = int.Parse(value);
 
             value = reader.ReadLine();
-            version = int.Parse(value);
+            version = long.Parse(value);
 
             value = reader.ReadLine();
-            nextVersion = int.Parse(value);
+            nextVersion = long.Parse(value);
 
             value = reader.ReadLine();
             flushedLogicalAddress = long.Parse(value);
@@ -379,6 +403,9 @@ namespace FASTER.core
 
             value = reader.ReadLine();
             deltaTailAddress = long.Parse(value);
+
+            value = reader.ReadLine();
+            manualLockingActive = bool.Parse(value);
 
             value = reader.ReadLine();
             var numSessions = int.Parse(value);
@@ -488,6 +515,7 @@ namespace FASTER.core
                     writer.WriteLine(headAddress);
                     writer.WriteLine(beginAddress);
                     writer.WriteLine(deltaTailAddress);
+                    writer.WriteLine(manualLockingActive);
 
                     writer.WriteLine(checkpointTokens.Count);
                     foreach (var kvp in checkpointTokens)
@@ -538,6 +566,7 @@ namespace FASTER.core
             Debug.WriteLine("Head Address: {0}", headAddress);
             Debug.WriteLine("Begin Address: {0}", beginAddress);
             Debug.WriteLine("Delta Tail Address: {0}", deltaTailAddress);
+            Debug.WriteLine("Manual Locking Active: {0}", manualLockingActive);
             Debug.WriteLine("Num sessions recovered: {0}", continueTokens.Count);
             Debug.WriteLine("Recovered sessions: ");
             foreach (var sessionInfo in continueTokens.Take(10))
@@ -558,9 +587,9 @@ namespace FASTER.core
         public IDevice deltaFileDevice;
         public DeltaLog deltaLog;
         public SemaphoreSlim flushedSemaphore;
-        public int prevVersion;
+        public long prevVersion;
 
-        public void Initialize(Guid token, int _version, ICheckpointManager checkpointManager)
+        public void Initialize(Guid token, long _version, ICheckpointManager checkpointManager)
         {
             info.Initialize(token, _version);
             checkpointManager.InitializeLogCheckpoint(token);

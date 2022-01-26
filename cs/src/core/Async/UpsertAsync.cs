@@ -14,17 +14,18 @@ namespace FASTER.core
         internal struct UpsertAsyncOperation<Input, Output, Context> : IUpdateAsyncOperation<Input, Output, Context, UpsertAsyncResult<Input, Output, Context>>
         {
             /// <inheritdoc/>
-            public UpsertAsyncResult<Input, Output, Context> CreateResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status);
+            public UpsertAsyncResult<Input, Output, Context> CreateResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status, output, recordMetadata);
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output)
             {
+                output = default;
                 OperationStatus internalStatus;
                 do
                 {
                     flushEvent = fasterKV.hlog.FlushEvent;
-                    internalStatus = fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                    internalStatus = fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref output, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                 } while (internalStatus == OperationStatus.RETRY_NOW);
                 output = default;
                 return TranslateStatus(internalStatus);
@@ -45,37 +46,61 @@ namespace FASTER.core
         /// <summary>
         /// State storage for the completion of an async Upsert, or the result if the Upsert was completed synchronously
         /// </summary>
-        public struct UpsertAsyncResult<Input, Output, Context>
+        public struct UpsertAsyncResult<Input, TOutput, Context>
         {
-            internal readonly UpdateAsyncInternal<Input, Output, Context, UpsertAsyncOperation<Input, Output, Context>, UpsertAsyncResult<Input, Output, Context>> updateAsyncInternal;
+            internal readonly UpdateAsyncInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>> updateAsyncInternal;
 
             /// <summary>Current status of the Upsert operation</summary>
             public Status Status { get; }
 
-            internal UpsertAsyncResult(Status status)
+            /// <summary>Output of the Upsert operation</summary>
+            public TOutput Output { get; }
+
+            /// <summary>Metadata of the updated record</summary>
+            public RecordMetadata RecordMetadata { get; }
+
+            internal UpsertAsyncResult(Status status, TOutput output, RecordMetadata recordMetadata)
             {
                 this.Status = status;
+                this.Output = output;
+                this.RecordMetadata = recordMetadata;
                 this.updateAsyncInternal = default;
             }
 
-            internal UpsertAsyncResult(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, ExceptionDispatchInfo exceptionDispatchInfo)
+            internal UpsertAsyncResult(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, TOutput, Context> fasterSession,
+                FasterExecutionContext<Input, TOutput, Context> currentCtx, PendingContext<Input, TOutput, Context> pendingContext, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 this.Status = Status.PENDING;
-                updateAsyncInternal = new UpdateAsyncInternal<Input, Output, Context, UpsertAsyncOperation<Input, Output, Context>, UpsertAsyncResult<Input, Output, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new UpsertAsyncOperation<Input, Output, Context>());
+                this.Output = default;
+                this.RecordMetadata = default;
+                updateAsyncInternal = new UpdateAsyncInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>>(
+                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new UpsertAsyncOperation<Input, TOutput, Context>());
             }
 
             /// <summary>Complete the Upsert operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
             /// <returns>ValueTask for Upsert result. User needs to await again if result status is Status.PENDING.</returns>
-            public ValueTask<UpsertAsyncResult<Input, Output, Context>> CompleteAsync(CancellationToken token = default) 
+            public ValueTask<UpsertAsyncResult<Input, TOutput, Context>> CompleteAsync(CancellationToken token = default) 
                 => this.Status != Status.PENDING
-                    ? new ValueTask<UpsertAsyncResult<Input, Output, Context>>(new UpsertAsyncResult<Input, Output, Context>(this.Status))
+                    ? new ValueTask<UpsertAsyncResult<Input, TOutput, Context>>(new UpsertAsyncResult<Input, TOutput, Context>(this.Status, this.Output, this.RecordMetadata))
                     : updateAsyncInternal.CompleteAsync(token);
 
             /// <summary>Complete the Upsert operation, issuing additional I/O synchronously if needed.</summary>
             /// <returns>Status of Upsert operation</returns>
             public Status Complete() => this.Status != Status.PENDING ? this.Status : updateAsyncInternal.Complete().Status;
+
+            /// <summary>Complete the Upsert operation, issuing additional I/O synchronously if needed.</summary>
+            /// <returns>Status and Output of Upsert operation</returns>
+            public (Status status, TOutput output) Complete(out RecordMetadata recordMetadata)
+            {
+                if (this.Status != Status.PENDING)
+                {
+                    recordMetadata = this.RecordMetadata;
+                    return (this.Status, this.Output);
+                }
+                var upsertAsyncResult = updateAsyncInternal.Complete();
+                recordMetadata = upsertAsyncResult.RecordMetadata;
+                return (upsertAsyncResult.Status, upsertAsyncResult.Output);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -91,6 +116,7 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pcontext, ref Key key, ref Input input, ref Value value, Context userContext, long serialNo, CancellationToken token)
         {
             CompletionEvent flushEvent;
+            Output output = default;
 
             fasterSession.UnsafeResumeThread();
             try
@@ -99,11 +125,11 @@ namespace FASTER.core
                 do
                 {
                     flushEvent = hlog.FlushEvent;
-                    internalStatus = InternalUpsert(ref key, ref input, ref value, ref userContext, ref pcontext, fasterSession, currentCtx, serialNo);
+                    internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref userContext, ref pcontext, fasterSession, currentCtx, serialNo);
                 } while (internalStatus == OperationStatus.RETRY_NOW);
 
                 if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-                    return new ValueTask<UpsertAsyncResult<Input, Output, Context>>(new UpsertAsyncResult<Input, Output, Context>((Status)internalStatus));
+                    return new ValueTask<UpsertAsyncResult<Input, Output, Context>>(new UpsertAsyncResult<Input, Output, Context>((Status)internalStatus, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
                 Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
             }
             finally

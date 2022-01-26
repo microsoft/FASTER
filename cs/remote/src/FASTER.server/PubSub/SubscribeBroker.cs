@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.common;
@@ -129,8 +128,6 @@ namespace FASTER.server
 
         private async Task Start(CancellationToken cancellationToken = default)
         {
-            done.Reset();
-
             try
             {
                 var uniqueKeys = new Dictionary<byte[], (byte[], byte[])>(new ByteArrayComparer());
@@ -142,7 +139,7 @@ namespace FASTER.server
                         break;
 
                     using var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
-                    await iter.WaitAsync(cancellationToken);
+                    await iter.WaitAsync(cancellationToken).ConfigureAwait(false);
                     while (iter.GetNext(out byte[] subscriptionKeyValueAscii, out _, out long currentAddress, out long nextAddress))
                     {
                         if (currentAddress >= long.MaxValue) return;
@@ -215,6 +212,7 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
+                done.Reset();
                 subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
                 prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(new ByteArrayComparer());
                 Task.Run(() => Start(cts.Token));
@@ -244,9 +242,14 @@ namespace FASTER.server
             var id = Interlocked.Increment(ref sid);
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
+                done.Reset();
                 subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
                 prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(new ByteArrayComparer());
                 Task.Run(() => Start(cts.Token));
+            }
+            else
+            {
+                while (prefixSubscriptions == null) Thread.Yield();
             }
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
             prefixSubscriptions.TryAdd(subscriptionPrefix, (ascii, new ConcurrentDictionary<int, ServerSessionBase>()));

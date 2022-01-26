@@ -417,8 +417,11 @@ namespace FASTER.core
             {
                 logHandle.Item1.Dispose();
                 logHandle.Item2.Dispose();
-                File.Delete(GetSegmentName(segment));
             }
+            try
+            {
+                File.Delete(GetSegmentName(segment));
+            } catch { }
         }
 
         /// <summary>
@@ -471,13 +474,12 @@ namespace FASTER.core
 
         private static uint GetSectorSize(string filename)
         {
-#if NETSTANDARD || NET
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 Debug.WriteLine("Assuming 512 byte sector alignment for disk with file " + filename);
                 return 512;
             }
-#endif
+
             if (!Native32.GetDiskFreeSpace(filename.Substring(0, 3),
                                         out uint lpSectorsPerCluster,
                                         out uint _sectorSize,

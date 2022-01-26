@@ -419,6 +419,7 @@ namespace FASTER.core
 
             for (int i=start/recordSize; i<end/recordSize; i++)
             {
+                long endPosition = 0;
                 if (!src[i].info.Invalid)
                 {
                     if (KeyHasObjects())
@@ -429,6 +430,7 @@ namespace FASTER.core
                         key_address->Address = pos;
                         key_address->Size = (int)(ms.Position - pos);
                         addr.Add((long)key_address);
+                        endPosition = pos + key_address->Size;
                     }
 
                     if (ValueHasObjects() && !src[i].info.Tombstone)
@@ -439,16 +441,15 @@ namespace FASTER.core
                         value_address->Address = pos;
                         value_address->Size = (int)(ms.Position - pos);
                         addr.Add((long)value_address);
+                        endPosition = pos + value_address->Size;
                     }
                 }
 
-                if (ms.Position > ObjectBlockSize || i == (end / recordSize) - 1)
+                if (endPosition > ObjectBlockSize || i == (end / recordSize) - 1)
                 {
                     var memoryStreamLength = (int)ms.Position;
 
                     var _objBuffer = bufferPool.Get(memoryStreamLength);
-
-                    asyncResult.done = new AutoResetEvent(false);
 
                     var _alignedLength = (memoryStreamLength + (sectorSize - 1)) & ~(sectorSize - 1);
 
@@ -478,6 +479,8 @@ namespace FASTER.core
 
                         // Reset address list for next chunk
                         addr = new List<long>();
+
+                        asyncResult.done = new AutoResetEvent(false);
 
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
@@ -841,8 +844,9 @@ namespace FASTER.core
         {
             long minObjAddress = long.MaxValue;
             long maxObjAddress = long.MinValue;
+            bool done = false;
 
-            while (ptr < untilptr)
+            while (!done && (ptr < untilptr))
             {
                 ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
 
@@ -853,15 +857,13 @@ namespace FASTER.core
                         var key_addr = GetKeyAddressInfo((long)raw + ptr);
                         var addr = key_addr->Address;
 
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
-                        {
-                            break;
-                        }
-
                         if (addr < minObjAddress) minObjAddress = addr;
                         addr += key_addr->Size;
                         if (addr > maxObjAddress) maxObjAddress = addr;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                            done = true;
                     }
 
 
@@ -870,15 +872,13 @@ namespace FASTER.core
                         var value_addr = GetValueAddressInfo((long)raw + ptr);
                         var addr = value_addr->Address;
 
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
-                        {
-                            break;
-                        }
-
                         if (addr < minObjAddress) minObjAddress = addr;
                         addr += value_addr->Size;
                         if (addr > maxObjAddress) maxObjAddress = addr;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                            done = true;
                     }
                 }
                 ptr += GetRecordSize(ptr).Item2;
@@ -1030,18 +1030,25 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        internal override void MemoryPageLockEvictionScan(long beginAddress, long endAddress) => MemoryPageScan(beginAddress, endAddress, OnLockEvictionObserver);
+
+        /// <inheritdoc />
+        internal override void MemoryPageScan(long beginAddress, long endAddress) => MemoryPageScan(beginAddress, endAddress, OnEvictionObserver);
+
+        /// <inheritdoc />
+        private void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
+            long pageStartAddress = beginAddress & ~PageSizeMask;
             int start = (int)(beginAddress & PageSizeMask) / recordSize;
             int count = (int)(endAddress - beginAddress) / recordSize;
             int end = start + count;
-            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end);
+            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end, pageStartAddress, recordSize);
             Debug.Assert(epoch.ThisInstanceProtected());
             try
             {
                 epoch.Suspend();
-                OnEvictionObserver?.OnNext(iter);
+                observer?.OnNext(iter);
             }
             finally
             {
@@ -1049,7 +1056,7 @@ namespace FASTER.core
             }
         }
 
-        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
+        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog)
         {
             throw new FasterException("Incremental snapshots not supported with generic allocator");
         }

@@ -14,7 +14,7 @@ namespace StoreVarLenTypes
     public sealed class AsciiSumSpanByteFunctions : SpanByteFunctions<long>
     {
         /// <inheritdoc/>
-        public AsciiSumSpanByteFunctions(MemoryPool<byte> memoryPool = null, bool locking = false) : base(memoryPool, locking) { }
+        public AsciiSumSpanByteFunctions(MemoryPool<byte> memoryPool = null) : base(memoryPool) { }
 
         /// <inheritdoc/>
         public override void InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, long address)

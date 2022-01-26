@@ -32,21 +32,21 @@ namespace FASTER.test.recovery.sumstore.recover_continue
                 <AdId, NumClicks>
                 (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
             fht2 = new FasterKV
                 <AdId, NumClicks>
                 (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
             fht3 = new FasterKV
                 <AdId, NumClicks>
                 (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
             numOps = 5000;
@@ -77,7 +77,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
 
             var firstsession = fht1.For(new AdSimpleFunctions()).NewSession<AdSimpleFunctions>("first");
             IncrementAllValues(ref firstsession, ref sno);
-            fht1.TakeFullCheckpoint(out _);
+            fht1.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot);
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             firstsession.Dispose();
 
@@ -100,7 +100,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             long newSno = cp.UntilSerialNo;
             Assert.AreEqual(sno - 1, newSno);
             IncrementAllValues(ref continuesession, ref sno);
-            fht2.TakeFullCheckpoint(out _);
+            fht2.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot);
             fht2.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             continuesession.Dispose();
 

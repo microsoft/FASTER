@@ -101,12 +101,11 @@ namespace FASTER.core
                                       bool useIoCompletionPort = true)
                 : base(filename, GetSectorSize(filename), capacity)
         {
-#if NETSTANDARD || NET
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 throw new FasterException("Cannot use LocalStorageDevice from non-Windows OS platform, use ManagedLocalStorageDevice instead.");
             }
-#endif
+
             ThrottleLimit = 120;
             this.useIoCompletionPort = useIoCompletionPort;
             this._disposed = false;
@@ -312,10 +311,8 @@ namespace FASTER.core
         public override void RemoveSegment(int segment)
         {
             if (logHandles.TryRemove(segment, out SafeFileHandle logHandle))
-            {
                 logHandle.Dispose();
-                Native32.DeleteFileW(GetSegmentName(segment));
-            }
+            Native32.DeleteFileW(GetSegmentName(segment));
         }
 
         /// <summary>
