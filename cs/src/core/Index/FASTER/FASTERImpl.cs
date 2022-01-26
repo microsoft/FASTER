@@ -2157,7 +2157,7 @@ namespace FASTER.core
 
             if (status == OperationStatus.SUCCESS || status == OperationStatus.NOTFOUND)
             {
-                return (Status)status;
+                return new(status);
             }
             else if (status == OperationStatus.RECORD_ON_DISK)
             {

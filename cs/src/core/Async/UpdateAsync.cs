@@ -185,7 +185,7 @@ namespace FASTER.core
         private static Status TranslateStatus(OperationStatus internalStatus)
         {
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-                return (Status)internalStatus;
+                return new(internalStatus);
             Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
             return Status.PENDING;
         }

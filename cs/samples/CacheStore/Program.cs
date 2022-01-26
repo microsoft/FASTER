@@ -144,20 +144,20 @@ namespace CacheStore
                 var key = new CacheKey(k);
                 var status = s.Read(ref key, ref output);
 
-                switch (status)
+                if (status == Status.PENDING)
                 {
-                    case Status.PENDING:
-                        statusPending++;
-                        if (statusPending % 100 == 0)
-                            s.CompletePending(false);
-                        break;
-                    case Status.OK:
-                        if (output.value != key.key)
-                            throw new Exception("Read error!");
-                        break;
-                    default:
-                        throw new Exception("Error!");
+                    statusPending++;
+                    if (statusPending % 100 == 0)
+                        s.CompletePending(false);
+                    break;
                 }
+                else if (status == Status.OK)
+                {
+                    if (output.value != key.key)
+                        throw new Exception("Read error!");
+                }
+                else
+                    throw new Exception("Error!");
             }
             s.CompletePending(true);
             sw.Stop();
@@ -186,22 +186,22 @@ namespace CacheStore
 
                 context.ticks = Stopwatch.GetTimestamp();
                 var status = s.Read(ref key, ref output, context);
-                switch (status)
+                if (status == Status.PENDING)
                 {
-                    case Status.PENDING:
-                        s.CompletePending(true);
-                        break;
-                    case Status.OK:
-                        long ticks = Stopwatch.GetTimestamp();
-                        if (output.value != key.key)
-                            Console.WriteLine("Sync: Incorrect value {0} found, latency = {1}ms", output.value, 1000*(ticks - context.ticks)/(double)Stopwatch.Frequency);
-                        else
-                            Console.WriteLine("Sync: Correct value {0} found, latency = {1}ms", output.value, 1000 * (ticks - context.ticks) / (double)Stopwatch.Frequency);
-                        break;
-                    default:
-                        ticks = Stopwatch.GetTimestamp() - context.ticks;
-                        Console.WriteLine("Sync: Value not found, latency = {0}ms", new TimeSpan(ticks).TotalMilliseconds);
-                        break;
+                    s.CompletePending(true);
+                }
+                else if (status == Status.OK)
+                {
+                    long ticks = Stopwatch.GetTimestamp();
+                    if (output.value != key.key)
+                        Console.WriteLine("Sync: Incorrect value {0} found, latency = {1}ms", output.value, 1000 * (ticks - context.ticks) / (double)Stopwatch.Frequency);
+                    else
+                        Console.WriteLine("Sync: Correct value {0} found, latency = {1}ms", output.value, 1000 * (ticks - context.ticks) / (double)Stopwatch.Frequency);
+                }
+                else
+                {
+                    long ticks = Stopwatch.GetTimestamp() - context.ticks;
+                    Console.WriteLine("Sync: Value not found, latency = {0}ms", new TimeSpan(ticks).TotalMilliseconds);
                 }
             }
         }

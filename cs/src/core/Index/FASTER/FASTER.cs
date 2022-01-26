@@ -530,7 +530,7 @@ namespace FASTER.core
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = (Status)internalStatus;
+                status = new(internalStatus);
             }
             else
             {
@@ -558,7 +558,7 @@ namespace FASTER.core
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
-                status = (Status)internalStatus;
+                status = new(internalStatus);
             }
             else
             {
@@ -587,7 +587,7 @@ namespace FASTER.core
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = (Status)internalStatus;
+                status = new(internalStatus);
             }
             else
             {
@@ -614,7 +614,7 @@ namespace FASTER.core
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = (Status)internalStatus;
+                status = new(internalStatus);
             }
             else
             {
@@ -642,7 +642,7 @@ namespace FASTER.core
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
-                status = (Status)internalStatus;
+                status = new(internalStatus);
             }
             else
             {
@@ -677,7 +677,7 @@ namespace FASTER.core
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
                 recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
-                status = (Status)internalStatus;
+                status = new(internalStatus);
             }
             else
             {
@@ -709,7 +709,7 @@ namespace FASTER.core
             Status status;
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = (Status)internalStatus;
+                status = new(internalStatus);
             }
             else
             {

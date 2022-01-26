@@ -205,24 +205,23 @@ namespace MemOnlyCache
                 {
                     var status = session.Read(ref key, ref output);
 
-                    switch (status)
+                    if (status == Status.NOTFOUND)
                     {
-                        case Status.NOTFOUND:
-                            localStatusNotFound++;
-                            if (UpsertOnCacheMiss)
-                            {
-                                var value = new CacheValue(1 + rnd.Next(MaxValueSize - 1), (byte)key.key);
-                                session.Upsert(ref key, ref value);
-                            }
-                            break;
-                        case Status.OK:
-                            localStatusFound++;
-                            if (output.value[0] != (byte)key.key)
-                                throw new Exception("Read error!");
-                            break;
-                        default:
-                            throw new Exception("Error!");
+                        localStatusNotFound++;
+                        if (UpsertOnCacheMiss)
+                        {
+                            var value = new CacheValue(1 + rnd.Next(MaxValueSize - 1), (byte)key.key);
+                            session.Upsert(ref key, ref value);
+                        }
                     }
+                    else if (status == Status.OK)
+                    {
+                        localStatusFound++;
+                        if (output.value[0] != (byte)key.key)
+                            throw new Exception("Read error!");
+                    }
+                    else
+                        throw new Exception("Error!");
                 }
                 i++;
             }

@@ -178,7 +178,7 @@ namespace FASTER.core
             } while (internalStatus == OperationStatus.RETRY_NOW || internalStatus == OperationStatus.RETRY_LATER);
 
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-                return (Status)internalStatus;
+                return new(internalStatus);
             if (internalStatus == OperationStatus.ALLOCATE_FAILED)
                 return Status.PENDING;    // This plus diskRequest.IsDefault() means allocate failed
 

@@ -230,7 +230,7 @@ namespace FASTER.core
             // Handle operation status
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = (Status)internalStatus;
+                status = new(internalStatus);
             }
             else
             {
@@ -372,7 +372,7 @@ namespace FASTER.core
             // Handle operation status
             if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
             {
-                status = (Status)internalStatus;
+                status = new(internalStatus);
             }
             else if (internalStatus == OperationStatus.ALLOCATE_FAILED)
             {
