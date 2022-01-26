@@ -44,8 +44,6 @@ namespace FASTER.core
                     {
                         if (!ctx.markers[EpochPhaseIdx.Prepare])
                         {
-                            if (!faster.RelaxedCPR)
-                                faster.AcquireSharedLatchesForAllPendingRequests(ctx);
                             ctx.markers[EpochPhaseIdx.Prepare] = true;
                         }
 

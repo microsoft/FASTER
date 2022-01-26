@@ -46,15 +46,6 @@ namespace FASTER.core
         private readonly bool UseFoldOverCheckpoint;
         internal readonly int sectorSize;
         private readonly bool WriteDefaultOnDelete;
-        internal bool RelaxedCPR;
-
-        /// <summary>
-        /// Use relaxed version of CPR, where ops pending I/O
-        /// are not part of CPR checkpoint. This mode allows
-        /// us to eliminate the WAIT_PENDING phase, and allows
-        /// sessions to be suspended. Do not modify during checkpointing.
-        /// </summary>
-        internal void UseRelaxedCPR() => RelaxedCPR = true;
 
         /// <summary>
         /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)

@@ -125,7 +125,7 @@ namespace SumStore
             else
             {
                 // Register thread with FASTER
-                session = fht.For(new Functions()).NewSession<Functions>(threadId.ToString(), true);
+                session = fht.For(new Functions()).NewSession<Functions>(threadId.ToString());
             }
 
             GenerateClicks(session, sno);

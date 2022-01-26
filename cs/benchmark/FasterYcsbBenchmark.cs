@@ -116,7 +116,7 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
-            var session = store.For(functions).NewSession<Functions>(null, !testLoader.Options.NoThreadAffinity);
+            var session = store.For(functions).NewSession<Functions>();
 
             while (!done)
             {
@@ -332,7 +332,7 @@ namespace FASTER.benchmark
 
             waiter.Wait();
 
-            var session = store.For(functions).NewSession<Functions>(null, !testLoader.Options.NoThreadAffinity);
+            var session = store.For(functions).NewSession<Functions>();
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();

@@ -97,8 +97,6 @@ namespace FASTER.core
 
             internal ValueTask<TAsyncResult> CompleteAsync(CancellationToken token = default)
             {
-                Debug.Assert(_fasterKV.RelaxedCPR);
-
                 // Note: We currently do not await anything here, and we must never do any post-await work inside CompleteAsync; this includes any code in
                 // a 'finally' block. All post-await work must be re-initiated by end user on the mono-threaded session.
 

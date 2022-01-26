@@ -266,11 +266,11 @@ namespace FASTER.core
 
         /// <inheritdoc />
         public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession(string sessionId = null, bool threadAffinitized = false)
-            => _fasterKV.NewSession<Input, Output, Context, Functions>(_functions, sessionId, threadAffinitized);
+            => _fasterKV.NewSession<Input, Output, Context, Functions>(_functions, sessionId);
 
         /// <inheritdoc />
         public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession(string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false)
-            => _fasterKV.ResumeSession<Input, Output, Context, Functions>(_functions, sessionId, out commitPoint, threadAffinitized);
+            => _fasterKV.ResumeSession<Input, Output, Context, Functions>(_functions, sessionId, out commitPoint);
 
         /// <inheritdoc />
         public bool GrowIndex() => _fasterKV.GrowIndex();

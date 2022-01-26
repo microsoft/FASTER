@@ -250,12 +250,9 @@ namespace FASTER.core
                         status = OperationStatus.CPR_SHIFT_DETECTED;
                     }
 
-                    if (RelaxedCPR) // don't hold on to shared latched during IO
-                    {
-                        if (heldOperation == LatchOperation.Shared)
-                            HashBucket.ReleaseSharedLatch(bucket);
-                        heldOperation = LatchOperation.None;
-                    }
+                    if (heldOperation == LatchOperation.Shared)
+                        HashBucket.ReleaseSharedLatch(bucket);
+                    heldOperation = LatchOperation.None;
                 }
 
                 goto CreatePendingContext;
@@ -722,15 +719,6 @@ namespace FASTER.core
                 {
                     status = OperationStatus.RETRY_LATER;
                     // Do not retain latch for pendings ops in relaxed CPR
-                    if (!RelaxedCPR)
-                    {
-                        // Retain the shared latch (if acquired)
-                        if (latchOperation == LatchOperation.Shared)
-                        {
-                            heldOperation = latchOperation;
-                            latchOperation = LatchOperation.None;
-                        }
-                    }
                     latchDestination = LatchDestination.CreatePendingContext; // Go pending
                 }
 
@@ -745,15 +733,6 @@ namespace FASTER.core
                 {
                     status = OperationStatus.RECORD_ON_DISK;
                     // Do not retain latch for pendings ops in relaxed CPR
-                    if (!RelaxedCPR)
-                    {
-                        // Retain the shared latch (if acquired)
-                        if (latchOperation == LatchOperation.Shared)
-                        {
-                            heldOperation = latchOperation;
-                            latchOperation = LatchOperation.None;
-                        }
-                    }
                     latchDestination = LatchDestination.CreatePendingContext; // Go pending
                 }
 
@@ -1341,8 +1320,6 @@ namespace FASTER.core
                             FasterExecutionContext<Input, Output, Context> currentCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            Debug.Assert(RelaxedCPR || pendingContext.version == ctx.version);
-
             if (request.logicalAddress >= hlog.BeginAddress)
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
@@ -1387,8 +1364,6 @@ namespace FASTER.core
                                     FasterExecutionContext<Input, Output, Context> currentCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            Debug.Assert(RelaxedCPR || pendingContext.version == opCtx.version);
-
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
             ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
 
@@ -1623,7 +1598,7 @@ namespace FASTER.core
                 SynchronizeEpoch(opCtx, currentCtx, ref pendingContext, fasterSession);
             }
 
-            if (status == OperationStatus.CPR_SHIFT_DETECTED || ((asyncOp || RelaxedCPR) && status == OperationStatus.RETRY_LATER))
+            if (status == OperationStatus.CPR_SHIFT_DETECTED || (asyncOp && status == OperationStatus.RETRY_LATER))
             {
 #region Retry as (v+1) Operation
                 var internalStatus = default(OperationStatus);
@@ -1660,7 +1635,7 @@ namespace FASTER.core
                             break;
                     }
                     Debug.Assert(internalStatus != OperationStatus.CPR_SHIFT_DETECTED);
-                } while (internalStatus == OperationStatus.RETRY_NOW || ((asyncOp || RelaxedCPR) && internalStatus == OperationStatus.RETRY_LATER));
+                } while (internalStatus == OperationStatus.RETRY_NOW || (asyncOp && internalStatus == OperationStatus.RETRY_LATER));
                 // Note that we spin in case of { async op + strict CPR } which is fine as this combination is rare/discouraged
 
                 status = internalStatus;

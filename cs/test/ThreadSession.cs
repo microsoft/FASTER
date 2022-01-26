@@ -11,10 +11,10 @@ namespace FASTER.test.statemachine
     {
         public static ThreadSession<K, V, I, O, C, F>
             CreateThreadSession<K, V, I, O, C, F>
-            (this FasterKV<K, V>.ClientSessionBuilder<I,O,C> fht, F f, bool threadAffinized)
+            (this FasterKV<K, V>.ClientSessionBuilder<I,O,C> fht, F f)
             where K : new() where V : new() where F : IFunctions<K, V, I, O, C>
         {
-            return new ThreadSession<K, V, I, O, C, F>(fht, f, threadAffinized);
+            return new ThreadSession<K, V, I, O, C, F>(fht, f);
         }
     }
 
@@ -24,15 +24,13 @@ namespace FASTER.test.statemachine
         readonly FasterKV<K, V>.ClientSessionBuilder<I, O, C> fht;
         ClientSession<K, V, I, O, C, F> s2;
         readonly F f;
-        readonly bool threadAffinitized;
         readonly AutoResetEvent ev = new AutoResetEvent(false);
         readonly AsyncQueue<string> q = new AsyncQueue<string>();
 
-        public ThreadSession(FasterKV<K, V>.ClientSessionBuilder<I, O, C> fht, F f, bool threadAffinitized)
+        public ThreadSession(FasterKV<K, V>.ClientSessionBuilder<I, O, C> fht, F f)
         {
             this.fht = fht;
             this.f = f;
-            this.threadAffinitized = threadAffinitized;
             var ss = new Thread(() => SecondSession());
             ss.Start();
             ev.WaitOne();
@@ -50,7 +48,7 @@ namespace FASTER.test.statemachine
 
         private void SecondSession()
         {
-            s2 = fht.NewSession(f, null, threadAffinitized);
+            s2 = fht.NewSession(f, null);
             ev.Set();
 
             while (true)
