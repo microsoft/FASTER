@@ -23,9 +23,10 @@ namespace FASTER.test.statemachine
     {
         readonly FasterKV<K, V>.ClientSessionBuilder<I, O, C> fht;
         ClientSession<K, V, I, O, C, F> s2;
+        UnsafeContext<K, V, I, O, C, F> uc2;
         readonly F f;
-        readonly AutoResetEvent ev = new AutoResetEvent(false);
-        readonly AsyncQueue<string> q = new AsyncQueue<string>();
+        readonly AutoResetEvent ev = new(false);
+        readonly AsyncQueue<string> q = new();
 
         public ThreadSession(FasterKV<K, V>.ClientSessionBuilder<I, O, C> fht, F f)
         {
@@ -49,6 +50,9 @@ namespace FASTER.test.statemachine
         private void SecondSession()
         {
             s2 = fht.NewSession(f, null);
+            uc2 = s2.GetUnsafeContext();
+            uc2.ResumeThread();
+
             ev.Set();
 
             while (true)
@@ -57,10 +61,12 @@ namespace FASTER.test.statemachine
                 switch (cmd)
                 {
                     case "refresh":
-                        s2.Refresh();
+                        uc2.Refresh();
                         ev.Set();
                         break;
                     case "dispose":
+                        uc2.SuspendThread();
+                        uc2.Dispose();
                         s2.Dispose();
                         ev.Set();
                         return;
