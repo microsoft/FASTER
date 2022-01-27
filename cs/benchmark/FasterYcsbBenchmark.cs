@@ -88,7 +88,7 @@ namespace FASTER.benchmark
             device.Dispose();
         }
 
-        private void RunYcsb(int thread_idx)
+        private void RunYcsbUnsafeContext(int thread_idx)
         {
             RandomGenerator rng = new((uint)(1 + thread_idx));
 
@@ -174,19 +174,19 @@ namespace FASTER.benchmark
                     }
 
 #if DASHBOARD
-                count += (int)kChunkSize;
+                    count += (int)kChunkSize;
 
-                //Check if stats collector is requesting for statistics
-                if (writeStats[thread_idx])
-                {
-                    var tstart1 = tstop1;
-                    tstop1 = Stopwatch.GetTimestamp();
-                    threadProgress[thread_idx] = count;
-                    threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
-                    lastWrittenValue = count;
-                    writeStats[thread_idx] = false;
-                    statsWritten[thread_idx].Set();
-                }
+                    //Check if stats collector is requesting for statistics
+                    if (writeStats[thread_idx])
+                    {
+                        var tstart1 = tstop1;
+                        tstop1 = Stopwatch.GetTimestamp();
+                        threadProgress[thread_idx] = count;
+                        threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
+                        lastWrittenValue = count;
+                        writeStats[thread_idx] = false;
+                        statsWritten[thread_idx].Set();
+                    }
 #endif
                 }
 
@@ -205,6 +205,92 @@ namespace FASTER.benchmark
 #if DASHBOARD
             statsWritten[thread_idx].Set();
 #endif
+
+            Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
+                writes_done + " writes, in " + sw.ElapsedMilliseconds + " ms.");
+            Interlocked.Add(ref total_ops_done, reads_done + writes_done);
+        }
+
+        private void RunYcsbSafeContext(int thread_idx)
+        {
+            RandomGenerator rng = new((uint)(1 + thread_idx));
+
+            if (numaStyle == 0)
+                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+            else
+                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+
+            waiter.Wait();
+
+            var sw = Stopwatch.StartNew();
+
+            Value value = default;
+            Input input = default;
+            Output output = default;
+
+            long reads_done = 0;
+            long writes_done = 0;
+
+            var session = store.For(functions).NewSession<Functions>();
+
+            while (!done)
+            {
+                long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
+                while (chunk_idx >= TxnCount)
+                {
+                    if (chunk_idx == TxnCount)
+                        idx_ = 0;
+                    chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
+                }
+
+                for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
+                {
+                    Op op;
+                    int r = (int)rng.Generate(100);
+                    if (r < readPercent)
+                        op = Op.Read;
+                    else if (readPercent >= 0)
+                        op = Op.Upsert;
+                    else
+                        op = Op.ReadModifyWrite;
+
+                    if (idx % 512 == 0)
+                    {
+                        if (!testLoader.Options.UseSafeContext)
+                            session.Refresh();
+                        session.CompletePending(false);
+                    }
+
+                    switch (op)
+                    {
+                        case Op.Upsert:
+                            {
+                                session.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
+                                ++writes_done;
+                                break;
+                            }
+                        case Op.Read:
+                            {
+                                session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
+                                ++reads_done;
+                                break;
+                            }
+                        case Op.ReadModifyWrite:
+                            {
+                                session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
+                                ++writes_done;
+                                break;
+                            }
+                        default:
+                            throw new InvalidOperationException("Unexpected op: " + op);
+                    }
+                }
+            }
+
+            session.CompletePending(true);
+            session.Dispose();
+
+            sw.Stop();
 
             Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
                 writes_done + " writes, in " + sw.ElapsedMilliseconds + " ms.");
@@ -246,7 +332,10 @@ namespace FASTER.benchmark
                 for (int idx = 0; idx < testLoader.Options.ThreadCount; ++idx)
                 {
                     int x = idx;
-                    workers[idx] = new Thread(() => SetupYcsb(x));
+                    if (testLoader.Options.UseSafeContext)
+                        workers[idx] = new Thread(() => SetupYcsbSafeContext(x));
+                    else
+                        workers[idx] = new Thread(() => SetupYcsbUnsafeContext(x));
                 }
 
                 foreach (Thread worker in workers)
@@ -289,7 +378,10 @@ namespace FASTER.benchmark
             for (int idx = 0; idx < testLoader.Options.ThreadCount; ++idx)
             {
                 int x = idx;
-                workers[idx] = new Thread(() => RunYcsb(x));
+                if (testLoader.Options.UseSafeContext)
+                    workers[idx] = new Thread(() => RunYcsbSafeContext(x));
+                else
+                    workers[idx] = new Thread(() => RunYcsbUnsafeContext(x));
             }
             // Start threads.
             foreach (Thread worker in workers)
@@ -356,7 +448,7 @@ namespace FASTER.benchmark
             return (insertsPerSecond, opsPerSecond);
         }
 
-        private void SetupYcsb(int thread_idx)
+        private void SetupYcsbUnsafeContext(int thread_idx)
         {
             if (numaStyle == 0)
                 Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
@@ -376,10 +468,10 @@ namespace FASTER.benchmark
             int count = 0;
 #endif
 
+            Value value = default;
+
             try
             {
-                Value value = default;
-
                 for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                     chunk_idx < InitCount;
                     chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize)
@@ -420,6 +512,43 @@ namespace FASTER.benchmark
                 uContext.SuspendThread();
             }
             uContext.Dispose();
+            session.Dispose();
+        }
+
+        private void SetupYcsbSafeContext(int thread_idx)
+        {
+            if (numaStyle == 0)
+                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+            else
+                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+
+            waiter.Wait();
+
+            var session = store.For(functions).NewSession<Functions>();
+
+            Value value = default;
+
+            for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
+                chunk_idx < InitCount;
+                chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize)
+            {
+                for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize; ++idx)
+                {
+                    if (idx % 256 == 0)
+                    {
+                        session.Refresh();
+
+                        if (idx % 65536 == 0)
+                        {
+                            session.CompletePending(false);
+                        }
+                    }
+
+                    session.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
+                }
+            }
+
+            session.CompletePending(true);
             session.Dispose();
         }
 
@@ -487,7 +616,7 @@ namespace FASTER.benchmark
         }
 #endif
 
-#region Load Data
+        #region Load Data
 
         internal static void CreateKeyVectors(TestLoader testLoader, out Key[] i_keys, out Key[] t_keys)
         {

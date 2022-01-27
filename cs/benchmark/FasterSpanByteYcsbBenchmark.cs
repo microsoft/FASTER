@@ -88,7 +88,134 @@ namespace FASTER.benchmark
             device.Dispose();
         }
 
-        private void RunYcsb(int thread_idx)
+        private void RunYcsbUnsafeContext(int thread_idx)
+        {
+            RandomGenerator rng = new((uint)(1 + thread_idx));
+
+            if (numaStyle == 0)
+                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+            else
+                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+
+            waiter.Wait();
+
+            var sw = Stopwatch.StartNew();
+
+            Span<byte> value = stackalloc byte[kValueSize];
+            Span<byte> input = stackalloc byte[kValueSize];
+            Span<byte> output = stackalloc byte[kValueSize];
+
+            ref SpanByte _value = ref SpanByte.Reinterpret(value);
+            ref SpanByte _input = ref SpanByte.Reinterpret(input);
+            SpanByteAndMemory _output = SpanByteAndMemory.FromFixedSpan(output);
+
+            long reads_done = 0;
+            long writes_done = 0;
+
+#if DASHBOARD
+            var tstart = Stopwatch.GetTimestamp();
+            var tstop1 = tstart;
+            var lastWrittenValue = 0;
+            int count = 0;
+#endif
+
+            var session = store.For(functions).NewSession<FunctionsSB>();
+            var uContext = session.GetUnsafeContext();
+            uContext.ResumeThread();
+
+            try
+            {
+                while (!done)
+                {
+                    long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
+                    while (chunk_idx >= TxnCount)
+                    {
+                        if (chunk_idx == TxnCount)
+                            idx_ = 0;
+                        chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
+                    }
+
+                    for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
+                    {
+                        Op op;
+                        int r = (int)rng.Generate(100);
+                        if (r < readPercent)
+                            op = Op.Read;
+                        else if (readPercent >= 0)
+                            op = Op.Upsert;
+                        else
+                            op = Op.ReadModifyWrite;
+
+                        if (idx % 512 == 0)
+                        {
+                            uContext.Refresh();
+                            uContext.CompletePending(false);
+                        }
+
+                        switch (op)
+                        {
+                            case Op.Upsert:
+                                {
+                                    uContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default, 1);
+                                    ++writes_done;
+                                    break;
+                                }
+                            case Op.Read:
+                                {
+                                    uContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default, 1);
+                                    ++reads_done;
+                                    break;
+                                }
+                            case Op.ReadModifyWrite:
+                                {
+                                    uContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default, 1);
+                                    ++writes_done;
+                                    break;
+                                }
+                            default:
+                                throw new InvalidOperationException("Unexpected op: " + op);
+                        }
+                    }
+
+#if DASHBOARD
+                    count += (int)kChunkSize;
+
+                    //Check if stats collector is requesting for statistics
+                    if (writeStats[thread_idx])
+                    {
+                        var tstart1 = tstop1;
+                        tstop1 = Stopwatch.GetTimestamp();
+                        threadProgress[thread_idx] = count;
+                        threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
+                        lastWrittenValue = count;
+                        writeStats[thread_idx] = false;
+                        statsWritten[thread_idx].Set();
+                    }
+#endif
+                }
+
+                uContext.CompletePending(true);
+            }
+            finally
+            {
+                uContext.SuspendThread();
+            }
+
+            uContext.Dispose();
+            session.Dispose();
+
+            sw.Stop();
+
+#if DASHBOARD
+            statsWritten[thread_idx].Set();
+#endif
+
+            Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
+                writes_done + " writes, in " + sw.ElapsedMilliseconds + " ms.");
+            Interlocked.Add(ref total_ops_done, reads_done + writes_done);
+        }
+
+        private void RunYcsbSafeContext(int thread_idx)
         {
             RandomGenerator rng = new((uint)(1 + thread_idx));
 
@@ -144,7 +271,7 @@ namespace FASTER.benchmark
 
                     if (idx % 512 == 0)
                     {
-                        if (!testLoader.Options.NoThreadAffinity)
+                        if (!testLoader.Options.UseSafeContext)
                             session.Refresh();
                         session.CompletePending(false);
                     }
@@ -225,7 +352,10 @@ namespace FASTER.benchmark
                 for (int idx = 0; idx < testLoader.Options.ThreadCount; ++idx)
                 {
                     int x = idx;
-                    workers[idx] = new Thread(() => SetupYcsb(x));
+                    if (testLoader.Options.UseSafeContext)
+                        workers[idx] = new Thread(() => SetupYcsbSafeContext(x));
+                    else
+                        workers[idx] = new Thread(() => SetupYcsbUnsafeContext(x));
                 }
 
                 foreach (Thread worker in workers)
@@ -269,7 +399,10 @@ namespace FASTER.benchmark
             for (int idx = 0; idx < testLoader.Options.ThreadCount; ++idx)
             {
                 int x = idx;
-                workers[idx] = new Thread(() => RunYcsb(x));
+                if (testLoader.Options.UseSafeContext)
+                    workers[idx] = new Thread(() => RunYcsbSafeContext(x));
+                else
+                    workers[idx] = new Thread(() => RunYcsbUnsafeContext(x));
             }
             // Start threads.
             foreach (Thread worker in workers)
@@ -327,7 +460,7 @@ namespace FASTER.benchmark
             return (insertsPerSecond, opsPerSecond);
         }
 
-        private void SetupYcsb(int thread_idx)
+        private void SetupYcsbUnsafeContext(int thread_idx)
         {
             if (numaStyle == 0)
                 Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
@@ -337,6 +470,8 @@ namespace FASTER.benchmark
             waiter.Wait();
 
             var session = store.For(functions).NewSession<FunctionsSB>();
+            var uContext = session.GetUnsafeContext();
+            uContext.ResumeThread();
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -344,6 +479,65 @@ namespace FASTER.benchmark
             var lastWrittenValue = 0;
             int count = 0;
 #endif
+
+            Span<byte> value = stackalloc byte[kValueSize];
+            ref SpanByte _value = ref SpanByte.Reinterpret(value);
+
+            try
+            {
+                for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
+                    chunk_idx < InitCount;
+                    chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize)
+                {
+                    for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize; ++idx)
+                    {
+                        if (idx % 256 == 0)
+                        {
+                            uContext.Refresh();
+
+                            if (idx % 65536 == 0)
+                            {
+                                uContext.CompletePending(false);
+                            }
+                        }
+
+                        uContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default, 1);
+                    }
+#if DASHBOARD
+                count += (int)kChunkSize;
+
+                //Check if stats collector is requesting for statistics
+                if (writeStats[thread_idx])
+                {
+                    var tstart1 = tstop1;
+                    tstop1 = Stopwatch.GetTimestamp();
+                    threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
+                    lastWrittenValue = count;
+                    writeStats[thread_idx] = false;
+                    statsWritten[thread_idx].Set();
+                }
+#endif
+                }
+                uContext.CompletePending(true);
+            }
+            finally
+            {
+                uContext.SuspendThread();
+            }
+            uContext.Dispose();
+            session.Dispose();
+        }
+
+        private void SetupYcsbSafeContext(int thread_idx)
+        {
+            if (numaStyle == 0)
+                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+            else
+                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+
+            waiter.Wait();
+
+            var session = store.For(functions).NewSession<FunctionsSB>();
 
             Span<byte> value = stackalloc byte[kValueSize];
             ref SpanByte _value = ref SpanByte.Reinterpret(value);
@@ -366,20 +560,6 @@ namespace FASTER.benchmark
 
                     session.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default, 1);
                 }
-#if DASHBOARD
-                count += (int)kChunkSize;
-
-                //Check if stats collector is requesting for statistics
-                if (writeStats[thread_idx])
-                {
-                    var tstart1 = tstop1;
-                    tstop1 = Stopwatch.GetTimestamp();
-                    threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
-                    lastWrittenValue = count;
-                    writeStats[thread_idx] = false;
-                    statsWritten[thread_idx].Set();
-                }
-#endif
             }
 
             session.CompletePending(true);
