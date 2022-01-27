@@ -18,12 +18,13 @@ namespace FASTER.core
         IFasterKV<Key, Value>
     {
         internal readonly AllocatorBase<Key, Value> hlog;
-        internal readonly AllocatorBase<Key, Value> readcache;
+        readonly AllocatorBase<Key, Value> readcache;
+        internal AllocatorBase<Key, Value> ReadCacheHlog => readcache;  // For test
 
         /// <summary>
         /// Compares two keys
         /// </summary>
-        internal protected readonly IFasterEqualityComparer<Key> comparer;
+        protected readonly IFasterEqualityComparer<Key> comparer;
 
         internal readonly bool UseReadCache;
         private readonly CopyReadsToTail CopyReadsToTail;
@@ -71,8 +72,8 @@ namespace FASTER.core
 
         internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
-        internal bool DisableLocking;
-        internal LockTable<Key> LockTable;
+        internal readonly bool DisableLocking;
+        internal readonly LockTable<Key> LockTable;
         internal long NumActiveLockingSessions = 0;
 
         internal void IncrementNumLockingSessions()
