@@ -138,7 +138,7 @@ namespace FASTER.test.ReadCacheTests
             Assert.IsTrue(tagExists);
 
             isReadCache = entry.ReadCache;
-            var log = isReadCache ? fht.ReadCacheHlog : fht.hlog;
+            var log = isReadCache ? fht.readcache : fht.hlog;
             var pa = log.GetPhysicalAddress(entry.Address);
             recordKey = log.GetKey(pa);
             invalid = log.GetInfo(pa).Invalid;
@@ -151,12 +151,12 @@ namespace FASTER.test.ReadCacheTests
 
         internal static (long logicalAddress, long physicalAddress) NextInChain(FasterKV<int, int> fht, long physicalAddress, out int recordKey, out bool invalid, ref bool isReadCache)
         {
-            var log = isReadCache ? fht.ReadCacheHlog : fht.hlog;
+            var log = isReadCache ? fht.readcache : fht.hlog;
             var info = log.GetInfo(physicalAddress);
             var la = info.PreviousAddress;
 
             isReadCache = new HashBucketEntry { word = la }.ReadCache;
-            log = isReadCache ? fht.ReadCacheHlog : fht.hlog;
+            log = isReadCache ? fht.readcache : fht.hlog;
             var pa = log.GetPhysicalAddress(la);
             recordKey = log.GetKey(pa);
             invalid = log.GetInfo(pa).Invalid;

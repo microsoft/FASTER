@@ -13,18 +13,16 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-
     public partial class FasterKV<Key, Value> : FasterBase,
         IFasterKV<Key, Value>
     {
         internal readonly AllocatorBase<Key, Value> hlog;
-        readonly AllocatorBase<Key, Value> readcache;
-        internal AllocatorBase<Key, Value> ReadCacheHlog => readcache;  // For test
+        internal readonly AllocatorBase<Key, Value> readcache;
 
         /// <summary>
         /// Compares two keys
         /// </summary>
-        protected readonly IFasterEqualityComparer<Key> comparer;
+        internal readonly IFasterEqualityComparer<Key> comparer;
 
         internal readonly bool UseReadCache;
         private readonly CopyReadsToTail CopyReadsToTail;
