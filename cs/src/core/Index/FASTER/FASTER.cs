@@ -13,7 +13,6 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-
     public partial class FasterKV<Key, Value> : FasterBase,
         IFasterKV<Key, Value>
     {
@@ -23,7 +22,7 @@ namespace FASTER.core
         /// <summary>
         /// Compares two keys
         /// </summary>
-        internal protected readonly IFasterEqualityComparer<Key> comparer;
+        internal readonly IFasterEqualityComparer<Key> comparer;
 
         internal readonly bool UseReadCache;
         private readonly CopyReadsToTail CopyReadsToTail;
@@ -71,8 +70,8 @@ namespace FASTER.core
 
         internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
-        internal bool DisableLocking;
-        internal LockTable<Key> LockTable;
+        internal readonly bool DisableLocking;
+        internal readonly LockTable<Key> LockTable;
         internal long NumActiveLockingSessions = 0;
 
         internal void IncrementNumLockingSessions()

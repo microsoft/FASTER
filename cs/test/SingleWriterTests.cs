@@ -10,18 +10,18 @@ namespace FASTER.test.SingleWriter
 {
     internal class SingleWriterTestFunctions : SimpleFunctions<int, int>
     {
-        internal int actualExecuted = 0;
+        internal WriteReason actualReason;
 
         public override void SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address, WriteReason reason)
         {
             Assert.AreEqual((WriteReason)input, reason);
-            actualExecuted |= 1 << input;
+            actualReason = reason;
         }
 
         public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address, WriteReason reason)
         {
             Assert.AreEqual((WriteReason)input, reason);
-            actualExecuted |= 1 << input;
+            actualReason = reason;
         }
     }
 
@@ -29,6 +29,7 @@ namespace FASTER.test.SingleWriter
     {
         const int numRecords = 1000;
         const int valueMult = 1_000_000;
+        const WriteReason NoReason = (WriteReason)(-1);
 
         SingleWriterTestFunctions functions;
 
@@ -43,8 +44,17 @@ namespace FASTER.test.SingleWriter
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             functions = new SingleWriterTestFunctions();
+            ReadCacheSettings readCacheSettings = default;
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is ReadCopyDestination dest)
+                {
+                    if (dest == ReadCopyDestination.ReadCache)
+                        readCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
+                    break;
+                }
+            }
 
-            ReadCacheSettings readCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
             fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings, CopyReadsToTail = CopyReadsToTail.FromStorage });
             session = fht.For(functions).NewSession<SingleWriterTestFunctions>();
         }
@@ -70,39 +80,40 @@ namespace FASTER.test.SingleWriter
         }
 
         [Test]
-        [Category(LockableUnsafeContextTestCategory)]
+        [Category(FasterKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SingleWriterReasonsTest()
+        public void SingleWriterReasonsTest([Values] ReadCopyDestination readCopyDestination)
         {
-            int expectedExecuted = 0;
-
-            expectedExecuted |= 1 << (int)WriteReason.Upsert;
+            functions.actualReason = NoReason;
             Populate();
-            Assert.AreEqual(expectedExecuted, functions.actualExecuted);
+            Assert.AreEqual(WriteReason.Upsert, functions.actualReason);
 
             fht.Log.FlushAndEvict(wait: true);
 
+            functions.actualReason = NoReason;
             int key = 42;
-            int input = (int)WriteReason.CopyToReadCache;
-            expectedExecuted |= 1 << input;
+            WriteReason expectedReason = readCopyDestination == ReadCopyDestination.ReadCache ? WriteReason.CopyToReadCache : WriteReason.CopyToTail;
+            int input = (int)expectedReason;
             var status = session.Read(key, input, out int output);
             Assert.AreEqual(Status.PENDING, status);
             session.CompletePending(wait: true);
-            Assert.AreEqual(expectedExecuted, functions.actualExecuted);
+            Assert.AreEqual(expectedReason, functions.actualReason);
 
+            functions.actualReason = NoReason;
             key = 64;
-            input = (int)WriteReason.CopyToTail;
-            expectedExecuted |= 1 << input;
+            expectedReason = WriteReason.CopyToTail;
+            input = (int)expectedReason;
             RecordMetadata recordMetadata = default;
             status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
             Assert.AreEqual(Status.PENDING, status);
             session.CompletePending(wait: true);
-            Assert.AreEqual(expectedExecuted, functions.actualExecuted);
+            Assert.AreEqual(expectedReason, functions.actualReason);
 
-            input = (int)WriteReason.Compaction;
-            expectedExecuted |= 1 << input;
+            functions.actualReason = NoReason;
+            expectedReason = WriteReason.Compaction;
+            input = (int)expectedReason;
             fht.Log.Compact<int, int, Empty, SingleWriterTestFunctions>(functions, ref input, ref output, fht.Log.SafeReadOnlyAddress, CompactionType.Scan);
-            Assert.AreEqual(expectedExecuted, functions.actualExecuted);
+            Assert.AreEqual(expectedReason, functions.actualReason);
         }
     }
 }
