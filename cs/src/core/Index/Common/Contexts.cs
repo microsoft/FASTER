@@ -82,7 +82,6 @@ namespace FASTER.core
             internal long logicalAddress;
             internal long serialNum;
             internal HashBucketEntry entry;
-            internal LatchOperation heldLatch;
 
             internal ushort operationFlags;
             internal RecordInfo recordInfo;

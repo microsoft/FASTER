@@ -109,7 +109,6 @@ namespace FASTER.core
             var bucket = default(HashBucket*);
             var slot = default(int);
             var physicalAddress = default(long);
-            var heldOperation = LatchOperation.None;
 
             var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
@@ -258,24 +257,14 @@ namespace FASTER.core
                 status = OperationStatus.RECORD_ON_DISK;
                 if (sessionCtx.phase == Phase.PREPARE)
                 {
-                    Debug.Assert(heldOperation != LatchOperation.Exclusive);
-                    if (useStartAddress)
+                    if (!useStartAddress)
                     {
-                        Debug.Assert(heldOperation == LatchOperation.None);
+                        // Failure to latch indicates CPR_SHIFT, but don't hold on to shared latch during IO
+                        if (HashBucket.TryAcquireSharedLatch(bucket))
+                            HashBucket.ReleaseSharedLatch(bucket);
+                        else
+                            status = OperationStatus.CPR_SHIFT_DETECTED;
                     }
-                    else if (heldOperation == LatchOperation.Shared || HashBucket.TryAcquireSharedLatch(bucket))
-                    {
-                        heldOperation = LatchOperation.Shared;
-                    }
-                    else
-                    {
-                        status = OperationStatus.CPR_SHIFT_DETECTED;
-                    }
-
-                    // don't hold on to shared latched during IO
-                    if (heldOperation == LatchOperation.Shared)
-                        HashBucket.ReleaseSharedLatch(bucket);
-                    heldOperation = LatchOperation.None;
                 }
 
                 goto CreatePendingContext;
@@ -306,7 +295,6 @@ namespace FASTER.core
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
-                pendingContext.heldLatch = heldOperation;
 
                 pendingContext.HasPrevHighestKeyHashAddress = prevHighestKeyHashAddress >= hlog.BeginAddress;
                 pendingContext.recordInfo.PreviousAddress = prevHighestKeyHashAddress;
@@ -778,7 +766,6 @@ namespace FASTER.core
             var physicalAddress = default(long);
             var status = default(OperationStatus);
             var latchOperation = LatchOperation.None;
-            var heldOperation = LatchOperation.None;
             var latchDestination = LatchDestination.NormalProcessing;
 
             var hash = comparer.GetHashCode64(ref key);
@@ -969,7 +956,6 @@ namespace FASTER.core
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
-                pendingContext.heldLatch = heldOperation;
             }
 #endregion
 
@@ -1000,8 +986,7 @@ namespace FASTER.core
             {
                 case Phase.PREPARE:
                     {
-                        Debug.Assert(pendingContext.heldLatch != LatchOperation.Exclusive);
-                        if (pendingContext.heldLatch == LatchOperation.Shared || HashBucket.TryAcquireSharedLatch(bucket))
+                        if (HashBucket.TryAcquireSharedLatch(bucket))
                         {
                             // Set to release shared latch (default)
                             latchOperation = LatchOperation.Shared;
@@ -1022,8 +1007,7 @@ namespace FASTER.core
                     {
                         if (!CheckEntryVersionNew(logicalAddress))
                         {
-                            Debug.Assert(pendingContext.heldLatch != LatchOperation.Shared);
-                            if (pendingContext.heldLatch == LatchOperation.Exclusive || HashBucket.TryAcquireExclusiveLatch(bucket))
+                            if (HashBucket.TryAcquireExclusiveLatch(bucket))
                             {
                                 // Set to release exclusive latch (default)
                                 latchOperation = LatchOperation.Exclusive;

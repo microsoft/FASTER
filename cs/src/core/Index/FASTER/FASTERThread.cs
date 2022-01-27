@@ -202,9 +202,6 @@ namespace FASTER.core
             // If done, callback user code.
             if (status == Status.OK || status == Status.NOTFOUND)
             {
-                if (pendingContext.heldLatch == LatchOperation.Shared)
-                    ReleaseSharedLatch(key);
-
                 switch (pendingContext.type)
                 {
                     case OperationType.RMW:
@@ -348,9 +345,6 @@ namespace FASTER.core
             // If done, callback user code
             if (status == Status.OK || status == Status.NOTFOUND)
             {
-                if (pendingContext.heldLatch == LatchOperation.Shared)
-                    ReleaseSharedLatch(key);
-
                 if (pendingContext.type == OperationType.READ)
                 {
                     fasterSession.ReadCompletionCallback(ref key,
