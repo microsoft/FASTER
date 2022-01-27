@@ -14,6 +14,14 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+
+    public interface IEntry
+    {
+        public int SerializedLength();
+
+        public void SerializeTo(Span<byte> dest);
+    }
+    
     /// <summary>
     /// FASTER log
     /// </summary>
@@ -313,6 +321,71 @@ namespace FASTER.core
         #endregion
 
         #region TryEnqueue
+
+        public unsafe bool TryEnqueue(IEntry entry, out long logicalAddress)
+        {
+            logicalAddress = 0;
+            var length = entry.SerializedLength();
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+                if (logicalAddress == 0)
+                {
+                    epoch.Suspend();
+                    if (cannedException != null) throw cannedException;
+                    return false;
+                }
+            
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            entry.SerializeTo(new Span<byte>((void *) (headerSize + physicalAddress), length));
+            SetHeader(length, (byte*)physicalAddress);
+            epoch.Suspend();
+            return true;
+        }
+
+        public unsafe bool TryEnqueue(IEnumerable<IEntry> entries, out long logicalAddress)
+        {
+            logicalAddress = 0;
+
+            var allocatedLength = 0;
+            foreach (var entry in entries)
+            {
+                allocatedLength += Align(entry.SerializedLength()) + headerSize;
+            }
+
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            foreach(var entry in entries)
+            {
+                var length = entry.SerializedLength();
+                entry.SerializeTo(new Span<byte>((void *)(headerSize + physicalAddress), length));
+                SetHeader(length, (byte*)physicalAddress);
+                physicalAddress += Align(length) + headerSize;
+            }
+
+            epoch.Suspend();
+            return true;
+        }
+        
         /// <summary>
         /// Try to enqueue entry to log (in memory). If it returns true, we are
         /// done. If it returns false, we need to retry.
@@ -332,6 +405,7 @@ namespace FASTER.core
             if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
