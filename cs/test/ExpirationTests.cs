@@ -494,7 +494,7 @@ namespace FASTER.test.Expiration
             return output;
         }
 
-        private ExpirationOutput ExecuteRMW(int key, ref ExpirationInput input, bool isImmutable, Status expectedStatus = Status.OK)
+        private ExpirationOutput ExecuteRMW(int key, ref ExpirationInput input, bool isImmutable, Status expectedStatus = default)
         {
             ExpirationOutput output = new ();
             var status = session.RMW(ref key, ref input, ref output);

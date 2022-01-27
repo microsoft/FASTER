@@ -191,7 +191,7 @@ namespace FASTER.test.LockTests
                 for (int iter = 0; iter < numIters; iter++)
                 {
                     if ((iter & 7) == 7)
-                        Assert.AreNotEqual(Status.PENDING, session.Read(key));
+                        Assert.AreNotEqual(Status.PENDING, session.Read(key).status);
 
                     // These will both just increment the stored value, ignoring the input argument.
                     if (useRMW)

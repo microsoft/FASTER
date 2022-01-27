@@ -5,6 +5,20 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.core
 {
+    enum StatusCode : byte
+    {
+        // Basic status codes
+        OK,
+        NOTFOUND,
+        PENDING,
+        ERROR,
+
+        // Advanced status codes
+        OK_IU,
+        OK_IPU,
+        OK_APPEND
+    }
+
     /// <summary>
     /// Status result of operation on FASTER
     /// </summary>
@@ -12,37 +26,79 @@ namespace FASTER.core
     public struct Status
     {
         [FieldOffset(0)]
-        readonly byte statusCode;
+        readonly StatusCode statusCode;
 
         /// <summary>
         /// 
         /// </summary>
         /// <param name="statusCode"></param>
-        public Status(byte statusCode) => this.statusCode = statusCode;
+        internal Status(StatusCode statusCode) => this.statusCode = statusCode;
 
-        internal Status(OperationStatus operationStatus) => this.statusCode = (byte)operationStatus;
+        internal Status(OperationStatus operationStatus) => statusCode = (StatusCode)operationStatus;
 
         /// <summary>
         /// For Read and RMW, item being read was found, and
         /// the operation completed successfully
         /// For Upsert, item was upserted successfully
         /// </summary>
-        public static Status OK => new((byte)0);
+        public static readonly Status OK = new(StatusCode.OK);
 
         /// <summary>
         /// For Read and RMW, item being read was not found
         /// </summary>
-        public static Status NOTFOUND => new(1);
+        public static readonly Status NOTFOUND = new(StatusCode.NOTFOUND);
 
         /// <summary>
         /// Operation went pending (async)
         /// </summary>
-        public static Status PENDING => new(2);
+        public static readonly Status PENDING = new(StatusCode.PENDING);
 
         /// <summary>
         /// Operation resulted in some error
         /// </summary>
-        public static Status ERROR => new(3);
+        public static readonly Status ERROR = new(StatusCode.ERROR);
+
+        /// <summary>
+        /// Whether operation has completed, i.e., it did not go pending
+        /// </summary>
+        public bool IsCompleted => statusCode != StatusCode.PENDING;
+
+        /// <summary>
+        /// Did operation complete successfully, i.e., it is not pending or errored out
+        /// </summary>
+        public bool IsCompletedSuccessfully => statusCode != StatusCode.PENDING && statusCode != StatusCode.ERROR;
+
+        /// <summary>
+        /// Whether operation is pending
+        /// </summary>
+        public bool IsPending => statusCode == StatusCode.PENDING;
+
+        /// <summary>
+        /// Whether operation is in error state
+        /// </summary>
+        public bool IsFaulted => statusCode == StatusCode.ERROR;
+
+        #region Advanced status
+        /// <summary>
+        /// 
+        /// </summary>
+        public bool IsInitialUpdate => statusCode == StatusCode.OK_IU;
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public bool IsInPlaceUpdate => statusCode == StatusCode.OK_IPU;
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public bool IsAppend => statusCode == StatusCode.OK_IU || statusCode == StatusCode.OK_APPEND;
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public bool IsNotFound => statusCode == StatusCode.NOTFOUND || statusCode == StatusCode.OK_IU;
+        #endregion
 
         /// <summary>
         /// Check equals
@@ -64,16 +120,10 @@ namespace FASTER.core
 
         /// <inheritdoc />
         public override bool Equals(object obj)
-        {
-            throw new System.Exception();
-            // return statusCode == ((Status)obj).statusCode;
-        }
+            => statusCode == ((Status)obj).statusCode;
 
         /// <inheritdoc />
         public override int GetHashCode()
-        {
-            throw new System.Exception();
-            // return statusCode.GetHashCode();
-        }
+            => statusCode.GetHashCode();
     }
 }
