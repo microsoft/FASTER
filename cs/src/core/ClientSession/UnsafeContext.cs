@@ -76,7 +76,10 @@ namespace FASTER.core
         /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
         /// <returns>True if all pending operations have completed, false otherwise</returns>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
-            => this.clientSession.UnsafeCompletePending(this.FasterSession, false, wait, spinWaitForCommit);
+        {
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            return this.clientSession.UnsafeCompletePending(this.FasterSession, false, wait, spinWaitForCommit);
+        }
 
         /// <summary>
         /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
@@ -87,7 +90,10 @@ namespace FASTER.core
         /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
         /// <returns>True if all pending operations have completed, false otherwise</returns>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            => this.clientSession.UnsafeCompletePendingWithOutputs(this.FasterSession, out completedOutputs, wait, spinWaitForCommit);
+        {
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            return this.clientSession.UnsafeCompletePendingWithOutputs(this.FasterSession, out completedOutputs, wait, spinWaitForCommit);
+        }
 
         #region Acquire and Dispose
         internal void Acquire()
