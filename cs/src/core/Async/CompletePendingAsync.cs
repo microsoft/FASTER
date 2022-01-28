@@ -21,17 +21,6 @@ namespace FASTER.core
         /// <returns></returns>
         internal async ValueTask ReadyToCompletePendingAsync<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token = default)
         {
-            #region Previous pending requests
-            if (!RelaxedCPR)
-            {
-                if (currentCtx.phase == Phase.IN_PROGRESS)
-                {
-                    if (currentCtx.prevCtx.SyncIoPendingCount != 0)
-                        await currentCtx.prevCtx.readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
-                }
-            }
-            #endregion
-
             if (currentCtx.SyncIoPendingCount != 0)
                 await currentCtx.readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
         }
@@ -47,29 +36,6 @@ namespace FASTER.core
         {
             while (true)
             {
-                bool done = true;
-
-                #region Previous pending requests
-                if (!RelaxedCPR)
-                {
-                    if (currentCtx.phase == Phase.IN_PROGRESS)
-                    {
-                        fasterSession.UnsafeResumeThread();
-                        try
-                        {
-                            InternalCompletePendingRequests(currentCtx.prevCtx, currentCtx, fasterSession, completedOutputs);
-                            InternalCompleteRetryRequests(currentCtx.prevCtx, currentCtx, fasterSession);
-                        }
-                        finally
-                        {
-                            fasterSession.UnsafeSuspendThread();
-                        }
-                        await currentCtx.prevCtx.WaitPendingAsync(token).ConfigureAwait(false);
-                        done &= currentCtx.prevCtx.HasNoPendingRequests;
-                    }
-                }
-                #endregion
-
                 fasterSession.UnsafeResumeThread();
                 try
                 {
@@ -82,9 +48,8 @@ namespace FASTER.core
                 }
 
                 await currentCtx.WaitPendingAsync(token).ConfigureAwait(false);
-                done &= currentCtx.HasNoPendingRequests;
 
-                if (done) return;
+                if (currentCtx.HasNoPendingRequests) return;
 
                 InternalRefresh(currentCtx, fasterSession);
 

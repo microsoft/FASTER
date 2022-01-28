@@ -109,7 +109,6 @@ namespace FASTER.core
             var bucket = default(HashBucket*);
             var slot = default(int);
             var physicalAddress = default(long);
-            var heldOperation = LatchOperation.None;
 
             var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
@@ -258,25 +257,13 @@ namespace FASTER.core
                 status = OperationStatus.RECORD_ON_DISK;
                 if (sessionCtx.phase == Phase.PREPARE)
                 {
-                    Debug.Assert(heldOperation != LatchOperation.Exclusive);
-                    if (useStartAddress)
+                    if (!useStartAddress)
                     {
-                        Debug.Assert(heldOperation == LatchOperation.None);
-                    }
-                    else if (heldOperation == LatchOperation.Shared || HashBucket.TryAcquireSharedLatch(bucket))
-                    {
-                        heldOperation = LatchOperation.Shared;
-                    }
-                    else
-                    {
-                        status = OperationStatus.CPR_SHIFT_DETECTED;
-                    }
-
-                    if (RelaxedCPR) // don't hold on to shared latched during IO
-                    {
-                        if (heldOperation == LatchOperation.Shared)
+                        // Failure to latch indicates CPR_SHIFT, but don't hold on to shared latch during IO
+                        if (HashBucket.TryAcquireSharedLatch(bucket))
                             HashBucket.ReleaseSharedLatch(bucket);
-                        heldOperation = LatchOperation.None;
+                        else
+                            status = OperationStatus.CPR_SHIFT_DETECTED;
                     }
                 }
 
@@ -308,7 +295,6 @@ namespace FASTER.core
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
-                pendingContext.heldLatch = heldOperation;
 
                 pendingContext.HasPrevHighestKeyHashAddress = prevHighestKeyHashAddress >= hlog.BeginAddress;
                 pendingContext.recordInfo.PreviousAddress = prevHighestKeyHashAddress;
@@ -780,7 +766,6 @@ namespace FASTER.core
             var physicalAddress = default(long);
             var status = default(OperationStatus);
             var latchOperation = LatchOperation.None;
-            var heldOperation = LatchOperation.None;
             var latchDestination = LatchDestination.NormalProcessing;
 
             var hash = comparer.GetHashCode64(ref key);
@@ -891,15 +876,6 @@ namespace FASTER.core
                 {
                     status = OperationStatus.RETRY_LATER;
                     // Do not retain latch for pendings ops in relaxed CPR
-                    if (!RelaxedCPR)
-                    {
-                        // Retain the shared latch (if acquired)
-                        if (latchOperation == LatchOperation.Shared)
-                        {
-                            heldOperation = latchOperation;
-                            latchOperation = LatchOperation.None;
-                        }
-                    }
                     latchDestination = LatchDestination.CreatePendingContext; // Go pending
                 }
 
@@ -920,15 +896,6 @@ namespace FASTER.core
                 {
                     status = OperationStatus.RECORD_ON_DISK;
                     // Do not retain latch for pendings ops in relaxed CPR
-                    if (!RelaxedCPR)
-                    {
-                        // Retain the shared latch (if acquired)
-                        if (latchOperation == LatchOperation.Shared)
-                        {
-                            heldOperation = latchOperation;
-                            latchOperation = LatchOperation.None;
-                        }
-                    }
                     latchDestination = LatchDestination.CreatePendingContext; // Go pending
                 }
 
@@ -989,7 +956,6 @@ namespace FASTER.core
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
-                pendingContext.heldLatch = heldOperation;
             }
 #endregion
 
@@ -1020,8 +986,7 @@ namespace FASTER.core
             {
                 case Phase.PREPARE:
                     {
-                        Debug.Assert(pendingContext.heldLatch != LatchOperation.Exclusive);
-                        if (pendingContext.heldLatch == LatchOperation.Shared || HashBucket.TryAcquireSharedLatch(bucket))
+                        if (HashBucket.TryAcquireSharedLatch(bucket))
                         {
                             // Set to release shared latch (default)
                             latchOperation = LatchOperation.Shared;
@@ -1042,8 +1007,7 @@ namespace FASTER.core
                     {
                         if (!CheckEntryVersionNew(logicalAddress))
                         {
-                            Debug.Assert(pendingContext.heldLatch != LatchOperation.Shared);
-                            if (pendingContext.heldLatch == LatchOperation.Exclusive || HashBucket.TryAcquireExclusiveLatch(bucket))
+                            if (HashBucket.TryAcquireExclusiveLatch(bucket))
                             {
                                 // Set to release exclusive latch (default)
                                 latchOperation = LatchOperation.Exclusive;
@@ -1782,8 +1746,6 @@ namespace FASTER.core
                             FasterExecutionContext<Input, Output, Context> currentCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            Debug.Assert(RelaxedCPR || pendingContext.version == ctx.version);
-
             ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
 
             if (request.logicalAddress >= hlog.BeginAddress)
@@ -1837,8 +1799,6 @@ namespace FASTER.core
                                     FasterExecutionContext<Input, Output, Context> currentCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            Debug.Assert(RelaxedCPR || pendingContext.version == opCtx.version);
-
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
             ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
             long logicalAddress = pendingContext.entry.Address;
@@ -2118,7 +2078,7 @@ namespace FASTER.core
             }
 
             // RMW now suppports RETRY_NOW due to Sealed records.
-            if (status == OperationStatus.CPR_SHIFT_DETECTED || status == OperationStatus.RETRY_NOW || ((asyncOp || RelaxedCPR) && status == OperationStatus.RETRY_LATER))
+            if (status == OperationStatus.CPR_SHIFT_DETECTED || status == OperationStatus.RETRY_NOW || (asyncOp && status == OperationStatus.RETRY_LATER))
             {
 #region Retry as (v+1) Operation
                 var internalStatus = default(OperationStatus);
@@ -2156,7 +2116,7 @@ namespace FASTER.core
                             break;
                     }
                     Debug.Assert(internalStatus != OperationStatus.CPR_SHIFT_DETECTED);
-                } while (internalStatus == OperationStatus.RETRY_NOW || ((asyncOp || RelaxedCPR) && internalStatus == OperationStatus.RETRY_LATER));
+                } while (internalStatus == OperationStatus.RETRY_NOW || (asyncOp && internalStatus == OperationStatus.RETRY_LATER));
                 // Note that we spin in case of { async op + strict CPR } which is fine as this combination is rare/discouraged
 
                 status = internalStatus;

@@ -89,19 +89,8 @@ namespace FASTER.core
             ctx.serialNum = lsn;
             ctx.guid = token;
 
-            if (RelaxedCPR)
+            if (ctx.retryRequests == null)
             {
-                if (ctx.retryRequests == null)
-                {
-                    ctx.retryRequests = new Queue<PendingContext<Input, Output, Context>>();
-                    ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
-                    ctx.ioPendingRequests = new Dictionary<long, PendingContext<Input, Output, Context>>();
-                    ctx.pendingReads = new AsyncCountDown();
-                }
-            }
-            else
-            {
-                ctx.totalPending = 0;
                 ctx.retryRequests = new Queue<PendingContext<Input, Output, Context>>();
                 ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
                 ctx.ioPendingRequests = new Dictionary<long, PendingContext<Input, Output, Context>>();
@@ -119,24 +108,13 @@ namespace FASTER.core
             dst.guid = src.guid;
             dst.excludedSerialNos = new List<long>();
 
-            if (!RelaxedCPR)
+            foreach (var v in src.ioPendingRequests.Values)
             {
-                dst.totalPending = src.totalPending;
-                dst.retryRequests = src.retryRequests;
-                dst.readyResponses = src.readyResponses;
-                dst.ioPendingRequests = src.ioPendingRequests;
-                dst.pendingReads = src.pendingReads;
+                dst.excludedSerialNos.Add(v.serialNum);
             }
-            else
+            foreach (var v in src.retryRequests)
             {
-                foreach (var v in src.ioPendingRequests.Values)
-                {
-                    dst.excludedSerialNos.Add(v.serialNum);
-                }
-                foreach (var v in src.retryRequests)
-                {
-                    dst.excludedSerialNos.Add(v.serialNum);
-                }
+                dst.excludedSerialNos.Add(v.serialNum);
             }
         }
 
@@ -148,27 +126,11 @@ namespace FASTER.core
         {
             while (true)
             {
-                bool done = true;
-
-                #region Previous pending requests
-                if (!RelaxedCPR)
-                {
-                    if (ctx.phase == Phase.IN_PROGRESS)
-                    {
-                        InternalCompletePendingRequests(ctx.prevCtx, ctx, fasterSession, completedOutputs);
-                        InternalCompleteRetryRequests(ctx.prevCtx, ctx, fasterSession);
-                        if (wait) ctx.prevCtx.WaitPending(epoch);
-                        done &= ctx.prevCtx.HasNoPendingRequests;
-                    }
-                }
-                #endregion
-
                 InternalCompletePendingRequests(ctx, ctx, fasterSession, completedOutputs);
                 InternalCompleteRetryRequests(ctx, ctx, fasterSession);
                 if (wait) ctx.WaitPending(epoch);
-                done &= ctx.HasNoPendingRequests;
 
-                if (done) return true;
+                if (ctx.HasNoPendingRequests) return true;
 
                 InternalRefresh(ctx, fasterSession);
 
@@ -240,9 +202,6 @@ namespace FASTER.core
             // If done, callback user code.
             if (status == Status.OK || status == Status.NOTFOUND)
             {
-                if (pendingContext.heldLatch == LatchOperation.Shared)
-                    ReleaseSharedLatch(key);
-
                 switch (pendingContext.type)
                 {
                     case OperationType.RMW:
@@ -386,9 +345,6 @@ namespace FASTER.core
             // If done, callback user code
             if (status == Status.OK || status == Status.NOTFOUND)
             {
-                if (pendingContext.heldLatch == LatchOperation.Shared)
-                    ReleaseSharedLatch(key);
-
                 if (pendingContext.type == OperationType.READ)
                 {
                     fasterSession.ReadCompletionCallback(ref key,
