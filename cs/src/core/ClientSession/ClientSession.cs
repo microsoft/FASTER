@@ -24,7 +24,6 @@ namespace FASTER.core
     {
         internal readonly FasterKV<Key, Value> fht;
 
-        internal readonly bool SupportAsync = false;
         internal readonly FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx;
         internal CommitPoint LatestCommitPoint;
 
@@ -45,13 +44,11 @@ namespace FASTER.core
             FasterKV<Key, Value> fht,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             Functions functions,
-            bool supportAsync,
             SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
         {
             this.fht = fht;
             this.ctx = ctx;
             this.functions = functions;
-            SupportAsync = supportAsync;
             LatestCommitPoint = new CommitPoint { UntilSerialNo = -1, ExcludedSerialNos = null };
             FasterSession = new InternalFasterSession(this);
 
@@ -93,10 +90,6 @@ namespace FASTER.core
                     inputVariableLengthStruct = o as IVariableLengthStruct<Input>;
                 }
             }
-
-            // Session runs on a single thread
-            if (!supportAsync)
-                UnsafeResumeThread();
         }
 
         private void UpdateVarlen(ref IVariableLengthStruct<Value, Input> variableLengthStruct)
@@ -153,10 +146,6 @@ namespace FASTER.core
             this.completedOutputs?.Dispose();
             CompletePending(true);
             fht.DisposeClientSession(ID);
-
-            // Session runs on a single thread
-            if (!SupportAsync)
-                UnsafeSuspendThread();
         }
 
         /// <summary>
@@ -184,14 +173,14 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
+            UnsafeResumeThread();
             try
             {
                 return fht.ContextRead(ref key, ref input, ref output, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
-                if (SupportAsync) UnsafeSuspendThread();
+                UnsafeSuspendThread();
             }
         }
 
@@ -233,14 +222,14 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, ref RecordMetadata recordMetadata, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
+            UnsafeResumeThread();
             try
             {
                 return fht.ContextRead(ref key, ref input, ref output, ref recordMetadata, readFlags, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
-                if (SupportAsync) UnsafeSuspendThread();
+                UnsafeSuspendThread();
             }
         }
 
@@ -248,38 +237,31 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref Input input, ref Output output, ReadFlags readFlags = ReadFlags.None, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
+            UnsafeResumeThread();
             try
             {
                 return fht.ContextReadAtAddress(address, ref input, ref output, readFlags, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
-                if (SupportAsync) UnsafeSuspendThread();
+                UnsafeSuspendThread();
             }
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
-        {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
-            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, userContext, serialNo, cancellationToken);
-        }
+        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default) 
+            => fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, userContext, serialNo, cancellationToken);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
-        {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
-            return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
-        }
+            => fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
             Input input = default;
             return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, userContext, serialNo, token);
         }
@@ -288,7 +270,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Context context = default, long serialNo = 0, CancellationToken token = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
             Input input = default;
             return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
         }
@@ -298,7 +279,6 @@ namespace FASTER.core
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, long startAddress, ReadFlags readFlags = ReadFlags.None,
                                                                                                  Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
             var operationFlags = FasterKV<Key, Value>.PendingContext<Input, Output, Context>.GetOperationFlags(readFlags);
             return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, startAddress, userContext, serialNo, cancellationToken, operationFlags);
         }
@@ -308,7 +288,6 @@ namespace FASTER.core
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Input input, ReadFlags readFlags = ReadFlags.None,
                                                                                                           Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
             Key key = default;
             var operationFlags = FasterKV<Key, Value>.PendingContext<Input, Output, Context>.GetOperationFlags(readFlags, noKey: true);
             return fht.ReadAsync(this.FasterSession, this.ctx, ref key, ref input, address, userContext, serialNo, cancellationToken, operationFlags);
@@ -327,14 +306,14 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
+            UnsafeResumeThread();
             try
             {
                 return fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
-                if (SupportAsync) UnsafeSuspendThread();
+                UnsafeSuspendThread();
             }
         }
 
@@ -342,14 +321,14 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
+            UnsafeResumeThread();
             try
             {
                 return fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
-                if (SupportAsync) UnsafeSuspendThread();
+                UnsafeSuspendThread();
             }
         }
 
@@ -373,18 +352,13 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-        {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
-            return fht.UpsertAsync(this.FasterSession, this.ctx, ref key, ref input, ref desiredValue, userContext, serialNo, token);
-        }
+        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default) 
+            => fht.UpsertAsync(this.FasterSession, this.ctx, ref key, ref input, ref desiredValue, userContext, serialNo, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-        {
-            return UpsertAsync(ref key, ref desiredValue, userContext, serialNo, token);
-        }
+        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default) 
+            => UpsertAsync(ref key, ref desiredValue, userContext, serialNo, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -400,14 +374,14 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref Key key, ref Input input, ref Output output, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
+            UnsafeResumeThread();
             try
             {
                 return fht.ContextRMW(ref key, ref input, ref output, out recordMetadata, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
-                if (SupportAsync) UnsafeSuspendThread();
+                UnsafeSuspendThread();
             }
         }
 
@@ -437,11 +411,8 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
-        {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
-            return fht.RmwAsync(this.FasterSession, this.ctx, ref key, ref input, context, serialNo, token);
-        }
+        public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default) 
+            => fht.RmwAsync(this.FasterSession, this.ctx, ref key, ref input, context, serialNo, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -452,14 +423,14 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref Key key, Context userContext = default, long serialNo = 0)
         {
-            if (SupportAsync) UnsafeResumeThread();
+            UnsafeResumeThread();
             try
             {
                 return fht.ContextDelete(ref key, userContext, FasterSession, serialNo, ctx);
             }
             finally
             {
-                if (SupportAsync) UnsafeSuspendThread();
+                UnsafeSuspendThread();
             }
         }
 
@@ -470,11 +441,8 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-        {
-            Debug.Assert(SupportAsync, NotAsyncSessionErr);
-            return fht.DeleteAsync(this.FasterSession, this.ctx, ref key, userContext, serialNo, token);
-        }
+        public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default) 
+            => fht.DeleteAsync(this.FasterSession, this.ctx, ref key, userContext, serialNo, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -484,9 +452,9 @@ namespace FASTER.core
         /// <inheritdoc/>
         public void Refresh()
         {
-            if (SupportAsync) UnsafeResumeThread();
+            UnsafeResumeThread();
             fht.InternalRefresh(ctx, FasterSession);
-            if (SupportAsync) UnsafeSuspendThread();
+            UnsafeSuspendThread();
         }
 
         #endregion IFasterOperations
@@ -561,14 +529,14 @@ namespace FASTER.core
 
         internal bool CompletePending(bool getOutputs, bool wait, bool spinWaitForCommit)
         {
-            if (SupportAsync) UnsafeResumeThread();
+            UnsafeResumeThread();
             try
             {
                 return UnsafeCompletePending(FasterSession, getOutputs, wait, spinWaitForCommit);
             }
             finally
             {
-                if (SupportAsync) UnsafeSuspendThread();
+                UnsafeSuspendThread();
             }
         }
 
@@ -750,14 +718,14 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus CompactionCopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long expectedLogicalAddress)
         {
-            if (SupportAsync) UnsafeResumeThread();
+            UnsafeResumeThread();
             try
             {
                 return fht.InternalCopyToTail(ref key, ref input, ref desiredValue, ref output, expectedLogicalAddress, FasterSession, ctx, WriteReason.Compaction);
             }
             finally
             {
-                if (SupportAsync) UnsafeSuspendThread();
+                UnsafeSuspendThread();
             }
         }
 
@@ -773,14 +741,14 @@ namespace FASTER.core
         /// <returns>Status</returns>
         internal Status ContainsKeyInMemory(ref Key key, out long logicalAddress, long fromAddress = -1)
         {
-            if (SupportAsync) UnsafeResumeThread();
+            UnsafeResumeThread();
             try
             {
                 return fht.InternalContainsKeyInMemory(ref key, ctx, FasterSession, out logicalAddress, fromAddress);
             }
             finally
             {
-                if (SupportAsync) UnsafeSuspendThread();
+                UnsafeSuspendThread();
             }
         }
 
@@ -791,9 +759,6 @@ namespace FASTER.core
         /// <returns>FASTER iterator</returns>
         public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1)
         {
-            if (!SupportAsync)
-                throw new FasterException("Do not perform iteration using a threadAffinitized session");
-
             if (untilAddress == -1)
                 untilAddress = fht.Log.TailAddress;
 
@@ -826,10 +791,8 @@ namespace FASTER.core
         /// Suspend session on current thread
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeSuspendThread()
-        {
-            fht.epoch.Suspend();
-        }
+        internal void UnsafeSuspendThread() 
+            => fht.epoch.Suspend();
 
         void IClientSession.AtomicSwitch(long version)
         {

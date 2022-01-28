@@ -41,19 +41,6 @@ namespace FASTER.core
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 
-        internal void AcquireSharedLatchesForAllPendingRequests<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx)
-        {
-            foreach (var _ctx in ctx.retryRequests)
-            {
-                AcquireSharedLatch(_ctx.key.Get());
-            }
-
-            foreach (var _ctx in ctx.ioPendingRequests.Values)
-            {
-                AcquireSharedLatch(_ctx.key.Get());
-            }
-        }
-        
         internal void WriteHybridLogMetaInfo()
         {
             var metadata = _hybridLogCheckpoint.info.ToByteArray();

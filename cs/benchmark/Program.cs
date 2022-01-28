@@ -42,13 +42,6 @@ namespace FASTER.benchmark
                             tester.Dispose();
                         }
                         break;
-                    case BenchmarkType.ClientSession:
-                        {
-                            var tester = new FASTER_ClientSessionYcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
-                            testStats.AddResult(tester.Run(testLoader));
-                            tester.Dispose();
-                        }
-                        break;
                     case BenchmarkType.ConcurrentDictionaryYcsb:
                         {
                             var tester = new ConcurrentDictionary_YcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
