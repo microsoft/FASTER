@@ -15,11 +15,6 @@ namespace FASTER.core
         readonly StatusCode statusCode;
 
         /// <summary>
-        /// Get underlying status code
-        /// </summary>
-        public StatusCode StatusCode => statusCode;
-
-        /// <summary>
         /// Create status from given status code
         /// </summary>
         /// <param name="statusCode"></param>
@@ -90,6 +85,12 @@ namespace FASTER.core
         /// </summary>
         public bool IsNotFound => statusCode == StatusCode.NOTFOUND || statusCode == StatusCode.OK_IU;
         #endregion
+
+
+        /// <summary>
+        /// Get the underlying status code value
+        /// </summary>
+        public byte Value => (byte)statusCode;
 
         /// <summary>
         /// Check equals

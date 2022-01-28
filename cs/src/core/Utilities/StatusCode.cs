@@ -4,9 +4,9 @@
 namespace FASTER.core
 {
     /// <summary>
-    /// Raw return status code for FASTER operations
+    /// Return status code for FASTER operations
     /// </summary>
-    public enum StatusCode : byte
+    enum StatusCode : byte
     {
         # region Basic status codes
         /// <summary>
