@@ -635,7 +635,7 @@ namespace FASTER.server
         private unsafe bool Write(ref Status s, ref byte* dst, int length)
         {
             if (length < 1) return false;
-            *dst++ = (byte)s;
+            *dst++ = (byte)s.StatusCode;
             return true;
         }
 

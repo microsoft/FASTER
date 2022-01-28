@@ -5,20 +5,6 @@ using System.Runtime.InteropServices;
 
 namespace FASTER.core
 {
-    enum StatusCode : byte
-    {
-        // Basic status codes
-        OK,
-        NOTFOUND,
-        PENDING,
-        ERROR,
-
-        // Advanced status codes
-        OK_IU,
-        OK_IPU,
-        OK_APPEND
-    }
-
     /// <summary>
     /// Status result of operation on FASTER
     /// </summary>
@@ -29,7 +15,12 @@ namespace FASTER.core
         readonly StatusCode statusCode;
 
         /// <summary>
-        /// 
+        /// Get underlying status code
+        /// </summary>
+        public StatusCode StatusCode => statusCode;
+
+        /// <summary>
+        /// Create status from given status code
         /// </summary>
         /// <param name="statusCode"></param>
         internal Status(StatusCode statusCode) => this.statusCode = statusCode;
