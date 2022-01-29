@@ -22,7 +22,18 @@ namespace FASTER.test
         {
             Byte,
             SpanBatch,
-            SpanByte
+            SpanByte,
+            IEntry
+        }
+
+        private class ByteArrayEntry : FasterLog.IEntry
+        {
+            public int SerializedLength() => entry.Length;
+
+            public void SerializeTo(Span<byte> dest)
+            {
+                entry.CopyTo(dest);
+            }
         }
 
         private struct ReadOnlySpanBatch : IReadOnlySpanBatch
@@ -83,7 +94,7 @@ namespace FASTER.test
             }
 
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
-
+            var ientry = new ByteArrayEntry();
             // Enqueue but set each Entry in a way that can differentiate between entries
             for (int i = 0; i < numEntries; i++)
             {
@@ -109,6 +120,9 @@ namespace FASTER.test
                         break;
                     case EnqueueIteratorType.SpanBatch:
                         log.Enqueue(spanBatch);
+                        break;
+                    case EnqueueIteratorType.IEntry:
+                        log.Enqueue(ientry);
                         break;
                     default:
                         Assert.Fail("Unknown EnqueueIteratorType");
@@ -154,7 +168,7 @@ namespace FASTER.test
         public async Task EnqueueAsyncBasicTest([Values] TestUtils.DeviceType deviceType)
         {
 
-            const int expectedEntryCount = 10;
+            const int expectedEntryCount = 11;
 
             string filename = path + "EnqueueAsyncBasic" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
@@ -167,6 +181,7 @@ namespace FASTER.test
             CancellationToken cancellationToken = default;
             ReadOnlyMemory<byte> readOnlyMemoryEntry = entry;
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(5);
+            var ientry = new ByteArrayEntry();
 
             var input1 = new byte[] { 0, 1, 2, 3 };
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
@@ -177,6 +192,7 @@ namespace FASTER.test
             await log.EnqueueAsync(input2);
             await log.EnqueueAsync(input3);
             await log.EnqueueAsync(readOnlyMemoryEntry);
+            await log.EnqueueAsync(ientry);
             await log.EnqueueAsync(spanBatch);
             await log.CommitAsync();
 
@@ -204,6 +220,9 @@ namespace FASTER.test
                             Assert.IsTrue(result.SequenceEqual(entry), "Fail - Result does not equal ReadOnlyMemoryEntry. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
                             break;
                         case 5:
+                            Assert.IsTrue(result.SequenceEqual(entry), "Fail - Result does not equal SpanBatchEntry. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
+                            break;
+                        case 6:
                             Assert.IsTrue(result.SequenceEqual(entry), "Fail - Result does not equal SpanBatchEntry. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
                             break;
 
