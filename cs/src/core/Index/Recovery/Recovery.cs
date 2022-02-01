@@ -13,7 +13,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    internal enum ReadStatus { Pending, Done };
+    internal enum ReadStatus { Pending, Done, Error };
     internal enum FlushStatus { Pending, Done };
 
     internal class RecoveryStatus
@@ -59,11 +59,19 @@ namespace FASTER.core
             this.readSemaphore.Release();
         }
 
+        internal void SignalError(int pageIndex)
+        {
+            this.readStatus[pageIndex] = ReadStatus.Error;
+            this.readSemaphore.Release();
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WaitRead(int pageIndex)
         {
             while (this.readStatus[pageIndex] == ReadStatus.Pending)
                 this.readSemaphore.Wait();
+            if (this.readStatus[pageIndex] == ReadStatus.Error)
+                throw new FasterException($"Error reading page {pageIndex} from device");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -984,7 +992,10 @@ namespace FASTER.core
                 result.freeBuffer1.Return();
             }
             int pageIndex = GetPageIndexForPage(result.page);
-            result.context.SignalRead(pageIndex);
+            if (errorCode != 0)
+                result.context.SignalError(pageIndex);
+            else
+                result.context.SignalRead(pageIndex);
         }
     }
 }
