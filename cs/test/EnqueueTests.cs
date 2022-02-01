@@ -28,7 +28,7 @@ namespace FASTER.test
 
         private class ByteArrayEntry : FasterLog.IEntry
         {
-            public int SerializedLength() => entry.Length;
+            public int SerializedLength => entry.Length;
 
             public void SerializeTo(Span<byte> dest)
             {
