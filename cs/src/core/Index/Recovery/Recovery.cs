@@ -360,7 +360,7 @@ namespace FASTER.core
             hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
             _recoveredSessionNameMap = recoveredHLCInfo.info.sessionNameMap;
-            maxSessionId = recoveredHLCInfo.info.maxSessionId;
+            maxSessionID = recoveredHLCInfo.info.maxSessionID;
             checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
             recoveredHLCInfo.Dispose();
         }

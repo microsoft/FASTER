@@ -78,7 +78,7 @@ namespace FASTER.core
             ThreadStateMachineStep(ctx, fasterSession, default);
         }
 
-        internal void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, int sessionId, string sessionName, long lsn = -1)
+        internal void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName, long lsn = -1)
         {
             ctx.phase = Phase.REST;
             // The system version starts at 1. Because we do not know what the current state machine state is,
@@ -87,7 +87,7 @@ namespace FASTER.core
             ctx.version = 1;
             ctx.markers = new bool[8];
             ctx.serialNum = lsn;
-            ctx.sessionID = sessionId;
+            ctx.sessionID = sessionID;
             ctx.sessionName = sessionName;
 
             if (ctx.retryRequests == null)

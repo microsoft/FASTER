@@ -331,7 +331,7 @@ namespace FASTER.core
         /// <summary>
         /// Max session ID
         /// </summary>
-        public int maxSessionId;
+        public int maxSessionID;
 
         /// <summary>
         /// Object log segment offsets
@@ -421,7 +421,7 @@ namespace FASTER.core
 
             for (int i = 0; i < numSessions; i++)
             {
-                var sessionId = int.Parse(reader.ReadLine());
+                var sessionID = int.Parse(reader.ReadLine());
                 var sessionName = reader.ReadLine();
                 var serialno = long.Parse(reader.ReadLine());
 
@@ -430,7 +430,7 @@ namespace FASTER.core
                 for (int j = 0; j < exclusionCount; j++)
                     exclusions.Add(long.Parse(reader.ReadLine()));
 
-                continueTokens.TryAdd(sessionId, (sessionName, new CommitPoint
+                continueTokens.TryAdd(sessionID, (sessionName, new CommitPoint
                 {
                     UntilSerialNo = serialno,
                     ExcludedSerialNos = exclusions
@@ -438,9 +438,9 @@ namespace FASTER.core
                 if (sessionName != null)
                 {
                     sessionNameMap ??= new();
-                    sessionNameMap.TryAdd(sessionName, sessionId);
+                    sessionNameMap.TryAdd(sessionName, sessionID);
                 }
-                if (sessionId > maxSessionId) maxSessionId = sessionId;
+                if (sessionID > maxSessionID) maxSessionID = sessionID;
             }
 
             // Read object log segment offsets

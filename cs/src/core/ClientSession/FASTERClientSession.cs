@@ -160,11 +160,11 @@ namespace FASTER.core
             if (sessionName != null && _recoveredSessionNameMap != null && _recoveredSessionNameMap.ContainsKey(sessionName))
                 throw new FasterException($"Session named {sessionName} already exists in recovery info, use RecoverSession to resume it");
 
-            int sessionId = Interlocked.Increment(ref maxSessionId);
+            int sessionID = Interlocked.Increment(ref maxSessionID);
             var ctx = new FasterExecutionContext<Input, Output, Context>();
-            InitContext(ctx, sessionId, sessionName);
+            InitContext(ctx, sessionID, sessionName);
             var prevCtx = new FasterExecutionContext<Input, Output, Context>();
-            InitContext(prevCtx, sessionId, sessionName);
+            InitContext(prevCtx, sessionID, sessionName);
             prevCtx.version--;
 
             ctx.prevCtx = prevCtx;
@@ -174,7 +174,7 @@ namespace FASTER.core
 
             var session = sessionCreator(ctx);
             lock (_activeSessions)
-                _activeSessions.Add(sessionId, new SessionInfo { sessionName = sessionName, session = session, isActive = true });
+                _activeSessions.Add(sessionID, new SessionInfo { sessionName = sessionName, session = session, isActive = true });
             return session;
         }
 
@@ -206,10 +206,10 @@ namespace FASTER.core
                 SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            if (_recoveredSessionNameMap == null || !_recoveredSessionNameMap.TryRemove(sessionName, out int sessionId))
+            if (_recoveredSessionNameMap == null || !_recoveredSessionNameMap.TryRemove(sessionName, out int sessionID))
                 throw new FasterException($"Unable to find session named {sessionName} to recover");
 
-            return InternalResumeSession<Input, Output, Context, Functions, ClientSession<Key, Value, Input, Output, Context, Functions>>(functions, sessionId, out commitPoint,
+            return InternalResumeSession<Input, Output, Context, Functions, ClientSession<Key, Value, Input, Output, Context, Functions>>(functions, sessionID, out commitPoint,
                         ctx => new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, sessionVariableLengthStructSettings));
         }
 
@@ -269,19 +269,19 @@ namespace FASTER.core
         /// <summary>
         /// Dispose session with FASTER
         /// </summary>
-        /// <param name="sessionId"></param>
+        /// <param name="sessionID"></param>
         /// <param name="sessionPhase"></param>
         /// <returns></returns>
-        internal void DisposeClientSession(int sessionId, Phase sessionPhase)
+        internal void DisposeClientSession(int sessionID, Phase sessionPhase)
         {
             // If a session is disposed during a checkpoint cycle, we mark the session
             // as inactive, but wait until the end of checkpoint before disposing it
             lock (_activeSessions)
             {
                 if (sessionPhase == Phase.REST || sessionPhase == Phase.PREPARE_GROW || sessionPhase == Phase.IN_PROGRESS_GROW)
-                    _activeSessions.Remove(sessionId);
+                    _activeSessions.Remove(sessionID);
                 else
-                    _activeSessions[sessionId].isActive = false;
+                    _activeSessions[sessionID].isActive = false;
             }
         }
     }

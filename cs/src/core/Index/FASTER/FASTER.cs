@@ -61,7 +61,7 @@ namespace FASTER.core
 
         ConcurrentDictionary<int, (string, CommitPoint)> _recoveredSessions;
         ConcurrentDictionary<string, int> _recoveredSessionNameMap;
-        int maxSessionId;
+        int maxSessionID;
 
         internal readonly bool DisableLocking;
         internal readonly LockTable<Key> LockTable;
