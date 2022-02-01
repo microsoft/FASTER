@@ -39,9 +39,9 @@ namespace SumStore
 
     public sealed class Functions : FunctionsBase<AdId, NumClicks, Input, Output, Empty>
     {
-        public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
+        public override void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
         {
-            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
+            Console.WriteLine("Session {0} reports persistence until {1}", sessionID, commitPoint.UntilSerialNo);
         }
 
         // Read functions

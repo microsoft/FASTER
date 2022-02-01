@@ -61,7 +61,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void DeleteCompletionCallback(ref Key key, Context ctx) { }
         /// <inheritdoc/>
-        public virtual void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
+        public virtual void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint) { }
     }
 
     /// <summary>
@@ -91,28 +91,11 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref RecordInfo recordInfo, long address) { dst = src; return true; }
-        /// <inheritdoc/>
-        public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref RecordInfo recordInfo, long address, WriteReason reason) => dst = src;
-
-        /// <inheritdoc/>
         public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) => value = input;
         /// <inheritdoc/>
         public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, long address) => newValue = merger(input, oldValue);
-
         /// <inheritdoc/>
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) { value = merger(input, value); return true; }
-
-        /// <inheritdoc/>
-        public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordMetadata recordMetadata) { }
-        /// <inheritdoc/>
-        public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordMetadata recordMetadata) { }
-        /// <inheritdoc/>
-        public override void UpsertCompletionCallback(ref Key key, ref Value input, ref Value value, Context ctx) { }
-        /// <inheritdoc/>
-        public override void DeleteCompletionCallback(ref Key key, Context ctx) { }
-        /// <inheritdoc/>
-        public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
     }
 
     public class SimpleFunctions<Key, Value> : SimpleFunctions<Key, Value, Empty>

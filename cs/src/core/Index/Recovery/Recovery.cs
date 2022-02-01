@@ -359,7 +359,8 @@ namespace FASTER.core
             // Recover session information
             hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
-
+            _recoveredSessionNameMap = recoveredHLCInfo.info.sessionNameMap;
+            maxSessionId = recoveredHLCInfo.info.maxSessionId;
             checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
             recoveredHLCInfo.Dispose();
         }
@@ -873,7 +874,7 @@ namespace FASTER.core
             }
         }
 
-        internal bool AtomicSwitch<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> fromCtx, FasterExecutionContext<Input, Output, Context> toCtx, long version, ConcurrentDictionary<string, CommitPoint> tokens)
+        internal bool AtomicSwitch<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> fromCtx, FasterExecutionContext<Input, Output, Context> toCtx, long version, ConcurrentDictionary<int, (string, CommitPoint)> tokens)
         {
             lock (toCtx)
             {
@@ -882,12 +883,12 @@ namespace FASTER.core
                     CopyContext(fromCtx, toCtx);
                     if (toCtx.serialNum != -1)
                     {
-                        tokens.TryAdd(toCtx.guid,
+                        tokens.TryAdd(toCtx.sessionID, (toCtx.sessionName,
                             new CommitPoint
                             {
                                 UntilSerialNo = toCtx.serialNum,
                                 ExcludedSerialNos = toCtx.excludedSerialNos
-                            });
+                            }));
                     }
                     return true;
                 }
