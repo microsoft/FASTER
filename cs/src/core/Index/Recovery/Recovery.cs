@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 namespace FASTER.core
 {
     internal enum ReadStatus { Pending, Done, Error };
-    internal enum FlushStatus { Pending, Done };
+    internal enum FlushStatus { Pending, Done, Error };
 
     internal class RecoveryStatus
     {
@@ -59,7 +59,7 @@ namespace FASTER.core
             this.readSemaphore.Release();
         }
 
-        internal void SignalError(int pageIndex)
+        internal void SignalReadError(int pageIndex)
         {
             this.readStatus[pageIndex] = ReadStatus.Error;
             this.readSemaphore.Release();
@@ -79,6 +79,8 @@ namespace FASTER.core
         {
             while (this.readStatus[pageIndex] == ReadStatus.Pending)
                 await this.readSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (this.readStatus[pageIndex] == ReadStatus.Error)
+                throw new FasterException($"Error reading page {pageIndex} from device");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -88,11 +90,19 @@ namespace FASTER.core
             this.flushSemaphore.Release();
         }
 
+        internal void SignalFlushedError(int pageIndex)
+        {
+            this.flushStatus[pageIndex] = FlushStatus.Error;
+            this.flushSemaphore.Release();
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WaitFlush(int pageIndex)
         {
             while (this.flushStatus[pageIndex] == FlushStatus.Pending)
                 this.flushSemaphore.Wait();
+            if (this.flushStatus[pageIndex] == FlushStatus.Error)
+                throw new FasterException($"Error flushing page {pageIndex} to device");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -100,6 +110,8 @@ namespace FASTER.core
         {
             while (this.flushStatus[pageIndex] == FlushStatus.Pending)
                 await this.flushSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (this.flushStatus[pageIndex] == FlushStatus.Error)
+                throw new FasterException($"Error flushing page {pageIndex} to device");
         }
 
         internal void Dispose()
@@ -836,7 +848,10 @@ namespace FASTER.core
             if (Interlocked.Decrement(ref result.count) == 0)
             {
                 int pageIndex = hlog.GetPageIndexForPage(result.page);
-                result.context.SignalFlushed(pageIndex);
+                if (errorCode != 0)
+                    result.context.SignalFlushedError(pageIndex);
+                else
+                    result.context.SignalFlushed(pageIndex);
                 if (result.page + result.context.capacity < result.context.endPage)
                 {
                     long readPage = result.page + result.context.capacity;
@@ -993,7 +1008,7 @@ namespace FASTER.core
             }
             int pageIndex = GetPageIndexForPage(result.page);
             if (errorCode != 0)
-                result.context.SignalError(pageIndex);
+                result.context.SignalReadError(pageIndex);
             else
                 result.context.SignalRead(pageIndex);
         }
