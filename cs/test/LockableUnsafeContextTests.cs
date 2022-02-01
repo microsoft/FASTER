@@ -26,7 +26,7 @@ namespace FASTER.test.LockableUnsafeContext
             deletedRecordAddress = address;
         }
 
-        public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
         {
             deletedRecordAddress = address;
             return true;
@@ -53,8 +53,6 @@ namespace FASTER.test.LockableUnsafeContext
     public enum ReadCopyDestination { Tail, ReadCache }
 
     public enum FlushMode { NoFlush, ReadOnly, OnDisk }
-
-    public enum UpdateOp { Upsert, RMW, Delete }
 
     [TestFixture]
     class LockableUnsafeContextTests

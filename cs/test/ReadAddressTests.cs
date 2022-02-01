@@ -95,29 +95,36 @@ namespace FASTER.test.readaddress
             }
 
             // Return false to force a chain of values.
-            public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) => false;
+            public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, 
+                    ref int usedLength, int fullLength, long address) => false;
 
-            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => false;
+            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo,
+                    ref int usedLength, int fullLength, long address) => false;
 
             // Record addresses
-            public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
+            public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo,
+                    ref int usedLength, int fullLength, long address)
             {
                 dst = src;
                 this.lastWriteAddress = address;
+                return true;
             }
 
-            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+            public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo,
+                    ref int usedLength, int fullLength, long address)
             {
                 this.lastWriteAddress = address;
                 output.address = address;
                 output.value = value.value = input.value;
+                return true;
             }
 
-            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
+            public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
             {
                 this.lastWriteAddress = address;
                 output.address = address;
                 output.value = newValue.value = input.value;
+                return true;
             }
 
             public override void ReadCompletionCallback(ref Key key, ref Value input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)

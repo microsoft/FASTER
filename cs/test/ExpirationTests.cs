@@ -195,7 +195,7 @@ namespace FASTER.test.Expiration
             }
 
             /// <inheritdoc/>
-            public override void CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RecordInfo recordInfo, long address)
+            public override bool CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
             {
                 output.AddFunc(Funcs.CopyUpdater);
                 switch (input.testOp)
@@ -206,27 +206,27 @@ namespace FASTER.test.Expiration
                     case TestOp.PassiveExpire:
                         newValue.field1 = oldValue.field1 + 1;
                         output.result = ExpirationResult.Incremented;
-                        return;
+                        return true;
                     case TestOp.ExpireDelete:
                         Assert.AreEqual(GetValue(key) + 1, oldValue.field1);    // For this test we only call this operation when the value will expire
                         newValue.field1 = oldValue.field1 + 1;
                         recordInfo.Tombstone = true;
                         output.result = ExpirationResult.ExpireDelete;
-                        return;
+                        return true;
                     case TestOp.ExpireRollover:
                         Assert.AreEqual(GetValue(key) + 1, oldValue.field1);    // For this test we only call this operation when the value will expire
                         newValue.field1 = GetValue(key);
                         output.result = ExpirationResult.ExpireRollover;
                         output.retrievedValue = newValue.field1;
-                        return;
+                        return true;
                     case TestOp.SetIfKeyExists:
                         newValue.field1 = input.value;
                         output.result = ExpirationResult.Updated;
                         output.retrievedValue = newValue.field1;
-                        return;
+                        return true;
                     case TestOp.SetIfKeyNotExists:
                         Assert.Fail($"{input.testOp} should not get here");
-                        return;
+                        return true;
                     case TestOp.SetIfValueEquals:
                         if (oldValue.field1 == input.comparisonValue)
                         {
@@ -240,7 +240,7 @@ namespace FASTER.test.Expiration
                             output.retrievedValue = oldValue.field1;
                         }
 
-                        return;
+                        return true;
                     case TestOp.SetIfValueNotEquals:
                         if (oldValue.field1 != input.comparisonValue)
                         {
@@ -253,7 +253,7 @@ namespace FASTER.test.Expiration
                             output.result = ExpirationResult.NotUpdated;
                             output.retrievedValue = oldValue.field1;
                         }
-                        return;
+                        return true;
                     case TestOp.DeleteIfValueEquals:
                         if (oldValue.field1 == input.comparisonValue)
                         {
@@ -264,7 +264,7 @@ namespace FASTER.test.Expiration
                         {
                             Assert.Fail("Should have returned false from NeedCopyUpdate");
                         }
-                        return;
+                        return true;
                     case TestOp.DeleteIfValueNotEquals:
                         if (oldValue.field1 != input.comparisonValue)
                         { 
@@ -275,25 +275,28 @@ namespace FASTER.test.Expiration
                         {
                             Assert.Fail("Should have returned false from NeedCopyUpdate");
                         }
-                        return;
+                        return true;
                     case TestOp.Revivify:
                         Assert.Fail($"{input.testOp} should not get here");
-                        return;
+                        return true;
                     default:
                         Assert.Fail($"Unexpected testOp: {input.testOp}");
-                        return;
+                        return true;
                 }
             }
 
-            public override void InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, long address)
+            public override bool InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo,
+                    ref int usedLength, int fullLength, long address)
             {
                 output.AddFunc(Funcs.InitialUpdater);
                 value.field1 = input.value;
                 output.result = ExpirationResult.Updated;
                 output.retrievedValue = value.field1;
+                return true;
             }
 
-            public override bool InPlaceUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, long address)
+            public override bool InPlaceUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo,
+                    ref int usedLength, int fullLength, long address)
             {
                 output.AddFunc(Funcs.InPlaceUpdater);
                 switch (input.testOp)
@@ -413,12 +416,15 @@ namespace FASTER.test.Expiration
             }
 
             // Upsert functions
-            public override void SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, long address)
+            public override bool SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo,
+                    ref int usedLength, int fullLength, long address)
             {
                 src.CopyTo(ref dst);
+                return true;
             }
 
-            public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, long address)
+            public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo,
+                    ref int usedLength, int fullLength, long address)
             {
                 src.CopyTo(ref dst);
                 return true;

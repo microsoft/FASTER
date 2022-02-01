@@ -8,7 +8,6 @@ using FASTER.core;
 using FASTER.devices;
 using System.Threading;
 using System.Runtime.InteropServices;
-using System.Linq;
 
 namespace FASTER.test
 {
@@ -21,6 +20,9 @@ namespace FASTER.test
         internal const string ReadCacheTestCategory = "ReadCache";
         internal const string LockTestCategory = "Locking";
         internal const string CheckpointRestoreCategory = "CheckpointRestore";
+        internal const string RevivificationCategory = "Revivification";
+
+        public enum UpdateOp { Upsert, RMW, Delete }
 
         /// <summary>
         /// Delete a directory recursively

@@ -32,15 +32,18 @@ namespace FASTER.core
         public virtual bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
 
         /// <inheritdoc/>
-        public virtual bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { dst = src; return true; }
+        public virtual bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, 
+                ref int usedLength, int fullLength, long address) { dst = src; return true; }
         /// <inheritdoc/>
-        public virtual void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) => dst = src;
+        public virtual bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address) { dst = src; return true; }
         /// <inheritdoc/>
         public virtual void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
         public virtual void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => dst = src;
 
         /// <inheritdoc/>
-        public virtual void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
+        public virtual bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address) => true;
         /// <inheritdoc/>
         public virtual void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
         /// <inheritdoc/>
@@ -48,16 +51,17 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
         /// <inheritdoc/>
-        public virtual void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) { }
+        public virtual bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address) => true;
         /// <inheritdoc/>
         public virtual bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) => true;
         /// <inheritdoc/>
-        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => true;
+        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address) => true;
 
         /// <inheritdoc/>
-        public virtual void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { value = default; }
+        public virtual void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address) { value = default; }
         public virtual void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
-        public virtual bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) => true;
+        public virtual bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address) => true;
 
         public virtual void DisposeKey(ref Key key) { }
         public virtual void DisposeValue(ref Value value) { }
@@ -103,17 +107,25 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref RecordInfo recordInfo, long address) { dst = src; return true; }
+        public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address) { dst = src; return true; }
         /// <inheritdoc/>
-        public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref RecordInfo recordInfo, long address) => dst = src;
+        public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address) { dst = src; return true; }
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) => value = input;
+        public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address) {value = input; return true; }
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, long address) => newValue = merger(input, oldValue);
+        public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        {
+            newValue = merger(input, oldValue); 
+            return true;
+        }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, long address) { value = merger(input, value); return true; }
+        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address) { value = merger(input, value); return true; }
 
         /// <inheritdoc/>
         public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordMetadata recordMetadata) { }

@@ -20,8 +20,8 @@ namespace FASTER.core
         const int kTotalBits = kTotalSizeInBytes * 8;
 
         // Previous address
-        const int kPreviousAddressBits = 48;
-        const long kPreviousAddressMaskInWord = (1L << kPreviousAddressBits) - 1;
+        internal const int kPreviousAddressBits = 48;
+        internal const long kPreviousAddressMaskInWord = (1L << kPreviousAddressBits) - 1;
 
         // Shift position of lock in word
         const int kLockShiftInWord = kPreviousAddressBits;

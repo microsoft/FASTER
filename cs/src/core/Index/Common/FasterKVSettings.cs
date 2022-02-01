@@ -135,6 +135,14 @@ namespace FASTER.core
         public bool TryRecoverLatest = false;
 
         /// <summary>
+        /// The number of free (deleted) records in the free-record pool (in addition to any in the hash chains).
+        /// If non-zero, we will reuse Tombstoned records encountered in the mutable region during Updates.
+        /// If record are fixed-length, then this applies to the single bin for that length.
+        /// </summary>
+        /// <remarks>Requires <see cref="SupportsLocking"/> to be true.</remarks>
+        public int MaxFreeRecordsInBin = 1024;
+
+        /// <summary>
         /// Create default configuration settings for FasterKV. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").

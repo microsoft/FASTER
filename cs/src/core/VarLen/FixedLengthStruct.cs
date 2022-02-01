@@ -27,6 +27,8 @@ namespace FASTER.core
         /// <returns></returns>
         public int GetLength(ref T t) => size;
 
+        internal static int Length => size;
+
         public unsafe void Serialize(ref T source, void* destination)
             => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
 

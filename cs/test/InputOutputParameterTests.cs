@@ -39,16 +39,18 @@ namespace FASTER.test.InputOutputParameterTests
             }
 
             /// <inheritdoc/>
-            public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address)
+            public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo,
+                    ref int usedLength, int fullLength, long address)
             {
-                SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
-                return true;
+                return SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref usedLength, fullLength, address);
             }
             /// <inheritdoc/>
-            public override void SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address)
+            public override bool SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo,
+                    ref int usedLength, int fullLength, long address)
             {
                 lastWriteAddress = address;
                 dst = output = src * input;
+                return true;
             }
 
             /// <inheritdoc/>
@@ -59,16 +61,17 @@ namespace FASTER.test.InputOutputParameterTests
                 Assert.AreEqual(dst, output);
             }
 
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, long address)
+            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
             {
-                InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
-                return true;
+                return InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedLength, fullLength, address);
             }
-            public override void InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, long address)
+            public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
             {
                 lastWriteAddress = address;
                 value = output = key * input;
+                return true;
             }
+
             /// <inheritdoc/>
             public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, long address)
             {

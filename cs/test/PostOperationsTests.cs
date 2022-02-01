@@ -28,19 +28,19 @@ namespace FASTER.test
 
             public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address) { this.pswAddress = address; }
 
-            public override void InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, long address) { value = input; }
+            public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address) { value = input; return true; }
             /// <inheritdoc/>
             public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, long address) { this.piuAddress = address; }
 
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, long address) => false; // For this test, we want this to fail and lead to InitialUpdater
+            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address) => false; // For this test, we want this to fail and lead to InitialUpdater
 
             /// <inheritdoc/>
-            public override void CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, long address) { newValue = oldValue; }
+            public override bool CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address) { newValue = oldValue; return true; }
             /// <inheritdoc/>
             public override bool PostCopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, long address) { this.pcuAddress = address; return true; }
 
             public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, long address) { this.psdAddress = address; }
-            public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, long address) => false;
+            public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address) => false;
         }
 
         private FasterKV<int, int> fht;

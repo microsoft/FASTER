@@ -20,15 +20,18 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, long address)
+        public override bool InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address)
         {
             Interlocked.Increment(ref InitialCount);
 
             value.Value = input;
             value.ReferenceCount = 1;
+            return true;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, long address)
+        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -37,12 +40,13 @@ namespace FASTER.test
             return true;
         }
 
-        public override void CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RecordInfo recordInfo, long address)
+        public override bool CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
         {
             Interlocked.Increment(ref CopyCount);
 
             newValue.Value = input;
             newValue.ReferenceCount = oldValue.ReferenceCount + 1;
+            return true;
         }
     }
 
@@ -52,15 +56,16 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, long address)
+        public override bool InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
         {
             Interlocked.Increment(ref InitialCount);
 
             value.Value = 0;
             value.ReferenceCount = 0;
+            return true;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, long address)
+        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -70,7 +75,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RecordInfo recordInfo, long address)
+        public override bool CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
         {
             Interlocked.Increment(ref CopyCount);
 
@@ -78,6 +83,7 @@ namespace FASTER.test
             if (newValue.ReferenceCount > 0)
                 newValue.ReferenceCount--;
             newValue.Value = oldValue.Value;
+            return true;
         }
     }
 

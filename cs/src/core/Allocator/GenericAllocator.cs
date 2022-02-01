@@ -179,6 +179,11 @@ namespace FASTER.core
             return (recordSize, recordSize);
         }
 
+        public override (int, int) GetRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, FasterSession fasterSession)
+        {
+            return (recordSize, recordSize);
+        }
+
         internal override bool TryComplete()
         {
             var b1 = objectLogDevice.TryComplete();

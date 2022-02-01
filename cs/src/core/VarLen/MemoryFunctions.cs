@@ -23,9 +23,11 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override void SingleWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
+        public override bool SingleWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address)
         {
             src.CopyTo(dst);
+            return true;
         }
 
         /// <inheritdoc/>
@@ -35,7 +37,8 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override bool ConcurrentWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address)
         {
             if (dst.Length < src.Length)
             {
@@ -71,22 +74,26 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
+        public override bool InitialUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address)
         {
             input.CopyTo(value);
+            return true;
         }
 
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref Memory<T> input, ref Memory<T> oldValue, ref Memory<T> newValue, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
+        public override bool CopyUpdater(ref Key key, ref Memory<T> input, ref Memory<T> oldValue, ref Memory<T> newValue, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
         {
             oldValue.CopyTo(newValue);
+            return true;
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
+        public override bool InPlaceUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address)
         {
             // The default implementation of IPU simply writes input to destination, if there is space
-            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref recordInfo, address);
+            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref recordInfo, ref usedLength, fullLength, address);
         }
     }
 }

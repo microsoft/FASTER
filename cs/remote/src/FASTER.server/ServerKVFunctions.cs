@@ -20,19 +20,19 @@ namespace FASTER.server
         public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
             => functions.CheckpointCompletionCallback(sessionId, commitPoint);
 
-        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
-            => functions.SingleDeleter(ref key, ref value, ref recordInfo, address);
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+            => functions.SingleDeleter(ref key, ref value, ref recordInfo, ref usedLength, fullLength, address);
 
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
-        public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
-            => functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
+        public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+            => functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, ref usedLength, fullLength, address);
 
         public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             => functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
-        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
-            => functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+            => functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref usedLength, fullLength, address);
 
         public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output)
             => functions.NeedInitialUpdate(ref key, ref input, ref output);
@@ -40,8 +40,8 @@ namespace FASTER.server
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
             => functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
 
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
-            => functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
+        public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+            => functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref usedLength, fullLength, address);
 
         public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
             => functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
@@ -49,11 +49,11 @@ namespace FASTER.server
         public void DeleteCompletionCallback(ref Key key, long ctx)
             => functions.DeleteCompletionCallback(ref key, ctx);
 
-        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
-            => functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+        public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+            => functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedLength, fullLength, address);
 
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
-            => functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+            => functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedLength, fullLength, address);
 
         public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
 
@@ -72,8 +72,11 @@ namespace FASTER.server
         public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             => functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
-        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
-            => functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+        public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+            => functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref usedLength, fullLength, address);
+
+        public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
+            => functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
 

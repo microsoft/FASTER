@@ -121,12 +121,13 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, long address)
+        public override bool SingleWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
         {
             src.CopyTo(ref dst);
+            return true;
         }
 
-        public override bool ConcurrentWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
         {
             if (src.length != dst.length)
                 return false;
@@ -166,12 +167,13 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, long address)
+        public override bool SingleWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
         {
             src.CopyTo(ref dst);
+            return true;
         }
 
-        public override bool ConcurrentWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
         {
             if (src.length != dst.length)
                 return false;

@@ -189,6 +189,15 @@ namespace FASTER.core
             return (actualSize, (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
+        public override (int, int) GetRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, FasterSession fasterSession)
+        {
+            var actualSize = RecordInfo.GetLength() +
+                ((KeyLength.GetLength(ref key) + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
+                fasterSession.GetLength(ref value, ref input);
+
+            return (actualSize, (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
+        }
+
         public override void Serialize(ref Key src, long physicalAddress)
         {
             KeyLength.Serialize(ref src, (byte*)physicalAddress + RecordInfo.GetLength());

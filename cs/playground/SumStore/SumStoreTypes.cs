@@ -58,20 +58,24 @@ namespace SumStore
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address)
+        public override bool InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address)
         {
             value = input.numClicks;
+            return true;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, long address)
+        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo,
+                ref int usedLength, int fullLength, long address)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, long address)
+        public override bool CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
         {
             newValue.numClicks = oldValue.numClicks + input.numClicks.numClicks;
+            return true;
         }
     }
 }

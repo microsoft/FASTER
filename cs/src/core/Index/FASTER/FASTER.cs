@@ -120,7 +120,11 @@ namespace FASTER.core
             _hybridLogCheckpoint.info.manualLockingActive = true;
             Interlocked.Increment(ref this.NumActiveLockingSessions);
         }
-        internal void DecrementNumLockingSessions() => --this.NumActiveLockingSessions;
+        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref this.NumActiveLockingSessions);
+
+        internal bool EnableFreeRecordPool => FreeRecordPool is not null;
+        internal bool FreeRecordPoolHasRecords => EnableFreeRecordPool && FreeRecordPool.HasRecords;
+        internal FreeRecordPool FreeRecordPool;
 
         /// <summary>
         /// Create FasterKV instance
@@ -131,8 +135,9 @@ namespace FASTER.core
                 fasterKVConfig.GetIndexSizeCacheLines(), fasterKVConfig.GetLogSettings(), 
                 fasterKVConfig.GetCheckpointSettings(), fasterKVConfig.GetSerializerSettings(), 
                 fasterKVConfig.EqualityComparer, fasterKVConfig.GetVariableLengthStructSettings(),
-                fasterKVConfig.TryRecoverLatest, fasterKVConfig.SupportsLocking)
-        { }
+                fasterKVConfig.TryRecoverLatest, fasterKVConfig.SupportsLocking, fasterKVConfig.MaxFreeRecordsInBin)
+        {
+        }
 
         /// <summary>
         /// Create FasterKV instance
@@ -145,10 +150,13 @@ namespace FASTER.core
         /// <param name="variableLengthStructSettings"></param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
         /// <param name="supportsLocking">Whether FASTER takes read and write locks on records</param>
+        /// <param name="maxFreeRecordsInBin">The number of free records in the free-record pool (in addition to any in the hash chains).
+        ///     If non-zero, we will revivify and reuse Tombstoned records encountered in the mutable region during Updates.</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool supportsLocking = false)
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool supportsLocking = false,
+            int maxFreeRecordsInBin = 0)
         {
             if (comparer != null)
                 this.comparer = comparer;
@@ -172,6 +180,8 @@ namespace FASTER.core
             }
 
             this.SupportsLocking = supportsLocking;
+            if (maxFreeRecordsInBin > 0 && !SupportsLocking)
+                throw new FasterException("Cross-key record reuse requires DisableLocking to be false");
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
@@ -270,9 +280,13 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
+            this.InitializeRevivification(keyLen is not null && this.EnableFreeRecordPool);
             this.LockTable = new LockTable<Key>(keyLen, this.comparer, keyLen is null ? null : hlog.bufferPool);
 
             systemState = SystemState.Make(Phase.REST, 1);
+
+            if (maxFreeRecordsInBin > 0)
+                this.FreeRecordPool = new FreeRecordPool(maxFreeRecordsInBin, keyLen is null ? hlog.GetAverageRecordSize() : -1);
 
             if (tryRecoverLatest)
             {
@@ -812,6 +826,8 @@ namespace FASTER.core
             _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
+            if (EnableFreeRecordPool)
+                FreeRecordPool.Dispose();
         }
 
         private static void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)

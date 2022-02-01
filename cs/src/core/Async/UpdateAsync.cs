@@ -78,7 +78,12 @@ namespace FASTER.core
             readonly FasterKV<Key, Value> _fasterKV;
             readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
             readonly FasterExecutionContext<Input, Output, Context> _currentCtx;
+
+#pragma warning disable IDE0044 // Add readonly modifier
+            // This cannot be readonly or it defensively copies and we will modify the internal state of the *temporary*
             TAsyncOperation _asyncOperation;
+#pragma warning restore IDE0044 // Add readonly modifier
+
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 

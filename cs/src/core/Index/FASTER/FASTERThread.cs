@@ -362,8 +362,9 @@ namespace FASTER.core
             }
             else
             {
-                internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
-                Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+                do
+                    internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
+                while (internalStatus == OperationStatus.RETRY_NOW);
             }
 
             request.Dispose();

@@ -380,6 +380,17 @@ namespace FASTER.core
         public abstract (int, int) GetRecordSize(ref Key key, ref Value value);
 
         /// <summary>
+        /// Get record size
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="value"></param>
+        /// <param name="fasterSession"></param>
+        /// <returns></returns>
+        public abstract (int, int) GetRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, FasterSession fasterSession)
+            where FasterSession : IVariableLengthStruct<Value, Input>;
+
+        /// <summary>
         /// Allocate page
         /// </summary>
         /// <param name="index"></param>
