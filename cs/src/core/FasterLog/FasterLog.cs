@@ -26,7 +26,7 @@ namespace FASTER.core
         {
             /// <summary></summary>
             /// <returns> the size in bytes after serialization onto FasterLog</returns>
-            public int SerializedLength();
+            public int SerializedLength { get; }
 
             /// <summary>
             /// Serialize the entry onto FasterLog.
@@ -368,7 +368,7 @@ namespace FASTER.core
         public unsafe bool TryEnqueue<T>(T entry, out long logicalAddress) where T : IEntry
         {
             logicalAddress = 0;
-            var length = entry.SerializedLength();
+            var length = entry.SerializedLength;
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -407,7 +407,7 @@ namespace FASTER.core
             var allocatedLength = 0;
             foreach (var entry in entries)
             {
-                allocatedLength += Align(entry.SerializedLength()) + headerSize;
+                allocatedLength += Align(entry.SerializedLength) + headerSize;
             }
 
             ValidateAllocatedLength(allocatedLength);
@@ -427,7 +427,7 @@ namespace FASTER.core
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             foreach(var entry in entries)
             {
-                var length = entry.SerializedLength();
+                var length = entry.SerializedLength;
                 entry.SerializeTo(new Span<byte>((void *)(headerSize + physicalAddress), length));
                 SetHeader(length, (byte*)physicalAddress);
                 physicalAddress += Align(length) + headerSize;
