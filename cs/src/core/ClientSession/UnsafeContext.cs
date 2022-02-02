@@ -611,9 +611,9 @@ namespace FASTER.core
             #endregion Key and Value management
 
             #region IFunctions - Checkpointing
-            public void CheckpointCompletionCallback(string guid, CommitPoint commitPoint)
+            public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
             {
-                _clientSession.functions.CheckpointCompletionCallback(guid, commitPoint);
+                _clientSession.functions.CheckpointCompletionCallback(sessionID, sessionName, commitPoint);
                 _clientSession.LatestCommitPoint = commitPoint;
             }
             #endregion IFunctions - Checkpointing

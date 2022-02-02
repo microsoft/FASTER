@@ -135,6 +135,8 @@ namespace FASTER.test.recovery.sumstore.simple
                 Assert.Null(fht2.RecoveredCommitCookie);
             
             var session2 = fht2.NewSession(new AdSimpleFunctions());
+            Assert.AreEqual(2, session2.ID);
+
             for (int key = 0; key < numOps; key++)
             {
                 var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);

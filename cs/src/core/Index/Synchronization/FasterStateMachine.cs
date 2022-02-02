@@ -216,7 +216,7 @@ namespace FASTER.core
                         };
 
                         // Thread local action
-                        fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
+                        fasterSession?.CheckpointCompletionCallback(ctx.sessionID, ctx.sessionName, commitPoint);
                     }
                 }
                 if ((ctx.version == targetStartState.Version) && (ctx.phase < Phase.REST) && !(ctx.threadStateMachine is IndexSnapshotStateMachine))
@@ -314,7 +314,7 @@ namespace FASTER.core
                     }
                 }
                 if (commitPoint.ExcludedSerialNos != null)
-                    fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
+                    fasterSession?.CheckpointCompletionCallback(ctx.sessionID, ctx.sessionName, commitPoint);
             }
 
         }

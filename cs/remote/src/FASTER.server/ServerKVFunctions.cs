@@ -17,8 +17,8 @@ namespace FASTER.server
             this.serverNetworkSession = serverNetworkSession;
         }
 
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-            => functions.CheckpointCompletionCallback(sessionId, commitPoint);
+        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
+            => functions.CheckpointCompletionCallback(sessionID, sessionName, commitPoint);
 
         public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
             => functions.SingleDeleter(ref key, ref value, ref recordInfo, address);

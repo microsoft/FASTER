@@ -59,7 +59,9 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value> ReadCache { get; }
 
-        internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
+        ConcurrentDictionary<int, (string, CommitPoint)> _recoveredSessions;
+        ConcurrentDictionary<string, int> _recoveredSessionNameMap;
+        int maxSessionID;
 
         internal readonly bool DisableLocking;
         internal readonly LockTable<Key> LockTable;
@@ -78,8 +80,8 @@ namespace FASTER.core
         /// <param name="fasterKVConfig">Config settings</param>
         public FasterKV(FasterKVSettings<Key, Value> fasterKVConfig) :
             this(
-                fasterKVConfig.GetIndexSizeCacheLines(), fasterKVConfig.GetLogSettings(), 
-                fasterKVConfig.GetCheckpointSettings(), fasterKVConfig.GetSerializerSettings(), 
+                fasterKVConfig.GetIndexSizeCacheLines(), fasterKVConfig.GetLogSettings(),
+                fasterKVConfig.GetCheckpointSettings(), fasterKVConfig.GetSerializerSettings(),
                 fasterKVConfig.EqualityComparer, fasterKVConfig.GetVariableLengthStructSettings(),
                 fasterKVConfig.TryRecoverLatest, fasterKVConfig.DisableLocking)
         { }
@@ -438,7 +440,7 @@ namespace FASTER.core
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        public ValueTask RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default) 
+        public ValueTask RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default)
             => InternalRecoverAsync(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1, cancellationToken);
 
         /// <summary>
@@ -451,6 +453,45 @@ namespace FASTER.core
         public void Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
         {
             InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, -1);
+        }
+
+        /// <summary>
+        /// Enumerate all currently recoverable sessions
+        /// </summary>
+        public IEnumerable<(int, string, CommitPoint)> RecoverableSessions
+        {
+            get
+            {
+                if (_recoveredSessions != null)
+                {
+                    foreach (var kvp in _recoveredSessions)
+                    {
+                        yield return (kvp.Key, kvp.Value.Item1, kvp.Value.Item2);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Dispose recoverable session with given ID, use RecoverableSessions to get recoverable session details
+        /// </summary>
+        /// <param name="sessionID"></param>
+        public void DisposeRecoverableSession(int sessionID)
+        {
+            if (_recoveredSessions != null && _recoveredSessions.TryRemove(sessionID, out var entry))
+            {
+                if (entry.Item1 != null)
+                    _recoveredSessionNameMap.TryRemove(entry.Item1, out _);
+            }
+        }
+
+        /// <summary>
+        /// Dispose (all) recoverable sessions
+        /// </summary>
+        public void DisposeRecoverableSessions()
+        {
+            _recoveredSessions = null;
+            _recoveredSessionNameMap = null;
         }
 
         /// <summary>

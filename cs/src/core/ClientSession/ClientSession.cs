@@ -121,7 +121,12 @@ namespace FASTER.core
         /// <summary>
         /// Get session ID
         /// </summary>
-        public string ID { get { return ctx.guid; } }
+        public int ID { get { return ctx.sessionID; } }
+
+        /// <summary>
+        /// Get session name
+        /// </summary>
+        public string Name { get { return ctx.sessionName; } }
 
         /// <summary>
         /// Next sequential serial no for session (current serial no + 1)
@@ -145,7 +150,7 @@ namespace FASTER.core
         {
             this.completedOutputs?.Dispose();
             CompletePending(true);
-            fht.DisposeClientSession(ID);
+            fht.DisposeClientSession(ID, ctx.phase);
         }
 
         /// <summary>
@@ -1037,9 +1042,9 @@ namespace FASTER.core
             #endregion Key and Value management
 
             #region IFunctions - Checkpointing
-            public void CheckpointCompletionCallback(string guid, CommitPoint commitPoint)
+            public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
             {
-                _clientSession.functions.CheckpointCompletionCallback(guid, commitPoint);
+                _clientSession.functions.CheckpointCompletionCallback(sessionID, sessionName, commitPoint);
                 _clientSession.LatestCommitPoint = commitPoint;
             }
             #endregion IFunctions - Checkpointing

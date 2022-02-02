@@ -7,6 +7,7 @@ using NUnit.Framework;
 using FASTER.test.recovery.sumstore;
 using System;
 using FASTER.devices;
+using System.Linq;
 
 namespace FASTER.test.recovery
 {
@@ -221,6 +222,58 @@ namespace FASTER.test.recovery
                 Assert.AreEqual(fht1.Log.TailAddress, fht2.Log.TailAddress);
 
                 using var s2 = fht2.NewSession(new SimpleFunctions<long, long>());
+                for (long key = 0; key < 1000 * i + 1000; key++)
+                {
+                    long output = default;
+                    var status = s2.Read(ref key, ref output);
+                    if (status != Status.PENDING)
+                    {
+                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
+                }
+                s2.CompletePending(true);
+            }
+        }
+
+        [Test]
+        [Category("FasterKV"), Category("CheckpointRestore")]
+        public void RecoveryCheck2Repeated([Values] CheckpointType checkpointType)
+        {
+            Guid token = default;
+
+            for (int i = 0; i < 6; i++)
+            {
+                using var fht1 = new FasterKV<long, long>
+                    (128,
+                    logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20 },
+                    checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                    );
+
+                if (i > 0)
+                {
+                    fht1.Recover(default, token);
+                    if (i == 3) fht1.DisposeRecoverableSessions();
+                    int recoverableSessionCount = fht1.RecoverableSessions.Count();
+                    if (i < 3)
+                        Assert.AreEqual(i, recoverableSessionCount);
+                    else
+                        Assert.AreEqual(i - 3, recoverableSessionCount);
+                }
+
+                using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
+
+                for (long key = 1000 * i; key < 1000 * i + 1000; key++)
+                {
+                    s1.Upsert(ref key, ref key);
+                }
+
+                var task = fht1.TakeHybridLogCheckpointAsync(checkpointType);
+                bool success;
+                (success, token) = task.AsTask().GetAwaiter().GetResult();
+                Assert.IsTrue(success);
+
+                using var s2 = fht1.NewSession(new SimpleFunctions<long, long>());
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
                     long output = default;

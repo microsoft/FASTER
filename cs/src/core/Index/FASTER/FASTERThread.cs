@@ -12,13 +12,13 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        internal CommitPoint InternalContinue<Input, Output, Context>(string guid, out FasterExecutionContext<Input, Output, Context> ctx)
+        internal (string, CommitPoint) InternalContinue<Input, Output, Context>(int sessionID, out FasterExecutionContext<Input, Output, Context> ctx)
         {
             ctx = null;
 
             if (_recoveredSessions != null)
             {
-                if (_recoveredSessions.TryGetValue(guid, out _))
+                if (_recoveredSessions.TryGetValue(sessionID, out _))
                 {
                     // We have recovered the corresponding session. 
                     // Now obtain the session by first locking the rest phase
@@ -29,21 +29,21 @@ namespace FASTER.core
                         if (MakeTransition(currentState, intermediateState))
                         {
                             // No one can change from REST phase
-                            if (_recoveredSessions.TryRemove(guid, out CommitPoint cp))
+                            if (_recoveredSessions.TryRemove(sessionID, out var cp))
                             {
                                 // We have atomically removed session details. 
                                 // No one else can continue this session
                                 ctx = new FasterExecutionContext<Input, Output, Context>();
-                                InitContext(ctx, guid);
+                                InitContext(ctx, sessionID, cp.Item1);
                                 ctx.prevCtx = new FasterExecutionContext<Input, Output, Context>();
-                                InitContext(ctx.prevCtx, guid);
+                                InitContext(ctx.prevCtx, sessionID, cp.Item1);
                                 ctx.prevCtx.version--;
-                                ctx.serialNum = cp.UntilSerialNo;
+                                ctx.serialNum = cp.Item2.UntilSerialNo;
                             }
                             else
                             {
                                 // Someone else continued this session
-                                cp = new CommitPoint { UntilSerialNo = -1 };
+                                cp = ((string)null, new CommitPoint { UntilSerialNo = -1 });
                                 Debug.WriteLine("Session already continued by another thread!");
                             }
 
@@ -54,12 +54,12 @@ namespace FASTER.core
 
                     // Need to try again when in REST
                     Debug.WriteLine("Can continue only in REST phase");
-                    return new CommitPoint { UntilSerialNo = -1 };
+                    return (null, new CommitPoint { UntilSerialNo = -1 });
                 }
             }
 
             Debug.WriteLine("No recovered sessions!");
-            return new CommitPoint { UntilSerialNo = -1 };
+            return (null, new CommitPoint { UntilSerialNo = -1 });
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -78,7 +78,7 @@ namespace FASTER.core
             ThreadStateMachineStep(ctx, fasterSession, default);
         }
 
-        internal void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, string token, long lsn = -1)
+        internal void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName, long lsn = -1)
         {
             ctx.phase = Phase.REST;
             // The system version starts at 1. Because we do not know what the current state machine state is,
@@ -87,7 +87,8 @@ namespace FASTER.core
             ctx.version = 1;
             ctx.markers = new bool[8];
             ctx.serialNum = lsn;
-            ctx.guid = token;
+            ctx.sessionID = sessionID;
+            ctx.sessionName = sessionName;
 
             if (ctx.retryRequests == null)
             {
@@ -105,7 +106,7 @@ namespace FASTER.core
             dst.threadStateMachine = src.threadStateMachine;
             dst.markers = src.markers;
             dst.serialNum = src.serialNum;
-            dst.guid = src.guid;
+            dst.sessionName = src.sessionName;
             dst.excludedSerialNos = new List<long>();
 
             foreach (var v in src.ioPendingRequests.Values)
