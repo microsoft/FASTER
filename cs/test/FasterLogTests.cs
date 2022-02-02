@@ -9,6 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
+using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using NUnit.Framework;
 
 namespace FASTER.test
@@ -119,7 +120,7 @@ namespace FASTER.test
         {
             AsyncByteVector,
             AsyncMemoryOwner,
-            Sync
+            Sync,
         }
 
         internal static bool IsAsync(IteratorType iterType) => iterType == IteratorType.AsyncByteVector || iterType == IteratorType.AsyncMemoryOwner;
@@ -233,6 +234,79 @@ namespace FASTER.test
                     Assert.Fail("Unknown IteratorType");
                     break;
             }
+            Assert.AreEqual(numEntries, counter.count);
+        }
+
+
+        internal class TestConsumer : FasterLogScanIterator.IScanEntryConsumer
+        {
+            private Counter counter;
+            private byte[] entry;
+
+            internal TestConsumer(Counter counter, byte[] entry)
+            {
+                this.counter = counter;
+                this.entry = entry;
+            }
+            
+            public void Consume(ReadOnlySpan<byte> result, long currentAddress, long nextAddress)
+            {
+                Assert.IsTrue(result.SequenceEqual(entry));
+                counter.IncrementAndMaybeTruncateUntil(nextAddress);
+                
+            }
+        }
+        
+        [Test]
+        [Category("FasterLog")]
+        public async ValueTask FasterLogConsumerTest([Values] LogChecksumType logChecksum)
+        {
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
+            log = new FasterLog(logSettings);
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+            log.Commit(true);
+
+            using var iter = log.Scan(0, long.MaxValue);
+            var counter = new Counter(log);
+            var consumer = new TestConsumer(counter, entry);
+
+            while (iter.TryConsumeNext(consumer)) {}
+              
+            Assert.AreEqual(numEntries, counter.count);
+        }
+        
+        [Test]
+        [Category("FasterLog")]
+        public async ValueTask FasterLogAsyncConsumerTest([Values] LogChecksumType logChecksum)
+        {
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
+            log = await FasterLog.CreateAsync(logSettings);
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+            log.Commit(true);
+            log.CompleteLog(true);
+
+            using var iter = log.Scan(0, long.MaxValue);
+            var counter = new Counter(log);
+            var consumer = new TestConsumer(counter, entry);
+            await iter.ConsumeAllAsync(consumer);
             Assert.AreEqual(numEntries, counter.count);
         }
     }

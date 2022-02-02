@@ -257,7 +257,7 @@ namespace FASTER.core
             // Ensure all currently started entries will enqueue before we declare log closed
             epoch.BumpCurrentEpoch(() =>
             {
-                CommitInternal(out _, out _, false, null, long.MaxValue, null);
+                CommitInternal(out _, out _, false, Array.Empty<byte>(), long.MaxValue, null);
             });
 
             // Ensure progress even if there is no thread in epoch table

@@ -95,7 +95,6 @@ namespace FASTER.core
                 long nextAddress;
                 while (!GetNext(out result, out length, out currentAddress, out nextAddress))
                 {
-                    if (Ended) yield break;
                     if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
                 }
@@ -118,11 +117,27 @@ namespace FASTER.core
                 long nextAddress;
                 while (!GetNext(pool, out result, out length, out currentAddress, out nextAddress))
                 {
-                    if (Ended) yield break;
                     if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
                 }
                 yield return (result, length, currentAddress, nextAddress);
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously consume the log with given consumer until end of iteration or cancelled
+        /// </summary>
+        /// <param name="consumer"> consumer </param>
+        /// <param name="token"> cancellation token </param>
+        /// <typeparam name="T"> consumer type </typeparam>
+        public async Task ConsumeAllAsync<T>(T consumer, CancellationToken token = default) where T : IScanEntryConsumer
+        {
+            while (!disposed)
+            {
+                while (!TryConsumeNext(consumer))
+                {
+                    if (!await WaitAsync(token).ConfigureAwait(false)) return;
+                }
             }
         }
 
@@ -158,6 +173,7 @@ namespace FASTER.core
             {
                 if (@this.disposed)
                     return false;
+                if (@this.Ended) return false;
                 var commitTask = @this.fasterLog.CommitTask;
                 if (@this.NextAddress < @this.fasterLog.CommittedUntilAddress)
                     return true;
@@ -177,6 +193,7 @@ namespace FASTER.core
             {
                 if (@this.disposed)
                     return false;
+                if (@this.Ended) return false;
                 var refreshUncommittedTask = @this.fasterLog.RefreshUncommittedTask;
                 if (@this.NextAddress < @this.fasterLog.SafeTailAddress)
                     return true;
