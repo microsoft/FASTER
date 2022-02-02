@@ -22,7 +22,7 @@ namespace FASTER.core
         /// <summary>
         ///  Represents a entry that can be serialized directly onto FasterLog when enqueuing
         /// </summary>
-        public interface IEntry
+        public interface IEnqueueEntry
         {
             /// <summary></summary>
             /// <returns> the size in bytes after serialization onto FasterLog</returns>
@@ -333,7 +333,7 @@ namespace FASTER.core
         /// <param name="entry">Entry to be enqueued to log</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
-        public long Enqueue<T>(T entry) where T : IEntry
+        public long Enqueue<T>(T entry) where T : IEnqueueEntry
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
@@ -347,7 +347,7 @@ namespace FASTER.core
         /// <param name="entries">Batch of entries to be enqueued to log</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
-        public long Enqueue<T>(IEnumerable<T> entries) where T : IEntry
+        public long Enqueue<T>(IEnumerable<T> entries) where T : IEnqueueEntry
         {
             long logicalAddress;
             while (!TryEnqueue(entries, out logicalAddress))
@@ -365,7 +365,7 @@ namespace FASTER.core
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<T>(T entry, out long logicalAddress) where T : IEntry
+        public unsafe bool TryEnqueue<T>(T entry, out long logicalAddress) where T : IEnqueueEntry
         {
             logicalAddress = 0;
             var length = entry.SerializedLength;
@@ -400,7 +400,7 @@ namespace FASTER.core
         /// <param name="logicalAddress">Logical address of first added entry</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<T>(IEnumerable<T> entries, out long logicalAddress) where T : IEntry
+        public unsafe bool TryEnqueue<T>(IEnumerable<T> entries, out long logicalAddress) where T : IEnqueueEntry
         {
             logicalAddress = 0;
 
@@ -704,7 +704,7 @@ namespace FASTER.core
         /// <param name="token">Cancellation token</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
-        public ValueTask<long> EnqueueAsync<T>(T entry, CancellationToken token = default) where T : IEntry
+        public ValueTask<long> EnqueueAsync<T>(T entry, CancellationToken token = default) where T : IEnqueueEntry
         {
             token.ThrowIfCancellationRequested();
             if (TryEnqueue(entry, out long logicalAddress))
@@ -714,7 +714,7 @@ namespace FASTER.core
         }
 
         private static async ValueTask<long> SlowEnqueueAsync<T>(FasterLog @this, T entry, CancellationToken token)
-            where T : IEntry
+            where T : IEnqueueEntry
         {
             long logicalAddress;
             while (true)
@@ -741,7 +741,7 @@ namespace FASTER.core
         /// <param name="token">Cancellation token</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of first added entry</returns>
-        public ValueTask<long> EnqueueAsync<T>(IEnumerable<T> entries, CancellationToken token = default) where T : IEntry
+        public ValueTask<long> EnqueueAsync<T>(IEnumerable<T> entries, CancellationToken token = default) where T : IEnqueueEntry
         {
             token.ThrowIfCancellationRequested();
             if (TryEnqueue(entries, out long logicalAddress))
@@ -751,7 +751,7 @@ namespace FASTER.core
         }
 
         private static async ValueTask<long> SlowEnqueueAsync<T>(FasterLog @this, IEnumerable<T> entry, CancellationToken token)
-            where T : IEntry
+            where T : IEnqueueEntry
         {
             long logicalAddress;
             while (true)
@@ -1030,7 +1030,7 @@ namespace FASTER.core
         /// <param name="entry">Entry to be enqueued to log</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
-        public long EnqueueAndWaitForCommit<T>(T entry) where T : IEntry
+        public long EnqueueAndWaitForCommit<T>(T entry) where T : IEnqueueEntry
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
@@ -1046,7 +1046,7 @@ namespace FASTER.core
         /// <param name="entries">Entries to be enqueued to log</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of first added entry</returns>
-        public long EnqueueAndWaitForCommit<T>(IEnumerable<T> entries) where T : IEntry
+        public long EnqueueAndWaitForCommit<T>(IEnumerable<T> entries) where T : IEnqueueEntry
         {
             long logicalAddress;
             while (!TryEnqueue(entries, out logicalAddress))
@@ -1223,7 +1223,7 @@ namespace FASTER.core
         /// <param name="token">Cancellation token</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
-        public async ValueTask<long> EnqueueAndWaitForCommitAsync<T>(T entry, CancellationToken token = default) where T : IEntry
+        public async ValueTask<long> EnqueueAndWaitForCommitAsync<T>(T entry, CancellationToken token = default) where T : IEnqueueEntry
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
@@ -1277,7 +1277,7 @@ namespace FASTER.core
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
         public async ValueTask<long> EnqueueAndWaitForCommitAsync<T>(IEnumerable<T> entries,
-            CancellationToken token = default) where T : IEntry
+            CancellationToken token = default) where T : IEnqueueEntry
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;

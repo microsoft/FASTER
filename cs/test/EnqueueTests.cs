@@ -26,7 +26,7 @@ namespace FASTER.test
             IEntry
         }
 
-        private class ByteArrayEntry : FasterLog.IEntry
+        private class ByteArrayEnqueueEntry : FasterLog.IEnqueueEntry
         {
             public int SerializedLength => entry.Length;
 
@@ -94,7 +94,7 @@ namespace FASTER.test
             }
 
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numEntries);
-            var ientry = new ByteArrayEntry();
+            var ientry = new ByteArrayEnqueueEntry();
             // Enqueue but set each Entry in a way that can differentiate between entries
             for (int i = 0; i < numEntries; i++)
             {
@@ -181,7 +181,7 @@ namespace FASTER.test
             CancellationToken cancellationToken = default;
             ReadOnlyMemory<byte> readOnlyMemoryEntry = entry;
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(5);
-            var ientry = new ByteArrayEntry();
+            var ientry = new ByteArrayEnqueueEntry();
 
             var input1 = new byte[] { 0, 1, 2, 3 };
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };

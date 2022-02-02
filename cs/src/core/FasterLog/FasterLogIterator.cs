@@ -28,6 +28,20 @@ namespace FASTER.core
         internal long requestedCompletedUntilAddress;
 
         /// <summary>
+        /// Consumes a FasterLog entry without copying 
+        /// </summary>
+        public interface IScanEntryConsumer
+        {
+            /// <summary>
+            /// Consumes the given entry.
+            /// </summary>
+            /// <param name="entry"> the entry to consume </param>
+            /// <param name="currentAddress"> address of the consumed entry </param>
+            /// <param name="nextAddress"> (predicted) address of the next entry </param>
+            public void Consume(ReadOnlySpan<byte> entry, long currentAddress, long nextAddress);
+        }
+
+        /// <summary>
         /// Iteration completed until (as part of commit)
         /// </summary>
         public long CompletedUntilAddress;
@@ -346,6 +360,63 @@ namespace FASTER.core
 
                 fixed (byte* bp = &entry.Memory.Span.GetPinnableReference())
                     Buffer.MemoryCopy((void*)(headerSize + physicalAddress), bp, entryLength, entryLength);
+                epoch.Suspend();
+                return true;
+            }
+        }
+
+        
+        /// <summary>
+        /// Consume the next entry in the log with the given consumer
+        /// </summary>
+        /// <param name="consumer">consumer</param>
+        /// <typeparam name="T">concrete type of consumer</typeparam>
+        /// <returns>whether a next entry is present</returns>
+        public unsafe bool TryConsumeNext<T>(T consumer) where T : IScanEntryConsumer
+        {
+            if (disposed)
+            {
+                currentAddress = default;
+                nextAddress = default;
+                return false;
+            }
+
+            epoch.Resume();
+            // Continue looping until we find a record that is not a commit record
+            while (true)
+            {
+                long physicalAddress;
+                bool isCommitRecord;
+                int entryLength;
+                try
+                {
+                    var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
+                        out nextAddress,
+                        out isCommitRecord);
+                    if (!hasNext)
+                    {
+                        epoch.Suspend();
+                        return false;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Throw upwards, but first, suspend the epoch we are in 
+                    epoch.Suspend();
+                    throw;
+                }
+                
+                if (isCommitRecord)
+                {
+                    FasterLogRecoveryInfo info = new();
+                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
+                    if (info.CommitNum != long.MaxValue) continue;
+                    
+                    // Otherwise, no more entries
+                    epoch.Suspend();
+                    return false;
+                }
+                consumer.Consume(new ReadOnlySpan<byte>((void*)(headerSize + physicalAddress), entryLength), currentAddress, nextAddress);
                 epoch.Suspend();
                 return true;
             }

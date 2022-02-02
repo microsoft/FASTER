@@ -1,5 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
+
+using System;
 using FASTER.core;
 using NUnit.Framework;
 
@@ -129,7 +131,45 @@ namespace FASTER.test
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
             Assert.AreEqual(entryLength, currentEntry);
+        }
 
+        internal class TestConsumer : FasterLogScanIterator.IScanEntryConsumer
+        {
+            internal int currentEntry = 0;
+            
+            public void Consume(ReadOnlySpan<byte> entry, long currentAddress, long nextAddress)
+            {
+                if (currentEntry < entryLength)
+                {
+                    // Span Batch only added first entry several times so have separate verification
+                    Assert.AreEqual((byte)entryFlag, entry[currentEntry]);
+                    currentEntry++;
+                }
+            }
+        }
+        [Test]
+        [Category("FasterLog")]
+        [Category("Smoke")]
+        public void ScanConsumerTest([Values] TestUtils.DeviceType deviceType)
+        {
+            // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
+            string filename = path + "LogScanDefault" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            PopulateLog(log);
+
+            // Basic default scan from start to end 
+            // Indirectly used in other tests, but good to have the basic test here for completeness
+
+            // Read the log - Look for the flag so know each entry is unique
+            var consumer = new TestConsumer();
+            using (var iter = log.Scan(0, 100_000_000))  
+            {
+                while (iter.TryConsumeNext(consumer)) {}
+            }
+
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, consumer.currentEntry);
         }
 
         [Test]
