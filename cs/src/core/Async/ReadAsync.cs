@@ -52,8 +52,6 @@ namespace FASTER.core
                             _fasterSession.UnsafeResumeThread();
                             try
                             {
-                                Debug.Assert(_fasterKV.RelaxedCPR);
-
                                 var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _);
                                 Debug.Assert(status != Status.PENDING);
                                 _result = (status, _pendingContext.output);

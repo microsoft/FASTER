@@ -88,8 +88,7 @@ namespace FASTER.test.async
 
             fht2.Recover(token); // sync, does not require session
 
-            var guid = s1.ID;
-            using (var s3 = fht2.For(functions).ResumeSession<AdSimpleFunctions>(guid, out CommitPoint lsn))
+            using (var s3 = fht2.For(functions).ResumeSession<AdSimpleFunctions>(s1.ID, out CommitPoint lsn))
             {
                 Assert.AreEqual(numOps - 1, lsn.UntilSerialNo);
 

@@ -44,8 +44,6 @@ namespace FASTER.core
                     {
                         if (!ctx.markers[EpochPhaseIdx.Prepare])
                         {
-                            if (!faster.RelaxedCPR)
-                                faster.AcquireSharedLatchesForAllPendingRequests(ctx);
                             ctx.markers[EpochPhaseIdx.Prepare] = true;
                         }
 
@@ -67,7 +65,7 @@ namespace FASTER.core
                         if (!_ctx.markers[EpochPhaseIdx.InProgress])
                         {
                             faster.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version, tokens);
-                            faster.InitContext(ctx, ctx.prevCtx.guid, ctx.prevCtx.serialNum);
+                            faster.InitContext(ctx, ctx.prevCtx.sessionID, ctx.prevCtx.sessionName, ctx.prevCtx.serialNum);
 
                             // Has to be prevCtx, not ctx
                             ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;

@@ -62,9 +62,33 @@ namespace FASTER.core
             // Temporarily block new sessions from starting, which may add an entry to the table and resize the
             // dictionary. There should be minimal contention here.
             lock (faster._activeSessions)
+            {
+                List<int> toDelete = null;
+
                 // write dormant sessions to checkpoint
                 foreach (var kvp in faster._activeSessions)
-                    kvp.Value.AtomicSwitch(next.Version - 1);
+                {
+                    kvp.Value.session.AtomicSwitch(next.Version - 1);
+                    if (!kvp.Value.isActive)
+                    {
+                        toDelete ??= new();
+                        toDelete.Add(kvp.Key);
+                    }
+                }
+
+                // delete any sessions that ended during checkpoint cycle
+                if (toDelete != null)
+                {
+                    foreach (var key in toDelete)
+                        faster._activeSessions.Remove(key);
+                }
+            }
+
+            // Make sure previous recoverable sessions are re-checkpointed
+            foreach (var item in faster.RecoverableSessions)
+            {
+                faster._hybridLogCheckpoint.info.checkpointTokens.TryAdd(item.Item1, (item.Item2, item.Item3));
+            }
         }
 
         /// <inheritdoc />

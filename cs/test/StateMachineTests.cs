@@ -54,7 +54,7 @@ namespace FASTER.test.statemachine
         [Category("Smoke")]
         public void StateMachineTest1()
         {
-            Prepare(out var f, out var s1, out var s2);
+            Prepare(out var f, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
@@ -66,7 +66,7 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
 
             // Refresh s1
-            s1.Refresh();
+            uc1.Refresh();
 
             // We should now be in IN_PROGRESS, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState));
@@ -79,7 +79,7 @@ namespace FASTER.test.statemachine
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
 
-            s1.Refresh();
+            uc1.Refresh();
 
             // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
@@ -95,6 +95,9 @@ namespace FASTER.test.statemachine
 
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
+
+            uc1.SuspendThread();
+            uc1.Dispose();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -105,7 +108,7 @@ namespace FASTER.test.statemachine
         [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest2()
         {
-            Prepare(out var f, out var s1, out var s2);
+            Prepare(out var f, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
@@ -117,23 +120,23 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
 
             // Refresh s1
-            s1.Refresh();
+            uc1.Refresh();
 
             // We should now be in IN_PROGRESS, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState));
 
-            // Dispose session s2; does not move state machine forward
+            // Dispose session s2; moves state machine forward to WAIT_FLUSH, 2
             s2.Dispose();
 
-            // We should still be in IN_PROGRESS, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState));
+            // We should be in WAIT_FLUSH, 2
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), fht1.SystemState));
 
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
 
             // Since s1 is the only session now, it will fast-foward state machine
             // to completion
-            s1.Refresh();
+            uc1.Refresh();
 
             // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
@@ -141,6 +144,8 @@ namespace FASTER.test.statemachine
             // We should be in REST, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
 
+            uc1.SuspendThread();
+            uc1.Dispose();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -150,19 +155,19 @@ namespace FASTER.test.statemachine
         [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest3()
         {
-            Prepare(out var f, out var s1, out var s2);
+            Prepare(out var f, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
 
             // Refresh session s1
-            s1.Refresh();
+            uc1.Refresh();
 
             // s1 is now in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
 
             // Suspend s1
-            s1.UnsafeSuspendThread();
+            uc1.SuspendThread();
 
             // Since s2 is the only session now, it will fast-foward state machine
             // to completion
@@ -174,12 +179,15 @@ namespace FASTER.test.statemachine
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
 
-            s1.UnsafeResumeThread();
+            uc1.ResumeThread();
 
             // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
+
+            uc1.SuspendThread();
+            uc1.Dispose();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -189,7 +197,7 @@ namespace FASTER.test.statemachine
         [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest4()
         {
-            Prepare(out var f, out var s1, out var s2);
+            Prepare(out var f, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
@@ -201,7 +209,7 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
 
             // Refresh s1
-            s1.Refresh();
+            uc1.Refresh();
 
             // We should now be in IN_PROGRESS, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState));
@@ -210,7 +218,7 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
 
             // Suspend s1
-            s1.UnsafeSuspendThread();
+            uc1.SuspendThread();
 
             // Since s2 is the only session now, it will fast-foward state machine
             // to completion
@@ -222,12 +230,15 @@ namespace FASTER.test.statemachine
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
 
-            s1.UnsafeResumeThread();
+            uc1.ResumeThread();
 
             // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
+
+            uc1.SuspendThread();
+            uc1.Dispose();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -237,19 +248,19 @@ namespace FASTER.test.statemachine
         [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest5()
         {
-            Prepare(out var f, out var s1, out var s2);
+            Prepare(out var f, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
 
             // Refresh session s2
-            s1.Refresh();
+            uc1.Refresh();
             s2.Refresh();
 
             // We should now be in IN_PROGRESS, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState));
 
-            s1.Refresh();
+            uc1.Refresh();
 
             // We should be in WAIT_FLUSH, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), fht1.SystemState));
@@ -263,7 +274,7 @@ namespace FASTER.test.statemachine
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
 
-            s1.Refresh();
+            uc1.Refresh();
 
             // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
@@ -272,10 +283,10 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
 
             // No callback here since already done
-            s1.Refresh();
+            uc1.Refresh();
 
             // Suspend s1
-            s1.UnsafeSuspendThread();
+            uc1.SuspendThread();
 
             // Since s2 is the only session now, it will fast-foward state machine
             // to completion
@@ -287,12 +298,15 @@ namespace FASTER.test.statemachine
             // Expect no checkpoint completion callback on resume
             f.checkpointCallbackExpectation = 0;
 
-            s1.UnsafeResumeThread();
+            uc1.ResumeThread();
 
             // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
+
+            uc1.SuspendThread();
+            uc1.Dispose();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -303,10 +317,10 @@ namespace FASTER.test.statemachine
         [Category("FasterKV"), Category("CheckpointRestore")]
         public void StateMachineTest6()
         {
-            Prepare(out var f, out var s1, out var s2);
+            Prepare(out var f, out var s1, out var uc1, out var s2);
 
             // Suspend s1
-            s1.UnsafeSuspendThread();
+            uc1.SuspendThread();
 
             // s1 is now in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
@@ -332,11 +346,13 @@ namespace FASTER.test.statemachine
             // Expect checkpoint completion callback on resume
             f.checkpointCallbackExpectation = 1;
 
-            s1.UnsafeResumeThread();
+            uc1.ResumeThread();
 
             // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
+            uc1.SuspendThread();
+            uc1.Dispose();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -350,7 +366,7 @@ namespace FASTER.test.statemachine
         {
             var callback = new TestCallback();
             fht1.UnsafeRegisterCallback(callback);
-            Prepare(out var f, out var s1, out var s2);
+            Prepare(out var f, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
@@ -358,7 +374,7 @@ namespace FASTER.test.statemachine
 
             // Refresh session s2
             s2.Refresh();
-            s1.Refresh();
+            uc1.Refresh();
 
             // We should now be in IN_PROGRESS, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState));
@@ -373,7 +389,7 @@ namespace FASTER.test.statemachine
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
 
-            s1.Refresh();
+            uc1.Refresh();
 
             // Completion callback should have been called once
             Assert.IsTrue(f.checkpointCallbackExpectation == 0);
@@ -390,6 +406,9 @@ namespace FASTER.test.statemachine
 
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
+
+            uc1.SuspendThread();
+            uc1.Dispose();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -402,14 +421,14 @@ namespace FASTER.test.statemachine
         public void VersionChangeTest()
         {
             var toVersion = 1 + (1 << 14);
-            Prepare(out var f, out var s1, out var s2, toVersion);
+            Prepare(out var f, out var s1, out var uc1, out var s2, toVersion);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
 
             // Refresh session s2
             s2.Refresh();
-            s1.Refresh();
+            uc1.Refresh();
 
             // We should now be in IN_PROGRESS, toVersion
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, toVersion), fht1.SystemState));
@@ -422,7 +441,7 @@ namespace FASTER.test.statemachine
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
 
-            s1.Refresh();
+            uc1.Refresh();
 
             // Completion callback should have been called once
             Assert.IsTrue(f.checkpointCallbackExpectation == 0);
@@ -437,6 +456,9 @@ namespace FASTER.test.statemachine
 
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
+
+            uc1.SuspendThread();
+            uc1.Dispose();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -445,6 +467,7 @@ namespace FASTER.test.statemachine
 
         void Prepare(out SimpleFunctions f,
             out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1,
+            out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> uc1,
             out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s2,
             long toVersion = -1)
         {
@@ -463,7 +486,7 @@ namespace FASTER.test.statemachine
 
             NumClicks value;
 
-            s1 = fht1.For(f).NewSession<SimpleFunctions>("foo", threadAffinitized: true);
+            s1 = fht1.For(f).NewSession<SimpleFunctions>("foo");
 
             for (int key = 0; key < numOps; key++)
             {
@@ -474,8 +497,12 @@ namespace FASTER.test.statemachine
             // Ensure state machine needs no I/O wait during WAIT_FLUSH
             fht1.Log.ShiftReadOnlyAddress(fht1.Log.TailAddress, true);
 
-            // Start affinitized session s2 on another thread for testing
-            s2 = fht1.For(f).CreateThreadSession(f, threadAffinized: true);
+            // Create unsafe context and hold epoch to prepare for manual state machine driver
+            uc1 = s1.GetUnsafeContext();
+            uc1.ResumeThread();
+
+            // Start session s2 on another thread for testing
+            s2 = fht1.For(f).CreateThreadSession(f);
 
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
@@ -534,7 +561,7 @@ namespace FASTER.test.statemachine
     {
         public int checkpointCallbackExpectation = 0;
 
-        public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
+        public override void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
         {
             switch (checkpointCallbackExpectation)
             {
