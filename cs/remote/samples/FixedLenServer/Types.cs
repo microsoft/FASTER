@@ -65,7 +65,7 @@ namespace FasterFixedLenServer
         public void DeleteCompletionCallback(ref Key key, long ctx) { }
 
         public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
-            => Debug.WriteLine("Session {0} reports persistence until {1}", sessionID, commitPoint.UntilSerialNo);
+            => Debug.WriteLine($"Session {sessionID} ({(sessionName ?? "null")}) reports persistence until {commitPoint.UntilSerialNo}");
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
