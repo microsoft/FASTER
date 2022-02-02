@@ -41,7 +41,7 @@ namespace SumStore
     {
         public override void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
         {
-            Console.WriteLine("Session {0} reports persistence until {1}", sessionID, commitPoint.UntilSerialNo);
+            Console.WriteLine($"Session {sessionID} ({(sessionName ?? "null")}) reports persistence until {commitPoint.UntilSerialNo}");
         }
 
         // Read functions
