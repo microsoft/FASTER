@@ -157,6 +157,9 @@ namespace FASTER.core
             if (functions == null)
                 throw new ArgumentNullException(nameof(functions));
 
+            if (sessionName == "")
+                throw new FasterException("Cannot use empty string as session name");
+
             if (sessionName != null && _recoveredSessionNameMap != null && _recoveredSessionNameMap.ContainsKey(sessionName))
                 throw new FasterException($"Session named {sessionName} already exists in recovery info, use RecoverSession to resume it");
 

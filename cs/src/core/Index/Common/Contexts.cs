@@ -34,36 +34,6 @@ namespace FASTER.core
         ALLOCATE_FAILED
     }
 
-    internal class SerializedFasterExecutionContext
-    {
-        internal long version;
-        internal long serialNum;
-        internal int sessionID;
-        internal string sessionName;
-
-        /// <summary>
-        /// </summary>
-        /// <param name="writer"></param>
-        public void Write(StreamWriter writer)
-        {
-            writer.WriteLine(version);
-            writer.WriteLine(sessionName);
-            writer.WriteLine(sessionID);
-            writer.WriteLine(serialNum);
-        }
-
-        /// <summary>
-        /// </summary>
-        /// <param name="reader"></param>
-        public void Load(StreamReader reader)
-        {
-            version = long.Parse(reader.ReadLine());
-            sessionName = reader.ReadLine();
-            sessionID = int.Parse(reader.ReadLine());
-            serialNum = long.Parse(reader.ReadLine());
-        }
-    }
-
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         internal struct PendingContext<Input, Output, Context>
@@ -190,9 +160,15 @@ namespace FASTER.core
             }
         }
 
-        internal sealed class FasterExecutionContext<Input, Output, Context> : SerializedFasterExecutionContext
+        internal sealed class FasterExecutionContext<Input, Output, Context>
         {
+            internal int sessionID;
+            internal string sessionName;
+
+            internal long version;
+            internal long serialNum;
             public Phase phase;
+
             public bool[] markers;
             public long totalPending;
             public Queue<PendingContext<Input, Output, Context>> retryRequests;
@@ -423,6 +399,7 @@ namespace FASTER.core
             {
                 var sessionID = int.Parse(reader.ReadLine());
                 var sessionName = reader.ReadLine();
+                if (sessionName == "") sessionName = null;
                 var serialno = long.Parse(reader.ReadLine());
 
                 var exclusions = new List<long>();
