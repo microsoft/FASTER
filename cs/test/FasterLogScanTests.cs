@@ -133,7 +133,7 @@ namespace FASTER.test
             Assert.AreEqual(entryLength, currentEntry);
         }
 
-        internal class TestConsumer : FasterLogScanIterator.IScanEntryConsumer
+        internal class TestConsumer : ILogEntryConsumer
         {
             internal int currentEntry = 0;
             

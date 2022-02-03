@@ -238,7 +238,7 @@ namespace FASTER.test
         }
 
 
-        internal class TestConsumer : FasterLogScanIterator.IScanEntryConsumer
+        internal class TestConsumer : ILogEntryConsumer
         {
             private Counter counter;
             private byte[] entry;

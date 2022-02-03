@@ -28,20 +28,6 @@ namespace FASTER.core
         internal long requestedCompletedUntilAddress;
 
         /// <summary>
-        /// Consumes a FasterLog entry without copying 
-        /// </summary>
-        public interface IScanEntryConsumer
-        {
-            /// <summary>
-            /// Consumes the given entry.
-            /// </summary>
-            /// <param name="entry"> the entry to consume </param>
-            /// <param name="currentAddress"> address of the consumed entry </param>
-            /// <param name="nextAddress"> (predicted) address of the next entry </param>
-            public void Consume(ReadOnlySpan<byte> entry, long currentAddress, long nextAddress);
-        }
-
-        /// <summary>
         /// Iteration completed until (as part of commit)
         /// </summary>
         public long CompletedUntilAddress;
@@ -130,7 +116,7 @@ namespace FASTER.core
         /// <param name="consumer"> consumer </param>
         /// <param name="token"> cancellation token </param>
         /// <typeparam name="T"> consumer type </typeparam>
-        public async Task ConsumeAllAsync<T>(T consumer, CancellationToken token = default) where T : IScanEntryConsumer
+        public async Task ConsumeAllAsync<T>(T consumer, CancellationToken token = default) where T : ILogEntryConsumer
         {
             while (!disposed)
             {
@@ -389,7 +375,7 @@ namespace FASTER.core
         /// <param name="consumer">consumer</param>
         /// <typeparam name="T">concrete type of consumer</typeparam>
         /// <returns>whether a next entry is present</returns>
-        public unsafe bool TryConsumeNext<T>(T consumer) where T : IScanEntryConsumer
+        public unsafe bool TryConsumeNext<T>(T consumer) where T : ILogEntryConsumer
         {
             if (disposed)
             {

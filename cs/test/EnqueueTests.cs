@@ -26,7 +26,7 @@ namespace FASTER.test
             IEntry
         }
 
-        private class ByteArrayEnqueueEntry : FasterLog.IEnqueueEntry
+        private class ByteArrayEnqueueEntry : ILogEnqueueEntry
         {
             public int SerializedLength => entry.Length;
 
