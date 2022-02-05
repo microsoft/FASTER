@@ -1,6 +1,7 @@
-﻿using System;
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -46,10 +47,9 @@ namespace FASTER.core
                         {
                             ctx.markers[EpochPhaseIdx.Prepare] = true;
                         }
-
-                        faster.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
                     }
 
+                    faster.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
                     if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version))
                         faster.GlobalStateMachineStep(current);
                     break;
@@ -70,11 +70,9 @@ namespace FASTER.core
                             // Has to be prevCtx, not ctx
                             ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;
                         }
-
-                        faster.epoch.Mark(EpochPhaseIdx.InProgress, current.Version);
                     }
 
-                    // Has to be prevCtx, not ctx
+                    faster.epoch.Mark(EpochPhaseIdx.InProgress, current.Version);
                     if (faster.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.Version))
                         faster.GlobalStateMachineStep(current);
                     break;
