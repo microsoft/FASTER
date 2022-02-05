@@ -521,6 +521,7 @@ namespace FASTER.core
 
                 try
                 {
+                    epoch.Resume();
                     ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, valueTasks, token);
                 }
                 catch (Exception)
@@ -528,6 +529,10 @@ namespace FASTER.core
                     this._indexCheckpoint.Reset();
                     this._hybridLogCheckpoint.Dispose();
                     throw;
+                }
+                finally
+                {
+                    epoch.Suspend();
                 }
 
                 if (valueTasks.Count == 0)
