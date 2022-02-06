@@ -34,9 +34,10 @@ namespace FASTER.libdpr
         /// <returns> whether the cut was different from last time </returns>
         public bool TryGetCurrentCut(out IDprStateSnapshot snapshot)
         {
-            snapshot = dprClient.GetDprFinder().GetStateSnapshot();
+            snapshot = default;
             var clientViewNumber = dprClient.GetDprViewNumber();
             if (seenDprViewNum >= clientViewNumber) return false;
+            snapshot = dprClient.GetDprFinder().GetStateSnapshot();
             seenDprViewNum = clientViewNumber;
             return true;
         }
@@ -71,11 +72,14 @@ namespace FASTER.libdpr
         /// <summary>
         ///     Add a batch of requests to DPR tracking, with the given number of requests issued to the given worker ID.
         ///     This method should be called before the client sends a batch.
+        ///     Operations within the issued batch are numbered with ids in [return_value, return_value + batch_size) in
+        ///     order for tracking.
         ///     Not thread-safe except with ResolveBatch.
         /// </summary>
+        /// <param name="batchSize">size of the batch to issue</param>
         /// <param name="workerId"> destination of the batch</param>
         /// <param name="header"> header that encodes tracking information (to be forwarded to batch destination)</param>
-        public void IssueBatch(Worker workerId, out ReadOnlySpan<byte> header)
+        public void IssueBatch(int batchSize, Worker workerId, out ReadOnlySpan<byte> header)
         {
             CheckWorldlineChange();
             // Wait for a batch slot to become available
@@ -95,6 +99,7 @@ namespace FASTER.libdpr
                     dprHeader.sessionId = guid;
                     dprHeader.worldLine = clientWorldLine;
                     dprHeader.versionLowerBound = clientVersion;
+                    dprHeader.numMessages = batchSize;
                     // Populate tracking information into the batch
                     CopyDeps(ref dprHeader);
                     header = new Span<byte>(info.header, 0, dprHeader.Size());

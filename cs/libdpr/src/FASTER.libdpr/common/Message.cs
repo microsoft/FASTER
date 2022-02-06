@@ -7,10 +7,10 @@ namespace FASTER.libdpr
     ///     DPR metadata associated with each batch. Laid out continuously as:
     ///     header | deps (WorkerVersion[])
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = 48)]
+    [StructLayout(LayoutKind.Explicit, Size = 52)]
     public unsafe struct DprBatchRequestHeader
     {
-        public const int HeaderSize = 48;
+        public const int HeaderSize = 52;
         [FieldOffset(0)] public fixed byte data[HeaderSize];
 
         [FieldOffset(0)] public Guid sessionId;
@@ -21,7 +21,8 @@ namespace FASTER.libdpr
         [FieldOffset(32)] public long versionLowerBound;
         [FieldOffset(40)] public int batchId;
         [FieldOffset(44)] public int numDeps;
-        [FieldOffset(48)] public fixed byte deps[1];
+        [FieldOffset(48)] public int numMessages;
+        [FieldOffset(52)] public fixed byte deps[1];
 
         public int Size()
         {

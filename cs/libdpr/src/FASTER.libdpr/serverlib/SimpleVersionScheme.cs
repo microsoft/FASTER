@@ -18,7 +18,7 @@ namespace FASTER.libdpr
         {
             epoch = new LightEpoch();
         }
-
+        
         /// <summary>
         ///     Returns the current version
         /// </summary>
@@ -57,6 +57,11 @@ namespace FASTER.libdpr
         public void Leave()
         {
             epoch.Suspend();
+        }
+
+        public void Bump(Action trigger)
+        {
+            epoch.BumpCurrentEpoch(trigger);
         }
 
         /// <summary>

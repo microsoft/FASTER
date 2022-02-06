@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.libdpr
@@ -10,7 +11,19 @@ namespace FASTER.libdpr
         public static bool TryWriteBytes(Span<byte> destination, long value) => BitConverter.TryWriteBytes(destination, value);
         
         public static bool TryWriteBytes(Span<byte> destination, int value) => BitConverter.TryWriteBytes(destination, value);
+        
+        public static IEnumerable<T> Append<T>(this IEnumerable<T> src, T elem) => src.Append(elem);
+        
 #else
+        
+        // TODO(TIanyu): Performance issue and should be fixed
+        public static IEnumerable<T> Append<T>(this IEnumerable<T> src, T elem)
+        {
+            var l = src.ToList();
+            l.Add(elem);
+            return l;
+        }
+
         public static unsafe bool TryWriteBytes(Span<byte> destination, long value)
         {
             if (destination.Length < sizeof(long)) return false;
