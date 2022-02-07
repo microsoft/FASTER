@@ -25,11 +25,8 @@ namespace FASTER.libdpr
             {
                 fixed (byte* h = responseHead)
                 {
-                    fixed (byte* b = Unsafe.AsRef<DprBatchResponseHeader>(h).versions)
-                    {
-                        var l = (long*) b;
-                        Count = (int) l[0];
-                    }
+                    var l = (long*) (h + Unsafe.AsRef<DprBatchHeader>(h).VersionVectorOffset);
+                    Count = (int) l[0];
                 }
             }
         }
@@ -42,11 +39,8 @@ namespace FASTER.libdpr
             {
                 fixed (byte* h = responseHead)
                 {
-                    fixed (byte* b = Unsafe.AsRef<DprBatchResponseHeader>(h).versions)
-                    {
-                        var l = (long*) b;
-                        return l[index + 1];
-                    }
+                    var l = (long*) (h + Unsafe.AsRef<DprBatchHeader>(h).VersionVectorOffset);
+                    return l[index + 1];
                 }
             }
         }

@@ -41,7 +41,6 @@ namespace FASTER.libdpr
     ///     to be called before and after every batch execution.
     /// </summary>
     /// <typeparam name="TStateObject"></typeparam>
-    /// <typeparam name="TToken"></typeparam>
     public class DprServer<TStateObject>
         where TStateObject : IStateObject
     {
@@ -152,28 +151,38 @@ namespace FASTER.libdpr
             }, targetWorldline);
         }
 
+        public int ComputeErrorResponse(ref DprBatchHeader request, Span<byte> response)
+        {
+            ref var responseObj =
+                ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchHeader>(response));
+            responseObj.srcWorkerId = request.srcWorkerId;
+            // Use negative to signal that there was a mismatch, which would prompt error handling on client side
+            // Must be negative to distinguish from a normal response message in current version
+            responseObj.worldLine = -state.worldlineTracker.Version();
+            responseObj.batchId = request.batchId;
+            return DprBatchHeader.FixedLenSize;
+        }
+
         /// <summary>
-        ///     Invoke before beginning processing of a batch. If the function returns false, the batch must not be
-        ///     executed to preserve DPR consistency, and the caller should return the error response (written in the
-        ///     response field in case of failure). Otherwise, when the function returns, the batch is safe to execute.
-        ///     In the true case, there must eventually be a matching SignalBatchFinish call on the same thread for DPR
-        ///     to make progress.
+        ///     Invoke before beginning processing of a batch received from a remote worker/client. If the function
+        ///     returns false, the batch must not be executed to preserve DPR consistency, and the caller should return
+        ///     the error response (written in the response field in case of failure). Otherwise, when the function
+        ///     returns, the batch is safe to execute. In the true case, there must eventually be a matching
+        ///     SignalBatchFinish call on the same thread for DPR to make progress.
         /// </summary>
         /// <param name="request">Dpr request message from user</param>
-        /// <param name="response">Dpr response message that will be returned to user in case of failure</param>
         /// <param name="tracker">Tracker to use for batch execution</param>
         /// <returns>Whether the batch can be executed</returns>
-        public unsafe bool RequestBatchBegin(ref DprBatchRequestHeader request, ref DprBatchResponseHeader response,
+        public unsafe bool RequestRemoteBatchBegin(ref DprBatchHeader request,
             out DprBatchVersionTracker tracker)
         {
-            // Sanity check
-            Debug.Assert(request.workerId.Equals(Me()));
             // Wait for worker version to catch up to largest in batch (minimum version where all operations
             // can be safely executed), taking checkpoints if necessary.
-            while (request.versionLowerBound > stateObject.Version())
+            while (request.version > stateObject.Version())
             {
-                stateObject.BeginCheckpoint(ComputeDependency, request.versionLowerBound);
+                stateObject.BeginCheckpoint(ComputeDependency, request.version);
                 core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
+                Thread.Yield();
             }
 
             // Enter protected region for world-lines. Because we validate requests batch-at-a-time, the world-line
@@ -194,11 +203,6 @@ namespace FASTER.libdpr
             // is not executed.
             if (request.worldLine < wl)
             {
-                response.sessionId = request.sessionId;
-                response.workerId = request.workerId;
-                // Use negative to signal that there was a mismatch, which would prompt error handling on client side
-                response.worldLine = -wl;
-                response.batchId = request.batchId;
                 state.worldlineTracker.Leave();
                 tracker = default;
                 return false;
@@ -213,12 +217,16 @@ namespace FASTER.libdpr
             // could get processed at a future version instead due to thread timing. However, this is not a correctness
             // issue, nor do we lose much precision as batch-level dependency tracking is already an approximation.
             var deps = state.versions[stateObject.Version()];
-            fixed (byte* depValues = request.deps)
+            if (!request.srcWorkerId.Equals(Worker.INVALID))
+                deps.Update(request.srcWorkerId, request.version);
+            fixed (byte* d = request.data)
             {
-                for (var i = 0; i < request.numDeps; i++)
+                var depsHead = d + request.AdditionalDepsOffset;
+                for (var i = 0; i < request.numAdditionalDeps; i++)
                 {
-                    ref var wv = ref Unsafe.AsRef<WorkerVersion>(depValues + sizeof(WorkerVersion) * i);
+                    ref var wv = ref Unsafe.AsRef<WorkerVersion>(depsHead);
                     deps.Update(wv.Worker, wv.Version);
+                    depsHead += sizeof(WorkerVersion);
                 }
             }
 
@@ -232,15 +240,14 @@ namespace FASTER.libdpr
         ///     on the same thread for DPR to make progress.
         /// </summary>
         /// <param name="request">Dpr request message from user</param>
-        /// <param name="response">Dpr response message that will be returned to user</param>
+        /// <param name="response">Dpr response message to be populated, or null if not required</param>
         /// <param name="tracker">Tracker used in batch processing</param>
         /// <returns> size of header if successful, negative size required to hold response if supplied byte span is too small</returns>
-        public int SignalBatchFinish(ref DprBatchRequestHeader request, Span<byte> response,
+        public int SignalRemoteBatchFinish(ref DprBatchHeader request, Span<byte> response,
             DprBatchVersionTracker tracker)
         {
-            ref var dprResponse =
-                ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
-            var responseSize = DprBatchResponseHeader.HeaderSize + tracker.EncodingSize();
+            ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchHeader>(response));
+            var responseSize = DprBatchHeader.FixedLenSize + tracker.EncodingSize();
             if (response.Length < responseSize) return -responseSize;
 
             // Signal batch finished so world-lines can advance. Need to make sure not double-invoked, therefore only
@@ -248,102 +255,51 @@ namespace FASTER.libdpr
             state.worldlineTracker.Leave();
 
             // Populate response
-            dprResponse.sessionId = request.sessionId;
-            dprResponse.workerId = request.workerId;
+            dprResponse.srcWorkerId = Me();
             dprResponse.worldLine = request.worldLine;
+            dprResponse.version = tracker.maxVersion == DprBatchVersionTracker.NotExecuted
+                ? stateObject.Version()
+                : tracker.maxVersion; 
             dprResponse.batchId = request.batchId;
-            dprResponse.batchSize = responseSize;
-            tracker.AppendOntoResponse(ref dprResponse);
+            dprResponse.numAdditionalDeps = 0;
+            tracker.AppendToHeader(ref dprResponse);
 
+            tracker.Reset();
             trackers.Return(tracker);
             return responseSize;
         }
-
-        /// <summary>
-        /// Obtain a version tracker for a subscription batch. Functionally, subscription messages are equivalent to
-        /// response messages, but do not necessarily have a corresponding DPR request for them. There must eventually
-        /// be a matching FinishSubscriptionBatch call on the same thread for DPR to make progress.
-        /// </summary>
-        /// <returns> Tracker to use for batch execution </returns>
-        public DprBatchVersionTracker StarComposeSubscriptionBatch()
+        
+        public DprBatchVersionTracker RequestLocalBatchBegin()
         {
             state.worldlineTracker.Enter();
             return trackers.Checkout();
         }
-
-        /// <summary>
-        ///      Invoke after processing of a subscription batch is complete, and DprBatchVersionTracker has been populated
-        ///      with a batch offset ->  executed version mapping. This function must be invoked once for every
-        ///      started subscription batch on the same thread for DPR to make progress.
-        /// </summary>
-        /// <param name="sessionId"> id of the session this batch is going to </param>
-        /// <param name="response"> Dpr response message that will be returned to user </param>
-        /// <param name="tracker"> Tracker used in batch processing</param>
-        /// <returns> size of header if successful, negative size required to hold response if supplied byte span is too small </returns>
-        public int FinishComposeSubscriptionBatch(Guid sessionId, Span<byte> response, DprBatchVersionTracker tracker)
+        
+        public int SignalLocalBatchFinish(Span<byte> response, DprBatchVersionTracker tracker)
         {
-            ref var dprResponse =
-                ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
-            var responseSize = DprBatchResponseHeader.HeaderSize + tracker.EncodingSize();
+            ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchHeader>(response));
+            var responseSize = DprBatchHeader.FixedLenSize + tracker.EncodingSize();
             if (response.Length < responseSize) return -responseSize;
 
-            // This is the world line we are leaving
             var wl = state.worldlineTracker.Version();
-
             // Signal batch finished so world-lines can advance. Need to make sure not double-invoked, therefore only
             // called after size validation.
             state.worldlineTracker.Leave();
 
             // Populate response
-            dprResponse.sessionId = sessionId;
-            dprResponse.workerId = Me();
+            dprResponse.srcWorkerId = Me();
             dprResponse.worldLine = wl;
+            dprResponse.version = tracker.maxVersion == DprBatchVersionTracker.NotExecuted
+                ? stateObject.Version()
+                : tracker.maxVersion; 
             dprResponse.batchId = ClientBatchTracker.INVALID_BATCH_ID;
-            dprResponse.batchSize = responseSize;
-            tracker.AppendOntoResponse(ref dprResponse);
+            tracker.AppendToHeader(ref dprResponse);
 
+            tracker.Reset();
             trackers.Return(tracker);
             return responseSize;
         }
-        
-        public unsafe bool StartProcessSubscriptionBatch(Span<byte> responseBytes)
-        {
-            fixed (byte* b = responseBytes)
-            {
-                ref var response = ref Unsafe.AsRef<DprBatchResponseHeader>(b);
-                while (response.versionUpperBound > stateObject.Version())
-                {
-                    stateObject.BeginCheckpoint(ComputeDependency, response.versionUpperBound);
-                    core.Utility.MonotonicUpdate(ref state.lastCheckpointMilli, state.sw.ElapsedMilliseconds, out _);
-                }
 
-                var wl = state.worldlineTracker.Enter();
-                while (response.worldLine > wl)
-                {
-                    state.worldlineTracker.Leave();
-                    TryAdvanceWorldLineTo(response.worldLine);
-                    wl = state.worldlineTracker.Enter();
-                }
-
-                if (response.worldLine < wl)
-                {
-                    state.worldlineTracker.Leave();
-                    return false;
-                }
-
-                Debug.Assert(response.worldLine == wl);
-
-                var deps = state.versions[stateObject.Version()];
-                deps.Update(response.workerId, response.versionUpperBound);
-
-                return true;
-            }
-        }
-        
-        public void SignalSubscriptionBatchProcessingFinish()
-        {
-            state.worldlineTracker.Leave();
-        }
         /// <summary>
         ///     Force the execution of a checkpoint ahead of the schedule specified at creation time.
         ///     Resets the checkpoint schedule to happen checkpoint_milli after this invocation.

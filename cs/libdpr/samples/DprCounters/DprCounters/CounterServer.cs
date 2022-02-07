@@ -93,18 +93,17 @@ namespace DprCounters
                         SocketFlags.None);
 
                 // We can obtain the DPR header by computing the size information
-                ref var request = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(
+                ref var request = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchHeader>(
                     new ReadOnlySpan<byte>(inBuffer, sizeof(int), size - sizeof(int))));
                 
                 var responseBuffer = new Span<byte>(outBuffer, sizeof(int), outBuffer.Length - sizeof(int));
-                ref var response =
-                    ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(responseBuffer));
-                var responseHeaderSize = response.Size();
+
+                int responseHeaderSize;
                 long result = 0;
                 // Before executing server-side logic, check with DPR to start tracking for the batch and make sure 
                 // we are allowed to execute it. If not, the response header will be populated and we should immediately
                 // return that to the client side libDPR.
-                if (dprServer.RequestBatchBegin(ref request, ref response, out var tracker))
+                if (dprServer.RequestRemoteBatchBegin(ref request, out var tracker))
                 {
                     // If so, protect the execution and obtain the version this batch will execute in
                     var v = dprServer.StateObject().VersionScheme().Enter();
@@ -119,7 +118,11 @@ namespace DprCounters
                     // Once requests are done executing, stop protecting this batch so DPR can progress
                     dprServer.StateObject().VersionScheme().Leave();
                     // Signal the end of execution for DPR to finish up and populate a response header
-                    responseHeaderSize = dprServer.SignalBatchFinish(ref request, responseBuffer, tracker);
+                    responseHeaderSize = dprServer.SignalRemoteBatchFinish(ref request, responseBuffer, tracker);
+                }
+                else
+                {
+                    responseHeaderSize = dprServer.ComputeErrorResponse(ref request, responseBuffer);
                 }
 
                 // The server is then free to convey the result back to the client any way it wants, so long as it
