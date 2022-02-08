@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
@@ -12,9 +13,10 @@ namespace FASTER.libdpr
     {
         /// <summary> Special value to use when an operation was not executed for whatever reason </summary>
         public const long NotExecuted = 0;
-
+        
         // TODO(Tianyu): Move towards more sophisticated representation if necessary
         private const int DefaultBatchSize = 1024;
+        internal long maxVersion = NotExecuted;
         private readonly List<long> versions = new List<long>(DefaultBatchSize);
 
         /// <summary>
@@ -28,6 +30,7 @@ namespace FASTER.libdpr
                 versions.Add(NotExecuted);
 
             versions[batchOffset] = executedVersion;
+            maxVersion = Math.Max(executedVersion, maxVersion);
         }
 
         /// <summary>
@@ -60,14 +63,22 @@ namespace FASTER.libdpr
         ///     enough space allocated to fit this information.
         /// </summary>
         /// <param name="response"> Reference to the destination header </param>
-        public unsafe void AppendOntoResponse(ref DprBatchResponseHeader response)
+        internal unsafe void AppendToHeader(ref DprBatchHeader response)
         {
-            fixed (byte* start = &response.versions[0])
+            fixed (byte* start = response.data)
             {
-                Unsafe.AsRef<long>(start) = versions.Count;
-                for (var i = 1; i <= versions.Count; i++)
-                    Unsafe.AsRef<long>(start + sizeof(long) * i) = versions[i - 1];
+                var versionVector = (long *)(start + response.VersionVectorOffset);
+                versionVector[0] = versions.Count;
+
+                for (var i = 0; i < versions.Count; i++)
+                    versionVector[i + 1] = versions[i];
             }
+        }
+
+        internal void Reset()
+        {
+            versions.Clear();
+            maxVersion = NotExecuted;
         }
     }
 }

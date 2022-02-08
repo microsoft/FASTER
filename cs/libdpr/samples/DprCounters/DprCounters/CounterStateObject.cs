@@ -85,7 +85,7 @@ namespace DprCounters
 
         public override IEnumerable<(byte[], int)> GetUnprunedVersions()
         {
-            throw new NotImplementedException();
+            return Enumerable.Empty<(byte[], int)>();
         }
     }
 }

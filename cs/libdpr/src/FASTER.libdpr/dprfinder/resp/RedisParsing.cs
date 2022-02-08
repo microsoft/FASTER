@@ -150,36 +150,36 @@ namespace FASTER.libdpr
                         switch ((char) buf[stringStart])
                         {
                             case 'N':
-                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size)
+                                Debug.Assert(Encoding.ASCII.GetString(buf, stringStart, size)
                                     .Equals("NewCheckpoint"));
                                 currentCommand.commandType = DprFinderCommand.Type.NEW_CHECKPOINT;
                                 commandParserState = CommandParserState.ARG_WL;
                                 break;
                             case 'R':
-                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size)
+                                Debug.Assert(Encoding.ASCII.GetString(buf, stringStart, size)
                                     .Equals("ReportRecovery"));
                                 currentCommand.commandType = DprFinderCommand.Type.REPORT_RECOVERY;
                                 commandParserState = CommandParserState.ARG_WV;
                                 break;
                             case 'A':
-                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size)
+                                Debug.Assert(Encoding.ASCII.GetString(buf, stringStart, size)
                                     .Equals("AddWorker"));
                                 currentCommand.commandType = DprFinderCommand.Type.ADD_WORKER;
                                 commandParserState = CommandParserState.ARG_W;
                                 break;
                             case 'D':
-                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size)
+                                Debug.Assert(Encoding.ASCII.GetString(buf, stringStart, size)
                                     .Equals("DeleteWorker"));
                                 currentCommand.commandType = DprFinderCommand.Type.DELETE_WORKER;
                                 commandParserState = CommandParserState.ARG_W;
                                 break;
                             case 'S':
-                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size).Equals("Sync"));
+                                Debug.Assert(Encoding.ASCII.GetString(buf, stringStart, size).Equals("Sync"));
                                 currentCommand.commandType = DprFinderCommand.Type.SYNC;
                                 commandParserState = CommandParserState.NONE;
                                 return true;
                             case 'G':
-                                Debug.Assert(Encoding.ASCII.GetString(buf, readHead, size)
+                                Debug.Assert(Encoding.ASCII.GetString(buf, stringStart, size)
                                     .Equals("GraphResent"));
                                 currentCommand.commandType = DprFinderCommand.Type.GRAPH_RESENT;
                                 commandParserState = CommandParserState.ARG_WV;
@@ -228,7 +228,6 @@ namespace FASTER.libdpr
                     if (ProcessRedisBulkString(readHead, buf))
                     {
                         Debug.Assert(size == sizeof(long));
-                        Debug.Assert(currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY);
                         currentCommand.worldLine = BitConverter.ToInt64(buf, stringStart);
                         size = -1;
                         if (currentCommand.commandType == DprFinderCommand.Type.NEW_CHECKPOINT)
@@ -250,7 +249,6 @@ namespace FASTER.libdpr
                 case CommandParserState.ARG_DEPS:
                     if (ProcessRedisBulkString(readHead, buf))
                     {
-                        Debug.Assert(currentCommand.commandType == DprFinderCommand.Type.REPORT_RECOVERY);
                         currentCommand.deps.Clear();
                         var numDeps = BitConverter.ToInt32(buf, stringStart);
                         for (var i = 0; i < numDeps; i++)

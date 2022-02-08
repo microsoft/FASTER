@@ -11,13 +11,11 @@ namespace FASTER.libdpr
         internal readonly byte[] header;
         internal bool allocated;
         internal int batchId;
-        internal Worker workerId;
 
         internal BatchInfo(int batchId)
         {
             this.batchId = batchId;
             allocated = false;
-            workerId = default;
             header = new byte[MaxHeaderSize];
         }
     }

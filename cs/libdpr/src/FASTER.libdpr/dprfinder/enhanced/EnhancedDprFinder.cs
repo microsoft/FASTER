@@ -34,7 +34,7 @@ namespace FASTER.libdpr
 
         public long SafeVersion(Worker worker)
         {
-            return lastKnownCut?[worker] ?? 0;
+            return lastKnownCut.TryGetValue(worker, out var result) ? result : 0;
         }
 
         public IDprStateSnapshot GetStateSnapshot()
@@ -44,7 +44,7 @@ namespace FASTER.libdpr
 
         public long SystemWorldLine()
         {
-            return lastKnownClusterState?.currentWorldLine ?? 0;
+            return lastKnownClusterState?.currentWorldLine ?? 1;
         }
 
         public long GlobalMaxVersion()

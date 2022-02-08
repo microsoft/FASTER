@@ -18,7 +18,7 @@ namespace FASTER.libdpr
         {
             epoch = new LightEpoch();
         }
-
+        
         /// <summary>
         ///     Returns the current version
         /// </summary>
@@ -59,6 +59,11 @@ namespace FASTER.libdpr
             epoch.Suspend();
         }
 
+        public void Bump(Action trigger)
+        {
+            epoch.BumpCurrentEpoch(trigger);
+        }
+
         /// <summary>
         ///     Attempts to advance the version to the target version, executing the given action in a critical section
         ///     where no batches are being processed before entering the next version. Each version will be advanced to
@@ -77,7 +82,7 @@ namespace FASTER.libdpr
             while (Interlocked.CompareExchange(ref versionChanged, ev, null) != null)
             {
             }
-
+            
             if (targetVersion != -1 && targetVersion <= version)
             {
                 versionChanged.Set();
@@ -86,11 +91,11 @@ namespace FASTER.libdpr
             }
 
             // Any thread that sees ev will be in v + 1, because the bump happens only after ev is set. 
-            var original = version;
             epoch.BumpCurrentEpoch(() =>
             {
-                version = targetVersion == -1 ? version + 1 : targetVersion;
-                criticalSection(original, version);
+                var nextVersion = targetVersion == -1 ? version + 1 : targetVersion;
+                criticalSection(version, nextVersion);
+                version = nextVersion;
                 versionChanged.Set();
                 versionChanged = null;
             });

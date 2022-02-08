@@ -74,20 +74,18 @@ namespace FASTER.libdpr
             dprServer = new DprServer<TestStateObject>(finder, me, stateObject);
         }
         
-        public void Process(Span<byte> dprHeader, Span<byte> response, (int, int) op)
+        public void Process(ReadOnlySpan<byte> dprHeader, Span<byte> response, (int, int) op)
         {
-            ref var dprRequest =
-                ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchRequestHeader>(dprHeader));
-            ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchResponseHeader>(response));
 
-            if (dprServer.RequestBatchBegin(ref dprRequest, ref dprResponse, out var tracker))
+            if (dprServer.RequestRemoteBatchBegin(dprHeader, out var tracker))
             {
                 var v = stateObject.VersionScheme().Enter();
                 stateObject.DoStuff(op);
                 tracker.MarkOneOperationVersion(0, v);
                 stateObject.VersionScheme().Leave();
-                dprServer.SignalBatchFinish(ref dprRequest, response, tracker);
+                dprServer.SignalRemoteBatchFinish(dprHeader, response, tracker);
             }
+            else throw new NotImplementedException();
         }
     }
 

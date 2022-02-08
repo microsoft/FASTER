@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 
 namespace FASTER.libdpr
@@ -234,7 +235,6 @@ namespace FASTER.libdpr
                 {
                     // Mark cut as changed so we know to serialize the new cut later on
                     cutChanged = true;
-
                     var version = currentCut.GetValueOrDefault(committed.Worker, 0);
                     // Update cut if necessary
                     if (version < committed.Version)
@@ -297,7 +297,6 @@ namespace FASTER.libdpr
             // Traverse the graph to try and commit versions
             TryCommitVersions();
         }
-
         private void TryCommitVersions(bool tryCommitAll = false)
         {
             // Go through the unprocessed wvs and traverse the graph, unless instructed otherwise, give up after a while
@@ -361,7 +360,7 @@ namespace FASTER.libdpr
 
         public void MarkWorkerAccountedFor(Worker worker, long earliestPresentVersion)
         {
-            // Should not be invoked if recovery is underway
+            // Should only be invoked if recovery is underway
             Debug.Assert(!recoveryState.RecoveryComplete());
             // Lock here because can be accessed from multiple threads. No need to lock once all workers are accounted
             // for as then only the graph traversal thread will update current cut

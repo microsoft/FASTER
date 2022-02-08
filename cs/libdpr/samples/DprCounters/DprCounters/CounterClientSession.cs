@@ -17,7 +17,7 @@ namespace DprCounters
         private byte[] serializationBuffer = new byte[1 << 15];
         private long serialNum = 0;
 
-        private ClientVersionTracker versionTracker = new ClientVersionTracker();
+        private ClientVersionTracker versionTracker = new();
         
         /// <summary>
         /// Create a new client session
@@ -45,7 +45,7 @@ namespace DprCounters
             versionTracker.Add(id);
             // Before sending operations, consult with DPR client for a batch header. For this simple example, we 
             // are using one message per batch
-            session.IssueBatch(1, worker, out var header);
+            var header = session.IssueBatch();
             // Use a serialization scheme that writes a size field and then the DPR header and request in sequence.
             BitConverter.TryWriteBytes(new Span<byte>(serializationBuffer, 0, sizeof(int)),
                 header.Length + sizeof(long));
