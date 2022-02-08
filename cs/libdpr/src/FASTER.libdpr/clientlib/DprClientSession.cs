@@ -79,8 +79,8 @@ namespace FASTER.libdpr
         ///     order for tracking.
         ///     Not thread-safe except with ResolveBatch.
         /// </summary>
-        /// <param name="header"> header that encodes tracking information (to be forwarded to batch destination)</param>
-        public void IssueBatch(out ReadOnlySpan<byte> header)
+        /// <returns> header that encodes tracking information (to be forwarded to batch destination)</returns>
+        public ReadOnlySpan<byte> IssueBatch()
         {
             CheckWorldlineChange();
             // Wait for a batch slot to become available
@@ -101,7 +101,7 @@ namespace FASTER.libdpr
                     dprHeader.batchId = info.batchId;
                     // Populate tracking information into the batch
                     var len = CopyDeps(ref dprHeader);
-                    header = new Span<byte>(info.header, 0, (int) len);
+                    return new Span<byte>(info.header, 0, (int) len);
                 }
             }
         }
@@ -115,9 +115,10 @@ namespace FASTER.libdpr
         /// </summary>
         /// <param name="reply">The received reply</param>
         /// <param name="versionVector">
-        ///     An IEnumerable holding the version each operation in the batch executed at. Operations are identified by
-        ///     the offset they appeared in the original batch. This object shares scope with the reply Memory and will no
-        ///     longer be safe to access if reply is moved, modified, or deallocated.
+        ///     An vector holding the version each operation in the batch executed at, if the sender of the batch
+        ///     populated if (see DprBatchVersionTracker in DprServer). Operations are identified by  the offset they
+        ///     appeared in the original batch. This object shares scope with the reply Memory and will no
+        ///     longer be safe to access if reply is modified or deallocated.
         /// </param>
         /// <returns>whether it is safe to proceed with consuming the operation result</returns>
         public unsafe bool ResolveBatch(ReadOnlySpan<byte> reply, out DprBatchVersionVector versionVector)

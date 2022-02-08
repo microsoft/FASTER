@@ -122,7 +122,7 @@ namespace DprCounters
                 }
                 else
                 {
-                    responseHeaderSize = dprServer.ComputeErrorResponse(ref request, responseBuffer);
+                    responseHeaderSize = dprServer.ComposeErrorResponse(ref request, responseBuffer);
                 }
 
                 // The server is then free to convey the result back to the client any way it wants, so long as it
