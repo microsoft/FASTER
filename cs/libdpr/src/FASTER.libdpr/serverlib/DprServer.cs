@@ -88,6 +88,7 @@ namespace FASTER.libdpr
                     state.rollbackProgress.Wait();
                 }
             }, state.dprFinder.SystemWorldLine());
+            state.dprFinder.Refresh();
         }
 
         /// <summary></summary>
@@ -162,11 +163,13 @@ namespace FASTER.libdpr
         ///     sending DPR
         /// component. 
         /// </summary>
-        /// <param name="request">the original request that failed</param>
+        /// <param name="requestBytes">the original request that failed</param>
         /// <param name="response"> the response message to populate</param>
         /// <returns> size of the response message, or negative of the required size if it does not fit </returns>
-        public int ComposeErrorResponse(ref DprBatchHeader request, Span<byte> response)
+        public int ComposeErrorResponse(ReadOnlySpan<byte> requestBytes, Span<byte> response)
         {
+            var cast = MemoryMarshal.Cast<byte, DprBatchHeader>(requestBytes);
+            ref readonly var request = ref MemoryMarshal.GetReference(cast);
             if (response.Length < DprBatchHeader.FixedLenSize) return -DprBatchHeader.FixedLenSize;
 
             ref var responseObj =
@@ -186,12 +189,15 @@ namespace FASTER.libdpr
         ///     execute. In the true case, there must eventually be a matching SignalRemoteBatchFinish call on the same
         ///     thread for DPR to make progress. Only one batch is allowed to be active on a thread at a given time. 
         /// </summary>
-        /// <param name="request">Dpr request message from user</param>
+        /// <param name="requestBytes">Dpr request message from user</param>
         /// <param name="tracker">Tracker to use for batch execution</param>
         /// <returns>Whether the batch can be executed</returns>
-        public unsafe bool RequestRemoteBatchBegin(ref DprBatchHeader request,
+        public unsafe bool RequestRemoteBatchBegin(ReadOnlySpan<byte> requestBytes,
             out DprBatchVersionTracker tracker)
         {
+            var cast = MemoryMarshal.Cast<byte, DprBatchHeader>(requestBytes);
+            ref readonly var request = ref MemoryMarshal.GetReference(cast);
+            
             // Wait for worker version to catch up to largest in batch (minimum version where all operations
             // can be safely executed), taking checkpoints if necessary.
             while (request.version > stateObject.Version())
@@ -254,13 +260,16 @@ namespace FASTER.libdpr
         ///     populated with a batch offset -> executed version mapping. This function must be invoked after beginning
         ///     a remote batch on the same thread for DPR to make progress.
         /// </summary>
-        /// <param name="request">Dpr request message from user</param>
+        /// <param name="requestBytes">Dpr request message from user</param>
         /// <param name="response">Dpr response message to be populated</param>
         /// <param name="tracker">Tracker used in batch processing</param>
         /// <returns> size of header if successful, negative size required to hold response if supplied byte span is too small</returns>
-        public int SignalRemoteBatchFinish(ref DprBatchHeader request, Span<byte> response,
+        public int SignalRemoteBatchFinish(ReadOnlySpan<byte> requestBytes, Span<byte> response,
             DprBatchVersionTracker tracker)
         {
+            var cast = MemoryMarshal.Cast<byte, DprBatchHeader>(requestBytes);
+            ref readonly var request = ref MemoryMarshal.GetReference(cast);
+            
             ref var dprResponse = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchHeader>(response));
             var responseSize = DprBatchHeader.FixedLenSize + tracker.EncodingSize();
             if (response.Length < responseSize) return -responseSize;

@@ -91,11 +91,11 @@ namespace FASTER.libdpr
             }
 
             // Any thread that sees ev will be in v + 1, because the bump happens only after ev is set. 
-            var original = version;
             epoch.BumpCurrentEpoch(() =>
             {
-                version = targetVersion == -1 ? version + 1 : targetVersion;
-                criticalSection(original, version);
+                var nextVersion = targetVersion == -1 ? version + 1 : targetVersion;
+                criticalSection(version, nextVersion);
+                version = nextVersion;
                 versionChanged.Set();
                 versionChanged = null;
             });

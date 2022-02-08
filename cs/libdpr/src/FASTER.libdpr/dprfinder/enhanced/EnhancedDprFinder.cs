@@ -44,7 +44,7 @@ namespace FASTER.libdpr
 
         public long SystemWorldLine()
         {
-            return lastKnownClusterState?.currentWorldLine ?? 0;
+            return lastKnownClusterState?.currentWorldLine ?? 1;
         }
 
         public long GlobalMaxVersion()

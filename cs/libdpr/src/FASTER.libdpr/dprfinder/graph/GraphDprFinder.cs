@@ -54,7 +54,7 @@ namespace FASTER.libdpr
         /// <inheritdoc />
         public long SystemWorldLine()
         {
-            return lastKnownState?.GetCurrentWorldLines().Select(e => e.Value).Max() ?? 0;
+            return lastKnownState?.GetCurrentWorldLines().Select(e => e.Value).Max() ?? 1;
         }
 
         /// <inheritdoc />

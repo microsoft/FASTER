@@ -45,8 +45,10 @@ namespace FASTER.libdpr
         // Should only be called on client threads, as it conveys worldline changes through exceptions.
         private void CheckWorldlineChange()
         {
+            var systemWorldLine = dprClient.GetDprFinder().SystemWorldLine();
             // No failure
-            if (clientWorldLine == dprClient.GetDprFinder().SystemWorldLine()) return;
+            if (clientWorldLine == systemWorldLine) return;
+            Debug.Assert(clientWorldLine < systemWorldLine);
             clientWorldLine = dprClient.GetDprFinder().SystemWorldLine();
             var rollbackPoint = dprClient.GetDprFinder().GetStateSnapshot();
             batchTracker.HandleRollback();
