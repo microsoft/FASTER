@@ -106,13 +106,13 @@ namespace FASTER.test
 
     internal class TryAddTestFunctions : TryAddFunctions<int, RMWValue, Status>
     {
-        public override bool InitialUpdater(ref int key, ref RMWValue input, ref RMWValue value, ref RMWValue output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool InitialUpdater(ref int key, ref RMWValue input, ref RMWValue value, ref RMWValue output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             input.flag = true;
-            return base.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedLength, fullLength, address);
+            return base.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
         }
 
-        public override bool CopyUpdater(ref int key, ref RMWValue input, ref RMWValue oldValue, ref RMWValue newValue, ref RMWValue output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool CopyUpdater(ref int key, ref RMWValue input, ref RMWValue oldValue, ref RMWValue newValue, ref RMWValue output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             Assert.Fail("CopyUpdater");
             return false;

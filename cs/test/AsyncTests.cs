@@ -135,10 +135,10 @@ namespace FASTER.test.async
 
         // RMW functions
         public override bool InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address) { value = input.numClicks; return true; ;}
+                ref int usedValueLength, int fullValueLength, long address) { value = input.numClicks; return true; ;}
 
         public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
@@ -146,7 +146,7 @@ namespace FASTER.test.async
 
         public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output) => true;
 
-        public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
             return true;

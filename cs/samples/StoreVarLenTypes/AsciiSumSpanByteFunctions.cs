@@ -18,7 +18,7 @@ namespace StoreVarLenTypes
 
         /// <inheritdoc/>
         public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             input.CopyTo(ref value);
             return true;
@@ -26,7 +26,7 @@ namespace StoreVarLenTypes
 
         /// <inheritdoc/>
         public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             long curr = Utils.BytesToLong(value.AsSpan());
             long next = curr + Utils.BytesToLong(input.AsSpan());
@@ -36,7 +36,7 @@ namespace StoreVarLenTypes
         }
 
         /// <inheritdoc/>
-        public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             long curr = Utils.BytesToLong(oldValue.AsSpan());
             long next = curr + Utils.BytesToLong(input.AsSpan());

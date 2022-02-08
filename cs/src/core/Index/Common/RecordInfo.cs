@@ -255,6 +255,13 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void TransferLocksFrom(ref RecordInfo other)
+        {
+            this.CopyLocksFrom(other);
+            other.ClearLocks();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryUpdateAddress(long newPrevAddress)
         {
             var expectedWord = word;

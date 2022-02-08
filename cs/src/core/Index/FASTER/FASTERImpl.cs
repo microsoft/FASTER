@@ -50,12 +50,16 @@ namespace FASTER.core
                 return false;
         }
 
+        private bool IsFixedLengthReviv => varLenValueOnlyLengthStruct is null;
         private IVariableLengthStruct<Value> varLenValueOnlyLengthStruct;
+        internal VariableLengthBlittableAllocator<Key, Value> varLenAllocator;
 
-        private void InitializeRevivification(bool isVarLenValue)
+        private void InitializeRevivification(IVariableLengthStruct<Value> varLenStruct, int maxFreeRecordsInBin, bool fixedRecordLength)
         {
-            if (EnableFreeRecordPool && isVarLenValue)
-                varLenValueOnlyLengthStruct = new FixedLengthStruct<Value>();
+            varLenValueOnlyLengthStruct = varLenStruct;
+            varLenAllocator = this.hlog as VariableLengthBlittableAllocator<Key, Value>;
+            if (maxFreeRecordsInBin > 0)
+                this.freeRecordPool = new FreeRecordPool(maxFreeRecordsInBin, fixedRecordLength ? hlog.GetAverageRecordSize() : -1);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -65,15 +69,21 @@ namespace FASTER.core
         private long MinFreeRecordAddress(HashBucketEntry entry) => entry.Address > this.hlog.ReadOnlyAddress ? entry.Address : this.hlog.ReadOnlyAddress;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe void SetLengths(ref Value value, ref RecordInfo recordInfo, int usedLength, int fullLength)
+        private int* GetValueLengthPointer(long physicalAddress, int usedValueLength) => (int*)((byte*)physicalAddress + GetValueOffset(physicalAddress) + usedValueLength);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int GetValueOffset(long physicalAddress) => (int)(varLenAllocator.ValueOffset(physicalAddress) - physicalAddress);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe void SetLengths(long physicalAddress, ref Value value, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
         {
-            Debug.Assert(EnableFreeRecordPool, "caller should have verified EnableFreeRecordPool");
-            usedLength = RoundupLength(usedLength);
-            long availableLength = fullLength - usedLength;
-            if (availableLength > 0)
+            if (IsFixedLengthReviv)
+                return;
+            usedValueLength = RoundupLength(usedValueLength);
+            int availableLength = fullValueLength - usedValueLength;
+            if (availableLength >= sizeof(int))
             {
-                Debug.Assert(availableLength >= sizeof(int), "VarLen GetRecordSize() should have ensured 8-byte-aligned record length");
-                *((int*)Unsafe.AsPointer(ref value) + RoundupLength(usedLength)) = fullLength;
+                *GetValueLengthPointer(physicalAddress, usedValueLength) = fullValueLength;
                 recordInfo.Filler = true;
                 return;
             }
@@ -81,51 +91,124 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private (int usedLength, int fullLength) GetLengths<Input, Output, Context, FasterSession>(ref Value value, ref RecordInfo recordInfo, FasterSession fasterSession)
+        private (int usedValueLength, int fullValueLength) GetLengths(int allocatedSize, long newPhysicalAddress)
+        {
+            if (IsFixedLengthReviv)
+                return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length);
+
+            int valueOffset = GetValueOffset(newPhysicalAddress);
+            int fullValueLength = allocatedSize - valueOffset;
+
+            // Return usedValueLength with the default "fixedlen" value of "entire record is used".
+            return (fullValueLength, fullValueLength);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private (int usedValueLength, int fullValueLength) GetLengths<Input, Output, Context, FasterSession>(long physicalAddress, ref Value value, ref RecordInfo recordInfo, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            int usedLength = varLenValueOnlyLengthStruct is not null ? varLenValueOnlyLengthStruct.GetLength(ref value) : FixedLengthStruct<Value>.Length;
+            if (IsFixedLengthReviv)
+                return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length);
 
-            // If there is no filler, we have no idea how to get the true full length.
-            int fullLength = recordInfo.Filler
-                ? *(int*)Unsafe.AsPointer(ref value) + RoundupLength(usedLength)
-                : RoundupLength(usedLength);
-            return (usedLength, fullLength);
+            int usedValueLength = varLenValueOnlyLengthStruct.GetLength(ref value);
+            usedValueLength = RoundupLength(usedValueLength);
+            int fullValueLength = recordInfo.Filler
+                ? *GetValueLengthPointer(physicalAddress, usedValueLength)    // Get the length from the Value space after usedLength
+                : usedValueLength;                                      // There is no filler, so we have no idea how to get the true full length
+            return (usedValueLength, fullValueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private (int usedValueLength, int fullValueLength) GetValueLengths<Input, Output, Context, FasterSession>(long physicalAddress, ref Value recordValue, ref RecordInfo recordInfo, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
+            if (IsFixedLengthReviv)
+                return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length);
+
             // Only get valueOffset if we need it.
             if (recordInfo.Filler)
-                return GetLengths<Input, Output, Context, FasterSession>(ref recordValue, ref recordInfo, fasterSession);
+                return GetLengths<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
 
             // Get the full record length (including key), not just the value length.
             var (_, fullRecordLength) = hlog.GetRecordSize(physicalAddress);
-            int valueOffset = (int)((long)Unsafe.AsPointer(ref hlog.GetValue(physicalAddress)) - physicalAddress);
-            var length = fullRecordLength - valueOffset;
+            var length = fullRecordLength - GetValueOffset(physicalAddress);
             return (length, length);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private (int usedLength, int fullValueLength, int fullRecordLength) GetRecordLengths<Input, Output, Context, FasterSession>(long physicalAddress, ref Value recordValue, ref RecordInfo recordInfo, FasterSession fasterSession)
+        private (int usedValueLength, int fullValueLength, int fullRecordLength) GetRecordLengths<Input, Output, Context, FasterSession>(long physicalAddress, ref Value recordValue, ref RecordInfo recordInfo, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            int usedLength, fullValueLength, fullRecordLength;
-            int valueOffset = (int)((long)Unsafe.AsPointer(ref hlog.GetValue(physicalAddress)) - physicalAddress);
+            int fullRecordLength;
+            if (IsFixedLengthReviv)
+            {
+                (_, fullRecordLength) = hlog.GetRecordSize(physicalAddress);
+                return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length, fullRecordLength);
+            }
+
+            int usedValueLength, fullValueLength;
+            int valueOffset = GetValueOffset(physicalAddress);
             if (recordInfo.Filler)
             {
-                (usedLength, fullValueLength) = GetLengths<Input, Output, Context, FasterSession>(ref recordValue, ref recordInfo, fasterSession);
+                (usedValueLength, fullValueLength) = GetLengths<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
                 fullRecordLength = valueOffset + fullValueLength;
             }
             else
             {
                 // Get the full record length (including key), not just the value length.
                 (_, fullRecordLength) = hlog.GetRecordSize(physicalAddress);
-                usedLength = fullValueLength = fullRecordLength - valueOffset;
+                usedValueLength = fullValueLength = fullRecordLength - valueOffset;
             }
-            return (usedLength, fullValueLength, fullRecordLength);
+            return (usedValueLength, fullValueLength, fullRecordLength);
+        }
+
+        // Deleted value invariant: the full value length starts at the beginning of the value offset.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe void SetDeletedValueLength(long physicalAddress, ref RecordInfo recordInfo, int fullValueLength)
+        {
+            if (!IsFixedLengthReviv)
+            {
+                Debug.Assert(fullValueLength >= sizeof(int), "VarLen GetRecordSize() should have ensured 8-byte-aligned record length");
+                *GetValueLengthPointer(physicalAddress, 0) = fullValueLength;
+                recordInfo.Filler = true;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int GetDeletedValueLength(long physicalAddress, ref RecordInfo recordInfo)
+        {
+            Debug.Assert(recordInfo.Filler, "Should have filler set");
+            if (IsFixedLengthReviv)
+                return FixedLengthStruct<Value>.Length;
+            return *GetValueLengthPointer(physicalAddress, 0);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal int GetDeletedRecordLength(long physicalAddress, ref RecordInfo recordInfo)
+        {
+            int valueOffset = GetValueOffset(physicalAddress);
+            return valueOffset + GetDeletedValueLength(physicalAddress, ref recordInfo);
+        }
+
+        bool TryDequeueFreeRecord(ref int allocatedSize, HashBucketEntry entry, out long logicalAddress, out long physicalAddress)
+        {
+            if (FreeRecordPoolHasRecords && freeRecordPool.Dequeue(allocatedSize, MinFreeRecordAddress(entry), this, out logicalAddress))
+            {
+                physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                if (IsFixedLengthReviv)
+                {
+                    allocatedSize = FixedLengthStruct<Value>.Length;
+                }
+                else
+                {
+                    ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
+                    int valueOffset = GetValueOffset(physicalAddress);
+                    allocatedSize = valueOffset + GetDeletedValueLength(physicalAddress, ref recordInfo);
+                }
+                return true;
+            }
+            logicalAddress = physicalAddress = default;
+            return false;
         }
 
         internal enum LatchOperation : byte
@@ -508,36 +591,42 @@ namespace FASTER.core
                 if (logicalAddress >= hlog.ReadOnlyAddress)
                 {
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
+                    ref Value recordValue = ref hlog.GetValue(physicalAddress);
                     if (recordInfo.IsIntermediate(out status))
                         return status;
 
-                    (int usedValueLength, int fullValueLength) = GetValueLengths<Input, Output, Context, FasterSession>(physicalAddress, ref value, ref recordInfo, fasterSession);
-
+                    int usedValueLength, fullValueLength;
                     if (recordInfo.Tombstone)
                     {
                         if (recordInfo.Filler)
                         {
                             if (!recordInfo.Seal(fasterSession.IsManualLocking))
                                 return OperationStatus.RETRY_NOW;
-                            if (fasterSession.SingleWriter(ref key, ref input, ref hlog.GetValue(physicalAddress), ref value, ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress))
+                            if (recordInfo.Tombstone && recordInfo.Filler)
                             {
-                                if (EnableFreeRecordPool)
-                                    SetLengths(ref value, ref recordInfo, usedValueLength, fullValueLength);
-                                hlog.MarkPage(logicalAddress, sessionCtx.version);
-                                pendingContext.recordInfo = recordInfo;
-                                pendingContext.logicalAddress = logicalAddress;
-                                recordInfo.Unseal();
-                                return OperationStatus.SUCCESS;
+                                recordInfo.Tombstone = false;
+                                fullValueLength = GetDeletedValueLength(physicalAddress, ref recordInfo);
+                                usedValueLength = fullValueLength;
+                                if (fasterSession.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress))
+                                {
+                                    SetLengths(physicalAddress, ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
+                                    hlog.MarkPage(logicalAddress, sessionCtx.version);
+                                    pendingContext.recordInfo = recordInfo;
+                                    pendingContext.logicalAddress = logicalAddress;
+                                    recordInfo.Unseal();
+                                    return OperationStatus.SUCCESS;
+                                }
+                                recordInfo.Tombstone = true;
                             }
                             recordInfo.Unseal();
                         }
                         goto CreateNewRecord;
                     }
 
-                    if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress, out bool lockFailed))
+                    (usedValueLength, fullValueLength) = GetValueLengths<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
+                    if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress, out bool lockFailed))
                     {
-                        if (EnableFreeRecordPool)
-                            SetLengths(ref value, ref recordInfo, usedValueLength, fullValueLength);
+                        SetLengths(physicalAddress, ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
                         hlog.MarkPage(logicalAddress, sessionCtx.version);
                         pendingContext.recordInfo = recordInfo;
                         pendingContext.logicalAddress = logicalAddress;
@@ -571,37 +660,42 @@ namespace FASTER.core
                     if (recordInfo.IsIntermediate(out status))
                         goto LatchRelease; // Release shared latch (if acquired)
 
-                    (int usedValueLength, int fullValueLength) = GetValueLengths<Input, Output, Context, FasterSession>(physicalAddress, ref value, ref recordInfo, fasterSession);
-
+                    int usedValueLength, fullValueLength;
                     if (recordInfo.Tombstone)
                     {
                         if (recordInfo.Filler)
                         {
                             if (!recordInfo.Seal(fasterSession.IsManualLocking))
                                 return OperationStatus.RETRY_NOW;
-                            if (fasterSession.SingleWriter(ref key, ref input, ref hlog.GetValue(physicalAddress), ref value, ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress))
+                            if (recordInfo.Tombstone && recordInfo.Filler)
                             {
-                                if (EnableFreeRecordPool)
-                                    SetLengths(ref value, ref recordInfo, usedValueLength, fullValueLength);
-                                if (sessionCtx.phase == Phase.REST)
-                                    hlog.MarkPage(logicalAddress, sessionCtx.version);
-                                else
-                                    hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
-                                pendingContext.recordInfo = recordInfo;
-                                pendingContext.logicalAddress = logicalAddress;
-                                recordInfo.Unseal();
-                                status = OperationStatus.SUCCESS;
-                                goto LatchRelease; // Release shared latch (if acquired)
+                                recordInfo.Tombstone = false;
+                                fullValueLength = GetDeletedValueLength(physicalAddress, ref recordInfo);
+                                usedValueLength = fullValueLength;
+                                if (fasterSession.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress))
+                                {
+                                    SetLengths(physicalAddress, ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
+                                    if (sessionCtx.phase == Phase.REST)
+                                        hlog.MarkPage(logicalAddress, sessionCtx.version);
+                                    else
+                                        hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
+                                    pendingContext.recordInfo = recordInfo;
+                                    pendingContext.logicalAddress = logicalAddress;
+                                    recordInfo.Unseal();
+                                    status = OperationStatus.SUCCESS;
+                                    goto LatchRelease; // Release shared latch (if acquired)
+                                }
+                                recordInfo.Tombstone = true;
                             }
                             recordInfo.Unseal();
                         }
                         goto CreateNewRecord;
                     }
 
+                    (usedValueLength, fullValueLength) = GetValueLengths<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
                     if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress, out bool lockFailed))
                     {
-                        if (EnableFreeRecordPool)
-                            SetLengths(ref value, ref recordInfo, usedValueLength, fullValueLength);
+                        SetLengths(physicalAddress, ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
                         if (sessionCtx.phase == Phase.REST)
                             hlog.MarkPage(logicalAddress, sessionCtx.version);
                         else
@@ -623,7 +717,7 @@ namespace FASTER.core
                 }
                 else if (logicalAddress >= hlog.HeadAddress)
                 {
-                    // Only need to go below ReadOnly here for locking and Sealing.
+                    // Only need to go below ReadOnly here for locking.
                     physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                     pendingContext.recordInfo = recordInfo;
@@ -631,11 +725,8 @@ namespace FASTER.core
 
                     if (recordInfo.IsIntermediate(out status))
                         goto LatchRelease; // Release shared latch (if acquired)
-                    if (!recordInfo.Seal(fasterSession.IsManualLocking))
-                    {
-                        status = OperationStatus.RETRY_NOW;
-                        goto LatchRelease; // Release shared latch (if acquired)
-                    }
+
+                    // No need to actually Seal in readonly; the record cannot be modified, but we need the address for lock transfer.
                     unsealPhysicalAddress = physicalAddress;
                     goto CreateNewRecord;
                 }
@@ -663,8 +754,10 @@ namespace FASTER.core
                 {
                     if (unsealPhysicalAddress != Constants.kInvalidAddress)
                     {
-                        // Operation failed, so unseal the old record.
-                        hlog.GetInfo(unsealPhysicalAddress).Unseal();
+                        // Operation failed, so unseal the old record if we sealed it.
+                        ref RecordInfo ri = ref hlog.GetInfo(unsealPhysicalAddress);
+                        if (ri.Sealed)
+                            ri.Unseal();
                     }
                     if (status == OperationStatus.ALLOCATE_FAILED)
                     {
@@ -783,14 +876,14 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref input, ref value, fasterSession);
-            if (!FreeRecordPoolHasRecords || !FreeRecordPool.Dequeue(allocatedSize, MinFreeRecordAddress(entry), hlog, out long newLogicalAddress))
+            if (!TryDequeueFreeRecord(ref allocatedSize, entry, out long newLogicalAddress, out long newPhysicalAddress))
             {
                 BlockAllocate(allocatedSize, out newLogicalAddress, sessionCtx, fasterSession, pendingContext.IsAsync);
                 if (newLogicalAddress == 0)
                     return OperationStatus.ALLOCATE_FAILED;
+                newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             }
 
-            var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo,
                            inNewVersion: sessionCtx.InNewVersion,
@@ -800,9 +893,10 @@ namespace FASTER.core
             hlog.Serialize(ref key, newPhysicalAddress);
             ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
 
-            int usedLength = 0;
-            int valueOffset = (int)((long)Unsafe.AsPointer(ref newValue) - newPhysicalAddress);
-            fasterSession.SingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, ref usedLength, allocatedSize - valueOffset, newLogicalAddress);
+            var (usedValueLength, fullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
+            if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, ref usedValueLength, fullValueLength, newLogicalAddress))
+                return OperationStatus.RETRY_NOW;
+            SetLengths(newPhysicalAddress, ref newValue, ref recordInfo, usedValueLength, fullValueLength);
 
             bool success = true;
             if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
@@ -824,7 +918,7 @@ namespace FASTER.core
                 ref RecordInfo rcri = ref readcache.GetInfo(lowestReadCachePhysicalAddress);
                 if (rcri.PreviousAddress != latestLogicalAddress)
                     return OperationStatus.RETRY_NOW;
-                
+
                 // Splice a non-tentative record into the readcache/mainlog gap.
                 success = rcri.TryUpdateAddress(newLogicalAddress);
                 if (success)
@@ -838,7 +932,7 @@ namespace FASTER.core
             if (success)
             {
                 if (unsealPhysicalAddress != Constants.kInvalidAddress)
-                    recordInfo.CopyLocksFrom(hlog.GetInfo(unsealPhysicalAddress));
+                    recordInfo.TransferLocksFrom(ref hlog.GetInfo(unsealPhysicalAddress));
                 else if (LockTable.IsActive)
                     LockTable.TransferToLogRecord(ref key, ref recordInfo);
                 recordInfo.SetTentativeAtomic(false);
@@ -861,9 +955,9 @@ namespace FASTER.core
             return OperationStatus.RETRY_NOW;
         }
 
-#endregion
+        #endregion
 
-#region RMW Operation
+        #region RMW Operation
 
         /// <summary>
         /// Read-Modify-Write Operation. Updates value of 'key' using 'input' and current value.
@@ -950,6 +1044,7 @@ namespace FASTER.core
                     // Re-get hash code if we are using the free list; this record may have been deleted, pushed to freelist, then added back for a different key.
                     if (EnableFreeRecordPool && hash != comparer.GetHashCode64(ref recordKey))
                         return OperationStatus.RETRY_NOW;
+
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key,
                                         logicalAddress,
@@ -969,31 +1064,38 @@ namespace FASTER.core
                 if (recordInfo.IsIntermediate(out status))
                     return status;
 
-                (int usedValueLength, int fullValueLength) = GetValueLengths<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
-
+                int usedValueLength, fullValueLength;
                 if (recordInfo.Tombstone)
                 {
                     if (recordInfo.Filler)
                     {
                         if (!recordInfo.Seal(fasterSession.IsManualLocking))
                             return OperationStatus.RETRY_NOW;
-                        fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress);
-                        if (EnableFreeRecordPool)
-                            SetLengths(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
-                        hlog.MarkPage(logicalAddress, sessionCtx.version);
-                        pendingContext.recordInfo = recordInfo;
-                        pendingContext.logicalAddress = logicalAddress;
+                        if (recordInfo.Tombstone && recordInfo.Filler)
+                        {
+                            recordInfo.Tombstone = false;
+                            fullValueLength = GetDeletedValueLength(physicalAddress, ref recordInfo);
+                            usedValueLength = fullValueLength;
+                            if (fasterSession.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress))
+                            {
+                                SetLengths(physicalAddress, ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
+                                hlog.MarkPage(logicalAddress, sessionCtx.version);
+                                pendingContext.recordInfo = recordInfo;
+                                pendingContext.logicalAddress = logicalAddress;
+                                recordInfo.Unseal();
+                                return OperationStatus.SUCCESS;
+                            }
+                            recordInfo.Tombstone = true;
+                        }
                         recordInfo.Unseal();
-                        return OperationStatus.SUCCESS;
                     }
-                    recordInfo.Unseal();
                     goto CreateNewRecord;
                 }
 
-                if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress, out bool lockFailed))
+                (usedValueLength, fullValueLength) = GetValueLengths<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
+                if (fasterSession.InPlaceUpdater(ref key, ref input, ref recordValue, ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress, out bool lockFailed))
                 {
-                    if (EnableFreeRecordPool)
-                        SetLengths(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
+                    SetLengths(physicalAddress, ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
                     hlog.MarkPage(logicalAddress, sessionCtx.version);
                     pendingContext.recordInfo = recordInfo;
                     pendingContext.logicalAddress = logicalAddress;
@@ -1026,35 +1128,42 @@ namespace FASTER.core
                     if (recordInfo.IsIntermediate(out status))
                         return status;
 
-                    (int usedValueLength, int fullValueLength) = GetValueLengths<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
-
+                    int usedValueLength, fullValueLength;
                     if (recordInfo.Tombstone)
                     {
                         if (recordInfo.Filler)
                         {
                             if (!recordInfo.Seal(fasterSession.IsManualLocking))
                                 return OperationStatus.RETRY_NOW;
-                            fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress);
-                            if (EnableFreeRecordPool)
-                                SetLengths(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
-                            if (sessionCtx.phase == Phase.REST)
-                                hlog.MarkPage(logicalAddress, sessionCtx.version);
-                            else
-                                hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
-                            pendingContext.recordInfo = recordInfo;
-                            pendingContext.logicalAddress = logicalAddress;
+                            if (recordInfo.Tombstone && recordInfo.Filler)
+                            {
+                                recordInfo.Tombstone = false;
+                                fullValueLength = GetDeletedValueLength(physicalAddress, ref recordInfo);
+                                usedValueLength = fullValueLength;
+                                if (!fasterSession.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress))
+                                {
+                                    SetLengths(physicalAddress, ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
+                                    if (sessionCtx.phase == Phase.REST)
+                                        hlog.MarkPage(logicalAddress, sessionCtx.version);
+                                    else
+                                        hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
+                                    pendingContext.recordInfo = recordInfo;
+                                    pendingContext.logicalAddress = logicalAddress;
+                                    recordInfo.Unseal();
+                                    status = OperationStatus.SUCCESS;
+                                    goto LatchRelease; // Release shared latch (if acquired)
+                                }
+                                recordInfo.Tombstone = true;
+                            }
                             recordInfo.Unseal();
-                            status = OperationStatus.SUCCESS;
-                            goto LatchRelease; // Release shared latch (if acquired)
                         }
-                        recordInfo.Unseal();
                         goto CreateNewRecord;
                     }
 
+                    (usedValueLength, fullValueLength) = GetValueLengths<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
                     if (fasterSession.InPlaceUpdater(ref key, ref input, ref recordValue, ref output, ref recordInfo, ref usedValueLength, fullValueLength, logicalAddress, out bool lockFailed))
                     {
-                        if (EnableFreeRecordPool)
-                            SetLengths(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
+                        SetLengths(physicalAddress, ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
                         if (sessionCtx.phase == Phase.REST)
                             hlog.MarkPage(logicalAddress, sessionCtx.version);
                         else
@@ -1095,8 +1204,8 @@ namespace FASTER.core
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                     if (recordInfo.IsIntermediate(out status))
                         goto LatchRelease; // Release shared latch (if acquired)
-                    if (!recordInfo.Seal(fasterSession.IsManualLocking))
-                        return OperationStatus.RETRY_NOW;
+
+                    // No need to actually Seal in readonly; the record cannot be modified, but we need the address for lock transfer.
                     unsealPhysicalAddress = physicalAddress;
                     goto CreateNewRecord;
                 }
@@ -1145,8 +1254,10 @@ namespace FASTER.core
                 {
                     if (unsealPhysicalAddress != Constants.kInvalidAddress)
                     {
-                        // Operation failed, so unseal the old record.
-                        hlog.GetInfo(unsealPhysicalAddress).Unseal();
+                        // Operation failed, so unseal the old record if we sealed it.
+                        ref RecordInfo ri = ref hlog.GetInfo(unsealPhysicalAddress);
+                        if (ri.Sealed)
+                            ri.Unseal();
                     }
                     if (status == OperationStatus.ALLOCATE_FAILED)
                     {
@@ -1282,14 +1393,14 @@ namespace FASTER.core
                             hlog.GetInitialRecordSize(ref key, ref input, fasterSession) :
                             hlog.GetRecordSize(physicalAddress, ref input, fasterSession);
 
-            if (!FreeRecordPoolHasRecords || !FreeRecordPool.Dequeue(allocatedSize, MinFreeRecordAddress(entry), hlog, out long newLogicalAddress))
+            if (!TryDequeueFreeRecord(ref allocatedSize, entry, out long newLogicalAddress, out long newPhysicalAddress))
             {
                 BlockAllocate(allocatedSize, out newLogicalAddress, sessionCtx, fasterSession, pendingContext.IsAsync);
                 if (newLogicalAddress == 0)
                     return OperationStatus.ALLOCATE_FAILED;
+                newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             }
 
-            var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo, 
                             inNewVersion: sessionCtx.InNewVersion,
@@ -1300,36 +1411,43 @@ namespace FASTER.core
 
             // Populate the new record
             OperationStatus status;
-            int usedLength = 0;
             ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-            int valueOffset = (int)((long)Unsafe.AsPointer(ref newValue) - newPhysicalAddress);
+            var (usedValueLength, fullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
             if (logicalAddress < hlog.BeginAddress)
             {
-                fasterSession.InitialUpdater(ref key, ref input, ref newValue, ref output,
-                                             ref recordInfo, ref usedLength, allocatedSize - valueOffset, newLogicalAddress);
-                status = OperationStatus.NOTFOUND;
+                status = fasterSession.InitialUpdater(ref key, ref input, ref newValue, ref output,
+                                             ref recordInfo, ref usedValueLength, fullValueLength, newLogicalAddress)
+                    ? OperationStatus.NOTFOUND : OperationStatus.RETRY_NOW;
+
             }
             else if (logicalAddress >= hlog.HeadAddress)
             {
                 if (hlog.GetInfo(physicalAddress).Tombstone)
                 {
-                    fasterSession.InitialUpdater(ref key, ref input, ref newValue, ref output,
-                                                 ref recordInfo, ref usedLength, allocatedSize - valueOffset, newLogicalAddress);
-                    status = OperationStatus.NOTFOUND;
+                    status = fasterSession.InitialUpdater(ref key, ref input, ref newValue, ref output,
+                                                 ref recordInfo, ref usedValueLength, fullValueLength, newLogicalAddress)
+                        ? OperationStatus.NOTFOUND : OperationStatus.RETRY_NOW;
                 }
                 else
                 {
-                    fasterSession.CopyUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref newValue,
-                                            ref output, ref recordInfo, ref usedLength, allocatedSize - valueOffset, newLogicalAddress);
-                    status = OperationStatus.SUCCESS;
+                    status = fasterSession.CopyUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref newValue,
+                                            ref output, ref recordInfo, ref usedValueLength, fullValueLength, newLogicalAddress)
+                        ? OperationStatus.SUCCESS : OperationStatus.RETRY_NOW;
                 }
             }
             else
             {
                 // ah, old record slipped onto disk
-                hlog.GetInfo(newPhysicalAddress).SetInvalid();
-                return OperationStatus.RETRY_NOW;
+                status = OperationStatus.RETRY_NOW;
             }
+
+            if (status == OperationStatus.RETRY_NOW)
+            {
+                hlog.GetInfo(newPhysicalAddress).SetInvalid();
+                return status;
+            }
+
+            SetLengths(newPhysicalAddress, ref newValue, ref recordInfo, usedValueLength, fullValueLength);
 
             bool success = true;
             if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
@@ -1365,7 +1483,7 @@ namespace FASTER.core
             if (success)
             {
                 if (unsealPhysicalAddress != Constants.kInvalidAddress)
-                    recordInfo.CopyLocksFrom(hlog.GetInfo(unsealPhysicalAddress));
+                    recordInfo.TransferLocksFrom(ref hlog.GetInfo(unsealPhysicalAddress));
                 else if (LockTable.IsActive)
                     LockTable.TransferToLogRecord(ref key, ref recordInfo);
                 recordInfo.SetTentativeAtomic(false);
@@ -1486,6 +1604,7 @@ namespace FASTER.core
                     // Re-get hash code if we are using the free list; this record may have been deleted, pushed to freelist, then added back for a different key.
                     if (EnableFreeRecordPool && hash != comparer.GetHashCode64(ref recordKey))
                         return OperationStatus.RETRY_NOW;
+
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key,
                                         logicalAddress,
@@ -1572,17 +1691,16 @@ namespace FASTER.core
                     goto CreateNewRecord;
                 }
 
-                if (EnableFreeRecordPool)
-                    SetLengths(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
-                else if (WriteDefaultOnDelete)
+                if (WriteDefaultOnDelete)
                     recordValue = default;
+                SetDeletedValueLength(physicalAddress, ref recordInfo, fullValueLength);
                 if (sessionCtx.phase == Phase.REST)
                     hlog.MarkPage(logicalAddress, sessionCtx.version);
                 else 
                     hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
 
                 // Try to update hash chain and completely elide record only if previous address points to invalid address
-                if (!recordInfo.IsLocked && entry.Address == logicalAddress && recordInfo.PreviousAddress < hlog.BeginAddress)
+                if (!recordInfo.IsLocked && entry.Address == logicalAddress && recordInfo.PreviousAddress < hlog.BeginAddress && this.EnableFreeRecordPool)
                 {
                     var updatedEntry = default(HashBucketEntry);
                     updatedEntry.Tag = 0;
@@ -1593,12 +1711,11 @@ namespace FASTER.core
                     updatedEntry.Pending = entry.Pending;
                     updatedEntry.Tentative = false;
 
-                    // Ignore return value; this is a performance optimization to keep the hash table clean if we can, so if we fail it just means
-                    // the hashtable entry has already been updated by someone else.
-                    if (Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word) == entry.word && this.EnableFreeRecordPool)
+                    // If we CAS successfully, add it to the free list.
+                    if (Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word) == entry.word)
                     {
-                        recordInfo.Filler = false;
-                        FreeRecordPool.Enqueue(logicalAddress, fullRecordLength);
+                        recordInfo.Filler = true;
+                        freeRecordPool.Enqueue(logicalAddress, fullRecordLength);
                     }
                 }
 
@@ -1615,11 +1732,8 @@ namespace FASTER.core
 
                 if (recordInfo.IsIntermediate(out status))
                     goto LatchRelease; // Release shared latch (if acquired)
-                if (!recordInfo.Seal(fasterSession.IsManualLocking))
-                {
-                    status = OperationStatus.RETRY_NOW;
-                    goto LatchRelease; // Release shared latch (if acquired)
-                }
+
+                // No need to actually Seal in readonly; the record cannot be modified, but we need the address for lock transfer.
                 unsealPhysicalAddress = physicalAddress;
                 goto CreateNewRecord;
             }
@@ -1643,21 +1757,23 @@ namespace FASTER.core
                 // Allocate default record size for tombstone
                 var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
 
-                if (!FreeRecordPoolHasRecords || !FreeRecordPool.Dequeue(allocatedSize, MinFreeRecordAddress(entry), hlog, out long newLogicalAddress))
-                { 
+                if (!TryDequeueFreeRecord(ref allocatedSize, entry, out long newLogicalAddress, out long newPhysicalAddress))
+                {
                     BlockAllocate(allocatedSize, out newLogicalAddress, sessionCtx, fasterSession, pendingContext.IsAsync);
                     if (newLogicalAddress == 0)
                     {
                         if (unsealPhysicalAddress != Constants.kInvalidAddress)
                         {
-                            // Operation failed, so unseal the old record.
-                            hlog.GetInfo(unsealPhysicalAddress).Unseal();
+                            // Operation failed, so unseal the old record if we sealed it.
+                            ref RecordInfo ri = ref hlog.GetInfo(unsealPhysicalAddress);
+                            if (ri.Sealed)
+                                ri.Unseal();
                         }
                         status = OperationStatus.ALLOCATE_FAILED;
                         goto CreatePendingContext;
                     }
+                    newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 }
-                var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
                                inNewVersion: sessionCtx.InNewVersion,
@@ -1666,12 +1782,10 @@ namespace FASTER.core
                 recordInfo.Tentative = true;
                 hlog.Serialize(ref key, newPhysicalAddress);
 
-                int usedLength = 0;
                 ref Value newValue = ref hlog.GetValue(newPhysicalAddress);
-                int valueOffset = (int)((long)Unsafe.AsPointer(ref newValue) - newPhysicalAddress);
-                fasterSession.SingleDeleter(ref key, ref hlog.GetValue(newPhysicalAddress), ref recordInfo, ref usedLength, allocatedSize - valueOffset, newLogicalAddress);
-                if (EnableFreeRecordPool)
-                    SetLengths(ref newValue, ref recordInfo, usedLength, allocatedSize);
+                var (usedValueLength, fullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
+                fasterSession.SingleDeleter(ref key, ref newValue, ref recordInfo, ref usedValueLength, fullValueLength, newLogicalAddress);
+                SetLengths(newPhysicalAddress, ref newValue, ref recordInfo, usedValueLength, fullValueLength);
 
                 bool success = true;
                 if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
@@ -1707,7 +1821,7 @@ namespace FASTER.core
                 if (success)
                 {
                     if (unsealPhysicalAddress != Constants.kInvalidAddress)
-                        recordInfo.CopyLocksFrom(hlog.GetInfo(unsealPhysicalAddress));
+                        recordInfo.TransferLocksFrom(ref hlog.GetInfo(unsealPhysicalAddress));
                     else if (LockTable.IsActive)
                         LockTable.TransferToLogRecord(ref key, ref recordInfo);
                     recordInfo.SetTentativeAtomic(false);
@@ -1718,24 +1832,25 @@ namespace FASTER.core
                     pendingContext.recordInfo = recordInfo;
                     pendingContext.logicalAddress = newLogicalAddress;
                     status = OperationStatus.SUCCESS;
-                    goto LatchRelease;
                 }
                 else
                 {
-                    recordInfo.SetInvalid();
-                    status = OperationStatus.RETRY_NOW;
-
                     if (unsealPhysicalAddress != Constants.kInvalidAddress)
                     {
-                        // Operation failed, so unseal the old record.
-                        hlog.GetInfo(unsealPhysicalAddress).Unseal();
+                        // Operation failed, so unseal the old record if we sealed it.
+                        ref RecordInfo ri = ref hlog.GetInfo(unsealPhysicalAddress);
+                        if (ri.Sealed)
+                            ri.Unseal();
                     }
-                    goto LatchRelease;
+                    recordInfo.SetInvalid();
+                    status = OperationStatus.RETRY_NOW;
                 }
-            }
-#endregion
 
-#region Create pending context
+                goto LatchRelease;
+            }
+        #endregion
+
+        #region Create pending context
         CreatePendingContext:
             {
                 pendingContext.type = OperationType.DELETE;
@@ -1805,8 +1920,16 @@ namespace FASTER.core
 
             if (logicalAddress >= hlog.HeadAddress)
             {
-                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                ref Key recordKey = ref hlog.GetKey(physicalAddress);
+                if (!comparer.Equals(ref key, ref recordKey))
                 {
+                    // Re-get hash code if we are using the free list; this record may have been deleted, pushed to freelist, then added back for a different key.
+                    if (EnableFreeRecordPool && hash != comparer.GetHashCode64(ref recordKey))
+                    {
+                        lockInfo = default;
+                        return OperationStatus.RETRY_NOW;
+                    }
+
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key,
                                         logicalAddress,
@@ -1896,7 +2019,7 @@ namespace FASTER.core
 #region ContainsKeyInMemory
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status InternalContainsKeyInMemory<Input, Output, Context, FasterSession>(
+        internal OperationStatus InternalContainsKeyInMemory<Input, Output, Context, FasterSession>(
             ref Key key, 
             FasterExecutionContext<Input, Output, Context> sessionCtx, 
             FasterSession fasterSession, out long logicalAddress, long fromAddress = -1)
@@ -1929,8 +2052,13 @@ namespace FASTER.core
                 {
                     physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
 
-                    if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                    ref Key recordKey = ref hlog.GetKey(physicalAddress);
+                    if (!comparer.Equals(ref key, ref recordKey))
                     {
+                        // Re-get hash code if we are using the free list; this record may have been deleted, pushed to freelist, then added back for a different key.
+                        if (EnableFreeRecordPool && hash != comparer.GetHashCode64(ref recordKey))
+                            return OperationStatus.RETRY_NOW;
+
                         logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                         TraceBackForKeyMatch(ref key,
                                                 logicalAddress,
@@ -1942,22 +2070,22 @@ namespace FASTER.core
                     if (logicalAddress < fromAddress)
                     {
                         logicalAddress = 0;
-                        return Status.NOTFOUND;
+                        return OperationStatus.NOTFOUND;
                     }
                     else
-                        return Status.OK;
+                        return OperationStatus.SUCCESS;
                 }
                 else
                 {
                     logicalAddress = 0;
-                    return Status.NOTFOUND;
+                    return OperationStatus.NOTFOUND;
                 }
             }
             else
             {
                 // no tag found
                 logicalAddress = 0;
-                return Status.NOTFOUND;
+                return OperationStatus.NOTFOUND;
             }
         }
 #endregion
@@ -2130,8 +2258,13 @@ namespace FASTER.core
                 if (logicalAddress >= hlog.HeadAddress)
                 {
                     physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                    if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                    ref Key recordKey = ref hlog.GetKey(physicalAddress);
+                    if (!comparer.Equals(ref key, ref recordKey))
                     {
+                        // Re-get hash code if we are using the free list; this record may have been deleted, pushed to freelist, then added back for a different key.
+                        if (EnableFreeRecordPool && hash != comparer.GetHashCode64(ref recordKey))
+                            return OperationStatus.RETRY_NOW;
+
                         logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                         TraceBackForKeyMatch(ref key,
                                                 logicalAddress,
@@ -2175,13 +2308,13 @@ namespace FASTER.core
                     (actualSize, allocatedSize) = hlog.GetRecordSize(physicalAddress, ref pendingContext.input.Get(), fasterSession);
                 }
 
-                if (!FreeRecordPoolHasRecords || !FreeRecordPool.Dequeue(allocatedSize, MinFreeRecordAddress(entry), hlog, out long newLogicalAddress))
+                if (!TryDequeueFreeRecord(ref allocatedSize, entry, out long newLogicalAddress, out long newPhysicalAddress))
                 {
                     BlockAllocate(allocatedSize, out newLogicalAddress, sessionCtx, fasterSession);
                     if (newLogicalAddress == 0)
                         return OperationStatus.ALLOCATE_FAILED;
+                    newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 }
-                var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
                                inNewVersion: opCtx.InNewVersion,
@@ -2193,24 +2326,30 @@ namespace FASTER.core
                 // Populate the new record
                 if ((request.logicalAddress < hlog.BeginAddress) || oldRecordInfo.Tombstone)
                 {
-                    int usedLength = 0;
                     ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-                    int valueOffset = (int)((long)Unsafe.AsPointer(ref newValue) - newPhysicalAddress);
-                    fasterSession.InitialUpdater(ref key,
+                    var (usedValueLength, fullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
+                    status = fasterSession.InitialUpdater(ref key,
                                              ref pendingContext.input.Get(), ref newValue,
-                                             ref pendingContext.output, ref recordInfo, ref usedLength, allocatedSize - valueOffset, newLogicalAddress);
-                    status = OperationStatus.NOTFOUND;
+                                             ref pendingContext.output, ref recordInfo, ref usedValueLength, fullValueLength, newLogicalAddress)
+                        ? OperationStatus.NOTFOUND : OperationStatus.RETRY_NOW;
+                    SetLengths(newPhysicalAddress, ref newValue, ref recordInfo, usedValueLength, fullValueLength);
                 }
                 else
                 {
-                    int usedLength = 0;
                     ref Value value = ref hlog.GetContextRecordValue(ref request);
-                    int valueOffset = (int)((long)Unsafe.AsPointer(ref value) - newPhysicalAddress);
-                    fasterSession.CopyUpdater(ref key,
-                                          ref pendingContext.input.Get(), ref value,
-                                          ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
-                                          ref pendingContext.output, ref recordInfo, ref usedLength, allocatedSize - valueOffset, newLogicalAddress);
-                    status = OperationStatus.SUCCESS;
+                    ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+                    var (usedValueLength, fullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
+                    status = fasterSession.CopyUpdater(ref key,
+                                          ref pendingContext.input.Get(), ref value, ref newValue,
+                                          ref pendingContext.output, ref recordInfo, ref usedValueLength, fullValueLength, newLogicalAddress)
+                        ? OperationStatus.SUCCESS : OperationStatus.RETRY_NOW;
+                    SetLengths(newPhysicalAddress, ref newValue, ref recordInfo, usedValueLength, fullValueLength);
+                }
+
+                if (status == OperationStatus.RETRY_NOW)
+                {
+                    hlog.GetInfo(newPhysicalAddress).SetInvalid();
+                    return status;
                 }
 
                 bool success = true;
@@ -2660,8 +2799,13 @@ namespace FASTER.core
             if (logicalAddress >= hlog.HeadAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                ref Key recordKey = ref hlog.GetKey(physicalAddress);
+                if (!comparer.Equals(ref key, ref recordKey))
                 {
+                    // Re-get hash code if we are using the free list; this record may have been deleted, pushed to freelist, then added back for a different key.
+                    if (EnableFreeRecordPool && hash != comparer.GetHashCode64(ref recordKey))
+                        return OperationStatus.RETRY_NOW;
+
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key,
                                             logicalAddress,
@@ -2703,17 +2847,17 @@ namespace FASTER.core
                 recordInfo.Tentative = true;
                 readcache.Serialize(ref key, newPhysicalAddress);
                 ref Value newValue = ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-                int valueOffset = (int)((long)Unsafe.AsPointer(ref newValue) - newPhysicalAddress);
+                var (usedValueLength, fullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
                 fasterSession.CopyWriter(ref key, ref value, ref newValue,
                                         ref recordInfo, Constants.kInvalidAddress); // We do not expose readcache addresses
             }
             else
             {
-                if (!FreeRecordPoolHasRecords || !FreeRecordPool.Dequeue(allocatedSize, MinFreeRecordAddress(entry), hlog, out newLogicalAddress))
+                if (!TryDequeueFreeRecord(ref allocatedSize, entry, out newLogicalAddress, out newPhysicalAddress))
                 {
                     BlockAllocate(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
+                    newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 }
-                newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
                                 inNewVersion: opCtx.InNewVersion,
@@ -2722,7 +2866,7 @@ namespace FASTER.core
                 hlog.Serialize(ref key, newPhysicalAddress);
 
                 ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-                int valueOffset = (int)((long)Unsafe.AsPointer(ref newValue) - newPhysicalAddress);
+                var (usedValueLength, fullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
                 fasterSession.CopyWriter(ref key, ref value, ref newValue, ref recordInfo, newLogicalAddress);
             }
 

@@ -24,7 +24,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public override bool SingleWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             src.CopyTo(dst);
             return true;
@@ -38,7 +38,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public override bool ConcurrentWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             if (dst.Length < src.Length)
             {
@@ -75,14 +75,14 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public override bool InitialUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             input.CopyTo(value);
             return true;
         }
 
         /// <inheritdoc/>
-        public override bool CopyUpdater(ref Key key, ref Memory<T> input, ref Memory<T> oldValue, ref Memory<T> newValue, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool CopyUpdater(ref Key key, ref Memory<T> input, ref Memory<T> oldValue, ref Memory<T> newValue, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             oldValue.CopyTo(newValue);
             return true;
@@ -90,10 +90,10 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public override bool InPlaceUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             // The default implementation of IPU simply writes input to destination, if there is space
-            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref recordInfo, ref usedLength, fullLength, address);
+            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
         }
     }
 }

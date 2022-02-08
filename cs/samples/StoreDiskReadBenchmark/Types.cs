@@ -62,17 +62,17 @@ namespace StoreDiskReadBenchmark
         { if (dst == null) dst = new Output(); dst.value = value; return true; }
 
         // RMW functions
-        public override bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             value.vfield1 = input.ifield1;
             return true;
         }
-        public override bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             return true;
         }
-        public override bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             value.vfield1 += input.ifield1;
             return true;

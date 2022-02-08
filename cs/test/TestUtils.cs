@@ -24,6 +24,8 @@ namespace FASTER.test
 
         public enum UpdateOp { Upsert, RMW, Delete }
 
+        public enum FlushMode { NoFlush, ReadOnly, OnDisk }
+
         /// <summary>
         /// Delete a directory recursively
         /// </summary>

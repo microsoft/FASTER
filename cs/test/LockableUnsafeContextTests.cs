@@ -26,7 +26,7 @@ namespace FASTER.test.LockableUnsafeContext
             deletedRecordAddress = address;
         }
 
-        public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             deletedRecordAddress = address;
             return true;
@@ -51,8 +51,6 @@ namespace FASTER.test.LockableUnsafeContext
     public enum ResultLockTarget { MutableLock, LockTable }
 
     public enum ReadCopyDestination { Tail, ReadCache }
-
-    public enum FlushMode { NoFlush, ReadOnly, OnDisk }
 
     [TestFixture]
     class LockableUnsafeContextTests
@@ -147,6 +145,13 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext)
+        {
+            // If we already have an exception, clear these counts so "Run" will not report them spuriously.
+            luContext.sharedLockCount = 0;
+            luContext.exclusiveLockCount = 0;
+        }
+
+        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -465,18 +470,26 @@ namespace FASTER.test.LockableUnsafeContext
                 using var luContext = localSession.GetLockableUnsafeContext();
                 luContext.ResumeThread();
 
-                for (var iteration = 0; iteration < numIterations; ++iteration)
+                try
                 {
-                    for (var key = baseKey + rng.Next(numIncrement); key < baseKey + numKeys; key += rng.Next(1, numIncrement))
+                    for (var iteration = 0; iteration < numIterations; ++iteration)
                     {
-                        var lockType = rng.Next(100) < 60 ? LockType.Shared : LockType.Exclusive;
-                        luContext.Lock(key, lockType);
-                        locks[key] = lockType;
-                    }
+                        for (var key = baseKey + rng.Next(numIncrement); key < baseKey + numKeys; key += rng.Next(1, numIncrement))
+                        {
+                            var lockType = rng.Next(100) < 60 ? LockType.Shared : LockType.Exclusive;
+                            luContext.Lock(key, lockType);
+                            locks[key] = lockType;
+                        }
 
-                    foreach (var key in locks.Keys.OrderBy(key => key))
-                        luContext.Unlock(key, locks[key]);
-                    locks.Clear();
+                        foreach (var key in locks.Keys.OrderBy(key => key))
+                            luContext.Unlock(key, locks[key]);
+                        locks.Clear();
+                    }
+                }
+                catch (Exception)
+                {
+                    ClearCountsOnError(luContext);
+                    throw;
                 }
 
                 luContext.SuspendThread();
@@ -613,6 +626,11 @@ namespace FASTER.test.LockableUnsafeContext
                     Assert.AreEqual(Status.OK, status);
                 }
             }
+            catch (Exception)
+            {
+                ClearCountsOnError(luContext);
+                throw;
+            }
             finally
             {
                 luContext.SuspendThread();
@@ -649,6 +667,11 @@ namespace FASTER.test.LockableUnsafeContext
                     var status = luContext.RMW(key, key * valueMult);
                     Assert.AreEqual(Status.NOTFOUND, status);
                 }
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(luContext);
+                throw;
             }
             finally
             {
@@ -687,6 +710,11 @@ namespace FASTER.test.LockableUnsafeContext
                     Assert.AreEqual(Status.NOTFOUND, status);
                     luContext.Unlock(key, LockType.Exclusive);  // TODO Delete should do this
                 }
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(luContext);
+                throw;
             }
             finally
             {
@@ -766,6 +794,11 @@ namespace FASTER.test.LockableUnsafeContext
                 var (xlock, slock) = luContext.IsLocked(key);
                 Assert.IsTrue(xlock);
                 Assert.AreEqual(0, slock);
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(luContext);
+                throw;
             }
             finally
             {
@@ -860,6 +893,11 @@ namespace FASTER.test.LockableUnsafeContext
                     else
                         unlockKey(key);
                 }
+                catch (Exception)
+                {
+                    ClearCountsOnError(lockLuContext);
+                    throw;
+                }
                 finally
                 {
                     lockLuContext.SuspendThread();
@@ -886,6 +924,11 @@ namespace FASTER.test.LockableUnsafeContext
                         Assert.AreEqual(Status.NOTFOUND, status);
                     else
                         Assert.AreEqual(Status.OK, status);
+                }
+                catch (Exception)
+                {
+                    ClearCountsOnError(updateLuContext);
+                    throw;
                 }
                 finally
                 {

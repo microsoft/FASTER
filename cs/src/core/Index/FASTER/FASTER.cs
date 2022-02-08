@@ -112,7 +112,7 @@ namespace FASTER.core
         internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
 
         internal bool SupportsLocking;
-        internal LockTable<Key> LockTable;
+        internal readonly LockTable<Key> LockTable;
         internal long NumActiveLockingSessions = 0;
 
         internal void IncrementNumLockingSessions()
@@ -122,9 +122,16 @@ namespace FASTER.core
         }
         internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref this.NumActiveLockingSessions);
 
-        internal bool EnableFreeRecordPool => FreeRecordPool is not null;
-        internal bool FreeRecordPoolHasRecords => EnableFreeRecordPool && FreeRecordPool.HasRecords;
-        internal FreeRecordPool FreeRecordPool;
+        internal bool EnableFreeRecordPool => freeRecordPool is not null;
+        internal bool FreeRecordPoolHasRecords => EnableFreeRecordPool && freeRecordPool.HasRecords;
+        private FreeRecordPool freeRecordPool;
+        internal FreeRecordPool SwapFreeRecordPool(FreeRecordPool pool)
+        {
+            var temp = this.freeRecordPool;
+            this.freeRecordPool = pool;
+            return temp;
+        }
+        internal FreeRecordPool FreeRecordPool => this.freeRecordPool;
 
         /// <summary>
         /// Create FasterKV instance
@@ -280,13 +287,10 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            this.InitializeRevivification(keyLen is not null && this.EnableFreeRecordPool);
             this.LockTable = new LockTable<Key>(keyLen, this.comparer, keyLen is null ? null : hlog.bufferPool);
+            this.InitializeRevivification(variableLengthStructSettings?.valueLength, maxFreeRecordsInBin, fixedRecordLength: keyLen is null);
 
             systemState = SystemState.Make(Phase.REST, 1);
-
-            if (maxFreeRecordsInBin > 0)
-                this.FreeRecordPool = new FreeRecordPool(maxFreeRecordsInBin, keyLen is null ? hlog.GetAverageRecordSize() : -1);
 
             if (tryRecoverLatest)
             {
@@ -827,7 +831,7 @@ namespace FASTER.core
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
             if (EnableFreeRecordPool)
-                FreeRecordPool.Dispose();
+                freeRecordPool.Dispose();
         }
 
         private static void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)

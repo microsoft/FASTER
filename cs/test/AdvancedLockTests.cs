@@ -46,12 +46,12 @@ namespace FASTER.test.LockTests
             public override void CopyWriter(ref int key, ref int src, ref int dst, ref RecordInfo recordInfo, long address)
             {
                 int output = default;
-                int usedLength = 0;
-                SingleWriter(ref key, ref readCacheInput, ref src, ref dst, ref output, ref recordInfo, ref usedLength, -1, address);
+                int usedValueLength = 0;
+                SingleWriter(ref key, ref readCacheInput, ref src, ref dst, ref output, ref recordInfo, ref usedValueLength, -1, address);
             }
 
             public override bool SingleWriter(ref int key, ref Input input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, 
-                    ref int usedLength, int fullLength, long address)
+                    ref int usedValueLength, int fullValueLength, long address)
             {
                 // In the wait case we are waiting for a signal that something else has completed, e.g. a pending Read, by the thread with SetEvent.
                 if ((input.flags & LockFunctionFlags.WaitForEvent) != 0)

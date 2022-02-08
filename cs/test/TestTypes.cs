@@ -87,7 +87,7 @@ namespace FASTER.test
 
         // RMW functions
         public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
@@ -96,7 +96,7 @@ namespace FASTER.test
         }
 
         public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
@@ -106,7 +106,7 @@ namespace FASTER.test
 
         public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output) => true;
 
-        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
@@ -151,7 +151,7 @@ namespace FASTER.test
 
         // RMW functions
         public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo,
-                    ref int usedLength, int fullLength, long address)
+                    ref int usedValueLength, int fullValueLength, long address)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
@@ -159,7 +159,7 @@ namespace FASTER.test
         }
 
         public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
@@ -168,7 +168,7 @@ namespace FASTER.test
 
         public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output) => true;
 
-        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
@@ -211,10 +211,10 @@ namespace FASTER.test
 
         // Upsert functions
         public override bool SingleWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address) { dst = src; return true;}
+                ref int usedValueLength, int fullValueLength, long address) { dst = src; return true;}
 
         public override bool ConcurrentWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             Interlocked.Increment(ref _concurrentWriterCallCount);
             return false;
@@ -222,7 +222,7 @@ namespace FASTER.test
 
         // RMW functions
         public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
@@ -230,7 +230,7 @@ namespace FASTER.test
         }
 
         public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
             Interlocked.Increment(ref _inPlaceUpdaterCallCount);
             return false;
@@ -238,7 +238,7 @@ namespace FASTER.test
 
         public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output) => true;
 
-        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
@@ -251,26 +251,26 @@ namespace FASTER.test
         public RMWSimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
 
         public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
-            var result = base.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedLength, fullLength, address);
+            var result = base.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
             output = input;
             return result;
         }
 
         /// <inheritdoc/>
-        public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+        public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
         {
-            var result = base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref usedLength, fullLength, address);
+            var result = base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
             output = newValue;
             return result;
         }
 
         /// <inheritdoc/>
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo,
-                ref int usedLength, int fullLength, long address)
+                ref int usedValueLength, int fullValueLength, long address)
         {
-            base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedLength, fullLength, address);
+            base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
             output = value; 
             return true;
         }

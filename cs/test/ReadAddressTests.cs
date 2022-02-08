@@ -96,14 +96,14 @@ namespace FASTER.test.readaddress
 
             // Return false to force a chain of values.
             public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, 
-                    ref int usedLength, int fullLength, long address) => false;
+                    ref int usedValueLength, int fullValueLength, long address) => false;
 
             public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo,
-                    ref int usedLength, int fullLength, long address) => false;
+                    ref int usedValueLength, int fullValueLength, long address) => false;
 
             // Record addresses
             public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo,
-                    ref int usedLength, int fullLength, long address)
+                    ref int usedValueLength, int fullValueLength, long address)
             {
                 dst = src;
                 this.lastWriteAddress = address;
@@ -111,7 +111,7 @@ namespace FASTER.test.readaddress
             }
 
             public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo,
-                    ref int usedLength, int fullLength, long address)
+                    ref int usedValueLength, int fullValueLength, long address)
             {
                 this.lastWriteAddress = address;
                 output.address = address;
@@ -119,7 +119,7 @@ namespace FASTER.test.readaddress
                 return true;
             }
 
-            public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+            public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
             {
                 this.lastWriteAddress = address;
                 output.address = address;

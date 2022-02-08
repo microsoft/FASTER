@@ -37,8 +37,8 @@ namespace ReadAddress
     public class Functions : SimpleFunctions<Key, Value>
     {
         // Return false to force a chain of values.
-        public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address) => false;
+        public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => false;
 
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address) => false;
+        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => false;
     }
 }

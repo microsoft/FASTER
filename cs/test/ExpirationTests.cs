@@ -195,7 +195,7 @@ namespace FASTER.test.Expiration
             }
 
             /// <inheritdoc/>
-            public override bool CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
+            public override bool CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
             {
                 output.AddFunc(Funcs.CopyUpdater);
                 switch (input.testOp)
@@ -286,7 +286,7 @@ namespace FASTER.test.Expiration
             }
 
             public override bool InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo,
-                    ref int usedLength, int fullLength, long address)
+                    ref int usedValueLength, int fullValueLength, long address)
             {
                 output.AddFunc(Funcs.InitialUpdater);
                 value.field1 = input.value;
@@ -296,7 +296,7 @@ namespace FASTER.test.Expiration
             }
 
             public override bool InPlaceUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo,
-                    ref int usedLength, int fullLength, long address)
+                    ref int usedValueLength, int fullValueLength, long address)
             {
                 output.AddFunc(Funcs.InPlaceUpdater);
                 switch (input.testOp)
@@ -417,14 +417,14 @@ namespace FASTER.test.Expiration
 
             // Upsert functions
             public override bool SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo,
-                    ref int usedLength, int fullLength, long address)
+                    ref int usedValueLength, int fullValueLength, long address)
             {
                 src.CopyTo(ref dst);
                 return true;
             }
 
             public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo,
-                    ref int usedLength, int fullLength, long address)
+                    ref int usedValueLength, int fullValueLength, long address)
             {
                 src.CopyTo(ref dst);
                 return true;

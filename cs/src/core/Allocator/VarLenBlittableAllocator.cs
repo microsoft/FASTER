@@ -90,7 +90,7 @@ namespace FASTER.core
             return ref ValueLength.AsRef(src);
         }
 
-        private long ValueOffset(long physicalAddress)
+        internal long ValueOffset(long physicalAddress)
             => physicalAddress + RecordInfo.GetLength() + AlignedKeySize(physicalAddress);
 
         private int AlignedKeySize(long physicalAddress)
