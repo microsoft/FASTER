@@ -42,7 +42,7 @@ namespace FASTER.server
 
         public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
             => functions.InitialUpdater(ref key, ref input, ref value, ref output);
-        
+
         public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
             => functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
 

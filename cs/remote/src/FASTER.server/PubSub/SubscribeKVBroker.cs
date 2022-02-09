@@ -158,7 +158,7 @@ namespace FASTER.server
                                                 fixed (byte* inputPtr = &sub.Value.Item2[0])
                                                 {
                                                     byte* inputBytePtr = inputPtr;
-                                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, 0, ref inputBytePtr, sub.Key);
+                                                    serverSession.PrefixPublish(subPrefixPtr, kvp.Key.Length, ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, 0, ref inputBytePtr, sub.Key);
                                                 }
                                             }
                                         }

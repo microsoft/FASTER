@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -20,6 +22,7 @@ namespace FASTER.core
         private ISynchronizationStateMachine currentSyncStateMachine;
         private List<IStateMachineCallback> callbacks = new List<IStateMachineCallback>();
         internal long lastVersion;
+
 
         /// <summary>
         /// Any additional (user specified) metadata to write out with commit

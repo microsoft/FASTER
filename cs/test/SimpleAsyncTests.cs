@@ -375,6 +375,7 @@ namespace FASTER.test.async
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
+<<<<<<< HEAD
         public async Task UpsertAsyncAndRMWAsyncTest([Values] bool useRMW, [Values] bool doFlush, [Values] bool completeAsync)
         {
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
@@ -412,6 +413,46 @@ namespace FASTER.test.async
             if (doFlush)
                 fht1.Log.FlushAndEvict(wait: true);
 
+=======
+
+        public async Task UpsertAsyncAndRMWAsyncTest([Values] bool useRMW, [Values] bool doFlush, [Values] bool completeAsync)
+        {
+            using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
+
+            async ValueTask completeRmw(FasterKV<long, long>.RmwAsyncResult<long, long, Empty> ar)
+            {
+                if (completeAsync)
+                {
+                    while (ar.Status == Status.PENDING)
+                        ar = await ar.CompleteAsync(); // test async version of Upsert completion
+                    return;
+                }
+                ar.Complete();
+            }
+
+            async ValueTask completeUpsert(FasterKV<long, long>.UpsertAsyncResult<long, long, Empty> ar)
+            {
+                if (completeAsync)
+                {
+                    while (ar.Status == Status.PENDING)
+                        ar = await ar.CompleteAsync(); // test async version of Upsert completion
+                    return;
+                }
+                ar.Complete();
+            }
+
+            for (long key = 0; key < numOps; key++)
+            {
+                if (useRMW)
+                    await completeRmw(await s1.RMWAsync(key, key));
+                else
+                    await completeUpsert(await s1.UpsertAsync(key, key));
+            }
+
+            if (doFlush)
+                fht1.Log.FlushAndEvict(wait: true);
+
+>>>>>>> aa440882740422ed61c7b54b87d9e97ee8bb30f4
             for (long key = 0; key < numOps; key++)
             {
                 if (useRMW)

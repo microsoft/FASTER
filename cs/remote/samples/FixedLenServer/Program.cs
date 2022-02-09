@@ -26,7 +26,7 @@ namespace FasterFixedLenServer
             ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
             if (result.Tag == ParserResultType.NotParsed) return;
             var opts = result.MapResult(o => o, xs => new Options());
-            
+
             using var server = new FixedLenServer<Key, Value, Input, Output, Functions>(opts.GetServerOptions(), e => new Functions());
             server.Start();
             Console.WriteLine("Started server");

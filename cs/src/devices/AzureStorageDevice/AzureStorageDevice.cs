@@ -194,17 +194,35 @@ namespace FASTER.devices
         /// <param name="result"></param>
         public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
         {
-            if (this.blobs.TryRemove(segment, out BlobEntry blob))
+            CloudPageBlob pageBlob;
+            if (blobs.TryRemove(segment, out BlobEntry blob))
+                pageBlob = blob.PageBlob;
+            else
+                pageBlob = blobDirectory.GetPageBlobReference(GetSegmentBlobName(segment));
+            if (!pageBlob.Exists()) return;
+
+            if (underLease)
             {
+<<<<<<< HEAD
                 CloudPageBlob pageBlob = blob.PageBlob;
 
                 if (this.underLease)
                 {
                     this.BlobManager.ConfirmLeaseAsync().GetAwaiter().GetResult();  // REVIEW: this method cannot avoid GetAwaiter
                 }
+=======
+                BlobManager.ConfirmLeaseAsync().AsTask()
+                    .GetAwaiter()
+                    .GetResult();
+            }
+>>>>>>> aa440882740422ed61c7b54b87d9e97ee8bb30f4
 
-                if (!this.BlobManager.CancellationToken.IsCancellationRequested)
+            if (!BlobManager.CancellationToken.IsCancellationRequested)
+            {
+                var t = pageBlob.DeleteAsync(cancellationToken: BlobManager.CancellationToken);
+                t.GetAwaiter().OnCompleted(() => 
                 {
+<<<<<<< HEAD
                     var t = pageBlob.DeleteAsync(cancellationToken: this.BlobManager.CancellationToken);
                     t.GetAwaiter().OnCompleted(() =>                                // REVIEW: this method cannot avoid GetAwaiter
                     {
@@ -215,6 +233,14 @@ namespace FASTER.devices
                         callback(result);
                     });
                 }
+=======
+                    if (t.IsFaulted)
+                    {
+                        BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
+                    }
+                    callback(result);
+                });
+>>>>>>> aa440882740422ed61c7b54b87d9e97ee8bb30f4
             }
         }
 

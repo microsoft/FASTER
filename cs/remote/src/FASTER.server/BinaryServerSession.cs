@@ -129,7 +129,7 @@ namespace FASTER.server
                 dcurr += BatchHeader.Size;
                 start = 0;
                 msgnum = 0;
-                
+
                 for (msgnum = 0; msgnum < num; msgnum++)
                 {
                     var message = (MessageType)(*src++);
@@ -185,6 +185,7 @@ namespace FASTER.server
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
                             else if (status == Status.OK || status == Status.NOTFOUND)
                                 serializer.SkipOutput(ref dcurr);
+
                             subscribeKVBroker?.Publish(keyPtr);
                             break;
 
