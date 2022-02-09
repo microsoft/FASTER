@@ -92,11 +92,7 @@ namespace FASTER.test.async
         [Test]
         [Category("FasterKV")]
         [Category("Stress")]
-<<<<<<< HEAD
-        public async Task LowMemConcurrentUpsertRMWReadAsyncTest()
-=======
         public async Task LowMemConcurrentUpsertRMWReadAsyncTest([Values]bool completeSync)
->>>>>>> aa440882740422ed61c7b54b87d9e97ee8bb30f4
         {
             await Task.Yield();
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
@@ -116,14 +112,11 @@ namespace FASTER.test.async
                     var result = await rmwtasks[key].ConfigureAwait(false);
                     if (result.Status == Status.PENDING)
                     {
-<<<<<<< HEAD
-=======
                         if (completeSync)
                         {
                             result.Complete();
                             continue;
                         }
->>>>>>> aa440882740422ed61c7b54b87d9e97ee8bb30f4
                         done = false;
                         rmwtasks[key] = result.CompleteAsync();
                     }

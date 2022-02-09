@@ -202,45 +202,21 @@ namespace FASTER.devices
             if (!pageBlob.Exists()) return;
 
             if (underLease)
-            {
-<<<<<<< HEAD
-                CloudPageBlob pageBlob = blob.PageBlob;
-
-                if (this.underLease)
-                {
-                    this.BlobManager.ConfirmLeaseAsync().GetAwaiter().GetResult();  // REVIEW: this method cannot avoid GetAwaiter
-                }
-=======
                 BlobManager.ConfirmLeaseAsync().AsTask()
                     .GetAwaiter()
                     .GetResult();
-            }
->>>>>>> aa440882740422ed61c7b54b87d9e97ee8bb30f4
 
             if (!BlobManager.CancellationToken.IsCancellationRequested)
             {
                 var t = pageBlob.DeleteAsync(cancellationToken: BlobManager.CancellationToken);
                 t.GetAwaiter().OnCompleted(() => 
                 {
-<<<<<<< HEAD
-                    var t = pageBlob.DeleteAsync(cancellationToken: this.BlobManager.CancellationToken);
-                    t.GetAwaiter().OnCompleted(() =>                                // REVIEW: this method cannot avoid GetAwaiter
-                    {
-                        if (t.IsFaulted)
-                        {
-                            this.BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
-                        }
-                        callback(result);
-                    });
-                }
-=======
                     if (t.IsFaulted)
                     {
                         BlobManager?.HandleBlobError(nameof(RemoveSegmentAsync), "could not remove page blob for segment", pageBlob?.Name, t.Exception, false);
                     }
                     callback(result);
                 });
->>>>>>> aa440882740422ed61c7b54b87d9e97ee8bb30f4
             }
         }
 

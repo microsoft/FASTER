@@ -33,18 +33,6 @@ namespace FASTER.test
                 var output1 = SpanByteAndMemory.FromFixedSpan(output);
 
                 s.Upsert(key1, value1);
-<<<<<<< HEAD
-                
-                s.Read(key1, ref input, ref output1);
-
-                Assert.IsTrue(output1.IsSpanByte);
-                Assert.IsTrue(output1.SpanByte.AsReadOnlySpan().SequenceEqual(value1));
-
-                var key2 = MemoryMarshal.Cast<char, byte>("key2".AsSpan());
-                var value2 = MemoryMarshal.Cast<char, byte>("value2value2value2".AsSpan());
-                var output2 = SpanByteAndMemory.FromFixedSpan(output);
-
-=======
 
                 s.Read(key1, ref input, ref output1);
 
@@ -55,7 +43,6 @@ namespace FASTER.test
                 var value2 = MemoryMarshal.Cast<char, byte>("value2value2value2".AsSpan());
                 var output2 = SpanByteAndMemory.FromFixedSpan(output);
 
->>>>>>> aa440882740422ed61c7b54b87d9e97ee8bb30f4
                 s.Upsert(key2, value2);
                 s.Read(key2, ref input, ref output2);
 
@@ -107,35 +94,6 @@ namespace FASTER.test
                     var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
                     fixed (byte* _ = key)
                         status = session.Read(key: SpanByte.FromFixedSpan(key), out var unused);
-<<<<<<< HEAD
-                    
-                    // All keys need to be fetched from disk
-                    Assert.AreEqual(Status.PENDING, status);
-
-                    session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-
-                    var count = 0;
-                    var value = 0L;
-                    using (completedOutputs)
-                    {
-                        while (completedOutputs.Next())
-                        {
-                            count++;
-                            Assert.AreEqual(Status.OK, completedOutputs.Current.Status);
-                            value = completedOutputs.Current.Output;
-                        }
-                    }
-                    Assert.AreEqual(1, count);
-                    return value;
-                }
-            }
-            finally
-            {
-                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
-            }
-        }
-
-=======
 
                     // All keys need to be fetched from disk
                     Assert.AreEqual(Status.PENDING, status);
@@ -163,7 +121,6 @@ namespace FASTER.test
             }
         }
 
->>>>>>> aa440882740422ed61c7b54b87d9e97ee8bb30f4
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]

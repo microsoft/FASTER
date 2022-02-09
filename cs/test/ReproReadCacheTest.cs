@@ -34,10 +34,6 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-<<<<<<< HEAD
-=======
-
->>>>>>> aa440882740422ed61c7b54b87d9e97ee8bb30f4
         public unsafe void RandomReadCacheTest1()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
