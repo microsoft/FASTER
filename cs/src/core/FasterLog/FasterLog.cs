@@ -519,10 +519,10 @@ namespace FASTER.core
             }
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)physicalAddress = userHeader;
-            item1.CopyTo(physicalAddress + sizeof(THeader));
-            item2.CopyTo(physicalAddress + sizeof(THeader) + item1.TotalSize);
-            item3.CopyTo(physicalAddress + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
             SetHeader(length, physicalAddress);
             epoch.Suspend();
             return true;
