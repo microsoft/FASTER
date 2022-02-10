@@ -743,7 +743,10 @@ namespace FASTER.core
             SegmentBufferSize = 1 + (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             if (SegmentSize < PageSize)
-                throw new FasterException($"Segment ({SegmentSize.ToString()}) must be at least of page size ({PageSize.ToString()})");
+                throw new FasterException($"Segment ({SegmentSize}) must be at least of page size ({PageSize})");
+
+            if ((LogTotalSizeBits != 0) && (LogTotalSizeBytes < PageSize))
+                throw new FasterException($"Memory size ({LogTotalSizeBytes}) must be configured to be either 1 (i.e., 0 bits) or at least page size ({PageSize})");
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
 
@@ -824,6 +827,8 @@ namespace FASTER.core
             if (ownedEpoch)
                 epoch.Dispose();
             bufferPool.Free();
+
+            this.FlushEvent.Dispose();
 
             OnReadOnlyObserver?.OnCompleted();
             OnEvictionObserver?.OnCompleted();
@@ -1751,18 +1756,12 @@ namespace FASTER.core
                     }
 
                     // Enqueue work in shared queue
-                    if (PendingFlush[index].Add(asyncResult))
+                    PendingFlush[index].Add(asyncResult);
+
+                    // Perform work from shared queue if possible
+                    if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
                     {
-                        // Perform work from shared queue if possible
-                        if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
-                        {
-                            WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
-                        }
-                    }
-                    else
-                    {
-                        // Could not add to pending flush list, treat as a failed write
-                        AsyncFlushPageCallback(1, 0, asyncResult);
+                        WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
                     }
                 }
                 else
@@ -1810,20 +1809,24 @@ namespace FASTER.core
         {
             int totalNumPages = (int)(endPage - startPage);
             completedSemaphore = new SemaphoreSlim(0);
-            var asyncResult = new PageAsyncFlushResult<Empty>
-            {
-                completedSemaphore = completedSemaphore,
-                count = totalNumPages
-            };
+            var flushCompletionTracker = new FlushCompletionTracker(completedSemaphore, totalNumPages);
             var localSegmentOffsets = new long[SegmentBufferSize];
 
             for (long flushPage = startPage; flushPage < endPage; flushPage++)
             {
-
+                long flushPageAddress = flushPage << LogPageSizeBits;
                 var pageSize = PageSize;
-
                 if (flushPage == endPage - 1)
-                    pageSize = (int)(endLogicalAddress - (flushPage << LogPageSizeBits));
+                    pageSize = (int)(endLogicalAddress - flushPageAddress);
+
+                var asyncResult = new PageAsyncFlushResult<Empty>
+                {
+                    flushCompletionTracker = flushCompletionTracker,
+                    page = flushPage,
+                    fromAddress = flushPageAddress,
+                    untilAddress = flushPageAddress + pageSize,
+                    count = 1
+                };
 
                 // Intended destination is flushPage
                 WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets);

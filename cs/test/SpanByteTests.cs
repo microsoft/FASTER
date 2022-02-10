@@ -33,7 +33,7 @@ namespace FASTER.test
                 var output1 = SpanByteAndMemory.FromFixedSpan(output);
 
                 s.Upsert(key1, value1);
-                
+
                 s.Read(key1, ref input, ref output1);
 
                 Assert.IsTrue(output1.IsSpanByte);
@@ -94,7 +94,7 @@ namespace FASTER.test
                     var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
                     fixed (byte* _ = key)
                         status = session.Read(key: SpanByte.FromFixedSpan(key), out var unused);
-                    
+
                     // All keys need to be fetched from disk
                     Assert.AreEqual(Status.PENDING, status);
 

@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -92,10 +95,9 @@ namespace FASTER.core
                     faster.IssueCompletionCallback(ctx, fasterSession);
                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                 }
-
-                faster.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
             }
 
+            faster.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.Version))
                 faster.GlobalStateMachineStep(current);
         }
@@ -157,9 +159,7 @@ namespace FASTER.core
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
 
-            if (ctx != null)
-                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-
+            faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
         }
@@ -259,9 +259,7 @@ namespace FASTER.core
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
 
-            if (ctx != null)
-                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-
+            faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
         }
@@ -348,9 +346,7 @@ namespace FASTER.core
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
 
-            if (ctx != null)
-                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-
+            faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
         }

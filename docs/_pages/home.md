@@ -10,7 +10,7 @@ header:
       url: "/docs/quick-start-guide/"
 excerpt: >
   A fast concurrent persistent key-value store and log, in C# and C++.<br />
-  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v1.9.6">Latest release v1.9.6</a></small>
+  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v1.9.11">Latest release v1.9.11</a></small>
 features:
   - image_path: /assets/images/faster-feature-1.png
     alt: "feature1"

@@ -38,7 +38,7 @@ namespace FASTER.server
         protected readonly NetworkSender messageManager;
 
         private readonly int serverBufferSize;
-        
+
         /// <summary>
         /// Create new instance
         /// </summary>
@@ -101,7 +101,6 @@ namespace FASTER.server
             }
         }
 
-        
         /// <summary>
         /// Publish an update to a key to all the subscribers of the key
         /// </summary>

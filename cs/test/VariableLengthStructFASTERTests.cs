@@ -13,6 +13,7 @@ namespace FASTER.test
         // VarLenMax is the variable-length portion; 2 is for the fixed fields
         const int VarLenMax = 10;
         const int StackAllocMax = VarLenMax + 2;
+
         static int GetVarLen(Random r) => r.Next(VarLenMax) + 2;
 
         [Test]

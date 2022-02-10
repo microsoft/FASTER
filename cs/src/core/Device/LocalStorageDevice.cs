@@ -312,10 +312,8 @@ namespace FASTER.core
         public override void RemoveSegment(int segment)
         {
             if (logHandles.TryRemove(segment, out SafeFileHandle logHandle))
-            {
                 logHandle.Dispose();
-                Native32.DeleteFileW(GetSegmentName(segment));
-            }
+            Native32.DeleteFileW(GetSegmentName(segment));
         }
 
         /// <summary>
