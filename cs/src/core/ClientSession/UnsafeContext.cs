@@ -364,7 +364,6 @@ namespace FASTER.core
         /// <inheritdoc/>
         public void Refresh()
         {
-            Debug.Assert(!LightEpoch.AnyInstanceProtected());
             clientSession.fht.InternalRefresh(clientSession.ctx, FasterSession);
         }
 
@@ -447,27 +446,30 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo,
-                    ref int usedValueLength, int fullValueLength, long address, out bool lockFailed)
+            public bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 lockFailed = false;
                 return !this.SupportsLocking
-                                   ? ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address)
-                                   : ConcurrentWriterLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address, out lockFailed);
+                                   ? ConcurrentWriterNoLock(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address)
+                                   : ConcurrentWriterLock(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, out lockFailed);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo,
-                    ref int usedValueLength, int fullValueLength, long address)
+            private bool ConcurrentWriterNoLock(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address)
             {
                 recordInfo.SetDirty();
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
-                return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
+                var (usedValueLength, fullValueLength) = _clientSession.fht.GetValueLengths<Input, Output, Context, IFasterSession<Key, Value, Input, Output, Context>>(physicalAddress, ref dst, ref recordInfo, this);
+                if (_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address))
+                {
+                    _clientSession.fht.SetLengths(physicalAddress, ref dst, ref recordInfo, usedValueLength, fullValueLength);
+                    return true;
+                }
+                return false;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo,
-                    ref int usedValueLength, int fullValueLength, long address, out bool lockFailed)
+            private bool ConcurrentWriterLock(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 if (!recordInfo.LockExclusive())
                 {
@@ -477,7 +479,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
+                    return !recordInfo.Tombstone && ConcurrentWriterNoLock(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
                 }
                 finally
                 {
@@ -520,25 +522,30 @@ namespace FASTER.core
 
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo,
-                    ref int usedValueLength, int fullValueLength, long address, out bool lockFailed)
+            public bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 lockFailed = false;
                 return !this.SupportsLocking
-                                   ? InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, ref usedValueLength, fullValueLength, address)
-                                   : InPlaceUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, ref usedValueLength, fullValueLength, address, out lockFailed);
+                                   ? InPlaceUpdaterNoLock(physicalAddress, ref key, ref input, ref output, ref value, ref recordInfo, address)
+                                   : InPlaceUpdaterLock(physicalAddress, ref key, ref input, ref output, ref value, ref recordInfo, address, out lockFailed);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            private bool InPlaceUpdaterNoLock(long physicalAddress, ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address)
             {
                 recordInfo.SetDirty();
+
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
-                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
+                var (usedValueLength, fullValueLength) = _clientSession.fht.GetValueLengths<Input, Output, Context, IFasterSession<Key, Value, Input, Output, Context>>(physicalAddress, ref value, ref recordInfo, this);
+                if (_clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address))
+                {
+                    _clientSession.fht.SetLengths(physicalAddress, ref value, ref recordInfo, usedValueLength, fullValueLength);
+                    return true;
+                }
+                return false;
             }
 
-            private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo,
-                    ref int usedValueLength, int fullValueLength, long address, out bool lockFailed)
+            private bool InPlaceUpdaterLock(long physicalAddress, ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, long address, out bool lockFailed)
             {
                 if (!recordInfo.LockExclusive())
                 {
@@ -548,7 +555,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, ref usedValueLength, fullValueLength, address);
+                    return !recordInfo.Tombstone && InPlaceUpdaterNoLock(physicalAddress, ref key, ref input, ref output, ref value, ref recordInfo, address);
                 }
                 finally
                 {
@@ -575,34 +582,46 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address, out bool lockFailed)
+            public bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref RecordInfo recordInfo, out int fullRecordLength, long address, out bool lockFailed)
             {
                 lockFailed = false;
                 return (!this.SupportsLocking)
-                                   ? ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref usedValueLength, fullValueLength, address)
-                                   : ConcurrentDeleterLock(ref key, ref value, ref recordInfo, ref usedValueLength, fullValueLength, address, out lockFailed);
+                                   ? ConcurrentDeleterNoLock(physicalAddress, ref key, ref value, ref recordInfo, out fullRecordLength, address)
+                                   : ConcurrentDeleterLock(physicalAddress, ref key, ref value, ref recordInfo, out fullRecordLength, address, out lockFailed);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            private bool ConcurrentDeleterNoLock(long physicalAddress, ref Key key, ref Value value, ref RecordInfo recordInfo, out int fullRecordLength, long address)
             {
                 recordInfo.SetDirty();
+
+                var (usedValueLength, fullValueLength, frl) = _clientSession.fht.GetRecordLengths<Input, Output, Context, IFasterSession<Key, Value, Input, Output, Context>>(physicalAddress, ref value, ref recordInfo, this);
+                fullRecordLength = frl;
                 recordInfo.SetTombstone();
-                return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, ref usedValueLength, fullValueLength, address);
-            }
+
+                if (_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, ref usedValueLength, fullValueLength, address))
+                {
+                    if (_clientSession.fht.WriteDefaultOnDelete)
+                        value = default;
+                    _clientSession.fht.SetDeletedValueLength(physicalAddress, ref recordInfo, fullValueLength);
+                    return true;
+                }
+                return false;
+                }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address, out bool lockFailed)
+            private bool ConcurrentDeleterLock(long physicalAddress, ref Key key, ref Value value, ref RecordInfo recordInfo, out int fullRecordLength, long address, out bool lockFailed)
             {
                 if (!recordInfo.LockExclusive())
                 {
                     lockFailed = true;
+                    fullRecordLength = 0;
                     return false;
                 }
                 try
                 {
                     lockFailed = false;
-                    return ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref usedValueLength, fullValueLength, address);
+                    return ConcurrentDeleterNoLock(physicalAddress, ref key, ref value, ref recordInfo, out fullRecordLength, address);
                 }
                 finally
                 {

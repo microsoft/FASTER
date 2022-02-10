@@ -7,11 +7,42 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
 
 namespace FASTER.test.Revivification
 {
     public enum DeleteDest { FreeList, InChain };
+
+    public enum CollisionRange { Ten = 10, None = int.MaxValue }
+
+    internal struct RevivificationSpanByteComparer : IFasterEqualityComparer<SpanByte>
+    {
+        private readonly SpanByteComparer defaultComparer;
+        private readonly int collisionRange;
+
+        internal RevivificationSpanByteComparer(CollisionRange range)
+        {
+            this.defaultComparer = new SpanByteComparer();
+            this.collisionRange = (int)range;
+        }
+
+        public bool Equals(ref SpanByte k1, ref SpanByte k2) => defaultComparer.Equals(ref k1, ref k2);
+
+        // The hash code ends with 0 so mod Ten isn't so helpful, so shift
+        public long GetHashCode64(ref SpanByte k) => (defaultComparer.GetHashCode64(ref k) >> 4) % (long)this.collisionRange;
+    }
+
+    /// <summary>
+    /// Callback for length computation based on value and input.
+    /// </summary>
+    public class RevivificationVLS : IVariableLengthStruct<SpanByte, SpanByte>
+    {
+        public int GetInitialLength(ref SpanByte input) => input.TotalSize;
+
+        public int GetLength(ref SpanByte value, ref SpanByte input) => input.TotalSize;
+    }
 
     [TestFixture]
     class RevivificationFixedLenTests
@@ -112,18 +143,11 @@ namespace FASTER.test.Revivification
                 this.vls = vls;
             }
 
-            public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
-            {
-                Assert.AreEqual(expectedInputLength, input.Length);
-                // SpanByte reads the available length as dst.Length
-                Assert.AreEqual(recordInfo.Filler ? fullValueLength : expectedSingleDestLength, dst.Length);
-                Assert.AreEqual(expectedSingleFullValueLength, fullValueLength);
-                Assert.AreEqual(expectedSingleFullValueLength, usedValueLength);
-                Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
-                input.CopyTo(ref dst);
-                usedValueLength = input.TotalSize;
-                return true;
-            }
+            public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) 
+                => InitialUpdater(ref key, ref input, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
+
+            public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) 
+                => InPlaceUpdater(ref key, ref input, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
 
             public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
             {
@@ -133,6 +157,8 @@ namespace FASTER.test.Revivification
                 Assert.AreEqual(expectedSingleFullValueLength, fullValueLength);
                 Assert.AreEqual(expectedSingleFullValueLength, usedValueLength);
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
+                if (input.Length > value.Length)
+                    return false;
                 input.CopyTo(ref value);
                 usedValueLength = input.TotalSize;
                 return true;
@@ -146,23 +172,9 @@ namespace FASTER.test.Revivification
                 Assert.AreEqual(expectedSingleFullValueLength, fullValueLength);
                 Assert.AreEqual(expectedSingleFullValueLength, usedValueLength);
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
-                input.CopyTo(ref newValue);
-                usedValueLength = input.TotalSize;
-                return true;
-            }
-
-            public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
-            {
-                Assert.AreEqual(expectedInputLength, input.Length);
-                Assert.AreEqual(expectedConcurrentDestLength, dst.Length);
-                Assert.AreEqual(expectedConcurrentFullValueLength, fullValueLength);
-                Assert.AreEqual(RoundUpSpanByteLength(expectedConcurrentDestLength), usedValueLength);
-                Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
-                if (input.Length > dst.Length)
+                if (input.Length > newValue.Length)
                     return false;
-                input.CopyTo(ref dst);      // Does not change dst.Length, which is fine for everything except shrinking (we've allocated sufficient space in other cases)
-                if (input.Length < dst.Length)
-                    dst.Length = input.Length;
+                input.CopyTo(ref newValue);
                 usedValueLength = input.TotalSize;
                 return true;
             }
@@ -215,23 +227,6 @@ namespace FASTER.test.Revivification
             }
         }
 
-        public struct RevivificationComparer : IFasterEqualityComparer<SpanByte>
-        {
-            private readonly SpanByteComparer defaultComparer;
-            private readonly int collisionRange;
-
-            internal RevivificationComparer(CollisionRange range)
-            {
-                this.defaultComparer = new SpanByteComparer();
-                this.collisionRange = (int)range;
-            }
-
-            public bool Equals(ref SpanByte k1, ref SpanByte k2) => defaultComparer.Equals(ref k1, ref k2);
-
-            // The hash code ends with 0 so mod Ten isn't so helpful
-            public long GetHashCode64(ref SpanByte k) => (defaultComparer.GetHashCode64(ref k) >> 4) % (long)this.collisionRange;
-        }
-
         /// <summary>
         /// Callback for length computation based on value and input.
         /// </summary>
@@ -246,13 +241,11 @@ namespace FASTER.test.Revivification
 
         static int RoundUpSpanByteLength(int dataLength) => FasterKV<SpanByte, SpanByte>.RoundupLength(sizeof(int) + dataLength);
 
-        public enum CollisionRange { Ten = 10, None = int.MaxValue }
-
         const int numRecords = 200;
         const int DefaultMaxRecsPerBin = 1024;
 
         RevivificationSpanByteFunctions functions;
-        RevivificationComparer comparer;
+        RevivificationSpanByteComparer comparer;
 
         private FasterKV<SpanByte, SpanByte> fht;
         private ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions> session;
@@ -274,11 +267,6 @@ namespace FASTER.test.Revivification
                     collisionRange = cr;
                     continue;
                 }
-                if (arg is BigBins bb)
-                {
-                    maxRecsPerBin = (int)bb;
-                    continue;
-                }
                 if (arg is PendingOp)
                 {
                     logSettings.CopyReadsToTail = CopyReadsToTail.FromStorage;
@@ -286,7 +274,7 @@ namespace FASTER.test.Revivification
                 }
             }
 
-            comparer = new RevivificationComparer(collisionRange);
+            comparer = new RevivificationSpanByteComparer(collisionRange);
             fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, supportsLocking: true, maxFreeRecordsInBin: maxRecsPerBin);
 
             var valueVLS = new RevivificationVLS();
@@ -1094,32 +1082,6 @@ namespace FASTER.test.Revivification
             }
             Assert.AreEqual(tailAddress, fht.Log.TailAddress);
         }
-
-        public enum BigBins { Thousand = 1_000, HundredThousand = 100_000 };
-
-        [Test]
-        [Category(RevivificationCategory)]
-        [Category(SmokeTestCategory)]
-        public void ThreadStressTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values(CollisionRange.Ten)] CollisionRange collisionRange, [Values] BigBins bigBins)
-        {
-            Span<byte> keyVec = stackalloc byte[10];
-            var key = SpanByte.FromFixedSpan(keyVec);
-
-            Span<byte> inputVec = stackalloc byte[InitialLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
-
-#if false
-            SpanByteAndMemory output = new();
-
-            for (int ii = 0; ii < numRecords; ++ii)
-            {
-                keyVec.Fill((byte)ii);
-
-                Assert.AreEqual(Status.OK, session.Upsert(ref key, ref input, ref input, ref output));
-            }
-#endif
-            // These free records all go into the same bin, with multiple threads inserting them there, and then multiple other threads dequeueing from there.
-        }
     }
 
     [TestFixture]
@@ -1203,4 +1165,349 @@ namespace FASTER.test.Revivification
         }
     }
 
+#if false // TODOtest
+    [TestFixture]
+    class RevivificationVarLenStressTests
+    {
+        const int InitialLength = 50;
+
+        internal class RevivificationStressFunctions : SpanByteFunctions<Empty>
+        {
+            public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) 
+                => InitialUpdater(ref key, ref input, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
+
+            public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+                => InPlaceUpdater(ref key, ref input, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
+
+            public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            {
+                if (input.Length > value.Length)
+                    return false;
+                input.CopyTo(ref value);
+                usedValueLength = input.TotalSize;
+                return true;
+            }
+
+            public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            {
+                if (input.Length > newValue.Length)
+                    return false;
+                input.CopyTo(ref newValue);
+                usedValueLength = input.TotalSize;
+                return true;
+            }
+
+            public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            {
+                if (input.Length > value.Length)
+                    return false;
+                input.CopyTo(ref value);      // Does not change dst.Length, which is fine for everything except shrinking (we've allocated sufficient space in other cases)
+                if (input.Length < value.Length)
+                    value.Length = input.Length;
+                usedValueLength = input.TotalSize;
+                return true;
+            }
+
+            public override void SingleDeleter(ref SpanByte key, ref SpanByte value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            {
+                usedValueLength = 0;
+            }
+
+            public override bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            {
+                usedValueLength = 0;
+                return true;
+            }
+        }
+
+        const int numRecords = 1000;
+        const int DefaultMaxRecsPerBin = 1024;
+
+        RevivificationStressFunctions functions;
+        RevivificationSpanByteComparer comparer;
+
+        private FasterKV<SpanByte, SpanByte> fht;
+        private ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions> session;
+        private IDevice log;
+
+        [SetUp]
+        public void Setup()
+        {
+            DeleteDirectory(MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
+
+            CollisionRange collisionRange = CollisionRange.None;
+            int maxRecsPerBin = DefaultMaxRecsPerBin;
+            LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 17, MemorySizeBits = 22 };
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is CollisionRange cr)
+                {
+                    collisionRange = cr;
+                    continue;
+                }
+            }
+
+            comparer = new RevivificationSpanByteComparer(collisionRange);
+            fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, supportsLocking: true, maxFreeRecordsInBin: maxRecsPerBin);
+
+            var valueVLS = new RevivificationVLS();
+            functions = new RevivificationStressFunctions();
+            session = fht.For(functions).NewSession<RevivificationStressFunctions>(
+                    sessionVariableLengthStructSettings: new SessionVariableLengthStructSettings<SpanByte, SpanByte> { valueLength = valueVLS });
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            session?.Dispose();
+            session = null;
+            fht?.Dispose();
+            fht = null;
+            log?.Dispose();
+            log = null;
+
+            DeleteDirectory(MethodTestDir);
+        }
+
+        unsafe void Populate()
+        {
+            Span<byte> inputVec = stackalloc byte[InitialLength];
+            var input = SpanByte.FromFixedSpan(inputVec);
+
+            SpanByteAndMemory output = new();
+
+            for (int ii = 0; ii < numRecords; ++ii)
+            {
+                var keyVec = BitConverter.GetBytes(ii);
+                fixed (byte* _ = keyVec)
+                {
+                    var key = SpanByte.FromFixedSpan(keyVec);
+                    Assert.AreEqual(Status.OK, session.Upsert(ref key, ref input, ref input, ref output));
+                }
+            }
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
+        public void ArtificialFreeBinThreadStressTest()
+        {
+            const int numIterations = 100;
+            const int numItems = 10000;
+            var flags = new long[numItems];
+            const int size = 42;    // size doesn't matter in this test
+
+            var bin = new FreeRecordBin(numItems + 1, size);
+            bool done = false;
+
+            unsafe void runEnqueueThread(int tid)
+            {
+                try
+                {
+                    for (var iteration = 0; iteration < numIterations; ++iteration)
+                    {
+                        // Start at 1 so 0 is clearly invalid.
+                        for (var ii = 1; ii < numItems; ++ii)
+                        {
+                            flags[ii] = 1;
+                            bin.Enqueue(ii, size);
+                        }
+
+                        // Make sure all were dequeued. Sleep a bit for the dequeue threads to pull out the last records.
+                        Thread.Sleep(10);
+                        List<int> strays = new();
+                        for (var ii = 1; ii < numItems; ++ii)
+                        {
+                            if (flags[ii] != 0)
+                                strays.Add(ii);
+                        }
+                        Assert.AreEqual(0, strays.Count);
+                    }
+                }
+                finally
+                {
+                    done = true;
+                }
+            }
+
+            unsafe void runDequeueThread(int tid)
+            {
+                while (!done)
+                {
+                    if (bin.Dequeue<int, int>(size, 0, out long address))
+                    {
+                        var prevFlag = Interlocked.CompareExchange(ref flags[address], 0, 1);
+                        Assert.AreEqual(1, prevFlag);
+                    }
+                }
+            }
+
+            int numDequeueThreads = 5;
+
+            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            tasks.Add(Task.Factory.StartNew(() => runEnqueueThread(0)));
+            for (int t = 1; t < numDequeueThreads; t++)
+            {
+                var tid = t;
+                tasks.Add(Task.Factory.StartNew(() => runDequeueThread(tid)));
+            }
+            Task.WaitAll(tasks.ToArray());
+        }
+
+        public enum ThreadingPattern { SameKeys, RandomKeys };
+
+        [Test]
+        [Category(RevivificationCategory)]
+        public void LiveFreeListThreadStressTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] CollisionRange collisionRange,
+                                             [Values] ThreadingPattern threadingPattern, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        {
+            int numIterations = 100;
+            int numThreadsEachOp = 1;
+
+            unsafe void runDeleteThread(int tid)
+            {
+                Span<byte> inputVec = stackalloc byte[InitialLength];
+                var input = SpanByte.FromFixedSpan(inputVec);
+
+                Random rng = new(tid * 101);
+
+                using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
+                localSession.ctx.phase = phase;
+
+                for (var iteration = 0; iteration < numIterations; ++iteration)
+                {
+                    for (var ii = tid; ii < numRecords; ii += numThreadsEachOp)
+                    {
+                        var kk = threadingPattern == ThreadingPattern.RandomKeys ? rng.Next(numRecords) : ii;
+                        var keyVec = BitConverter.GetBytes(kk);
+                        fixed (byte* _ = keyVec)
+                        {
+                            var key = SpanByte.FromFixedSpan(keyVec);
+                            Thread.Sleep(rng.Next(10));
+                            localSession.Delete(key);
+                        }
+                    }
+                }
+            }
+
+            unsafe void runUpdateThread(int tid)
+            {
+                Span<byte> inputVec = stackalloc byte[InitialLength / 2];       // /2 because of "next-highest bin" dequeueing
+                var input = SpanByte.FromFixedSpan(inputVec);
+
+                Random rng = new(tid * 101);
+
+                using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
+                localSession.ctx.phase = phase;
+
+                for (var iteration = 0; iteration < numIterations; ++iteration)
+                {
+                    for (var ii = tid; ii < numRecords; ii += numThreadsEachOp)
+                    {
+                        var kk = threadingPattern == ThreadingPattern.RandomKeys ? rng.Next(numRecords) : ii;
+                        var keyVec = BitConverter.GetBytes(kk);
+                        fixed (byte* _ = keyVec)
+                        {
+                            var key = SpanByte.FromFixedSpan(keyVec);
+                            if (updateOp == UpdateOp.Upsert)
+                                localSession.Upsert(key, input);
+                            else
+                                localSession.RMW(key, input);
+                        }
+                    }
+                }
+            }
+
+            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            for (int t = 0; t < numThreadsEachOp; t++)
+            {
+                var tid = t + 1;
+                tasks.Add(Task.Factory.StartNew(() => runDeleteThread(tid)));
+            }
+            for (int t = 0; t < numThreadsEachOp; t++)
+            {
+                var tid = t + 1;
+                tasks.Add(Task.Factory.StartNew(() => runUpdateThread(tid)));
+            }
+            Task.WaitAll(tasks.ToArray());
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        public void LiveInChainThreadStressTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values(CollisionRange.Ten)] CollisionRange collisionRange,
+                                                [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        {
+            // Turn off freelist.
+            fht.SwapFreeRecordPool(null);
+
+            int numIterations = 100;
+            int numThreadsEachOp = 1;
+
+            unsafe void runDeleteThread(int tid)
+            {
+                Span<byte> inputVec = stackalloc byte[InitialLength];
+                var input = SpanByte.FromFixedSpan(inputVec);
+
+                Random rng = new(tid * 101);
+
+                using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
+                localSession.ctx.phase = phase;
+
+                for (var iteration = 0; iteration < numIterations; ++iteration)
+                {
+                    for (var ii = tid; ii < numRecords; ii += numThreadsEachOp)
+                    {
+                        var keyVec = BitConverter.GetBytes(ii);
+                        fixed (byte* _ = keyVec)
+                        {
+                            var key = SpanByte.FromFixedSpan(keyVec);
+                            localSession.Delete(key);
+                        }
+                    }
+                }
+            }
+
+            unsafe void runUpdateThread(int tid)
+            {
+                Span<byte> inputVec = stackalloc byte[InitialLength / 2];       // /2 because of "next-highest bin" dequeueing
+                var input = SpanByte.FromFixedSpan(inputVec);
+
+                Random rng = new(tid * 101);
+
+                using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
+                localSession.ctx.phase = phase;
+
+                for (var iteration = 0; iteration < numIterations; ++iteration)
+                {
+                    for (var ii = tid; ii < numRecords; ii += numThreadsEachOp)
+                    {
+                        var keyVec = BitConverter.GetBytes(ii);
+                        fixed (byte* _ = keyVec)
+                        {
+                            var key = SpanByte.FromFixedSpan(keyVec);
+                            if (updateOp == UpdateOp.Upsert)
+                                localSession.Upsert(key, input);
+                            else
+                                localSession.RMW(key, input);
+                        }
+                    }
+                }
+            }
+
+            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            for (int t = 0; t < numThreadsEachOp; t++)
+            {
+                var tid = t + 1;
+                tasks.Add(Task.Factory.StartNew(() => runDeleteThread(tid)));
+            }
+            for (int t = 0; t < numThreadsEachOp; t++)
+            {
+                var tid = t + 1;
+                tasks.Add(Task.Factory.StartNew(() => runUpdateThread(tid)));
+            }
+            Task.WaitAll(tasks.ToArray());
+        }
+    }
+#endif
 }

@@ -68,7 +68,7 @@ namespace FASTER.core
         internal readonly bool UseReadCache;
         private readonly CopyReadsToTail CopyReadsToTail;
         internal readonly int sectorSize;
-        private readonly bool WriteDefaultOnDelete;
+        internal readonly bool WriteDefaultOnDelete;
         internal bool RelaxedCPR;
 
         /// <summary>

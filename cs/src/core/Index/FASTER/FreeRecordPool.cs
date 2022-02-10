@@ -46,12 +46,14 @@ namespace FASTER.core
 
         internal bool Set(long address, long size)
         {
-            // Don't replace a higher address with a lower one. There is a tiny chance we could race against another thread inserting
-            // a "better" record (higher address), but that's OK.
-            if (this.Address < address)
+            // Don't replace a higher address with a lower one.
+            FreeRecord old_record = new(this.word);
+            while (old_record.Address < address)
             {
-                this.word = (size << kSizeShiftInWord) | (address & RecordInfo.kPreviousAddressMaskInWord);
-                return true;
+                long newWord = (size << kSizeShiftInWord) | (address & RecordInfo.kPreviousAddressMaskInWord);
+                if (Interlocked.CompareExchange(ref word, newWord, old_record.word) == old_record.word)
+                    return true;
+                old_record = new(this.word);
             }
             return false;
         }
@@ -110,13 +112,14 @@ namespace FASTER.core
         // Used by test also
         internal static void GetPartitionSizes(int maxRecs, out int partitionCount, out int partitionSize, out int recordCount)
         {
-            // Round up to align partitions to cache boundary.
-            partitionCount = Environment.ProcessorCount * 2;
+            partitionCount = Environment.ProcessorCount / 2;
 
             if (maxRecs < partitionCount)
                 partitionCount = 1;
 
-            partitionSize = (((maxRecs / partitionCount) * sizeof(long) + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1)) / sizeof(long);
+            // Round up to align partitions to cache boundary.
+            var pad = Constants.kCacheLineBytes / sizeof(long) - 1;
+            partitionSize = ((((maxRecs + pad) / partitionCount) * sizeof(long) + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1)) / sizeof(long);
 
             // Overallocate to allow space for cache-aligned start
             recordCount = partitionSize * partitionCount;

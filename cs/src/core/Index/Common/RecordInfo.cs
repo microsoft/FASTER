@@ -28,7 +28,7 @@ namespace FASTER.core
 
         // We use 7 lock bits: 6 shared lock bits + 1 exclusive lock bit
         const int kSharedLockBits = 6;
-        const int kExlcusiveLockBits = 1;
+        const int kExclusiveLockBits = 1;
 
         // Shared lock constants
         const long kSharedLockMaskInWord = ((1L << kSharedLockBits) - 1) << kLockShiftInWord;
@@ -286,11 +286,6 @@ namespace FASTER.core
         public bool Valid
         {
             get => (word & kValidBitMask) > 0;
-            set
-            {
-                if (value) word |= kValidBitMask;
-                else word &= ~kValidBitMask;
-            }
         }
 
         public bool Tentative
