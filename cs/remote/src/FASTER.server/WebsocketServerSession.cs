@@ -315,6 +315,12 @@ namespace FASTER.server
                         offset += 4;
                     }
 
+                    if (msglen == 2)
+                    {
+                        this.Dispose();
+                        return false;
+                    }
+
                     completeWSCommand = true;
 
                     var decodedIndex = 0;
