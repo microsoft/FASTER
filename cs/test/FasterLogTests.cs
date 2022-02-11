@@ -259,7 +259,7 @@ namespace FASTER.test
         
         [Test]
         [Category("FasterLog")]
-        public async ValueTask FasterLogConsumerTest([Values] LogChecksumType logChecksum)
+        public void FasterLogConsumerTest([Values] LogChecksumType logChecksum)
         {
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
             var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
