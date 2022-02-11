@@ -575,7 +575,7 @@ namespace FASTER.server
 
             byte* d = respObj.bufferPtr;
             var dend = d + respObj.buffer.Length;
-            var dcurr = d + sizeof(int); // reserve space for size
+            var dcurr = d + 10 + sizeof(int); // reserve space for websocket header and size
             byte* outputDcurr;
 
             dcurr += BatchHeader.Size;
@@ -613,15 +613,19 @@ namespace FASTER.server
             }
 
             // Send replies
-            var dstart = d + sizeof(int);
+            var dtemp = d + 10;
+            var dstart = dtemp + sizeof(int);
             Unsafe.AsRef<BatchHeader>(dstart).NumMessages = 1;
             Unsafe.AsRef<BatchHeader>(dstart).SeqNo = 0;
-            int payloadSize = (int)(dcurr - d);
-            // Set packet size in header
-            *(int*)respObj.bufferPtr = -(payloadSize - sizeof(int));
+            int packetLen = (int)((dcurr - 10) - d);
+
+            CreateSendPacketHeader(ref d, packetLen);
+
+            *(int*)dtemp = (packetLen - sizeof(int));
+            *(int*)respObj.bufferPtr = -(packetLen - sizeof(int));
             try
             {
-                messageManager.Send(socket, respObj, 0, payloadSize);
+                messageManager.Send(socket, respObj, (int)(d - respObj.bufferPtr), (int)(dcurr - d));
             }
             catch
             {
