@@ -19,26 +19,33 @@ namespace FASTER.core
         /// For performance reasons, please use FasterKV&lt;Key, Value&gt;.For(functions).NewSession&lt;Functions&gt;(...) instead of this overload.
         /// </summary>
         /// <param name="functions">Callback functions.</param>
-        /// <param name="sessionId">ID/name of session (auto-generated if not provided)</param>
-        /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
+        /// <param name="sessionName">Name of session (optional)</param>
         /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
         /// <returns>Session instance</returns>
         ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> NewSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions,
-                string sessionId = null, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null);
+                string sessionName = null, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null);
 
         /// <summary>
-        /// Resume (continue) prior client session with FASTER, used during
-        /// recovery from failure.
+        /// Resume (continue) prior client session with FASTER, used during recovery from failure.
         /// </summary>
         /// <param name="functions">Callback functions.</param>
-        /// <param name="sessionId">ID/name of previous session to resume</param>
+        /// <param name="sessionName">Name of previous session to resume</param>
         /// <param name="commitPoint">Prior commit point of durability for session</param>
-        /// <param name="threadAffinitized">For advanced users. Specifies whether session holds the thread epoch across calls. Do not use with async code. Ensure thread calls session Refresh periodically to move the system epoch forward.</param>
         /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
         /// <returns>Session instance</returns>
         ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> ResumeSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions,
-                string sessionId, out CommitPoint commitPoint, bool threadAffinitized = false, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null);
+                string sessionName, out CommitPoint commitPoint, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null);
 
+        /// <summary>
+        /// Resume (continue) prior client session with FASTER; used during recovery from failure.
+        /// </summary>
+        /// <param name="functions">Callback functions</param>
+        /// <param name="sessionID">ID of previous session to resume</param>
+        /// <param name="commitPoint">Prior commit point of durability for session</param>
+        /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
+        /// <returns>Session instance</returns>
+        public ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> ResumeSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions, int sessionID,
+                out CommitPoint commitPoint, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null);
         #endregion
 
         #region Growth and Recovery
@@ -137,8 +144,8 @@ namespace FASTER.core
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with version after checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="recoverTo"> specific version requested within the checkpoint, if checkpoint supports multiple versions (e.g. incremental snapshot checkpoints), or -1 for latest version</param>
-
-        void Recover(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1);
+        /// <returns>Version we actually recovered to</returns>
+        long Recover(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1);
 
         /// <summary>
         /// Asynchronously recover from last successful index and log checkpoint
@@ -147,7 +154,8 @@ namespace FASTER.core
         /// <param name="undoNextVersion">Whether records with version after checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="recoverTo"> specific version requested within the checkpoint, if checkpoint supports multiple versions (e.g. incremental snapshot checkpoints), or -1 for latest version</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        ValueTask RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1, CancellationToken cancellationToken = default);
+        /// <returns>Version we actually recovered to</returns>
+        ValueTask<long> RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Recover using full checkpoint token
@@ -155,7 +163,8 @@ namespace FASTER.core
         /// <param name="fullcheckpointToken"></param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with version after checkpoint version need to be undone (and invalidated on log)</param>
-        void Recover(Guid fullcheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true);
+        /// <returns>Version we actually recovered to</returns>
+        long Recover(Guid fullcheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true);
 
         /// <summary>
         /// Asynchronously recover using full checkpoint token
@@ -164,7 +173,8 @@ namespace FASTER.core
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with version after checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        ValueTask RecoverAsync(Guid fullcheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default);
+        /// <returns>Version we actually recovered to</returns>
+        ValueTask<long> RecoverAsync(Guid fullcheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Recover using a separate index and log checkpoint token
@@ -173,7 +183,8 @@ namespace FASTER.core
         /// <param name="hybridLogToken"></param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with version after checkpoint version need to be undone (and invalidated on log)</param>
-        void Recover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload = -1, bool undoNextVersion = true);
+        /// <returns>Version we actually recovered to</returns>
+        long Recover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload = -1, bool undoNextVersion = true);
 
         /// <summary>
         /// Asynchronously recover using a separate index and log checkpoint token
@@ -183,7 +194,8 @@ namespace FASTER.core
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with version after checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        ValueTask RecoverAsync(Guid indexToken, Guid hybridLogToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default);
+        /// <returns>Version we actually recovered to</returns>
+        ValueTask<long> RecoverAsync(Guid indexToken, Guid hybridLogToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Complete ongoing checkpoint (spin-wait)

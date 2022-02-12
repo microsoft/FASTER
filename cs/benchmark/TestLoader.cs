@@ -105,10 +105,6 @@ namespace FASTER.benchmark
                     FasterSpanByteYcsbBenchmark.CreateKeyVectors(this, out this.init_span_keys, out this.txn_span_keys);
                     LoadData(this, this.init_span_keys, this.txn_span_keys, new FasterSpanByteYcsbBenchmark.KeySetter());
                     break;
-                case BenchmarkType.ClientSession:
-                    FASTER_ClientSessionYcsbBenchmark.CreateKeyVectors(this, out this.init_keys, out this.txn_keys);
-                    LoadData(this, this.init_keys, this.txn_keys, new FASTER_YcsbBenchmark.KeySetter());
-                    break;
                 case BenchmarkType.ConcurrentDictionaryYcsb:
                     ConcurrentDictionary_YcsbBenchmark.CreateKeyVectors(this, out this.init_keys, out this.txn_keys);
                     LoadData(this, this.init_keys, this.txn_keys, new ConcurrentDictionary_YcsbBenchmark.KeySetter());

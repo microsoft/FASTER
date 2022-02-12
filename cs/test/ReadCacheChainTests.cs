@@ -101,7 +101,7 @@ namespace FASTER.test.ReadCacheTests
                 Assert.AreEqual((immutable && key >= immutableSplitKey) ? Status.OK : Status.PENDING, status);
                 session.CompletePending(wait: true);
                 if (ii == 0)
-                    readCacheHighEvictionAddress = fht.readcache.GetTailAddress();
+                    readCacheHighEvictionAddress = fht.ReadCache.TailAddress;
             }
 
             // Pass2: non-PENDING reads from the cache
@@ -131,7 +131,7 @@ namespace FASTER.test.ReadCacheTests
             var bucket = default(HashBucket*);
             var slot = default(int);
 
-            var hash = fht.comparer.GetHashCode64(ref key);
+            var hash = fht.Comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
             var entry = default(HashBucketEntry);
@@ -155,6 +155,7 @@ namespace FASTER.test.ReadCacheTests
             var log = isReadCache ? fht.readcache : fht.hlog;
             var info = log.GetInfo(physicalAddress);
             var la = info.PreviousAddress;
+
             isReadCache = new HashBucketEntry { word = la }.ReadCache;
             log = isReadCache ? fht.readcache : fht.hlog;
             var pa = log.GetPhysicalAddress(la);
@@ -199,9 +200,9 @@ namespace FASTER.test.ReadCacheTests
 
         internal static (long logicalAddress, long physicalAddress) SkipReadCacheChain(FasterKV<int, int> fht, int key)
         {
-            var (la, pa) = ChainTests.GetHashChain(fht, key, out _, out _, out bool isReadCache);
+            var (la, pa) = GetHashChain(fht, key, out _, out _, out bool isReadCache);
             while (isReadCache)
-                (la, pa) = ChainTests.NextInChain(fht, pa, out _, out _, ref isReadCache);
+                (la, pa) = NextInChain(fht, pa, out _, out _, ref isReadCache);
             return (la, pa);
         }
 
@@ -249,7 +250,7 @@ namespace FASTER.test.ReadCacheTests
             doTest(midChainKey);
             ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: false);
 
-            fht.ReadCacheEvict(fht.readcache.BeginAddress, readCacheHighEvictionAddress);
+            fht.ReadCacheEvict(fht.ReadCache.BeginAddress, readCacheHighEvictionAddress);
             ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: true);
         }
 
@@ -280,7 +281,7 @@ namespace FASTER.test.ReadCacheTests
             Assert.IsTrue(isReadCache);
             Assert.IsTrue(invalid);
 
-            fht.ReadCacheEvict(fht.readcache.BeginAddress, readCacheHighEvictionAddress);
+            fht.ReadCacheEvict(fht.ReadCache.BeginAddress, readCacheHighEvictionAddress);
             _ = GetHashChain(lowChainKey, out actualKey, out invalid, out isReadCache);
             Assert.IsFalse(isReadCache);
             Assert.IsFalse(invalid);
@@ -338,7 +339,7 @@ namespace FASTER.test.ReadCacheTests
             doTest(midChainKey);
             ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: false);
 
-            fht.ReadCacheEvict(fht.readcache.BeginAddress, readCacheHighEvictionAddress);
+            fht.ReadCacheEvict(fht.ReadCache.BeginAddress, readCacheHighEvictionAddress);
             ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: true);
         }
 

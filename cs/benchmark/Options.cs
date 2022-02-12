@@ -12,8 +12,7 @@ namespace FASTER.benchmark
         HelpText = "Benchmark to run:" +
                         "\n    0 = YCSB" +
                         "\n    1 = YCSB with SpanByte" +
-                        "\n    2 = YCSB with ClientSession" +
-                        "\n    3 = ConcurrentDictionary")]
+                        "\n    2 = ConcurrentDictionary")]
         public int Benchmark { get; set; }
 
         [Option('t', "threads", Required = false, Default = 8,
@@ -72,13 +71,9 @@ namespace FASTER.benchmark
             HelpText = "Use Small Memory log in experiment")]
         public bool UseSmallMemoryLog { get; set; }
 
-        [Option("noaff", Required = false, Default = false,
-            HelpText = "Do not use thread affinitization in experiment")]
-        public bool NoThreadAffinity { get; set; }
-
-        [Option("post", Required = false, Default = false,
-            HelpText = "Support post-append operations")]
-        public bool PostOps { get; set; }
+        [Option("safectx", Required = false, Default = false,
+            HelpText = "Use 'safe' context (slower, per-operation epoch control) in experiment")]
+        public bool UseSafeContext { get; set; }
 
         [Option("chkptms", Required = false, Default = 0,
             HelpText = "If > 0, the number of milliseconds between checkpoints in experiment (else checkpointing is not done")]
@@ -102,8 +97,9 @@ namespace FASTER.benchmark
         {
             static string boolStr(bool value) => value ? "y" : "n";
             return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockImpl}; i: {IterationCount};"
-                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; noaff: {boolStr(this.NoThreadAffinity)}; post: {boolStr(this.PostOps)};"
-                        + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")}; chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
+                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
+                        + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
+                        + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
         }
     }
 }

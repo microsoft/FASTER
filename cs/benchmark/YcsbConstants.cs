@@ -9,7 +9,6 @@ namespace FASTER.benchmark
     {
         Ycsb = 0,
         SpanByte,
-        ClientSession,
         ConcurrentDictionaryYcsb
     };
 

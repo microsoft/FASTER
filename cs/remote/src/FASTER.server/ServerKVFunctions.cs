@@ -17,8 +17,11 @@ namespace FASTER.server
             this.serverNetworkSession = serverNetworkSession;
         }
 
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-            => functions.CheckpointCompletionCallback(sessionId, commitPoint);
+        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
+            => functions.CheckpointCompletionCallback(sessionID, sessionName, commitPoint);
+
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
+            => functions.SingleDeleter(ref key, ref value, ref recordInfo, address);
 
         public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
             => functions.SingleDeleter(ref key, ref value, ref recordInfo, ref usedLength, fullLength, address);
@@ -72,13 +75,10 @@ namespace FASTER.server
         public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
             => functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
 
-        public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
-            => functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref usedLength, fullLength, address);
+        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason)
+            => functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, reason);
 
-        public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-            => functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
-
-        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason) { }
 
         public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, long ctx)
             => functions.UpsertCompletionCallback(ref key, ref input, ref value, ctx);

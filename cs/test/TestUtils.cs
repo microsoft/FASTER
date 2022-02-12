@@ -180,6 +180,8 @@ namespace FASTER.test
 
         internal enum SyncMode { Sync, Async };
 
+        public enum ReadCopyDestination { Tail, ReadCache }
+
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
 

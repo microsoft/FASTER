@@ -40,13 +40,13 @@ namespace FASTER.test.InputOutputParameterTests
 
             /// <inheritdoc/>
             public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo,
-                    ref int usedValueLength, int fullValueLength, long address)
+                    ref UpdateInfo updateInfo, long address)
             {
-                return SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
+                return SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref updateInfo, address, WriteReason.Upsert);
             }
             /// <inheritdoc/>
             public override bool SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo,
-                    ref int usedValueLength, int fullValueLength, long address)
+                    ref UpdateInfo updateInfo, long address, WriteReason reason)
             {
                 lastWriteAddress = address;
                 dst = output = src * input;
@@ -54,18 +54,18 @@ namespace FASTER.test.InputOutputParameterTests
             }
 
             /// <inheritdoc/>
-            public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address)
+            public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason)
             {
                 Assert.AreEqual(lastWriteAddress, address);
                 Assert.AreEqual(key * input, dst);
                 Assert.AreEqual(dst, output);
             }
 
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
             {
-                return InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
+                return InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref updateInfo, address);
             }
-            public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
             {
                 lastWriteAddress = address;
                 value = output = key * input;
@@ -73,7 +73,7 @@ namespace FASTER.test.InputOutputParameterTests
             }
 
             /// <inheritdoc/>
-            public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, long address)
+            public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
             {
                 Assert.AreEqual(lastWriteAddress, address);
                 Assert.AreEqual(key * input, value);

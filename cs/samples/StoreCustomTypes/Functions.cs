@@ -8,9 +8,9 @@ namespace StoreCustomTypes
 {
     public sealed class Functions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) { value.value = input.value; return true; }
-        public override bool CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) { newValue = oldValue; return true; }
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) { value.value += input.value; return true; }
+        public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { value.value = input.value; return true; }
+        public override bool CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { newValue = oldValue; return true; }
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { value.value += input.value; return true; }
 
 
         public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)

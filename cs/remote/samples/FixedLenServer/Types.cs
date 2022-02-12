@@ -64,8 +64,8 @@ namespace FasterFixedLenServer
 
         public void DeleteCompletionCallback(ref Key key, long ctx) { }
 
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-            => Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
+        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
+            => Debug.WriteLine($"Session {sessionID} ({(sessionName ?? "null")}) reports persistence until {commitPoint.UntilSerialNo}");
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -82,13 +82,8 @@ namespace FasterFixedLenServer
             return true;
         }
 
-        // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address)
-        {
-            dst = src;
-            return true;
-        }
+        public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason) => dst = src;
 
         public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
         {
@@ -136,13 +131,13 @@ namespace FasterFixedLenServer
 
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
 
-        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address) { }
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { }
 
         public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
 
-        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason) { }
 
-        public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedLength, int fullLength, long address) => true;
+        public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
 
         public void DisposeKey(ref Key key) { }
 

@@ -41,19 +41,6 @@ namespace FASTER.core
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 
-        internal void AcquireSharedLatchesForAllPendingRequests<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx)
-        {
-            foreach (var _ctx in ctx.retryRequests)
-            {
-                AcquireSharedLatch(_ctx.key.Get());
-            }
-
-            foreach (var _ctx in ctx.ioPendingRequests.Values)
-            {
-                AcquireSharedLatch(_ctx.key.Get());
-            }
-        }
-        
         internal void WriteHybridLogMetaInfo()
         {
             var metadata = _hybridLogCheckpoint.info.ToByteArray();
@@ -98,6 +85,11 @@ namespace FASTER.core
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
             _hybridLogCheckpoint.info.manualLockingActive = this.NumActiveLockingSessions > 0;
+        }
+
+        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(IFunctions<Key, Value, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, object> sessionVariableLengthStructSettings) where CompactionFunctions : ICompactionFunctions<Key, Value>
+        {
+            throw new NotImplementedException();
         }
 
         // #endregion

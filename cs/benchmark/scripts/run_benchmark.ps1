@@ -31,11 +31,7 @@
     Used primarily to debug changes to this script or do a quick one-off run; the default is multiple counts as defined in the script.
 
 .PARAMETER LockMode
-    Locking mode to use: 0 = No locking, 1 = RecordInfo locking
-    Used primarily to debug changes to this script or do a quick one-off run; the default is multiple counts as defined in the script.
-
-.PARAMETER PostOpsMode
-    Post-append operations mode to use: 0 = No post ops, 1 = do post ops
+    Locking mode to use: 0 = No locking, 1 = RecordInfo locking, 2 = Manual locking
     Used primarily to debug changes to this script or do a quick one-off run; the default is multiple counts as defined in the script.
 
 .PARAMETER ReadPercentages
@@ -85,9 +81,9 @@
     Clones the master branch to the .\master folder, the branch_with_my_changes to the branch_with_my_changes folder, and runs those with any <other args> specified.
 
 .EXAMPLE
-    pwsh -c "./run_benchmark.ps1 master,branch_with_my_changes -CloneAndBuild -LockMode 0 -PostOpsMode 0"
+    pwsh -c "./run_benchmark.ps1 master,branch_with_my_changes -CloneAndBuild -LockMode 0"
 
-    Clones the master branch to the .\master folder, the branch_with_my_changes to the branch_with_my_changes folder, and runs those with no locking or post-append operations;
+    Clones the master branch to the .\master folder, the branch_with_my_changes to the branch_with_my_changes folder, and runs those with no locking operations;
     this is for best performance.
 #>
 param (
@@ -95,7 +91,6 @@ param (
   [Parameter(Mandatory=$false)] [int]$RunSeconds = 30,
   [Parameter(Mandatory=$false)] [int]$ThreadCount = -1,
   [Parameter(Mandatory=$false)] [int]$LockMode = -1,
-  [Parameter(Mandatory=$false)] [int]$PostOpsMode = -1,
   [Parameter(Mandatory=$false)] [int[]]$ReadPercentages,
   [Parameter(Mandatory=$false)] [switch]$UseRecover,
   [Parameter(Mandatory=$false)] [switch]$CloneAndBuild,
@@ -145,7 +140,6 @@ $distributions = ("uniform", "zipf")
 $readPercents = (0, 100)
 $threadCounts = (1, 20, 40, 60, 80)
 $lockModes = (0, 1)
-$postOpsModes = (0, 1)
 $smallDatas = (0) #, 1)
 $smallMemories = (0) #, 1)
 $syntheticDatas = (0) #, 1)
@@ -156,9 +150,6 @@ if ($ThreadCount -ge 0) {
 }
 if ($LockMode -ge 0) {
     $lockModes = ($LockMode)
-}
-if ($PostOpsMode -ge 0) {
-    $postOpsModes = ($PostOpsMode)
 }
 if ($ReadPercentages) {
     $readPercents = $ReadPercentages
@@ -172,7 +163,6 @@ $permutations = $distributions.Count *
                 $readPercents.Count *
                 $threadCounts.Count *
                 $lockModes.Count *
-                $postOpsModes.Count *
                 $smallDatas.Count *
                 $smallMemories.Count *
                 $syntheticDatas.Count
@@ -182,29 +172,27 @@ foreach ($d in $distributions) {
     foreach ($r in $readPercents) {
         foreach ($t in $threadCounts) {
             foreach ($z in $lockModes) {
-                foreach ($p in $postOpsModes) {
-                    foreach ($sd in $smallDatas) {
-                        foreach ($sm in $smallMemories) {
-                            foreach ($sy in $syntheticDatas) {
+                foreach ($sd in $smallDatas) {
+                    foreach ($sm in $smallMemories) {
+                        foreach ($sy in $syntheticDatas) {
+                            Write-Host
+                            Write-Host "Permutation $permutation of $permutations"
+
+                            # Only certain combinations of Numa/Threads are supported
+                            $n = ($t -lt 48) ? 0 : 1;
+
+                            for($ii = 0; $ii -lt $exeNames.Count; ++$ii) {
+                                $exeName = $exeNames[$ii]
+                                $resultDir = $resultDirs[$ii]
+
                                 Write-Host
-                                Write-Host "Permutation $permutation of $permutations"
+                                Write-Host "Permutation $permutation/$permutations generating results $($ii + 1)/$($exeNames.Count) to $resultDir for: -n $n -d $d -r $r -t $t -z $z -post $p -i $iterations --runsec $RunSeconds $k"
 
-                                # Only certain combinations of Numa/Threads are supported
-                                $n = ($t -lt 48) ? 0 : 1;
-
-                                for($ii = 0; $ii -lt $exeNames.Count; ++$ii) {
-                                    $exeName = $exeNames[$ii]
-                                    $resultDir = $resultDirs[$ii]
-
-                                    Write-Host
-                                    Write-Host "Permutation $permutation/$permutations generating results $($ii + 1)/$($exeNames.Count) to $resultDir for: -n $n -d $d -r $r -t $t -z $z -post $p -i $iterations --runsec $RunSeconds $k"
-
-                                    # RunSec and Recover are for one-off operations and are not recorded in the filenames.
-                                    $post = $p -eq 0 ? "" : "--post"
-                                    & "$exeName" -b 0 -n $n -d $d -r $r -t $t -z $z $post -i $iterations --runsec $RunSeconds $k | Tee-Object "$resultDir/results_n-$($n)_d-$($d)_r-$($r)_t-$($t)_z-$($z)_post-$($p).txt"
-                                }
-                                ++$permutation
+                                # RunSec and Recover are for one-off operations and are not recorded in the filenames.
+                                $post = $p -eq 0 ? "" : "--post"
+                                & "$exeName" -b 0 -n $n -d $d -r $r -t $t -z $z $post -i $iterations --runsec $RunSeconds $k | Tee-Object "$resultDir/results_n-$($n)_d-$($d)_r-$($r)_t-$($t)_z-$($z)_post-$($p).txt"
                             }
+                            ++$permutation
                         }
                     }
                 }

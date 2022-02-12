@@ -34,36 +34,6 @@ namespace FASTER.core
         ALLOCATE_FAILED
     }
 
-    internal class SerializedFasterExecutionContext
-    {
-        internal long version;
-        internal long serialNum;
-        internal string guid;
-
-        /// <summary>
-        /// </summary>
-        /// <param name="writer"></param>
-        public void Write(StreamWriter writer)
-        {
-            writer.WriteLine(version);
-            writer.WriteLine(guid);
-            writer.WriteLine(serialNum);
-        }
-
-        /// <summary>
-        /// </summary>
-        /// <param name="reader"></param>
-        public void Load(StreamReader reader)
-        {
-            string value = reader.ReadLine();
-            version = long.Parse(value);
-
-            guid = reader.ReadLine();
-            value = reader.ReadLine();
-            serialNum = long.Parse(value);
-        }
-    }
-
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         internal struct PendingContext<Input, Output, Context>
@@ -82,7 +52,6 @@ namespace FASTER.core
             internal long logicalAddress;
             internal long serialNum;
             internal HashBucketEntry entry;
-            internal LatchOperation heldLatch;
 
             internal ushort operationFlags;
             internal RecordInfo recordInfo;
@@ -191,9 +160,15 @@ namespace FASTER.core
             }
         }
 
-        internal sealed class FasterExecutionContext<Input, Output, Context> : SerializedFasterExecutionContext
+        internal sealed class FasterExecutionContext<Input, Output, Context>
         {
+            internal int sessionID;
+            internal string sessionName;
+
+            internal long version;
+            internal long serialNum;
             public Phase phase;
+
             public bool[] markers;
             public long totalPending;
             public Queue<PendingContext<Input, Output, Context>> retryRequests;
@@ -315,14 +290,24 @@ namespace FASTER.core
         public bool manualLockingActive;
 
         /// <summary>
-        /// Commit tokens per session restored during Continue
+        /// Commit tokens per session restored during Restore()
         /// </summary>
-        public ConcurrentDictionary<string, CommitPoint> continueTokens;
+        public ConcurrentDictionary<int, (string, CommitPoint)> continueTokens;
+
+        /// <summary>
+        /// Map of session name to session ID restored during Restore()
+        /// </summary>
+        public ConcurrentDictionary<string, int> sessionNameMap;
 
         /// <summary>
         /// Commit tokens per session created during Checkpoint
         /// </summary>
-        public ConcurrentDictionary<string, CommitPoint> checkpointTokens;
+        public ConcurrentDictionary<int, (string, CommitPoint)> checkpointTokens;
+
+        /// <summary>
+        /// Max session ID
+        /// </summary>
+        public int maxSessionID;
 
         /// <summary>
         /// Object log segment offsets
@@ -352,7 +337,7 @@ namespace FASTER.core
             deltaTailAddress = 0;
             headAddress = 0;
 
-            checkpointTokens = new ConcurrentDictionary<string, CommitPoint>();
+            checkpointTokens = new();
 
             objectLogSegmentOffsets = null;
         }
@@ -363,7 +348,7 @@ namespace FASTER.core
         /// <param name="reader"></param>
         public void Initialize(StreamReader reader)
         {
-            continueTokens = new ConcurrentDictionary<string, CommitPoint>();
+            continueTokens = new();
 
             string value = reader.ReadLine();
             var cversion = int.Parse(value);
@@ -412,20 +397,27 @@ namespace FASTER.core
 
             for (int i = 0; i < numSessions; i++)
             {
-                var guid = reader.ReadLine();
-                value = reader.ReadLine();
-                var serialno = long.Parse(value);
+                var sessionID = int.Parse(reader.ReadLine());
+                var sessionName = reader.ReadLine();
+                if (sessionName == "") sessionName = null;
+                var serialno = long.Parse(reader.ReadLine());
 
                 var exclusions = new List<long>();
                 var exclusionCount = int.Parse(reader.ReadLine());
                 for (int j = 0; j < exclusionCount; j++)
                     exclusions.Add(long.Parse(reader.ReadLine()));
 
-                continueTokens.TryAdd(guid, new CommitPoint
+                continueTokens.TryAdd(sessionID, (sessionName, new CommitPoint
                 {
                     UntilSerialNo = serialno,
                     ExcludedSerialNos = exclusions
-                });
+                }));
+                if (sessionName != null)
+                {
+                    sessionNameMap ??= new();
+                    sessionNameMap.TryAdd(sessionName, sessionID);
+                }
+                if (sessionID > maxSessionID) maxSessionID = sessionID;
             }
 
             // Read object log segment offsets
@@ -521,9 +513,10 @@ namespace FASTER.core
                     foreach (var kvp in checkpointTokens)
                     {
                         writer.WriteLine(kvp.Key);
-                        writer.WriteLine(kvp.Value.UntilSerialNo);
-                        writer.WriteLine(kvp.Value.ExcludedSerialNos.Count);
-                        foreach (long item in kvp.Value.ExcludedSerialNos)
+                        writer.WriteLine(kvp.Value.Item1);
+                        writer.WriteLine(kvp.Value.Item2.UntilSerialNo);
+                        writer.WriteLine(kvp.Value.Item2.ExcludedSerialNos.Count);
+                        foreach (long item in kvp.Value.Item2.ExcludedSerialNos)
                             writer.WriteLine(item);
                     }
 

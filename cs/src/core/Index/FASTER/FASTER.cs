@@ -13,47 +13,6 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    /// <summary>
-    /// Flags for the Read-by-address methods
-    /// </summary>
-    /// <remarks>Note: must be kept in sync with corresponding PendingContext k* values</remarks>
-    [Flags]
-    public enum ReadFlags
-    {
-        /// <summary>
-        /// Default read operation
-        /// </summary>
-        None = 0,
-
-        /// <summary>
-        /// Skip the ReadCache when reading, including not inserting to ReadCache when pending reads are complete.
-        /// May be used with ReadAtAddress, to avoid copying earlier versions.
-        /// </summary>
-        SkipReadCache = 0x00000001,
-
-        /// <summary>
-        /// The minimum address at which to resolve the Key; return <see cref="Status.NOTFOUND"/> if the key is not found at this address or higher
-        /// </summary>
-        MinAddress = 0x00000002,
-
-        /// <summary>
-        /// Force a copy to tail if we read from immutable or on-disk. If this and ReadCache are both specified, ReadCache wins.
-        /// This avoids log pollution for read-mostly workloads. Used mostly in conjunction with 
-        /// <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions}"/> locking.
-        /// </summary>
-        CopyToTail = 0x00000004,
-
-        /// <summary>
-        /// Skip copying to tail even if the FasterKV constructore specifed it. May be used with ReadAtAddress, to avoid copying earlier versions.
-        /// </summary>
-        SkipCopyToTail = 0x00000008,
-
-        /// <summary>
-        /// Utility to combine these flags. May be used with ReadAtAddress, to avoid copying earlier versions.
-        /// </summary>
-        SkipCopyReads = SkipReadCache | SkipCopyToTail,
-    }
-
     public partial class FasterKV<Key, Value> : FasterBase,
         IFasterKV<Key, Value>
     {
@@ -63,21 +22,12 @@ namespace FASTER.core
         /// <summary>
         /// Compares two keys
         /// </summary>
-        internal protected readonly IFasterEqualityComparer<Key> comparer;
+        internal readonly IFasterEqualityComparer<Key> comparer;
 
         internal readonly bool UseReadCache;
         private readonly CopyReadsToTail CopyReadsToTail;
         internal readonly int sectorSize;
         internal readonly bool WriteDefaultOnDelete;
-        internal bool RelaxedCPR;
-
-        /// <summary>
-        /// Use relaxed version of CPR, where ops pending I/O
-        /// are not part of CPR checkpoint. This mode allows
-        /// us to eliminate the WAIT_PENDING phase, and allows
-        /// sessions to be suspended. Do not modify during checkpointing.
-        /// </summary>
-        internal void UseRelaxedCPR() => RelaxedCPR = true;
 
         /// <summary>
         /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)
@@ -109,9 +59,11 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value> ReadCache { get; }
 
-        internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
+        ConcurrentDictionary<int, (string, CommitPoint)> _recoveredSessions;
+        ConcurrentDictionary<string, int> _recoveredSessionNameMap;
+        int maxSessionID;
 
-        internal bool SupportsLocking;
+        internal readonly bool DisableLocking;
         internal readonly LockTable<Key> LockTable;
         internal long NumActiveLockingSessions = 0;
 
@@ -139,10 +91,10 @@ namespace FASTER.core
         /// <param name="fasterKVConfig">Config settings</param>
         public FasterKV(FasterKVSettings<Key, Value> fasterKVConfig) :
             this(
-                fasterKVConfig.GetIndexSizeCacheLines(), fasterKVConfig.GetLogSettings(), 
-                fasterKVConfig.GetCheckpointSettings(), fasterKVConfig.GetSerializerSettings(), 
+                fasterKVConfig.GetIndexSizeCacheLines(), fasterKVConfig.GetLogSettings(),
+                fasterKVConfig.GetCheckpointSettings(), fasterKVConfig.GetSerializerSettings(),
                 fasterKVConfig.EqualityComparer, fasterKVConfig.GetVariableLengthStructSettings(),
-                fasterKVConfig.TryRecoverLatest, fasterKVConfig.SupportsLocking, fasterKVConfig.MaxFreeRecordsInBin)
+                fasterKVConfig.TryRecoverLatest, fasterKVConfig.DisableLocking, fasterKVConfig.MaxFreeRecordsInBin)
         {
         }
 
@@ -156,13 +108,13 @@ namespace FASTER.core
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
-        /// <param name="supportsLocking">Whether FASTER takes read and write locks on records</param>
+        /// <param name="disableLocking">Whether FASTER takes read and write locks on records</param>
         /// <param name="maxFreeRecordsInBin">The number of free records in the free-record pool (in addition to any in the hash chains).
         ///     If non-zero, we will revivify and reuse Tombstoned records encountered in the mutable region during Updates.</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool supportsLocking = false,
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableLocking = false,
             int maxFreeRecordsInBin = 0)
         {
             if (comparer != null)
@@ -186,8 +138,8 @@ namespace FASTER.core
                 }
             }
 
-            this.SupportsLocking = supportsLocking;
-            if (maxFreeRecordsInBin > 0 && !SupportsLocking)
+            this.DisableLocking = disableLocking;
+            if (maxFreeRecordsInBin > 0 && DisableLocking)
                 throw new FasterException("Cross-key record reuse requires DisableLocking to be false");
 
             if (checkpointSettings is null)
@@ -467,11 +419,11 @@ namespace FASTER.core
         /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="recoverTo"> specific version requested or -1 for latest version. FASTER will recover to the largest version number checkpointed that's smaller than the required version. </param>
-
-        public void Recover(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1)
+        /// <returns>Version we actually recovered to</returns>
+        public long Recover(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1)
         {
             FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
-            InternalRecover(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion, recoverTo);
+            return InternalRecover(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion, recoverTo);
         }
 
         /// <summary>
@@ -481,7 +433,8 @@ namespace FASTER.core
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="recoverTo"> specific version requested or -1 for latest version. FASTER will recover to the largest version number checkpointed that's smaller than the required version.</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        public ValueTask RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1,
+        /// <returns>Version we actually recovered to</returns>
+        public ValueTask<long> RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1,
             CancellationToken cancellationToken = default)
         {
             FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
@@ -494,9 +447,10 @@ namespace FASTER.core
         /// <param name="fullCheckpointToken">Token</param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        public void Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
+        /// <returns>Version we actually recovered to</returns>
+        public long Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
         {
-            InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1);
+            return InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1);
         }
 
         /// <summary>
@@ -506,7 +460,8 @@ namespace FASTER.core
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        public ValueTask RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default) 
+        /// <returns>Version we actually recovered to</returns>
+        public ValueTask<long> RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default)
             => InternalRecoverAsync(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1, cancellationToken);
 
         /// <summary>
@@ -516,9 +471,49 @@ namespace FASTER.core
         /// <param name="hybridLogCheckpointToken"></param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        public void Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
+        /// <returns>Version we actually recovered to</returns>
+        public long Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
         {
-            InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, -1);
+            return InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, -1);
+        }
+
+        /// <summary>
+        /// Enumerate all currently recoverable sessions
+        /// </summary>
+        public IEnumerable<(int, string, CommitPoint)> RecoverableSessions
+        {
+            get
+            {
+                if (_recoveredSessions != null)
+                {
+                    foreach (var kvp in _recoveredSessions)
+                    {
+                        yield return (kvp.Key, kvp.Value.Item1, kvp.Value.Item2);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Dispose recoverable session with given ID, use RecoverableSessions to get recoverable session details
+        /// </summary>
+        /// <param name="sessionID"></param>
+        public void DisposeRecoverableSession(int sessionID)
+        {
+            if (_recoveredSessions != null && _recoveredSessions.TryRemove(sessionID, out var entry))
+            {
+                if (entry.Item1 != null)
+                    _recoveredSessionNameMap.TryRemove(entry.Item1, out _);
+            }
+        }
+
+        /// <summary>
+        /// Dispose (all) recoverable sessions
+        /// </summary>
+        public void DisposeRecoverableSessions()
+        {
+            _recoveredSessions = null;
+            _recoveredSessionNameMap = null;
         }
 
         /// <summary>
@@ -529,7 +524,8 @@ namespace FASTER.core
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        public ValueTask RecoverAsync(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default) 
+        /// <returns>Version we actually recovered to</returns>
+        public ValueTask<long> RecoverAsync(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default)
             => InternalRecoverAsync(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, -1, cancellationToken);
 
         /// <summary>
@@ -554,6 +550,7 @@ namespace FASTER.core
 
                 try
                 {
+                    epoch.Resume();
                     ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, valueTasks, token);
                 }
                 catch (Exception)
@@ -561,6 +558,10 @@ namespace FASTER.core
                     this._indexCheckpoint.Reset();
                     this._hybridLogCheckpoint.Dispose();
                     throw;
+                }
+                finally
+                {
+                    epoch.Suspend();
                 }
 
                 if (valueTasks.Count == 0)

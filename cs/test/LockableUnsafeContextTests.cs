@@ -21,12 +21,12 @@ namespace FASTER.test.LockableUnsafeContext
     {
         internal long deletedRecordAddress;
 
-        public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, long address)
+        public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
         {
             deletedRecordAddress = address;
         }
 
-        public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+        public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
         {
             deletedRecordAddress = address;
             return true;
@@ -51,6 +51,10 @@ namespace FASTER.test.LockableUnsafeContext
     public enum ResultLockTarget { MutableLock, LockTable }
 
     public enum ReadCopyDestination { Tail, ReadCache }
+
+    public enum FlushMode { NoFlush, ReadOnly, OnDisk }
+
+    public enum UpdateOp { Upsert, RMW, Delete }
 
     [TestFixture]
     class LockableUnsafeContextTests
@@ -101,7 +105,7 @@ namespace FASTER.test.LockableUnsafeContext
 
             fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
                                             checkpointSettings: checkpointSettings, comparer: comparer,
-                                            supportsLocking: true);
+                                            disableLocking: false);
             session = fht.For(functions).NewSession<LockableUnsafeFunctions>();
         }
 
@@ -472,19 +476,19 @@ namespace FASTER.test.LockableUnsafeContext
 
                 try
                 {
-                    for (var iteration = 0; iteration < numIterations; ++iteration)
+                for (var iteration = 0; iteration < numIterations; ++iteration)
+                {
+                    for (var key = baseKey + rng.Next(numIncrement); key < baseKey + numKeys; key += rng.Next(1, numIncrement))
                     {
-                        for (var key = baseKey + rng.Next(numIncrement); key < baseKey + numKeys; key += rng.Next(1, numIncrement))
-                        {
-                            var lockType = rng.Next(100) < 60 ? LockType.Shared : LockType.Exclusive;
-                            luContext.Lock(key, lockType);
-                            locks[key] = lockType;
-                        }
-
-                        foreach (var key in locks.Keys.OrderBy(key => key))
-                            luContext.Unlock(key, locks[key]);
-                        locks.Clear();
+                        var lockType = rng.Next(100) < 60 ? LockType.Shared : LockType.Exclusive;
+                        luContext.Lock(key, lockType);
+                        locks[key] = lockType;
                     }
+
+                    foreach (var key in locks.Keys.OrderBy(key => key))
+                        luContext.Unlock(key, locks[key]);
+                    locks.Clear();
+                }
                 }
                 catch (Exception)
                 {

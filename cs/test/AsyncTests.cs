@@ -88,8 +88,7 @@ namespace FASTER.test.async
 
             fht2.Recover(token); // sync, does not require session
 
-            var guid = s1.ID;
-            using (var s3 = fht2.For(functions).ResumeSession<AdSimpleFunctions>(guid, out CommitPoint lsn))
+            using (var s3 = fht2.For(functions).ResumeSession<AdSimpleFunctions>(s1.ID, out CommitPoint lsn))
             {
                 Assert.AreEqual(numOps - 1, lsn.UntilSerialNo);
 
@@ -134,19 +133,23 @@ namespace FASTER.test.async
         }
 
         // RMW functions
-        public override bool InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo,
-                ref int usedValueLength, int fullValueLength, long address) { value = input.numClicks; return true; ;}
+        public override bool InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, 
+                ref UpdateInfo updateInfo, long address)
+        {
+            value = input.numClicks;
+            return true;
+        }
 
         public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo,
-                ref int usedValueLength, int fullValueLength, long address)
+                ref UpdateInfo updateInfo, long address)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output, ref UpdateInfo updateInfo) => true;
 
-        public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+        public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
             return true;

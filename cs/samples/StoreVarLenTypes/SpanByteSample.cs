@@ -30,7 +30,7 @@ namespace StoreVarLenTypes
                 logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
 
             // Create session
-            var s = store.For(new CustomSpanByteFunctions(locking: false)).NewSession<CustomSpanByteFunctions>();
+            var s = store.For(new CustomSpanByteFunctions()).NewSession<CustomSpanByteFunctions>();
 
             Random r = new Random(100);
 

@@ -60,14 +60,13 @@ namespace FASTER.core
         /// <param name="dst">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
-        /// <param name="usedValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space used in the valueif <paramref name="recordInfo"/>.Filler is set; set by FASTER in input.
-        ///     Should always be set by the function on output</param>
-        /// <param name="fullValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space available in the value if <paramref name="recordInfo"/>.Filler is set; set by FASTER</param>
+        /// <param name="updateInfo">Information about this update operation and its context</param>
         /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing</param>
-        bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address);
+        /// <param name="reason">The operation for which this write is being done</param>
+        bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason);
 
         /// <summary>
-        /// Called after a record containing an upsert of a new key has been successfully inserted at the tail of the log.
+        /// Called after SingleWriter when a record containing an upsert of a new key has been successfully inserted at the tail of the log.
         /// </summary>
         /// <param name="key">The key for this record</param>
         /// <param name="input">The user input that was used to compute <paramref name="dst"/></param>
@@ -75,8 +74,10 @@ namespace FASTER.core
         /// <param name="dst">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
+        /// <param name="updateInfo">Information about this update operation and its context</param>
         /// <param name="address">The logical address of the record being written; used as a RecordId by indexing</param>
-        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
+        /// <param name="reason">The operation for which this write is being done</param>
+        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason);
 
         /// <summary>
         /// Concurrent writer; called on an Upsert that finds the record in the mutable range.
@@ -87,31 +88,10 @@ namespace FASTER.core
         /// <param name="dst">The location where <paramref name="src"/> is to be copied; because this method is called only for in-place updates, there is a previous value there.</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
-        /// <param name="usedValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space used in the valueif <paramref name="recordInfo"/>.Filler is set; set by FASTER in input.
-        ///     Should always be set by the function on output</param>
-        /// <param name="fullValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space available in the value if <paramref name="recordInfo"/>.Filler is set; set by FASTER</param>
+        /// <param name="updateInfo">Information about this update operation and its context</param>
         /// <param name="address">The logical address of the record being copied to; used as a RecordId by indexing</param>
         /// <returns>True if the value was written, else false</returns>
-        bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address);
-
-        /// <summary>
-        /// Basic copy operation used in maintenance operations such as copying reads fetched from disk to either read cache or tail of log.
-        /// </summary>
-        /// <param name="key">The key for this record</param>
-        /// <param name="src">The previous value to be copied/updated</param>
-        /// <param name="dst">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
-        /// <param name="recordInfo">A reference to the header of the record</param>
-        /// <param name="address">The logical address of the record being copied to</param>
-        void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
-
-        /// <summary>
-        /// Upsert completion
-        /// </summary>
-        /// <param name="key">The key for this record</param>
-        /// <param name="input">The user input that was used to compute the new value</param>
-        /// <param name="value">The value passed to Upsert</param>
-        /// <param name="ctx">The application context passed through the pending operation</param>
-        void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx);
+        bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
         #endregion Upserts
 
         #region RMWs
@@ -122,7 +102,8 @@ namespace FASTER.core
         /// <param name="key">The key for this record</param>
         /// <param name="input">The user input to be used for computing the updated value</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation is to be copied</param>
-        bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output);
+        /// <param name="updateInfo">Information about this update operation and its context</param>
+        bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref UpdateInfo updateInfo);
 
         /// <summary>
         /// Initial update for RMW (insert at the tail of the log).
@@ -132,11 +113,9 @@ namespace FASTER.core
         /// <param name="value">The destination to be updated; because this is an insert, there is no previous value there.</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
-        /// <param name="usedValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space used in the valueif <paramref name="recordInfo"/>.Filler is set; set by FASTER in input.
-        ///     Should always be set by the function on output</param>
-        /// <param name="fullValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space available in the value if <paramref name="recordInfo"/>.Filler is set; set by FASTER</param>
+        /// <param name="updateInfo">Information about this update operation and its context</param>
         /// <param name="address">The logical address of the record being updated; used as a RecordId by indexing</param>
-        bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address);
+        bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
 
         /// <summary>
         /// Called after a record containing an initial update for RMW has been successfully inserted at the tail of the log.
@@ -146,8 +125,9 @@ namespace FASTER.core
         /// <param name="value">The destination to be updated; because this is an insert, there is no previous value there.</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
+        /// <param name="updateInfo">Information about this update operation and its context</param>
         /// <param name="address">The logical address of the record being written; used as a RecordId by indexing</param>
-        void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address);
+        void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
         #endregion InitialUpdater
 
         #region CopyUpdater
@@ -158,7 +138,8 @@ namespace FASTER.core
         /// <param name="input">The user input to be used for computing the updated value</param>
         /// <param name="oldValue">The existing value that would be copied.</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="oldValue"/> is to be copied</param>
-        bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output);
+        /// <param name="updateInfo">Information about this update operation and its context</param>
+        bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref UpdateInfo updateInfo);
 
         /// <summary>
         /// Copy-update for RMW (RCU (Read-Copy-Update) to the tail of the log)
@@ -169,11 +150,9 @@ namespace FASTER.core
         /// <param name="newValue">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
         /// <param name="output">The location where <paramref name="newValue"/> is to be copied</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
-        /// <param name="usedValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space used in the valueif <paramref name="recordInfo"/>.Filler is set; set by FASTER in input.
-        ///     Should always be set by the function on output</param>
-        /// <param name="fullValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space available in the value if <paramref name="recordInfo"/>.Filler is set; set by FASTER</param>
+        /// <param name="updateInfo">Information about this update operation and its context</param>
         /// <param name="address">The logical address of the record being updated; used as a RecordId by indexing</param>
-        bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address);
+        bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
 
         /// <summary>
         /// Called after a record containing an RCU (Read-Copy-Update) for RMW has been successfully inserted at the tail of the log.
@@ -184,9 +163,10 @@ namespace FASTER.core
         /// <param name="newValue">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
         /// <param name="output">The location where <paramref name="newValue"/> is to be copied</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
+        /// <param name="updateInfo">Information about this update operation and its context</param>
         /// <param name="address">The logical address of the record being copied into; used as a RecordId by indexing</param>
         /// <returns>True if the value was successfully updated, else false (e.g. the value was expired)</returns>
-        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address);
+        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
         #endregion CopyUpdater
 
         #region InPlaceUpdater
@@ -198,12 +178,10 @@ namespace FASTER.core
         /// <param name="value">The destination to be updated; because this is an in-place update, there is a previous value there.</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
-        /// <param name="usedValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space used in the valueif <paramref name="recordInfo"/>.Filler is set; set by FASTER in input.
-        ///     Should always be set by the function on output</param>
-        /// <param name="fullValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space available in the value if <paramref name="recordInfo"/>.Filler is set; set by FASTER</param>
+        /// <param name="updateInfo">Information about this update operation and its context</param>
         /// <param name="address">The logical address of the record being updated; used as a RecordId by indexing</param>
         /// <returns>True if the value was successfully updated, else false (e.g. the value was expired)</returns>
-        bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address);
+        bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
         #endregion InPlaceUpdater
 
         /// <summary>
@@ -220,28 +198,27 @@ namespace FASTER.core
 
         #region Deletes
         /// <summary>
-        /// Single deleter; called on an Delete that does not find the record in the mutable range and so inserts a new record.
+        /// Single deleter; called on a Delete that does not find the record in the mutable range and so inserts a new record.
         /// </summary>
         /// <param name="key">The key for the record to be deleted</param>
         /// <param name="value">The value for the record being deleted; because this method is called only for in-place updates, there is a previous value there. Usually this is ignored or assigned 'default'.</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
-        /// <param name="usedValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space used in the valueif <paramref name="recordInfo"/>.Filler is set; set by FASTER in input.
-        ///     Should always be set by the function on output</param>
-        /// <param name="fullValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space available in the value if <paramref name="recordInfo"/>.Filler is set; set by FASTER</param>
+        /// <param name="updateInfo">Information about this update operation and its context</param>
         /// <param name="address">The logical address of the record being deleted; used as a RecordId by indexing</param>
         /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
-        void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address);
+        void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
 
         /// <summary>
         /// Called after a record marking a Delete (with Tombstone set) has been successfully inserted at the tail of the log.
         /// </summary>
         /// <param name="key">The key for the record that was deleted</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
+        /// <param name="updateInfo">Information about this update operation and its context</param>
         /// <param name="address">The logical address of the record that was inserted with its tombstone set; used as a RecordId by indexing</param>
         /// <remarks>This does not have the address of the record that contains the value at 'key'; Delete does not retrieve records below HeadAddress, so
         ///     the last record we have in the 'key' chain may belong to 'key' or may be a collision.</remarks>
-        void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address);
+        void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
 
         /// <summary>
         /// Concurrent deleter; called on an Delete that finds the record in the mutable range.
@@ -249,20 +226,11 @@ namespace FASTER.core
         /// <param name="key">The key for the record to be deleted</param>
         /// <param name="value">The value for the record being deleted; because this method is called only for in-place updates, there is a previous value there. Usually this is ignored or assigned 'default'.</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
-        /// <param name="usedValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space used in the valueif <paramref name="recordInfo"/>.Filler is set; set by FASTER in input.
-        ///     Should always be set by the function on output</param>
-        /// <param name="fullValueLength">For a variable-length <typeparamref name="Value"/>, the amount of space available in the value if <paramref name="recordInfo"/>.Filler is set; set by FASTER</param>
+        /// <param name="updateInfo">Information about this update operation and its context</param>
         /// <param name="address">The logical address of the record being deleted; used as a RecordId by indexing</param>
         /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
-        bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address);
-
-        /// <summary>
-        /// Delete completion
-        /// </summary>
-        /// <param name="key">The key for this record</param>
-        /// <param name="ctx">The application context passed through the pending operation</param>
-        void DeleteCompletionCallback(ref Key key, Context ctx);
+        bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
         #endregion Deletes
 
         #region Key and Value management
@@ -283,9 +251,10 @@ namespace FASTER.core
         /// <summary>
         /// Checkpoint completion callback (called per client session)
         /// </summary>
-        /// <param name="sessionId">Session ID reporting persistence</param>
+        /// <param name="sessionID">ID of session reporting persistence</param>
+        /// <param name="sessionName">Name of session reporting persistence</param>
         /// <param name="commitPoint">Commit point descriptor</param>
-        void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint);
+        void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint);
         #endregion Checkpointing
     }
 

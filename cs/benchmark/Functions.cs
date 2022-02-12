@@ -9,15 +9,6 @@ namespace FASTER.benchmark
 {
     public struct Functions : IFunctions<Key, Value, Input, Output, Empty>
     {
-        readonly bool locking;
-        readonly bool postOps;
-
-        public Functions(bool locking, bool postOps)
-        {
-            this.locking = locking;
-            this.postOps = postOps;
-        }
-
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
         }
@@ -26,17 +17,9 @@ namespace FASTER.benchmark
         {
         }
 
-        public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Empty ctx)
+        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
         {
-        }
-
-        public void DeleteCompletionCallback(ref Key key, Empty ctx)
-        {
-        }
-
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
+            Debug.WriteLine($"Session {sessionID} ({(sessionName ?? "null")}) reports persistence until {commitPoint.UntilSerialNo}");
         }
 
         // Read functions
@@ -54,26 +37,20 @@ namespace FASTER.benchmark
             return true;
         }
 
-        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) { value = default; }
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { value = default; }
 
-        public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => true;
+        public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+        public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo UpdateInfo, long address, WriteReason reason)
         {
             dst = src;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-        {
-            dst = src;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
         {
             dst = src;
             return true;
@@ -81,37 +58,37 @@ namespace FASTER.benchmark
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+        public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
         {
             value.value = input.value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
         {
             value.value += input.value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+        public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
         {
             newValue.value = input.value + oldValue.value;
             return true;
         }
 
-        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) => true;
+        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
 
-        public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output) => true;
+        public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref UpdateInfo updateInfo) => true;
 
-        public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
+        public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { }
 
-        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
+        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref UpdateInfo updateInfo) => true;
 
-        public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
+        public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { }
 
-        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason) { }
 
         public void DisposeKey(ref Key key) { }
 

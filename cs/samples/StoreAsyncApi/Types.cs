@@ -93,11 +93,6 @@ namespace StoreAsyncApi
             return true;
         }
 
-        public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-            // Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
-        }
-
         public override void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx.type == 0)

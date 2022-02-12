@@ -12,13 +12,13 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        internal CommitPoint InternalContinue<Input, Output, Context>(string guid, out FasterExecutionContext<Input, Output, Context> ctx)
+        internal (string, CommitPoint) InternalContinue<Input, Output, Context>(int sessionID, out FasterExecutionContext<Input, Output, Context> ctx)
         {
             ctx = null;
 
             if (_recoveredSessions != null)
             {
-                if (_recoveredSessions.TryGetValue(guid, out _))
+                if (_recoveredSessions.TryGetValue(sessionID, out _))
                 {
                     // We have recovered the corresponding session. 
                     // Now obtain the session by first locking the rest phase
@@ -29,21 +29,21 @@ namespace FASTER.core
                         if (MakeTransition(currentState, intermediateState))
                         {
                             // No one can change from REST phase
-                            if (_recoveredSessions.TryRemove(guid, out CommitPoint cp))
+                            if (_recoveredSessions.TryRemove(sessionID, out var cp))
                             {
                                 // We have atomically removed session details. 
                                 // No one else can continue this session
                                 ctx = new FasterExecutionContext<Input, Output, Context>();
-                                InitContext(ctx, guid);
+                                InitContext(ctx, sessionID, cp.Item1);
                                 ctx.prevCtx = new FasterExecutionContext<Input, Output, Context>();
-                                InitContext(ctx.prevCtx, guid);
+                                InitContext(ctx.prevCtx, sessionID, cp.Item1);
                                 ctx.prevCtx.version--;
-                                ctx.serialNum = cp.UntilSerialNo;
+                                ctx.serialNum = cp.Item2.UntilSerialNo;
                             }
                             else
                             {
                                 // Someone else continued this session
-                                cp = new CommitPoint { UntilSerialNo = -1 };
+                                cp = ((string)null, new CommitPoint { UntilSerialNo = -1 });
                                 Debug.WriteLine("Session already continued by another thread!");
                             }
 
@@ -54,12 +54,12 @@ namespace FASTER.core
 
                     // Need to try again when in REST
                     Debug.WriteLine("Can continue only in REST phase");
-                    return new CommitPoint { UntilSerialNo = -1 };
+                    return (null, new CommitPoint { UntilSerialNo = -1 });
                 }
             }
 
             Debug.WriteLine("No recovered sessions!");
-            return new CommitPoint { UntilSerialNo = -1 };
+            return (null, new CommitPoint { UntilSerialNo = -1 });
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -78,7 +78,7 @@ namespace FASTER.core
             ThreadStateMachineStep(ctx, fasterSession, default);
         }
 
-        internal void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, string token, long lsn = -1)
+        internal void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName, long lsn = -1)
         {
             ctx.phase = Phase.REST;
             // The system version starts at 1. Because we do not know what the current state machine state is,
@@ -87,21 +87,11 @@ namespace FASTER.core
             ctx.version = 1;
             ctx.markers = new bool[8];
             ctx.serialNum = lsn;
-            ctx.guid = token;
+            ctx.sessionID = sessionID;
+            ctx.sessionName = sessionName;
 
-            if (RelaxedCPR)
+            if (ctx.retryRequests == null)
             {
-                if (ctx.retryRequests == null)
-                {
-                    ctx.retryRequests = new Queue<PendingContext<Input, Output, Context>>();
-                    ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
-                    ctx.ioPendingRequests = new Dictionary<long, PendingContext<Input, Output, Context>>();
-                    ctx.pendingReads = new AsyncCountDown();
-                }
-            }
-            else
-            {
-                ctx.totalPending = 0;
                 ctx.retryRequests = new Queue<PendingContext<Input, Output, Context>>();
                 ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
                 ctx.ioPendingRequests = new Dictionary<long, PendingContext<Input, Output, Context>>();
@@ -116,27 +106,16 @@ namespace FASTER.core
             dst.threadStateMachine = src.threadStateMachine;
             dst.markers = src.markers;
             dst.serialNum = src.serialNum;
-            dst.guid = src.guid;
+            dst.sessionName = src.sessionName;
             dst.excludedSerialNos = new List<long>();
 
-            if (!RelaxedCPR)
+            foreach (var v in src.ioPendingRequests.Values)
             {
-                dst.totalPending = src.totalPending;
-                dst.retryRequests = src.retryRequests;
-                dst.readyResponses = src.readyResponses;
-                dst.ioPendingRequests = src.ioPendingRequests;
-                dst.pendingReads = src.pendingReads;
+                dst.excludedSerialNos.Add(v.serialNum);
             }
-            else
+            foreach (var v in src.retryRequests)
             {
-                foreach (var v in src.ioPendingRequests.Values)
-                {
-                    dst.excludedSerialNos.Add(v.serialNum);
-                }
-                foreach (var v in src.retryRequests)
-                {
-                    dst.excludedSerialNos.Add(v.serialNum);
-                }
+                dst.excludedSerialNos.Add(v.serialNum);
             }
         }
 
@@ -148,27 +127,11 @@ namespace FASTER.core
         {
             while (true)
             {
-                bool done = true;
-
-                #region Previous pending requests
-                if (!RelaxedCPR)
-                {
-                    if (ctx.phase == Phase.IN_PROGRESS)
-                    {
-                        InternalCompletePendingRequests(ctx.prevCtx, ctx, fasterSession, completedOutputs);
-                        InternalCompleteRetryRequests(ctx.prevCtx, ctx, fasterSession);
-                        if (wait) ctx.prevCtx.WaitPending(epoch);
-                        done &= ctx.prevCtx.HasNoPendingRequests;
-                    }
-                }
-                #endregion
-
                 InternalCompletePendingRequests(ctx, ctx, fasterSession, completedOutputs);
                 InternalCompleteRetryRequests(ctx, ctx, fasterSession);
                 if (wait) ctx.WaitPending(epoch);
-                done &= ctx.HasNoPendingRequests;
 
-                if (done) return true;
+                if (ctx.HasNoPendingRequests) return true;
 
                 InternalRefresh(ctx, fasterSession);
 
@@ -240,9 +203,6 @@ namespace FASTER.core
             // If done, callback user code.
             if (status == Status.OK || status == Status.NOTFOUND)
             {
-                if (pendingContext.heldLatch == LatchOperation.Shared)
-                    ReleaseSharedLatch(key);
-
                 switch (pendingContext.type)
                 {
                     case OperationType.RMW:
@@ -251,16 +211,6 @@ namespace FASTER.core
                                                 ref pendingContext.output,
                                                 pendingContext.userContext, status,
                                                 new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
-                        break;
-                    case OperationType.UPSERT:
-                        fasterSession.UpsertCompletionCallback(ref key,
-                                                 ref pendingContext.input.Get(),
-                                                 ref pendingContext.value.Get(),
-                                                 pendingContext.userContext);
-                        break;
-                    case OperationType.DELETE:
-                        fasterSession.DeleteCompletionCallback(ref key,
-                                                 pendingContext.userContext);
                         break;
                     default:
                         throw new FasterException("Operation type not allowed for retry");
@@ -387,9 +337,6 @@ namespace FASTER.core
             // If done, callback user code
             if (status == Status.OK || status == Status.NOTFOUND)
             {
-                if (pendingContext.heldLatch == LatchOperation.Shared)
-                    ReleaseSharedLatch(key);
-
                 if (pendingContext.type == OperationType.READ)
                 {
                     fasterSession.ReadCompletionCallback(ref key,

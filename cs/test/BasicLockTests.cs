@@ -15,19 +15,15 @@ namespace FASTER.test.LockTests
     {
         internal class Functions : SimpleFunctions<int, int>
         {
-            public Functions() : base(true)
-            {
-            }
-
             static bool Increment(ref int dst)
             {
                 ++dst;
                 return true;
             }
 
-            public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => Increment(ref dst);
+            public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => Increment(ref dst);
 
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => Increment(ref value);
+            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => Increment(ref value);
         }
 
         private FasterKV<int, int> fkv;
@@ -39,7 +35,7 @@ namespace FASTER.test.LockTests
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
-            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, supportsLocking: true );
+            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, disableLocking: false );
             session = fkv.For(new Functions()).NewSession<Functions>();
         }
 

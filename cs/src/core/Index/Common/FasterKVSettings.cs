@@ -24,7 +24,7 @@ namespace FASTER.core
         /// <summary>
         /// Whether FASTER takes read and write locks on records
         /// </summary>
-        public bool SupportsLocking = true;
+        public bool DisableLocking = false;
 
         /// <summary>
         /// Device used for main hybrid log
@@ -139,7 +139,7 @@ namespace FASTER.core
         /// If non-zero, we will reuse Tombstoned records encountered in the mutable region during Updates.
         /// If record are fixed-length, then this applies to the single bin for that length.
         /// </summary>
-        /// <remarks>Requires <see cref="SupportsLocking"/> to be true.</remarks>
+        /// <remarks>Requires <see cref="DisableLocking"/> to be true.</remarks>
         public int MaxFreeRecordsInBin = 1024;
 
         /// <summary>
@@ -193,7 +193,7 @@ namespace FASTER.core
             var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(MemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
-            retStr += $"; mutable fraction: {MutableFraction}; supports locking: {(SupportsLocking ? "yes" : "no")}";
+            retStr += $"; mutable fraction: {MutableFraction}; supports locking: {(DisableLocking ? "no" : "yes")}";
             retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
             if (ReadCacheEnabled)
                 retStr += $"; rc memory: {Utility.PrettySize(ReadCacheMemorySize)}; rc page: {Utility.PrettySize(ReadCachePageSize)}";

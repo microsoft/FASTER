@@ -10,8 +10,8 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    internal enum ReadStatus { Pending, Done };
-    internal enum FlushStatus { Pending, Done };
+    internal enum ReadStatus { Pending, Done, Error };
+    internal enum FlushStatus { Pending, Done, Error };
 
     internal class RecoveryStatus
     {
@@ -56,11 +56,19 @@ namespace FASTER.core
             this.readSemaphore.Release();
         }
 
+        internal void SignalReadError(int pageIndex)
+        {
+            this.readStatus[pageIndex] = ReadStatus.Error;
+            this.readSemaphore.Release();
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WaitRead(int pageIndex)
         {
             while (this.readStatus[pageIndex] == ReadStatus.Pending)
                 this.readSemaphore.Wait();
+            if (this.readStatus[pageIndex] == ReadStatus.Error)
+                throw new FasterException($"Error reading page {pageIndex} from device");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -68,6 +76,8 @@ namespace FASTER.core
         {
             while (this.readStatus[pageIndex] == ReadStatus.Pending)
                 await this.readSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (this.readStatus[pageIndex] == ReadStatus.Error)
+                throw new FasterException($"Error reading page {pageIndex} from device");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -77,11 +87,19 @@ namespace FASTER.core
             this.flushSemaphore.Release();
         }
 
+        internal void SignalFlushedError(int pageIndex)
+        {
+            this.flushStatus[pageIndex] = FlushStatus.Error;
+            this.flushSemaphore.Release();
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WaitFlush(int pageIndex)
         {
             while (this.flushStatus[pageIndex] == FlushStatus.Pending)
                 this.flushSemaphore.Wait();
+            if (this.flushStatus[pageIndex] == FlushStatus.Error)
+                throw new FasterException($"Error flushing page {pageIndex} to device");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -89,6 +107,8 @@ namespace FASTER.core
         {
             while (this.flushStatus[pageIndex] == FlushStatus.Pending)
                 await this.flushSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (this.flushStatus[pageIndex] == FlushStatus.Error)
+                throw new FasterException($"Error flushing page {pageIndex} to device");
         }
 
         internal void Dispose()
@@ -224,17 +244,17 @@ namespace FASTER.core
             return l1 <= l2;
         }
 
-        private void InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoNextVersion, long recoverTo)
+        private long InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoNextVersion, long recoverTo)
         {
             GetRecoveryInfo(indexToken, hybridLogToken, out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo);
             if (recoverTo != -1 && recoveredHLCInfo.deltaLog == null)
             {
                 throw new FasterException("Recovering to a specific version within a token is only supported for incremental snapshots");
             }
-            InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion, recoverTo);
+            return InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion, recoverTo);
         }
 
-        private ValueTask InternalRecoverAsync(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)
+        private ValueTask<long> InternalRecoverAsync(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)
         {
             GetRecoveryInfo(indexToken, hybridLogToken, out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo);
             return InternalRecoverAsync(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion, recoverTo, cancellationToken);
@@ -279,13 +299,13 @@ namespace FASTER.core
             }
         }
 
-        private void InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo)
+        private long InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo)
         {
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 RecoverFuzzyIndex(recoveredICInfo);
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
-                return;
+                return -1;
             RecoveryOptions options = new(recoveredHLCInfo.info.manualLockingActive, headAddress, tailAddress, undoNextVersion);
 
             long readOnlyAddress;
@@ -310,15 +330,16 @@ namespace FASTER.core
             }
 
             DoPostRecovery(recoveredICInfo, recoveredHLCInfo, tailAddress, ref headAddress, ref readOnlyAddress);
+            return recoveredHLCInfo.info.version;
         }
 
-        private async ValueTask InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)
+        private async ValueTask<long> InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)
         {
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 await RecoverFuzzyIndexAsync(recoveredICInfo, cancellationToken).ConfigureAwait(false);
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
-                return;
+                return -1;
             RecoveryOptions options = new(recoveredHLCInfo.info.manualLockingActive, headAddress, tailAddress, undoNextVersion);
 
             long readOnlyAddress;
@@ -345,6 +366,7 @@ namespace FASTER.core
             }
 
             DoPostRecovery(recoveredICInfo, recoveredHLCInfo, tailAddress, ref headAddress, ref readOnlyAddress);
+            return recoveredHLCInfo.info.version;
         }
 
         private void DoPostRecovery(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, long tailAddress, ref long headAddress, ref long readOnlyAddress)
@@ -359,7 +381,8 @@ namespace FASTER.core
             // Recover session information
             hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
-
+            _recoveredSessionNameMap = recoveredHLCInfo.info.sessionNameMap;
+            maxSessionID = recoveredHLCInfo.info.maxSessionID;
             checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
             recoveredHLCInfo.Dispose();
         }
@@ -849,7 +872,10 @@ namespace FASTER.core
             if (Interlocked.Decrement(ref result.count) == 0)
             {
                 int pageIndex = hlog.GetPageIndexForPage(result.page);
-                result.context.SignalFlushed(pageIndex);
+                if (errorCode != 0)
+                    result.context.SignalFlushedError(pageIndex);
+                else
+                    result.context.SignalFlushed(pageIndex);
                 if (result.page + result.context.capacity < result.context.endPage)
                 {
                     long readPage = result.page + result.context.capacity;
@@ -873,7 +899,7 @@ namespace FASTER.core
             }
         }
 
-        internal bool AtomicSwitch<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> fromCtx, FasterExecutionContext<Input, Output, Context> toCtx, long version, ConcurrentDictionary<string, CommitPoint> tokens)
+        internal bool AtomicSwitch<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> fromCtx, FasterExecutionContext<Input, Output, Context> toCtx, long version, ConcurrentDictionary<int, (string, CommitPoint)> tokens)
         {
             lock (toCtx)
             {
@@ -882,12 +908,12 @@ namespace FASTER.core
                     CopyContext(fromCtx, toCtx);
                     if (toCtx.serialNum != -1)
                     {
-                        tokens.TryAdd(toCtx.guid,
+                        tokens.TryAdd(toCtx.sessionID, (toCtx.sessionName,
                             new CommitPoint
                             {
                                 UntilSerialNo = toCtx.serialNum,
                                 ExcludedSerialNos = toCtx.excludedSerialNos
-                            });
+                            }));
                     }
                     return true;
                 }
@@ -1005,7 +1031,10 @@ namespace FASTER.core
                 result.freeBuffer1.Return();
             }
             int pageIndex = GetPageIndexForPage(result.page);
-            result.context.SignalRead(pageIndex);
+            if (errorCode != 0)
+                result.context.SignalReadError(pageIndex);
+            else
+                result.context.SignalRead(pageIndex);
         }
     }
 }

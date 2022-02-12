@@ -67,7 +67,7 @@ namespace FASTER.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 },
-                                            supportsLocking: true, maxFreeRecordsInBin: 1024);
+                                            disableLocking: false, maxFreeRecordsInBin: 1024);
             functions = new RevivificationFixedLenFunctions();
             session = fht.For(functions).NewSession<RevivificationFixedLenFunctions>();
         }
@@ -143,74 +143,76 @@ namespace FASTER.test.Revivification
                 this.vls = vls;
             }
 
-            public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) 
-                => InitialUpdater(ref key, ref input, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
+            public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason) 
+                => InitialUpdater(ref key, ref input, ref dst, ref output, ref recordInfo, ref updateInfo, address);
 
-            public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) 
-                => InPlaceUpdater(ref key, ref input, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
+            public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) 
+                => InPlaceUpdater(ref key, ref input, ref dst, ref output, ref recordInfo, ref updateInfo, address);
 
-            public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
             {
                 Assert.AreEqual(expectedInputLength, input.Length);
                 // SpanByte reads the available length as value.Length
-                Assert.AreEqual(recordInfo.Filler ? fullValueLength : expectedSingleDestLength, value.Length);
-                Assert.AreEqual(expectedSingleFullValueLength, fullValueLength);
-                Assert.AreEqual(expectedSingleFullValueLength, usedValueLength);
+                Assert.AreEqual(recordInfo.Filler ? updateInfo.FullValueLength : expectedSingleDestLength, value.Length);
+                Assert.AreEqual(expectedSingleFullValueLength, updateInfo.FullValueLength);
+                Assert.AreEqual(0, updateInfo.UsedValueLength);
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
                 if (input.Length > value.Length)
                     return false;
                 input.CopyTo(ref value);
-                usedValueLength = input.TotalSize;
+                updateInfo.UsedValueLength = input.TotalSize;
                 return true;
             }
 
-            public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
             {
                 Assert.AreEqual(expectedInputLength, input.Length);
                 // SpanByte reads the available length as newValue.Length
-                Assert.AreEqual(recordInfo.Filler ? fullValueLength : expectedSingleDestLength, newValue.Length);
-                Assert.AreEqual(expectedSingleFullValueLength, fullValueLength);
-                Assert.AreEqual(expectedSingleFullValueLength, usedValueLength);
+                Assert.AreEqual(recordInfo.Filler ? updateInfo.FullValueLength : expectedSingleDestLength, newValue.Length);
+                Assert.AreEqual(expectedSingleFullValueLength, updateInfo.FullValueLength);
+                Assert.AreEqual(0, updateInfo.UsedValueLength);
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
                 if (input.Length > newValue.Length)
                     return false;
                 input.CopyTo(ref newValue);
-                usedValueLength = input.TotalSize;
+                updateInfo.UsedValueLength = input.TotalSize;
                 return true;
             }
 
-            public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
             {
                 Assert.AreEqual(expectedInputLength, input.Length);
                 Assert.AreEqual(expectedConcurrentDestLength, value.Length);
-                Assert.AreEqual(expectedConcurrentFullValueLength, fullValueLength);
-                Assert.AreEqual(RoundUpSpanByteLength(expectedConcurrentDestLength), usedValueLength);
+                Assert.AreEqual(expectedConcurrentFullValueLength, updateInfo.FullValueLength);
+                Assert.AreEqual(RoundUpSpanByteLength(expectedConcurrentDestLength), updateInfo.UsedValueLength);
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
                 if (input.Length > value.Length)
                     return false;
                 input.CopyTo(ref value);      // Does not change dst.Length, which is fine for everything except shrinking (we've allocated sufficient space in other cases)
                 if (input.Length < value.Length)
                     value.Length = input.Length;
-                usedValueLength = input.TotalSize;
+                updateInfo.UsedValueLength = input.TotalSize;
                 return true;
             }
 
-            public override void SingleDeleter(ref SpanByte key, ref SpanByte value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            public override void SingleDeleter(ref SpanByte key, ref SpanByte value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
             {
                 Assert.AreEqual(expectedSingleDestLength, value.Length);
-                Assert.AreEqual(expectedSingleFullValueLength, fullValueLength);
-                Assert.AreEqual(RoundUpSpanByteLength(expectedConcurrentDestLength), usedValueLength);  // concurrent bc this has data in it
+                Assert.AreEqual(expectedSingleFullValueLength, updateInfo.FullValueLength);
+                Assert.AreEqual(RoundUpSpanByteLength(expectedConcurrentDestLength), updateInfo.UsedValueLength);  // concurrent bc this has data in it
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
-                usedValueLength = 0;
+                updateInfo.UsedValueLength = 0;
+                value = default;
             }
 
-            public override bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            public override bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
             {
                 Assert.AreEqual(expectedConcurrentDestLength, value.Length);
-                Assert.AreEqual(expectedConcurrentFullValueLength, fullValueLength);
-                Assert.AreEqual(RoundUpSpanByteLength(expectedConcurrentDestLength), usedValueLength);
+                Assert.AreEqual(expectedConcurrentFullValueLength, updateInfo.FullValueLength);
+                Assert.AreEqual(RoundUpSpanByteLength(expectedConcurrentDestLength), updateInfo.UsedValueLength);
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
-                usedValueLength = 0;
+                updateInfo.UsedValueLength = 0;
+                value = default;
                 return true;
             }
 
@@ -275,7 +277,7 @@ namespace FASTER.test.Revivification
             }
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
-            fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, supportsLocking: true, maxFreeRecordsInBin: maxRecsPerBin);
+            fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, disableLocking: false, maxFreeRecordsInBin: maxRecsPerBin);
 
             var valueVLS = new RevivificationVLS();
             functions = new RevivificationSpanByteFunctions(fht, valueVLS);
@@ -1058,14 +1060,16 @@ namespace FASTER.test.Revivification
                 Assert.AreEqual(Status.OK, session.Delete(ref key));
                 tailAddress = fht.Log.TailAddress;
 
-                // Now restore to expect the shorter input length
+                // Now restore to expect the shorter input length (Same Value Length because we're reusing the old record)
                 functions.expectedInputLength = InitialLength / 2;
-                functions.expectedSingleDestLength = InitialLength / 2;
+                functions.expectedSingleDestLength = InitialLength;
                 functions.expectedConcurrentDestLength = InitialLength;
-                functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteLength(InitialLength);
+
+                var spanSlice = inputVec.Slice(0, InitialLength / 2);
+                var inputSlice = SpanByte.FromFixedSpan(spanSlice);
 
                 keyVec.Fill(targetRO);
-                Assert.AreEqual(Status.PENDING, session.Read(ref key, ref input, ref output));
+                Assert.AreEqual(Status.PENDING, session.Read(ref key, ref inputSlice, ref output));
                 session.CompletePending(wait: true);
                 Assert.IsTrue(functions.readCcCalled);
             }
@@ -1107,7 +1111,7 @@ namespace FASTER.test.Revivification
                 (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 22, PageSizeBits = 12 },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                supportsLocking: true, maxFreeRecordsInBin: 1024);
+                disableLocking: false, maxFreeRecordsInBin: 1024);
 
             functions = new MyFunctions();
             session = fht.For(functions).NewSession<MyFunctions>();
@@ -1211,11 +1215,13 @@ namespace FASTER.test.Revivification
             public override void SingleDeleter(ref SpanByte key, ref SpanByte value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
             {
                 usedValueLength = 0;
+                value = default;
             }
 
             public override bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
             {
                 usedValueLength = 0;
+                value = default;
                 return true;
             }
         }
@@ -1249,7 +1255,7 @@ namespace FASTER.test.Revivification
             }
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
-            fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, supportsLocking: true, maxFreeRecordsInBin: maxRecsPerBin);
+            fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, disableLocking: false, maxFreeRecordsInBin: maxRecsPerBin);
 
             var valueVLS = new RevivificationVLS();
             functions = new RevivificationStressFunctions();

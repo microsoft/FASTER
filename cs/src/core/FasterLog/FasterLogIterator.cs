@@ -81,7 +81,6 @@ namespace FASTER.core
                 long nextAddress;
                 while (!GetNext(out result, out length, out currentAddress, out nextAddress))
                 {
-                    if (Ended) yield break;
                     if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
                 }
@@ -104,11 +103,27 @@ namespace FASTER.core
                 long nextAddress;
                 while (!GetNext(pool, out result, out length, out currentAddress, out nextAddress))
                 {
-                    if (Ended) yield break;
                     if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
                 }
                 yield return (result, length, currentAddress, nextAddress);
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously consume the log with given consumer until end of iteration or cancelled
+        /// </summary>
+        /// <param name="consumer"> consumer </param>
+        /// <param name="token"> cancellation token </param>
+        /// <typeparam name="T"> consumer type </typeparam>
+        public async Task ConsumeAllAsync<T>(T consumer, CancellationToken token = default) where T : ILogEntryConsumer
+        {
+            while (!disposed)
+            {
+                while (!TryConsumeNext(consumer))
+                {
+                    if (!await WaitAsync(token).ConfigureAwait(false)) return;
+                }
             }
         }
 
@@ -144,6 +159,7 @@ namespace FASTER.core
             {
                 if (@this.disposed)
                     return false;
+                if (@this.Ended) return false;
                 var commitTask = @this.fasterLog.CommitTask;
                 if (@this.NextAddress < @this.fasterLog.CommittedUntilAddress)
                     return true;
@@ -163,6 +179,7 @@ namespace FASTER.core
             {
                 if (@this.disposed)
                     return false;
+                if (@this.Ended) return false;
                 var refreshUncommittedTask = @this.fasterLog.RefreshUncommittedTask;
                 if (@this.NextAddress < @this.fasterLog.SafeTailAddress)
                     return true;
@@ -346,6 +363,63 @@ namespace FASTER.core
 
                 fixed (byte* bp = &entry.Memory.Span.GetPinnableReference())
                     Buffer.MemoryCopy((void*)(headerSize + physicalAddress), bp, entryLength, entryLength);
+                epoch.Suspend();
+                return true;
+            }
+        }
+
+        
+        /// <summary>
+        /// Consume the next entry in the log with the given consumer
+        /// </summary>
+        /// <param name="consumer">consumer</param>
+        /// <typeparam name="T">concrete type of consumer</typeparam>
+        /// <returns>whether a next entry is present</returns>
+        public unsafe bool TryConsumeNext<T>(T consumer) where T : ILogEntryConsumer
+        {
+            if (disposed)
+            {
+                currentAddress = default;
+                nextAddress = default;
+                return false;
+            }
+
+            epoch.Resume();
+            // Continue looping until we find a record that is not a commit record
+            while (true)
+            {
+                long physicalAddress;
+                bool isCommitRecord;
+                int entryLength;
+                try
+                {
+                    var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
+                        out nextAddress,
+                        out isCommitRecord);
+                    if (!hasNext)
+                    {
+                        epoch.Suspend();
+                        return false;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Throw upwards, but first, suspend the epoch we are in 
+                    epoch.Suspend();
+                    throw;
+                }
+                
+                if (isCommitRecord)
+                {
+                    FasterLogRecoveryInfo info = new();
+                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
+                    if (info.CommitNum != long.MaxValue) continue;
+                    
+                    // Otherwise, no more entries
+                    epoch.Suspend();
+                    return false;
+                }
+                consumer.Consume(new ReadOnlySpan<byte>((void*)(headerSize + physicalAddress), entryLength), currentAddress, nextAddress);
                 epoch.Suspend();
                 return true;
             }

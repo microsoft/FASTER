@@ -36,22 +36,9 @@ namespace FASTER.test.LockTests
             internal readonly ManualResetEventSlim mres = new();
             readonly Random rng = new(101);
 
-            // CopyWriter takes no Input
             internal Input readCacheInput;
 
-            public Functions() : base(true)
-            {
-            }
-
-            public override void CopyWriter(ref int key, ref int src, ref int dst, ref RecordInfo recordInfo, long address)
-            {
-                int output = default;
-                int usedValueLength = 0;
-                SingleWriter(ref key, ref readCacheInput, ref src, ref dst, ref output, ref recordInfo, ref usedValueLength, -1, address);
-            }
-
-            public override bool SingleWriter(ref int key, ref Input input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, 
-                    ref int usedValueLength, int fullValueLength, long address)
+            public override bool SingleWriter(ref int key, ref Input input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason)
             {
                 // In the wait case we are waiting for a signal that something else has completed, e.g. a pending Read, by the thread with SetEvent.
                 if ((input.flags & LockFunctionFlags.WaitForEvent) != 0)
@@ -98,7 +85,7 @@ namespace FASTER.test.LockTests
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, ReadCacheSettings = readCacheSettings},
-                comparer: new ChainTests.ChainComparer(mod), supportsLocking: true);
+                comparer: new ChainTests.ChainComparer(mod), disableLocking: false);
             session = fkv.For(new Functions()).NewSession<Functions>();
         }
 

@@ -11,7 +11,7 @@ namespace FASTER.core
     {
         void UnsafeResumeThread();
         void UnsafeSuspendThread();
-        void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint);
+        void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint);
     }
 
     /// <summary>
@@ -26,10 +26,12 @@ namespace FASTER.core
     internal interface IFasterSession<Key, Value, Input, Output, Context> : IFasterSession, IVariableLengthStruct<Value, Input>
     {
         #region Optional features supported by this implementation
-        bool SupportsLocking { get; }
+        bool DisableLocking { get; }
 
         bool IsManualLocking { get; }
         #endregion Optional features supported by this implementation
+
+        SessionType SessionType { get; }
 
         #region Reads
         bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address);
@@ -38,40 +40,35 @@ namespace FASTER.core
         #endregion reads
 
         #region Upserts
-        bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo,
-                            ref int usedValueLength, int fullValueLength, long address);
-        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address);
-        void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
-        void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address);
-        bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed);
-        void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx);
+        bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason writeReason);
+        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason writeReason);
+        bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, out bool lockFailed);
         #endregion Upserts
 
         #region RMWs
         #region InitialUpdater
-        bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output);
-        bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address);
-        void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address);
+        bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref UpdateInfo updateInfo);
+        bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
+        void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
         #endregion InitialUpdater
 
         #region CopyUpdater
-        bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output);
-        bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address);
-        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address);
+        bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref UpdateInfo updateInfo);
+        bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
+        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
         #endregion CopyUpdater
 
         #region InPlaceUpdater
-        bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed);
+        bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, out bool lockFailed);
         #endregion InPlaceUpdater
 
         void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata);
         #endregion RMWs
 
         #region Deletes
-        void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address);
-        void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address);
-        bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref RecordInfo recordInfo, out int fullRecordLength , long address, out bool lockFailed);
-        void DeleteCompletionCallback(ref Key key, Context ctx);
+        void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
+        void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address);
+        bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, out int fullRecordLength, long address, out bool lockFailed);
         #endregion Deletes
 
         #region Key and Value management

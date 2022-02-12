@@ -17,51 +17,37 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public abstract class FunctionsBase<Key, Value, Input, Output, Context> : IFunctions<Key, Value, Input, Output, Context>
     {
-        protected readonly bool locking;
-        protected readonly bool postOps;
-
-        protected FunctionsBase(bool locking = false, bool postOps = false)
-        {
-            this.locking = locking;
-            this.postOps = postOps;
-        }
-
         /// <inheritdoc/>
         public virtual bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
         /// <inheritdoc/>
         public virtual bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
 
         /// <inheritdoc/>
-        public virtual bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, 
-                ref int usedValueLength, int fullValueLength, long address) { dst = src; return true; }
+        public virtual bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { dst = src; return true; }
         /// <inheritdoc/>
-        public virtual bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo,
-                ref int usedValueLength, int fullValueLength, long address) { dst = src; return true; }
+        public virtual bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason writeReason) { dst = src; return true; }
         /// <inheritdoc/>
-        public virtual void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
-        public virtual void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => dst = src;
+        public virtual void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason writeReason) { }
 
         /// <inheritdoc/>
-        public virtual bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo,
-                ref int usedValueLength, int fullValueLength, long address) => true;
+        public virtual bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
         /// <inheritdoc/>
-        public virtual void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
+        public virtual void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { }
         /// <inheritdoc/>
-        public virtual bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output) => true;
+        public virtual bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref UpdateInfo updateInfo) => true;
         /// <inheritdoc/>
-        public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
+        public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref UpdateInfo updateInfo) => true;
         /// <inheritdoc/>
-        public virtual bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => true;
+        public virtual bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
         /// <inheritdoc/>
-        public virtual bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) => true;
+        public virtual bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
         /// <inheritdoc/>
-        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo,
-                ref int usedValueLength, int fullValueLength, long address) => true;
+        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
 
         /// <inheritdoc/>
-        public virtual void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) { value = default; }
-        public virtual void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
-        public virtual bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => true;
+        public virtual void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { value = default; }
+        public virtual void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { }
+        public virtual bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
 
         public virtual void DisposeKey(ref Key key) { }
         public virtual void DisposeValue(ref Value value) { }
@@ -71,11 +57,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>
-        public virtual void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx) { }
-        /// <inheritdoc/>
-        public virtual void DeleteCompletionCallback(ref Key key, Context ctx) { }
-        /// <inheritdoc/>
-        public virtual void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
+        public virtual void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint) { }
     }
 
     /// <summary>
@@ -86,8 +68,6 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     public class SimpleFunctions<Key, Value, Context> : FunctionsBase<Key, Value, Value, Value, Context>
     {
-        public SimpleFunctions(bool locking = false, bool postOps = false) : base(locking, postOps) { }
-
         private readonly Func<Value, Value, Value> merger;
         public SimpleFunctions() => merger = (l, r) => l;
         public SimpleFunctions(Func<Value, Value, Value> merger) => this.merger = merger;
@@ -107,42 +87,22 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref RecordInfo recordInfo,
-                ref int usedValueLength, int fullValueLength, long address) { dst = src; return true; }
+        public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) {value = input; return true; }
         /// <inheritdoc/>
-        public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref RecordInfo recordInfo,
-                ref int usedValueLength, int fullValueLength, long address) { dst = src; return true; }
 
-        /// <inheritdoc/>
-        public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo,
-                ref int usedValueLength, int fullValueLength, long address) {value = input; return true; }
-        /// <inheritdoc/>
-        public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+        public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
         {
             newValue = merger(input, oldValue); 
             return true;
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo,
-                ref int usedValueLength, int fullValueLength, long address) { value = merger(input, value); return true; }
-
-        /// <inheritdoc/>
-        public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordMetadata recordMetadata) { }
-        /// <inheritdoc/>
-        public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordMetadata recordMetadata) { }
-        /// <inheritdoc/>
-        public override void UpsertCompletionCallback(ref Key key, ref Value input, ref Value value, Context ctx) { }
-        /// <inheritdoc/>
-        public override void DeleteCompletionCallback(ref Key key, Context ctx) { }
-        /// <inheritdoc/>
-        public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
+        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { value = merger(input, value); return true; }
     }
 
     public class SimpleFunctions<Key, Value> : SimpleFunctions<Key, Value, Empty>
     {
         public SimpleFunctions() : base() { }
-        public SimpleFunctions(bool locking = false, bool postOps = false) : base(locking, postOps) { }
         public SimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
     }
 }

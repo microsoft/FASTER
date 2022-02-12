@@ -70,8 +70,6 @@ namespace FASTER.core
 
         public bool Equals(RecordInfo other) => this.word == other.word;
 
-        public long GetHashCode64() => Utility.GetHashCode(this.word);
-
         public bool IsLocked => (word & (kExclusiveLockBitMask | kSharedLockMaskInWord)) != 0;
 
         public bool IsLockedExclusive => (word & kExclusiveLockBitMask) != 0;
@@ -349,7 +347,13 @@ namespace FASTER.core
             }
         }
 
-        public void Unseal() => word &= ~kSealedBitMask;
+        internal void Unseal()
+        {
+            Debug.Assert(Sealed, "Record should have been sealed");
+            word &= ~kSealedBitMask;
+        }
+
+        internal void UnsealIfSealed() => word &= ~kSealedBitMask;
 
         public bool DirtyAtomic
         {

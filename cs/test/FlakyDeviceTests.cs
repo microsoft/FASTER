@@ -137,7 +137,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         public async ValueTask FlakyLogTestTolerateFailure([Values] IteratorType iteratorType)
         {
-            var errorOptions = new ErrorSimulationOptions
+             var errorOptions = new ErrorSimulationOptions
             {
                 readTransientErrorRate = 0,
                 readPermanentErrorRate = 0,

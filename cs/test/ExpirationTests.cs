@@ -29,7 +29,7 @@ namespace FASTER.test.Expiration
 
         [Flags] internal enum Funcs { NeedInitialUpdate = 0x0001, NeedCopyUpdate = 0x0002, InPlaceUpdater = 0x0004, InitialUpdater, CopyUpdater = 0x0008, 
                                       SingleReader = 0x0010, ConcurrentReader = 0x0020,
-                                      RMWCompletionCallback = 0x0100, ReadCompletionCallback = 0x0200, UpsertCompletionCallback = 0x0400,
+                                      RMWCompletionCallback = 0x0100, ReadCompletionCallback = 0x0200,
                                       SkippedCopyUpdate = NeedCopyUpdate | RMWCompletionCallback,
                                       DidCopyUpdate = NeedCopyUpdate | CopyUpdater | RMWCompletionCallback };
 
@@ -134,7 +134,7 @@ namespace FASTER.test.Expiration
 
             static bool IsExpired(int key, int value) => value == GetValue(key) + 2;
 
-            public override bool NeedInitialUpdate(ref int key, ref ExpirationInput input, ref ExpirationOutput output)
+            public override bool NeedInitialUpdate(ref int key, ref ExpirationInput input, ref ExpirationOutput output, ref UpdateInfo updateInfo)
             {
                 output.AddFunc(Funcs.NeedInitialUpdate);
                 switch (input.testOp)
@@ -164,7 +164,7 @@ namespace FASTER.test.Expiration
                 }
             }
 
-            public override bool NeedCopyUpdate(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref ExpirationOutput output)
+            public override bool NeedCopyUpdate(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref ExpirationOutput output, ref UpdateInfo updateInfo)
             {
                 output.AddFunc(Funcs.NeedCopyUpdate);
                 switch (input.testOp)
@@ -195,7 +195,7 @@ namespace FASTER.test.Expiration
             }
 
             /// <inheritdoc/>
-            public override bool CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address)
+            public override bool CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
             {
                 output.AddFunc(Funcs.CopyUpdater);
                 switch (input.testOp)
@@ -285,8 +285,7 @@ namespace FASTER.test.Expiration
                 }
             }
 
-            public override bool InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo,
-                    ref int usedValueLength, int fullValueLength, long address)
+            public override bool InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
             {
                 output.AddFunc(Funcs.InitialUpdater);
                 value.field1 = input.value;
@@ -295,8 +294,7 @@ namespace FASTER.test.Expiration
                 return true;
             }
 
-            public override bool InPlaceUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo,
-                    ref int usedValueLength, int fullValueLength, long address)
+            public override bool InPlaceUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
             {
                 output.AddFunc(Funcs.InPlaceUpdater);
                 switch (input.testOp)
@@ -391,11 +389,6 @@ namespace FASTER.test.Expiration
                 output.AddFunc(Funcs.ReadCompletionCallback);
             }
 
-            public override void UpsertCompletionCallback(ref int key, ref ExpirationInput input, ref VLValue value, Empty ctx)
-            {
-                throw new NotImplementedException("TODO - UpsertCompletionCallback");
-            }
-
             // Read functions
             public override bool SingleReader(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, long address)
             {
@@ -417,14 +410,14 @@ namespace FASTER.test.Expiration
 
             // Upsert functions
             public override bool SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo,
-                    ref int usedValueLength, int fullValueLength, long address)
+                    ref UpdateInfo updateInfo, long address, WriteReason reason)
             {
                 src.CopyTo(ref dst);
                 return true;
             }
 
             public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo,
-                    ref int usedValueLength, int fullValueLength, long address)
+                    ref UpdateInfo updateInfo, long address)
             {
                 src.CopyTo(ref dst);
                 return true;

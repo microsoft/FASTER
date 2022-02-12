@@ -14,42 +14,41 @@ namespace FASTER.core
             _functions = functions;
         }
 
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
+        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint) { }
 
         /// <summary>
         /// No reads during compaction
         /// </summary>
         public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) => true;
 
-        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) { value = default; }
+        public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { value = default; }
 
-        public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) { }
+        public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { }
 
         /// <summary>
         /// No ConcurrentDeleter needed for compaction
         /// </summary>
-        public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => true;
+        public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
 
         /// <summary>
         /// For compaction, we never perform concurrent writes as rolled over data defers to
         /// newly inserted data for the same key.
         /// </summary>
-        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => true;
+        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
 
-        public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => true;
+        public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
         
-        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) => true;
+        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
 
-        public void DeleteCompletionCallback(ref Key key, Context ctx) { }
+        public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
+        
+        public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) { }
 
-        public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => true;
-        public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) { }
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address) => true;
 
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) => true;
+        public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref UpdateInfo updateInfo) => true;
 
-        public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output) => true;
-
-        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output) => true;
+        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref UpdateInfo updateInfo) => true;
 
         public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
 
@@ -63,17 +62,10 @@ namespace FASTER.core
         /// <summary>
         /// Write compacted live value to store
         /// </summary>
-        public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref int usedValueLength, int fullValueLength, long address) 
-            => _functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref usedValueLength, fullValueLength, address);
+        public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason) 
+            => _functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref updateInfo, address, reason);
 
-        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) { }
-
-        public void CopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-            => _functions.CopyWriter(ref key, ref src, ref dst, ref recordInfo, address);
-
-        public void PostCopyWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) { }
-
-        public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx) { }
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason) { }
 
         public void DisposeKey(ref Key key) { }
 
