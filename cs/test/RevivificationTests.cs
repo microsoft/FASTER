@@ -155,7 +155,7 @@ namespace FASTER.test.Revivification
                 // SpanByte reads the available length as value.Length
                 Assert.AreEqual(recordInfo.Filler ? updateInfo.FullValueLength : expectedSingleDestLength, value.Length);
                 Assert.AreEqual(expectedSingleFullValueLength, updateInfo.FullValueLength);
-                Assert.AreEqual(0, updateInfo.UsedValueLength);
+                Assert.AreEqual(expectedSingleFullValueLength, updateInfo.UsedValueLength);
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
                 if (input.Length > value.Length)
                     return false;
@@ -170,7 +170,7 @@ namespace FASTER.test.Revivification
                 // SpanByte reads the available length as newValue.Length
                 Assert.AreEqual(recordInfo.Filler ? updateInfo.FullValueLength : expectedSingleDestLength, newValue.Length);
                 Assert.AreEqual(expectedSingleFullValueLength, updateInfo.FullValueLength);
-                Assert.AreEqual(0, updateInfo.UsedValueLength);
+                Assert.AreEqual(expectedSingleFullValueLength, updateInfo.UsedValueLength);
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
                 if (input.Length > newValue.Length)
                     return false;
@@ -184,7 +184,7 @@ namespace FASTER.test.Revivification
                 Assert.AreEqual(expectedInputLength, input.Length);
                 Assert.AreEqual(expectedConcurrentDestLength, value.Length);
                 Assert.AreEqual(expectedConcurrentFullValueLength, updateInfo.FullValueLength);
-                Assert.AreEqual(RoundUpSpanByteLength(expectedConcurrentDestLength), updateInfo.UsedValueLength);
+                Assert.AreEqual(RoundUpSpanByteUsedLength(expectedConcurrentDestLength), updateInfo.UsedValueLength);
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
                 if (input.Length > value.Length)
                     return false;
@@ -199,7 +199,7 @@ namespace FASTER.test.Revivification
             {
                 Assert.AreEqual(expectedSingleDestLength, value.Length);
                 Assert.AreEqual(expectedSingleFullValueLength, updateInfo.FullValueLength);
-                Assert.AreEqual(RoundUpSpanByteLength(expectedConcurrentDestLength), updateInfo.UsedValueLength);  // concurrent bc this has data in it
+                Assert.AreEqual(RoundUpSpanByteUsedLength(expectedConcurrentDestLength), updateInfo.UsedValueLength);  // concurrent bc this has data in it
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
                 updateInfo.UsedValueLength = 0;
                 value = default;
@@ -209,7 +209,7 @@ namespace FASTER.test.Revivification
             {
                 Assert.AreEqual(expectedConcurrentDestLength, value.Length);
                 Assert.AreEqual(expectedConcurrentFullValueLength, updateInfo.FullValueLength);
-                Assert.AreEqual(RoundUpSpanByteLength(expectedConcurrentDestLength), updateInfo.UsedValueLength);
+                Assert.AreEqual(RoundUpSpanByteUsedLength(expectedConcurrentDestLength), updateInfo.UsedValueLength);
                 Assert.GreaterOrEqual(address, fht.hlog.ReadOnlyAddress);
                 updateInfo.UsedValueLength = 0;
                 value = default;
@@ -239,9 +239,15 @@ namespace FASTER.test.Revivification
             public int GetLength(ref SpanByte value, ref SpanByte input) => input.TotalSize;
         }
 
-        static int RoundUpSpanByteLength(SpanByte input) => FasterKV<SpanByte, SpanByte>.RoundupLength(input.TotalSize);
+        static int RoundUpSpanByteFullValueLength(SpanByte input) => RoundupTotalSizeFullValue(input.TotalSize);
 
-        static int RoundUpSpanByteLength(int dataLength) => FasterKV<SpanByte, SpanByte>.RoundupLength(sizeof(int) + dataLength);
+        static int RoundUpSpanByteFullValueLength(int dataLength) => RoundupTotalSizeFullValue(sizeof(int) + dataLength);
+
+        internal static int RoundupTotalSizeFullValue(int length) => (length + VariableLengthBlittableAllocator<SpanByte, SpanByte>.kRecordAlignment - 1) & (~(VariableLengthBlittableAllocator<SpanByte, SpanByte>.kRecordAlignment - 1));
+
+        static int RoundUpSpanByteUsedLength(int dataLength) => RoundUpTotalSizeUsed(sizeof(int) + dataLength);
+
+        static int RoundUpTotalSizeUsed(int totalSize) => FasterKV<SpanByte, SpanByte>.RoundupLength(totalSize);
 
         const int numRecords = 200;
         const int DefaultMaxRecsPerBin = 1024;
@@ -308,7 +314,7 @@ namespace FASTER.test.Revivification
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
 
-            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteLength(input);
+            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(input);
 
             SpanByteAndMemory output = new();
 
@@ -345,8 +351,8 @@ namespace FASTER.test.Revivification
 
             functions.expectedSingleDestLength = functions.expectedInputLength;
             functions.expectedConcurrentDestLength = InitialLength; // This is from the initial Populate()
-            functions.expectedSingleFullValueLength = RoundUpSpanByteLength(functions.expectedInputLength);
-            functions.expectedConcurrentFullValueLength = RoundUpSpanByteLength(InitialLength);
+            functions.expectedSingleFullValueLength = RoundUpSpanByteFullValueLength(functions.expectedInputLength);
+            functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
             Span<byte> inputVec = stackalloc byte[functions.expectedInputLength];
             var input = SpanByte.FromFixedSpan(inputVec);
@@ -362,14 +368,14 @@ namespace FASTER.test.Revivification
             if (growth == Growth.Shrink)
             {
                 // What's there now will be what is passed to ConcurrentWriter/IPU (if Shrink, we kept the same value we allocated initially)
-                functions.expectedConcurrentFullValueLength = growth == Growth.Shrink ? RoundUpSpanByteLength(InitialLength) : functions.expectedSingleFullValueLength;
+                functions.expectedConcurrentFullValueLength = growth == Growth.Shrink ? RoundUpSpanByteFullValueLength(InitialLength) : functions.expectedSingleFullValueLength;
 
                 // Now let's see if we have the correct expected extra length in the destination.
                 inputVec = stackalloc byte[InitialLength / 2];  // Grow this from ShrinkLength to InitialLength
                 input = SpanByte.FromFixedSpan(inputVec);
                 functions.expectedInputLength = InitialLength / 2;
                 functions.expectedConcurrentDestLength = InitialLength / 2;
-                functions.expectedSingleFullValueLength = RoundUpSpanByteLength(functions.expectedInputLength);
+                functions.expectedSingleFullValueLength = RoundUpSpanByteFullValueLength(functions.expectedInputLength);
 
                 if (updateOp == UpdateOp.Upsert)
                     session.Upsert(ref key, ref input, ref input, ref output);
@@ -402,7 +408,7 @@ namespace FASTER.test.Revivification
             functions.expectedInputLength = InitialLength / 2;
             functions.expectedSingleDestLength = InitialLength / 2;
             functions.expectedConcurrentDestLength = InitialLength;
-            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteLength(InitialLength);
+            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
             session.ctx.phase = phase;
             if (updateOp == UpdateOp.Upsert)
@@ -437,7 +443,7 @@ namespace FASTER.test.Revivification
             functions.expectedInputLength = InitialLength / 2;
             functions.expectedSingleDestLength = InitialLength / 2;
             functions.expectedConcurrentDestLength = InitialLength;
-            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteLength(input);
+            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(input);
 
             session.ctx.phase = phase;
             if (updateOp == UpdateOp.Upsert)
@@ -493,7 +499,7 @@ namespace FASTER.test.Revivification
 
             functions.expectedSingleDestLength = InitialLength;
             functions.expectedConcurrentDestLength = InitialLength;
-            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteLength(InitialLength);
+            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
             return tailAddress;
         }
@@ -554,7 +560,7 @@ namespace FASTER.test.Revivification
             // A revivified record will have the full initial value length. A new record here will be created with the half-size input
             // (which we do in these tests because we retrieve from the "next higher bin"
             if (!expectReviv)
-                functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteLength(input);
+                functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(input);
 
             session.ctx.phase = phase;
             if (updateOp == UpdateOp.Upsert)
@@ -684,7 +690,7 @@ namespace FASTER.test.Revivification
 
             // These come from the existing initial allocation so keep the full length
             functions.expectedConcurrentDestLength = InitialLength;
-            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteLength(InitialLength);
+            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
             // Revivify
             for (var ii = 0; ii < numRecords; ++ii)
@@ -993,7 +999,7 @@ namespace FASTER.test.Revivification
             functions.expectedInputLength = OversizeLength;
             functions.expectedSingleDestLength = OversizeLength;
             functions.expectedConcurrentDestLength = OversizeLength;
-            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteLength(OversizeLength);
+            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(OversizeLength);
 
             // Initial insert of the oversize record
             if (updateOp == UpdateOp.Upsert)
@@ -1036,7 +1042,7 @@ namespace FASTER.test.Revivification
             functions.expectedInputLength = InitialLength / 2;
             functions.expectedSingleDestLength = InitialLength / 2;
             functions.expectedConcurrentDestLength = InitialLength;
-            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteLength(InitialLength);
+            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
             // Use a different key below RO than we deleted; this will go pending to retrieve it
             Span<byte> keyVec = stackalloc byte[10];
@@ -1053,7 +1059,7 @@ namespace FASTER.test.Revivification
                 functions.expectedInputLength = GrowLength;
                 functions.expectedSingleDestLength = GrowLength;
                 functions.expectedConcurrentDestLength = GrowLength;
-                functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteLength(GrowLength);
+                functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(GrowLength);
 
                 keyVec.Fill(numRecords + 1);
                 Assert.AreEqual(Status.OK, session.Upsert(ref key, ref input, ref input, ref output));
