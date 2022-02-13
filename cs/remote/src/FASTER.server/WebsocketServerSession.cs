@@ -628,7 +628,6 @@ namespace FASTER.server
             CreateSendPacketHeader(ref d, packetLen);
 
             *(int*)dtemp = (packetLen - sizeof(int));
-            *(int*)respObj.bufferPtr = -(packetLen - sizeof(int));
             try
             {
                 messageManager.Send(socket, respObj, (int)(d - respObj.bufferPtr), (int)(dcurr - d));
