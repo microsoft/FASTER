@@ -561,7 +561,7 @@ namespace FASTER.test.statemachine
     {
         public int checkpointCallbackExpectation = 0;
 
-        public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
+        public override void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
         {
             switch (checkpointCallbackExpectation)
             {

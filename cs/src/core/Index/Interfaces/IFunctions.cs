@@ -254,9 +254,10 @@ namespace FASTER.core
         /// <summary>
         /// Checkpoint completion callback (called per client session)
         /// </summary>
-        /// <param name="sessionId">Session ID reporting persistence</param>
+        /// <param name="sessionID">ID of session reporting persistence</param>
+        /// <param name="sessionName">Name of session reporting persistence</param>
         /// <param name="commitPoint">Commit point descriptor</param>
-        void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint);
+        void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint);
         #endregion Checkpointing
     }
 

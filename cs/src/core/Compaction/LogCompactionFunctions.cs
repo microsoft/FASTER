@@ -14,7 +14,7 @@ namespace FASTER.core
             _functions = functions;
         }
 
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
+        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint) { }
 
         /// <summary>
         /// No reads during compaction

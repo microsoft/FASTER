@@ -11,7 +11,7 @@ namespace FASTER.core
     {
         void UnsafeResumeThread();
         void UnsafeSuspendThread();
-        void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint);
+        void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint);
     }
 
     /// <summary>

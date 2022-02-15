@@ -241,7 +241,7 @@ namespace FASTER.core
             // Ensure all currently started entries will enqueue before we declare log closed
             epoch.BumpCurrentEpoch(() =>
             {
-                CommitInternal(out _, out _, false, null, long.MaxValue, null);
+                CommitInternal(out _, out _, false, Array.Empty<byte>(), long.MaxValue, null);
             });
 
             // Ensure progress even if there is no thread in epoch table
@@ -310,9 +310,117 @@ namespace FASTER.core
                 Thread.Yield();
             return logicalAddress;
         }
+        
+        /// <summary>
+        /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
+        /// </summary>
+        /// <param name="entry">Entry to be enqueued to log</param>
+        /// <typeparam name="T">type of entry</typeparam>
+        /// <returns>Logical address of added entry</returns>
+        public long Enqueue<T>(T entry) where T : ILogEnqueueEntry
+        {
+            long logicalAddress;
+            while (!TryEnqueue(entry, out logicalAddress))
+                Thread.Yield();
+            return logicalAddress;
+        }
+
+        /// <summary>
+        /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
+        /// </summary>
+        /// <param name="entries">Batch of entries to be enqueued to log</param>
+        /// <typeparam name="T">type of entry</typeparam>
+        /// <returns>Logical address of added entry</returns>
+        public long Enqueue<T>(IEnumerable<T> entries) where T : ILogEnqueueEntry
+        {
+            long logicalAddress;
+            while (!TryEnqueue(entries, out logicalAddress))
+                Thread.Yield();
+            return logicalAddress;
+        }
         #endregion
 
         #region TryEnqueue
+        /// <summary>
+        /// Try to enqueue entry to log (in memory). If it returns true, we are
+        /// done. If it returns false, we need to retry.
+        /// </summary>
+        /// <param name="entry">Entry to be enqueued to log</param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <typeparam name="T">type of entry</typeparam>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryEnqueue<T>(T entry, out long logicalAddress) where T : ILogEnqueueEntry
+        {
+            logicalAddress = 0;
+            var length = entry.SerializedLength;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+                if (logicalAddress == 0)
+                {
+                    epoch.Suspend();
+                    if (cannedException != null) throw cannedException;
+                    return false;
+                }
+            
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            entry.SerializeTo(new Span<byte>((void *) (headerSize + physicalAddress), length));
+            SetHeader(length, (byte*)physicalAddress);
+            epoch.Suspend();
+            return true;
+        }
+
+        /// <summary>
+        /// Try to enqueue batch of entries as a single atomic unit (to memory). Entire 
+        /// batch needs to fit on one log page.
+        /// </summary>
+        /// <param name="entries">Batch to be appended to log</param>
+        /// <param name="logicalAddress">Logical address of first added entry</param>
+        /// <typeparam name="T">type of entry</typeparam>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryEnqueue<T>(IEnumerable<T> entries, out long logicalAddress) where T : ILogEnqueueEntry
+        {
+            logicalAddress = 0;
+
+            var allocatedLength = 0;
+            foreach (var entry in entries)
+            {
+                allocatedLength += Align(entry.SerializedLength) + headerSize;
+            }
+
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            foreach(var entry in entries)
+            {
+                var length = entry.SerializedLength;
+                entry.SerializeTo(new Span<byte>((void *)(headerSize + physicalAddress), length));
+                SetHeader(length, (byte*)physicalAddress);
+                physicalAddress += Align(length) + headerSize;
+            }
+
+            epoch.Suspend();
+            return true;
+        }
+        
         /// <summary>
         /// Try to enqueue entry to log (in memory). If it returns true, we are
         /// done. If it returns false, we need to retry.
@@ -332,6 +440,7 @@ namespace FASTER.core
             if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
             if (logicalAddress == 0)
             {
                 epoch.Suspend();
@@ -382,8 +491,44 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Try to append a user-defined header byte and three SpanByte entries entries atomically to the log. If it returns true, we are
-        /// done. If it returns false, we need to retry.
+        /// Try to append a user-defined blittable struct header and two SpanByte entries entries atomically to the log.
+        /// If it returns true, we are done. If it returns false, we need to retry.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item1"></param>
+        /// <param name="item2"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+            where THeader : unmanaged
+        {
+            logicalAddress = 0;
+            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            SetHeader(length, physicalAddress);
+            epoch.Suspend();
+            return true;
+        }
+
+        /// <summary>
+        /// Try to append a user-defined blittable struct header and three SpanByte entries entries atomically to the log.
+        /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
@@ -391,10 +536,11 @@ namespace FASTER.core
         /// <param name="item3"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue(byte userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, out long logicalAddress)
+        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, out long logicalAddress)
+            where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(byte) + item1.TotalSize + item2.TotalSize + item3.TotalSize;
+            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize;
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -409,45 +555,10 @@ namespace FASTER.core
             }
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *physicalAddress = userHeader;
-            item1.CopyTo(physicalAddress + sizeof(byte));
-            item2.CopyTo(physicalAddress + sizeof(byte) + item1.TotalSize);
-            item3.CopyTo(physicalAddress + sizeof(byte) + item1.TotalSize + item2.TotalSize);
-            SetHeader(length, physicalAddress);
-            epoch.Suspend();
-            return true;
-        }
-
-        /// <summary>
-        /// Try to append a user-defined header byte and two SpanByte entries entries atomically to the log. If it returns true, we are
-        /// done. If it returns false, we need to retry.
-        /// </summary>
-        /// <param name="userHeader"></param>
-        /// <param name="item1"></param>
-        /// <param name="item2"></param>
-        /// <param name="logicalAddress">Logical address of added entry</param>
-        /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue(byte userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
-        {
-            logicalAddress = 0;
-            var length = sizeof(byte) + item1.TotalSize + item2.TotalSize;
-            int allocatedLength = headerSize + Align(length);
-            ValidateAllocatedLength(allocatedLength);
-
-            epoch.Resume();
-
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
-            {
-                epoch.Suspend();
-                if (cannedException != null) throw cannedException;
-                return false;
-            }
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *physicalAddress = userHeader;
-            item1.CopyTo(physicalAddress + sizeof(byte));
-            item2.CopyTo(physicalAddress + sizeof(byte) + item1.TotalSize);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
             SetHeader(length, physicalAddress);
             epoch.Suspend();
             return true;
@@ -485,7 +596,6 @@ namespace FASTER.core
             epoch.Suspend();
             return true;
         }
-
 
         /// <summary>
         /// Try to enqueue batch of entries as a single atomic unit (to memory). Entire 
@@ -594,6 +704,80 @@ namespace FASTER.core
             {
                 var flushEvent = @this.FlushEvent;
                 if (@this.TryEnqueue(readOnlySpanBatch, out logicalAddress))
+                    break;
+                // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                try
+                {
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                }
+                catch when (!token.IsCancellationRequested) { }
+            }
+
+            return logicalAddress;
+        }
+        
+        /// <summary>
+        /// Enqueue entry to log in memory (async) - completes after entry is 
+        /// appended to memory, NOT committed to storage.
+        /// </summary>
+        /// <param name="entry">Entry to enqueue</param>
+        /// <param name="token">Cancellation token</param>
+        /// <typeparam name="T">type of entry</typeparam>
+        /// <returns>Logical address of added entry</returns>
+        public ValueTask<long> EnqueueAsync<T>(T entry, CancellationToken token = default) where T : ILogEnqueueEntry
+        {
+            token.ThrowIfCancellationRequested();
+            if (TryEnqueue(entry, out long logicalAddress))
+                return new ValueTask<long>(logicalAddress);
+
+            return SlowEnqueueAsync(this, entry, token);
+        }
+
+        private static async ValueTask<long> SlowEnqueueAsync<T>(FasterLog @this, T entry, CancellationToken token)
+            where T : ILogEnqueueEntry
+        {
+            long logicalAddress;
+            while (true)
+            {
+                var flushEvent = @this.FlushEvent;
+                if (@this.TryEnqueue(entry, out logicalAddress))
+                    break;
+                // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
+                try
+                {
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                }
+                catch when (!token.IsCancellationRequested) { }
+            }
+
+            return logicalAddress;
+        }
+        
+        /// <summary>
+        /// Enqueue batch of entries to log in memory (async) - completes after entry is 
+        /// appended to memory, NOT committed to storage.
+        /// </summary>
+        /// <param name="entries">Entry to enqueue</param>
+        /// <param name="token">Cancellation token</param>
+        /// <typeparam name="T">type of entry</typeparam>
+        /// <returns>Logical address of first added entry</returns>
+        public ValueTask<long> EnqueueAsync<T>(IEnumerable<T> entries, CancellationToken token = default) where T : ILogEnqueueEntry
+        {
+            token.ThrowIfCancellationRequested();
+            if (TryEnqueue(entries, out long logicalAddress))
+                return new ValueTask<long>(logicalAddress);
+
+            return SlowEnqueueAsync(this, entries, token);
+        }
+
+        private static async ValueTask<long> SlowEnqueueAsync<T>(FasterLog @this, IEnumerable<T> entry, CancellationToken token)
+            where T : ILogEnqueueEntry
+        {
+            long logicalAddress;
+            while (true)
+            {
+                var flushEvent = @this.FlushEvent;
+                if (@this.TryEnqueue(entry, out logicalAddress))
                     break;
                 // Wait for *some* flush - failure can be ignored except if the token was signaled (which the caller should handle correctly)
                 try
@@ -858,6 +1042,38 @@ namespace FASTER.core
             WaitForCommit(logicalAddress + 1);
             return logicalAddress;
         }
+        
+        /// <summary>
+        /// Append entry to log - spin-waits until entry is committed to storage.
+        /// Does NOT itself issue flush!
+        /// </summary>
+        /// <param name="entry">Entry to be enqueued to log</param>
+        /// <typeparam name="T">type of entry</typeparam>
+        /// <returns>Logical address of added entry</returns>
+        public long EnqueueAndWaitForCommit<T>(T entry) where T : ILogEnqueueEntry
+        {
+            long logicalAddress;
+            while (!TryEnqueue(entry, out logicalAddress))
+                Thread.Yield();
+            WaitForCommit(logicalAddress + 1);
+            return logicalAddress;
+        }
+        
+        /// <summary>
+        /// Append entry to log - spin-waits until entry is committed to storage.
+        /// Does NOT itself issue flush!
+        /// </summary>
+        /// <param name="entries">Entries to be enqueued to log</param>
+        /// <typeparam name="T">type of entry</typeparam>
+        /// <returns>Logical address of first added entry</returns>
+        public long EnqueueAndWaitForCommit<T>(IEnumerable<T> entries) where T : ILogEnqueueEntry
+        {
+            long logicalAddress;
+            while (!TryEnqueue(entries, out logicalAddress))
+                Thread.Yield();
+            WaitForCommit(logicalAddress + 1);
+            return logicalAddress;
+        }
 
         #endregion
 
@@ -987,6 +1203,113 @@ namespace FASTER.core
                 flushEvent = FlushEvent;
                 commitTask = CommitTask;
                 if (TryEnqueue(readOnlySpanBatch, out logicalAddress))
+                    break;
+                try
+                {
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                }
+                catch when (!token.IsCancellationRequested) { }
+            }
+
+            // Phase 2: wait for commit/flush to storage
+            // Since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
+            while (true)
+            {
+                LinkedCommitInfo linkedCommitInfo;
+                try
+                {
+                    linkedCommitInfo = await commitTask.WithCancellationAsync(token).ConfigureAwait(false);
+                }
+                catch (CommitFailureException e)
+                {
+                    linkedCommitInfo = e.LinkedCommitInfo;
+                    if (logicalAddress >= linkedCommitInfo.CommitInfo.FromAddress && logicalAddress < linkedCommitInfo.CommitInfo.UntilAddress)
+                        throw;
+                }
+                if (linkedCommitInfo.CommitInfo.UntilAddress < logicalAddress + 1)
+                    commitTask = linkedCommitInfo.NextTask;
+                else
+                    break;
+            }
+
+            return logicalAddress;
+        }
+        
+        /// <summary>
+        /// Append entry to log (async) - completes after entry is committed to storage.
+        /// Does NOT itself issue flush!
+        /// </summary>
+        /// <param name="entry">Entry to enqueue</param>
+        /// <param name="token">Cancellation token</param>
+        /// <typeparam name="T">type of entry</typeparam>
+        /// <returns>Logical address of added entry</returns>
+        public async ValueTask<long> EnqueueAndWaitForCommitAsync<T>(T entry, CancellationToken token = default) where T : ILogEnqueueEntry
+        {
+            token.ThrowIfCancellationRequested();
+            long logicalAddress;
+            CompletionEvent flushEvent;
+            Task<LinkedCommitInfo> commitTask;
+
+            // Phase 1: wait for commit to memory
+            while (true)
+            {
+                flushEvent = FlushEvent;
+                commitTask = CommitTask;
+                if (TryEnqueue(entry, out logicalAddress))
+                    break;
+                try
+                {
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                }
+                catch when (!token.IsCancellationRequested) { }
+            }
+
+            // Phase 2: wait for commit/flush to storage
+            // Since the task object was read before enqueueing, there is no need for the CommittedUntilAddress >= logicalAddress check like in WaitForCommit
+            while (true)
+            {
+                LinkedCommitInfo linkedCommitInfo;
+                try
+                {
+                    linkedCommitInfo = await commitTask.WithCancellationAsync(token).ConfigureAwait(false);
+                }
+                catch (CommitFailureException e)
+                {
+                    linkedCommitInfo = e.LinkedCommitInfo;
+                    if (logicalAddress >= linkedCommitInfo.CommitInfo.FromAddress && logicalAddress < linkedCommitInfo.CommitInfo.UntilAddress)
+                        throw;
+                }
+                if (linkedCommitInfo.CommitInfo.UntilAddress < logicalAddress + 1)
+                    commitTask = linkedCommitInfo.NextTask;
+                else
+                    break;
+            }
+
+            return logicalAddress;
+        }
+
+        /// <summary>
+        /// Append batch of entries to log (async) - completes after batch is committed to storage.
+        /// Does NOT itself issue flush!
+        /// </summary>
+        /// <param name="entries"> entries to enqueue</param>
+        /// <param name="token">Cancellation token</param>
+        /// <typeparam name="T">type of entry</typeparam>
+        /// <returns>Logical address of added entry</returns>
+        public async ValueTask<long> EnqueueAndWaitForCommitAsync<T>(IEnumerable<T> entries,
+            CancellationToken token = default) where T : ILogEnqueueEntry
+        {
+            token.ThrowIfCancellationRequested();
+            long logicalAddress;
+            CompletionEvent flushEvent;
+            Task<LinkedCommitInfo> commitTask;
+
+            // Phase 1: wait for commit to memory
+            while (true)
+            {
+                flushEvent = FlushEvent;
+                commitTask = CommitTask;
+                if (TryEnqueue(entries, out logicalAddress))
                     break;
                 try
                 {
