@@ -62,7 +62,10 @@ namespace FASTER.core
             /// <inheritdoc/>
             public void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext)
             {
-                currentCtx.ioPendingRequests.Remove(pendingContext.id);
+                if (!this.diskRequest.IsDefault())
+                {
+                    currentCtx.ioPendingRequests.Remove(pendingContext.id);
+                }
                 currentCtx.asyncPendingCount--;
                 currentCtx.pendingReads.Remove();
             }
