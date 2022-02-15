@@ -275,33 +275,28 @@ namespace FASTER.server
                     }
 
                     var nextBufOffset = offset;
+                    nextBufOffset += msglen;
 
                     while (fin == false)
                     {
-                        nextBufOffset += msglen;
-
-                        fin = ((buf[nextBufOffset]) & 0b10000000) != 0;
+                        fin = (buf[nextBufOffset] & 0b10000000) != 0;
 
                         nextBufOffset++;
-                        var nextMsgLen = buf[nextBufOffset] - 128; // & 0111 1111
+                        int nextMsgLen = buf[nextBufOffset] & 0b01111111; // & 0111 1111
 
-                        offset++;
                         nextBufOffset++;
 
                         if (nextMsgLen < 125)
                         {
                             nextBufOffset++;
-                            offset++;
                         }
                         else if (nextMsgLen == 126)
                         {
-                            offset += 3;
                             nextMsgLen = BitConverter.ToUInt16(new byte[] { buf[nextBufOffset + 1], buf[nextBufOffset] }, 0);
                             nextBufOffset += 2;
                         }
                         else if (nextMsgLen == 127)
                         {
-                            offset += 9;
                             nextMsgLen = (int)BitConverter.ToUInt64(new byte[] { buf[nextBufOffset + 7], buf[nextBufOffset + 6], buf[nextBufOffset + 5], buf[nextBufOffset + 4], buf[nextBufOffset + 3], buf[nextBufOffset + 2], buf[nextBufOffset + 1], buf[nextBufOffset] }, 0);
                             nextBufOffset += 8;
                         }
@@ -311,8 +306,9 @@ namespace FASTER.server
                         nextDecoderInfo.maskStart = nextBufOffset;
                         nextDecoderInfo.dataStart = nextBufOffset + 4;
                         decoderInfoList.Add(nextDecoderInfo);
-                        totalMsgLen += nextMsgLen;
-                        offset += 4;
+                        totalMsgLen += nextMsgLen; // Message length without the mask
+                        nextBufOffset += 4; // 4 bytes of masking
+                        nextBufOffset += nextMsgLen; // remaining message length
                     }
 
                     if (msglen == 2)
@@ -321,6 +317,7 @@ namespace FASTER.server
                         return false;
                     }
 
+                    offset = nextBufOffset;
                     completeWSCommand = true;
 
                     var decodedIndex = 0;
@@ -336,7 +333,7 @@ namespace FASTER.server
                         }
                     }
 
-                    offset += totalMsgLen;
+                    //offset += totalMsgLen;
                     readHead = offset;
                 }
 
