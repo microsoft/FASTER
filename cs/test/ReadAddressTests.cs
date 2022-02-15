@@ -80,43 +80,43 @@ namespace FASTER.test.readaddress
                 }
             }
 
-            public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+            public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
                 output.value = SetReadOutput(key.key, value.value);
-                output.address = address;
+                output.address = readInfo.Address;
                 return true;
             }
 
-            public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+            public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
                 output.value = SetReadOutput(key.key, value.value);
-                output.address = address;
+                output.address = readInfo.Address;
                 return true;
             }
 
             // Return false to force a chain of values.
-            public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address) => false;
+            public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) => false;
 
-            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) => false;
+            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) => false;
 
             // Record addresses
-            public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason)
+            public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, WriteReason reason)
             {
                 dst = src;
-                this.lastWriteAddress = address;
+                this.lastWriteAddress = updateInfo.Address;
             }
 
-            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
+            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
             {
-                this.lastWriteAddress = address;
-                output.address = address;
+                this.lastWriteAddress = updateInfo.Address;
+                output.address = updateInfo.Address;
                 output.value = value.value = input.value;
             }
 
-            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address)
+            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
             {
-                this.lastWriteAddress = address;
-                output.address = address;
+                this.lastWriteAddress = updateInfo.Address;
+                output.address = updateInfo.Address;
                 output.value = newValue.value = input.value;
             }
 

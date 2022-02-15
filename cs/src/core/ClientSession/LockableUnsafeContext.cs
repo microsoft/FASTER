@@ -492,18 +492,20 @@ namespace FASTER.core
             public bool DisableLocking => true;       // We only lock explicitly in Lock/Unlock, which are longer-duration locks.
 
             public bool IsManualLocking => true;
+
+            public SessionType SessionType => SessionType.LockableUnsafeContext;
             #endregion IFunctions - Optional features supported
 
             #region IFunctions - Reads
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
+            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo) 
+                => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address, out bool lockFailed)
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out bool lockFailed)
             {
                 lockFailed = false;
-                return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
+                return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
             }
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
@@ -515,61 +517,58 @@ namespace FASTER.core
 
             #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason) 
-                => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, reason);
+            public void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, WriteReason reason) 
+                => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref updateInfo, reason);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, WriteReason reason)
-                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address, reason);
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, WriteReason reason)
+                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref updateInfo, reason);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
+            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, out bool lockFailed)
             {
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 lockFailed = false;
-                return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, address);
+                return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref updateInfo);
             }
-
-            public void UpsertCompletionCallback(ref Key key, ref Input input, ref Value value, Context ctx)
-                => _clientSession.functions.UpsertCompletionCallback(ref key, ref input, ref value, ctx);
 #endregion IFunctions - Upserts
 
             #region IFunctions - RMWs
             #region InitialUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output)
-                => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output);
+            public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref UpdateInfo updateInfo)
+                => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output, ref updateInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+            public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) 
+                => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref updateInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) 
+                => _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref updateInfo);
             #endregion InitialUpdater
 
             #region CopyUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
-                => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
+            public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref UpdateInfo updateInfo)
+                => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output, ref updateInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
+            public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) 
+                => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref updateInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, address);
+            public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) 
+                => _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref updateInfo);
             #endregion CopyUpdater
 
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address, out bool lockFailed)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, out bool lockFailed)
             {
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 lockFailed = false;
-                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+                return _clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref updateInfo);
             }
 
             public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
@@ -580,22 +579,19 @@ namespace FASTER.core
 
             #region IFunctions - Deletes
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address) { value = default; }
+            public void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) { value = default; }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, long address) 
-                => _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, address);
+            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) 
+                => _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, ref updateInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address, out bool lockFailed)
+            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, out bool lockFailed)
             {
                 lockFailed = false;
                 recordInfo.Tombstone = true;
-                return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
+                return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, ref updateInfo);
             }
-
-            public void DeleteCompletionCallback(ref Key key, Context ctx)
-                => _clientSession.functions.DeleteCompletionCallback(ref key, ctx);
             #endregion IFunctions - Deletes
 
             #region Key and Value management

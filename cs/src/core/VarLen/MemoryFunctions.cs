@@ -22,13 +22,13 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override void SingleWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address, WriteReason reason)
+        public override void SingleWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, WriteReason reason)
         {
             src.CopyTo(dst);
         }
 
         /// <inheritdoc/>
-        public override bool ConcurrentWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref Key key, ref Memory<T> input, ref Memory<T> src, ref Memory<T> dst, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
         {
             if (dst.Length < src.Length)
             {
@@ -46,7 +46,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override bool SingleReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst, ref RecordInfo recordInfo, long address)
+        public override bool SingleReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
         {
             dst.Item1 = memoryPool.Rent(value.Length);
             dst.Item2 = value.Length;
@@ -55,7 +55,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override bool ConcurrentReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentReader(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
         {
             dst.Item1 = memoryPool.Rent(value.Length);
             dst.Item2 = value.Length;
@@ -64,22 +64,22 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
+        public override void InitialUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
         {
             input.CopyTo(value);
         }
 
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref Memory<T> input, ref Memory<T> oldValue, ref Memory<T> newValue, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
+        public override void CopyUpdater(ref Key key, ref Memory<T> input, ref Memory<T> oldValue, ref Memory<T> newValue, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
         {
             oldValue.CopyTo(newValue);
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, long address)
+        public override bool InPlaceUpdater(ref Key key, ref Memory<T> input, ref Memory<T> value, ref (IMemoryOwner<T>, int) output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
         {
             // The default implementation of IPU simply writes input to destination, if there is space
-            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref recordInfo, address);
+            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref recordInfo, ref updateInfo);
         }
     }
 }

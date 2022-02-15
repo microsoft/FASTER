@@ -189,7 +189,7 @@ while (r.Status == Status.PENDING)
 ### Pending Operations
 The sync form of `Read`, `Upsert`, `RMW`, and `Delete` may go pending due to IO operations. When a `Status.PENDING` is returned, you can call `CompletePending()` to wait for the results to arrive. It is generally most performant to issue many of these operations and call `CompletePending()` periodically or upon completion of a batch. An optional `wait` parameter allows you to wait until all pending operations issued on the session until that point are completed before this call returns. A second optional parameter, `spinWaitForCommit` allows you to further wait until all operations until that point are committed by a parallel checkpointing thread.
 
-Pending operations call the appropriate completion callback on the functions object: any or all of `ReadCompletionCallback`, `UpsertCompletionCallback`, `RMWCompletionCallback`, and `DeleteCompletionCallback` may be called, depending on the completed operation(s).
+Pending Read or RMW operations call the appropriate completion callback on the functions object: `ReadCompletionCallback` or `RMWCompletionCallback`, respectively, will be called.
 
 For ease of retrieving outputs from the calling code, there is also a `CompletePendingWithOutputs()` and a `CompletePendingWithOutputsAsync()` that return an iterator over the `Output`s that were completed.
 

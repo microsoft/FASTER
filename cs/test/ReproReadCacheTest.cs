@@ -18,13 +18,13 @@ namespace FASTER.test.ReadCacheTests
 
         class Functions : FunctionsBase<SpanByte, long, long, long, Context>
         {
-            public override bool ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref RecordInfo recordInfo, long address)
+            public override bool ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
                 dst = value;
                 return true;
             }
 
-            public override bool SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref RecordInfo recordInfo, long address)
+            public override bool SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
                 dst = value;
                 return true;

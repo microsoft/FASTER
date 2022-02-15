@@ -577,22 +577,22 @@ namespace FASTER.test
         {
             internal long expectedReadAddress;
 
-            public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address)
+            public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
-                Assign(ref value, ref dst, address);
+                Assign(ref value, ref dst, ref readInfo);
                 return true;
             }
 
-            public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, long address)
+            public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
-                Assign(ref value, ref dst, address);
+                Assign(ref value, ref dst, ref readInfo);
                 return true;
             }
 
-            void Assign(ref ValueStruct value, ref OutputStruct dst, long address)
+            void Assign(ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
             {
                 dst.value = value;
-                Assert.AreEqual(expectedReadAddress, address);
+                Assert.AreEqual(expectedReadAddress, readInfo.Address);
                 expectedReadAddress = -1;   // show that the test executed
             }
             public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)

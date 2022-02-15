@@ -38,7 +38,7 @@ namespace FASTER.test.LockTests
 
             internal Input readCacheInput;
 
-            public override void SingleWriter(ref int key, ref Input input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, long address, WriteReason reason)
+            public override void SingleWriter(ref int key, ref Input input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, WriteReason reason)
             {
                 // In the wait case we are waiting for a signal that something else has completed, e.g. a pending Read, by the thread with SetEvent.
                 if ((input.flags & LockFunctionFlags.WaitForEvent) != 0)
@@ -57,7 +57,7 @@ namespace FASTER.test.LockTests
                 return;
             }
 
-            public override bool SingleReader(ref int key, ref Input input, ref int value, ref int dst, ref RecordInfo recordInfo, long address)
+            public override bool SingleReader(ref int key, ref Input input, ref int value, ref int dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
                 // We should only be here if we are doing the initial read, before Upsert has taken place.
                 Assert.AreEqual(key + valueAdd, value, $"Key = {key}");
@@ -65,7 +65,7 @@ namespace FASTER.test.LockTests
                 return true;
             }
 
-            public override bool ConcurrentReader(ref int key, ref Input input, ref int value, ref int dst, ref RecordInfo recordInfo, long address)
+            public override bool ConcurrentReader(ref int key, ref Input input, ref int value, ref int dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
                 // We should only be here if the Upsert completed before the Read started; in this case we Read() the Upserted value.
                 Assert.AreEqual(key + valueAdd * 2, value, $"Key = {key}");
