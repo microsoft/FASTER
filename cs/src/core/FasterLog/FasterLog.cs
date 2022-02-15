@@ -1826,8 +1826,15 @@ namespace FASTER.core
 
                 if (headAddress == 0)
                     headAddress = Constants.kFirstValidAddress;
-                
-                allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
+
+                try
+                {
+                    allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
+                }
+                catch
+                {
+                    if (!tolerateDeviceFailure) throw;
+                }
             }
 
             iterators = CompleteRestoreFromCommit(info);
@@ -1890,7 +1897,14 @@ namespace FASTER.core
 
                 if (headAddress == 0)
                     headAddress = Constants.kFirstValidAddress;
-                allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
+                try
+                {
+                    allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
+                }
+                catch
+                {
+                    if (!tolerateDeviceFailure) throw;
+                }
             }
 
             iterators = CompleteRestoreFromCommit(info);
