@@ -60,7 +60,7 @@ namespace StoreAsyncApi
         static async Task AsyncOperator(int id)
         {
             using var session = faster.For(new CacheFunctions()).NewSession<CacheFunctions>(id.ToString());
-            Random rand = new Random(id);
+            Random rand = new(id);
 
             bool batched = true; // whether we batch upserts on session
             bool asyncUpsert = false; // whether we use sync or async upsert calls
@@ -87,7 +87,7 @@ namespace StoreAsyncApi
                         if (asyncUpsert)
                         {
                             var r = await session.UpsertAsync(ref key, ref value, context, seqNo++);
-                            while (r.Status == Status.PENDING)
+                            while (r.Status.IsPending)
                                 r = await r.CompleteAsync();
                         }
                         else
@@ -130,7 +130,7 @@ namespace StoreAsyncApi
                             for (int i = 0; i < batchSize; i++)
                             {
                                 var r = await taskBatch[i];
-                                while (r.Status == Status.PENDING)
+                                while (r.Status.IsPending)
                                     r = await r.CompleteAsync();
                             }
                         }
@@ -147,7 +147,7 @@ namespace StoreAsyncApi
             long lastTime = 0;
             long lastValue = numOps;
 
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
 
             while (true)

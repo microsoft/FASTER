@@ -141,7 +141,7 @@ namespace FASTER.test.recovery.sumstore.simple
             {
                 var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
                     session2.CompletePendingWithOutputs(out var outputs, wait: true);
                     Assert.IsTrue(outputs.Next());
@@ -150,7 +150,7 @@ namespace FASTER.test.recovery.sumstore.simple
                     outputs.Current.Dispose();
                 }
                 else
-                    Assert.AreEqual(Status.OK, status);
+                    Assert.IsTrue(status.IsFound);
                 Assert.AreEqual(key, output.value.numClicks);
             }
             session2.Dispose();
@@ -198,7 +198,7 @@ namespace FASTER.test.recovery.sumstore.simple
             {
                 var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                     session2.CompletePending(true);
                 else
                 {
@@ -257,7 +257,7 @@ namespace FASTER.test.recovery.sumstore.simple
     {
         public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
             Assert.AreEqual(key.adId, output.value.numClicks);
         }
 

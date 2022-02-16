@@ -51,33 +51,33 @@ namespace FASTER.test
             var value2 = new RMWValue { value = 2 };
 
             status = session.RMW(ref key, ref value1); // InitialUpdater + NOTFOUND
-            Assert.AreEqual(Status.NOTFOUND, status);
+            Assert.IsTrue(status.IsNotFound);
             Assert.IsTrue(value1.flag); // InitialUpdater is called
 
             status = session.RMW(ref key, ref value2); // InPlaceUpdater + OK
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsInPlaceUpdate);
 
             fht.Log.Flush(true);
             status = session.RMW(ref key, ref value2); // NeedCopyUpdate + OK
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsInPlaceUpdate);
 
             fht.Log.FlushAndEvict(true);
-            status = session.RMW(ref key, ref value2, Status.OK, 0); // PENDING + NeedCopyUpdate + OK
-            Assert.AreEqual(Status.PENDING, status);
+            status = session.RMW(ref key, ref value2, new(StatusCode.OK), 0); // PENDING + NeedCopyUpdate + OK
+            Assert.IsTrue(status.IsPending);
             session.CompletePending(true);
 
             // Test stored value. Should be value1
             var output = new RMWValue();
-            status = session.Read(ref key, ref value1, ref output, Status.OK, 0);
-            Assert.AreEqual(Status.PENDING, status);
+            status = session.Read(ref key, ref value1, ref output, new(StatusCode.OK), 0);
+            Assert.IsTrue(status.IsPending);
             session.CompletePending(true);
 
             status = session.Delete(ref key);
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
             session.CompletePending(true);
             fht.Log.FlushAndEvict(true);
-            status = session.RMW(ref key, ref value2, Status.NOTFOUND, 0); // PENDING + InitialUpdater + NOTFOUND
-            Assert.AreEqual(Status.PENDING, status);
+            status = session.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.NewAppend), 0); // PENDING + InitialUpdater + NOTFOUND
+            Assert.IsTrue(status.IsPending);
             session.CompletePending(true);
         }
     }
@@ -121,7 +121,7 @@ namespace FASTER.test
         {
             Assert.AreEqual(ctx, status);
 
-            if (status == Status.NOTFOUND)
+            if (status.IsNotFound)
                 Assert.IsTrue(input.flag); // InitialUpdater is called.
         }
 

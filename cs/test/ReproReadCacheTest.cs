@@ -32,7 +32,7 @@ namespace FASTER.test.ReadCacheTests
 
             public override void ReadCompletionCallback(ref SpanByte key, ref long input, ref long output, Context context, Status status, RecordMetadata recordMetadata)
             {
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound);
                 Assert.AreEqual(input, output);
                 context.Status = status;
             }
@@ -75,13 +75,13 @@ namespace FASTER.test.ReadCacheTests
                     long output = 0;
                     var status = session.Read(ref sb, ref input, ref output, context);
 
-                    if (status == Status.OK)
+                    if (status.IsFound)
                     {
                         Assert.AreEqual(input, output);
                         return;
                     }
 
-                    Assert.AreEqual(Status.PENDING, status, $"was not OK or PENDING: {keyString}");
+                    Assert.IsTrue(status.IsPending, $"was not OK or PENDING: {keyString}");
 
                     session.CompletePending(wait: true);
                 }
@@ -97,7 +97,7 @@ namespace FASTER.test.ReadCacheTests
                 fixed (byte* _ = key)
                 {
                     var sb = SpanByte.FromFixedSpan(key);
-                    Assert.AreEqual(Status.OK, session.Upsert(sb, i * 2));
+                    Assert.IsTrue(session.Upsert(sb, i * 2).IsFound);
                 }
             }
 

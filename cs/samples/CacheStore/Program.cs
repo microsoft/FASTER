@@ -105,7 +105,7 @@ namespace CacheStore
             using var s = store.For(new CacheFunctions()).NewSession<CacheFunctions>();
             Console.WriteLine("Writing keys from 0 to {0} to FASTER", numKeys);
 
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
             for (int i = 0; i < numKeys; i++)
             {
@@ -134,7 +134,7 @@ namespace CacheStore
 
             int statusPending = 0;
             var output = default(CacheValue);
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
 
             for (int i = 0; i < max; i++)
@@ -144,14 +144,14 @@ namespace CacheStore
                 var key = new CacheKey(k);
                 var status = s.Read(ref key, ref output);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
                     statusPending++;
                     if (statusPending % 100 == 0)
                         s.CompletePending(false);
                     break;
                 }
-                else if (status == Status.OK)
+                else if (status.IsFound)
                 {
                     if (output.value != key.key)
                         throw new Exception("Read error!");
@@ -186,11 +186,11 @@ namespace CacheStore
 
                 context.ticks = Stopwatch.GetTimestamp();
                 var status = s.Read(ref key, ref output, context);
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
                     s.CompletePending(true);
                 }
-                else if (status == Status.OK)
+                else if (status.IsFound)
                 {
                     long ticks = Stopwatch.GetTimestamp();
                     if (output.value != key.key)

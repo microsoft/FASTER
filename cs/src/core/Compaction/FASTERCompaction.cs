@@ -61,7 +61,7 @@ namespace FASTER.core
 
                             // For now, we perform each record compaction separately. In order to do this in parallel to maximize IOPS,
                             // we need a new Conditional Upsert API (CopyToTailIfNotExists)
-                            if (status == Status.PENDING)
+                            if (status.IsPending)
                             {
                                 fhtSession.CompletePendingWithOutputs(out var completedOutput, true);
                                 try
@@ -81,7 +81,7 @@ namespace FASTER.core
                             }
 
                             // Either record was found in future, or we returned NOTFOUND because of a tombstone in future
-                            if ((status == Status.OK) || (status == Status.NOTFOUND && recordMetadata.Address >= iter1.NextAddress))
+                            if (status.IsOK || (status.IsNotFound && recordMetadata.Address >= iter1.NextAddress))
                                 break;
                             
                             copyStatus = fhtSession.CompactionCopyToTail(ref key, ref input, ref value, ref output, checkedAddress);
@@ -161,7 +161,7 @@ namespace FASTER.core
                                 LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
 
                             // If record is not the latest in memory
-                            if (tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress) == Status.OK)
+                            if (tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress).IsOK)
                             {
                                 if (iter3.CurrentAddress != tempKeyAddress)
                                     continue;

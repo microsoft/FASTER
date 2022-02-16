@@ -21,6 +21,7 @@ namespace FASTER.core
         DELETE
     }
 
+    [Flags]
     internal enum OperationStatus
     {
         SUCCESS,
@@ -31,7 +32,33 @@ namespace FASTER.core
         SUCCESS_UNMARK,
         CPR_SHIFT_DETECTED,
         CPR_PENDING_DETECTED,
-        ALLOCATE_FAILED
+        ALLOCATE_FAILED,
+        BASIC_MASK = 0xFF,
+
+        ADVANCED_MASK = 0x700,
+        APPEND = (int)StatusCode.NewAppend << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPYAPPEND = (int)StatusCode.CopyAppend << OperationStatusUtils.OpStatusToStatusCodeShift
+    }
+
+    internal static class OperationStatusUtils
+    {
+        internal const int OpStatusToStatusCodeShift = 8;
+
+        internal static OperationStatus BasicOpCode(OperationStatus status) => status & OperationStatus.BASIC_MASK;
+
+        internal static OperationStatus AdvancedOpCode(OperationStatus status, StatusCode advancedStatusCode) => status | (OperationStatus)((int)advancedStatusCode << OpStatusToStatusCodeShift);
+
+        internal static bool TryConvertToStatusCode(OperationStatus advInternalStatus, out Status statusCode)
+        {
+            var internalStatus = BasicOpCode(advInternalStatus);
+            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            {
+                statusCode = new(advInternalStatus);
+                return true;
+            }
+            statusCode = default;
+            return false;
+        }
     }
 
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>

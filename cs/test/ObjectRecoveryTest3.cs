@@ -46,7 +46,7 @@ namespace FASTER.test.recovery.objects
             session1.Dispose();
 
             h.TryInitiateHybridLogCheckpoint(out Guid token, checkpointType);
-            h.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            h.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             tokens.Add((iterations, token));
             Destroy(log, objlog, h);
 
@@ -113,7 +113,7 @@ namespace FASTER.test.recovery.objects
                 if (i % 1000 == 0 && i > 0)
                 {
                     fht.TryInitiateHybridLogCheckpoint(out Guid token, checkpointType);
-                    fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                    fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                     tokens.Add((i, token));
                 }
             }
@@ -125,17 +125,17 @@ namespace FASTER.test.recovery.objects
             for (int i = 0; i < iter; i++)
             {
                 var key = new MyKey { key = i, name = string.Concat(Enumerable.Repeat(i.ToString(), 100)) };
-                var input = default(MyInput);
-                MyOutput g1 = new MyOutput();
+                MyInput input = default;
+                MyOutput g1 = new();
                 var status = session.Read(ref key, ref input, ref g1, context, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
                     session.CompletePending(true);
                     context.FinalizeRead(ref status, ref g1);
                 }
 
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound);
                 Assert.AreEqual(i.ToString(), g1.value.value);
             }
 
@@ -147,13 +147,13 @@ namespace FASTER.test.recovery.objects
                 session.Delete(ref key, context, 0);
                 var status = session.Read(ref key, ref input, ref output, context, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
                     session.CompletePending(true);
                     context.FinalizeRead(ref status, ref output);
                 }
 
-                Assert.AreEqual(Status.NOTFOUND, status);
+                Assert.IsTrue(status.IsNotFound);
             }
         }
     }

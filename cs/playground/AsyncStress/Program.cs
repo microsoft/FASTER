@@ -267,7 +267,7 @@ namespace AsyncStress
                     Console.WriteLine("    Verifying read results ...");
                     Parallel.For(0, numOperations, i =>
                     {
-                        Assert.Equal(Status.OK, results[i].Item1);
+                        Assert.True(results[i].Item1.IsFound);
                         Assert.Equal(database[i].Item2, results[i].Item2);
                     });
                     Console.WriteLine("    Results verified");

@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -73,7 +74,7 @@ namespace FASTER.test
         [Category("Smoke")]
         public void LogCompactBasicTest([Values] TestUtils.DeviceType deviceType, [Values] CompactionType compactionType)
         {
-            MyInput input = new MyInput();
+            MyInput input = new();
 
             const int totalRecords = 500;
             long compactUntil = 0;
@@ -95,22 +96,22 @@ namespace FASTER.test
             // Read all keys - all should be present
             for (int i = 0; i < totalRecords; i++)
             {
-                MyOutput output = new MyOutput();
+                MyOutput output = new();
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, 0, 0);
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     Assert.IsTrue(completedOutputs.Next());
-                    Assert.AreEqual(Status.OK, completedOutputs.Current.Status);
+                    Assert.IsTrue(completedOutputs.Current.Status.IsFound);
                     output = completedOutputs.Current.Output;
                     Assert.IsFalse(completedOutputs.Next());
                     completedOutputs.Dispose();
                 }
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound);
                 Assert.AreEqual(value.value, output.value.value);
             }
         }
@@ -120,7 +121,7 @@ namespace FASTER.test
         [Category("Compaction")]
         public void LogCompactTestNewEntries([Values] CompactionType compactionType)
         {
-            MyInput input = new MyInput();
+            MyInput input = new();
 
             const int totalRecords = 2000;
             long compactUntil = 0;
@@ -154,16 +155,16 @@ namespace FASTER.test
             // Read 2000 keys - all should be present
             for (int i = 0; i < totalRecords; i++)
             {
-                MyOutput output = new MyOutput();
+                MyOutput output = new();
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, 0, 0);
-                if (status == Status.PENDING)
+                if (status.IsPending)
                     session.CompletePending(true);
                 else
                 {
-                    Assert.AreEqual(Status.OK, status);
+                    Assert.IsTrue(status.IsFound);
                     Assert.AreEqual(value.value, output.value.value);
                 }
             }
@@ -175,7 +176,7 @@ namespace FASTER.test
         [Category("Smoke")]
         public void LogCompactAfterDeleteTest([Values] CompactionType compactionType)
         {
-            MyInput input = new MyInput();
+            MyInput input = new();
 
             const int totalRecords = 2000;
             long compactUntil = 0;
@@ -204,25 +205,25 @@ namespace FASTER.test
             // Read keys - all should be present
             for (int i = 0; i < totalRecords; i++)
             {
-                MyOutput output = new MyOutput();
+                MyOutput output = new();
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
                 int ctx = ((i < 500) && (i % 2 == 0)) ? 1 : 0;
 
                 var status = session.Read(ref key1, ref input, ref output, ctx, 0);
-                if (status == Status.PENDING)
+                if (status.IsPending)
                     session.CompletePending(true);
                 else
                 {
                     if (ctx == 0)
                     {
-                        Assert.AreEqual(Status.OK, status);
+                        Assert.IsTrue(status.IsFound);
                         Assert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.AreEqual(Status.NOTFOUND, status);
+                        Assert.IsTrue(status.IsNotFound);
                     }
                 }
             }
@@ -234,7 +235,7 @@ namespace FASTER.test
 
         public void LogCompactBasicCustomFctnTest([Values] CompactionType compactionType)
         {
-            MyInput input = new MyInput();
+            MyInput input = new();
 
             const int totalRecords = 2000;
             var compactUntil = 0L;
@@ -263,7 +264,7 @@ namespace FASTER.test
                 var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
 
                 var status = session.Read(ref key1, ref input, ref output, ctx, 0);
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
                     session.CompletePending(true);
                 }
@@ -271,12 +272,12 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.AreEqual(Status.OK, status);
+                        Assert.IsTrue(status.IsFound);
                         Assert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.AreEqual(Status.NOTFOUND, status);
+                        Assert.IsTrue(status.IsNotFound);
                     }
                 }
             }
@@ -312,15 +313,13 @@ namespace FASTER.test
             var input = default(MyInput);
             var output = default(MyOutput);
             var status = session.Read(ref key, ref input, ref output, 0, 0);
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
-                session.CompletePending(true);
+                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                (status, output) = GetSinglePendingResult(outputs);
             }
-            else
-            {
-                Assert.AreEqual(Status.OK, status);
-                Assert.AreEqual(value.value, output.value.value);
-            }
+            Assert.IsTrue(status.IsFound);
+            Assert.AreEqual(value.value, output.value.value);
         }
 
         private class Test2CompactionFunctions : ICompactionFunctions<MyKey, MyValue>

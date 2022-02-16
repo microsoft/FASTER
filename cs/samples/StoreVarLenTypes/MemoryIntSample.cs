@@ -61,11 +61,11 @@ namespace StoreVarLenTypes
                 var expectedValue = valueMem.Slice(0, valLen);
                 expectedValue.Span.Fill(valLen);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                     s.CompletePending(true);
                 else
                 {
-                    if ((status != Status.OK) || (!output.Item1.Memory.Slice(0, output.Item2).Span.SequenceEqual(expectedValue.Span)))
+                    if (!status.IsFound || (!output.Item1.Memory.Slice(0, output.Item2).Span.SequenceEqual(expectedValue.Span)))
                     {
                         output.Item1.Dispose();
                         success = false;

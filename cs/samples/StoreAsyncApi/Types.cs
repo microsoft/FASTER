@@ -104,7 +104,7 @@ namespace StoreAsyncApi
             {
                 long ticks = DateTime.Now.Ticks - ctx.ticks;
 
-                if (status == Status.NOTFOUND)
+                if (status.IsNotFound)
                     Console.WriteLine("Async: Value not found, latency = {0}ms", new TimeSpan(ticks).TotalMilliseconds);
 
                 if (output.value.value != key.key)

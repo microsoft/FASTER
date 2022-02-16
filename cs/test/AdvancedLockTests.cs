@@ -6,6 +6,7 @@ using NUnit.Framework;
 using System;
 using System.Threading;
 using FASTER.test.ReadCacheTests;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test.LockTests
 {
@@ -130,7 +131,7 @@ namespace FASTER.test.LockTests
                     var sleepFlag = (iter % 5 == 0) ? LockFunctionFlags.None : LockFunctionFlags.SleepAfterEventOperation;
                     Input input = new() { flags = LockFunctionFlags.WaitForEvent | sleepFlag, sleepRangeMs = 10 };
                     var status = session.Upsert(key, input, key + valueAdd * 2, ref output);
-                    Assert.AreEqual(Status.OK, status, $"Key = {key}");
+                    Assert.IsTrue(status.IsOK, $"Key = {key}");
                 },
                 key =>
                 {
@@ -143,11 +144,14 @@ namespace FASTER.test.LockTests
                     var status = session.Read(ref key, ref functions.readCacheInput, ref output, ref recordMetadata);
 
                     // If the Upsert completed before the Read started, we may Read() the Upserted value.
-                    if (status == Status.OK)
+                    if (status.IsCompleted)
+                    {
+                        Assert.IsTrue(status.IsOK, $"Key = {key}, status {status}");
                         Assert.AreEqual(key + valueAdd * 2, output, $"Key = {key}");
+                    }
                     else
                     {
-                        Assert.AreEqual(Status.PENDING, status, $"Key = {key}");
+                        Assert.IsTrue(status.IsPending, $"Key = {key}");
                         session.CompletePending(wait: true);
                     }
                 },
@@ -155,7 +159,7 @@ namespace FASTER.test.LockTests
                 {
                     int output = default;
                     var status = session.Read(ref key, ref output);
-                    Assert.AreEqual(Status.OK, status, $"Key = {key}");
+                    Assert.IsTrue(status.IsFound, $"Key = {key}");
                     Assert.AreEqual(key + valueAdd * 2, output, $"Key = {key}");
                     functions.mres.Reset();
                     ++iter;

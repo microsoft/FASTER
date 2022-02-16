@@ -90,7 +90,7 @@ namespace SecondaryReaderStore
                 while (true)
                 {
                     var status = s1.Read(ref key, ref output);
-                    if (status == Status.NOTFOUND)
+                    if (status.IsNotFound)
                     {
                         Console.WriteLine($"Key {key} not found at secondary; performing recovery to catch up");
                         Thread.Sleep(500);

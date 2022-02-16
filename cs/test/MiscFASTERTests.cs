@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -47,7 +48,7 @@ namespace FASTER.test
 
             int key = 8999998;
             var input1 = new MyInput { value = 23 };
-            MyOutput output = new MyOutput();
+            MyOutput output = new();
 
             session.RMW(ref key, ref input1, Empty.Default, 0);
 
@@ -75,32 +76,28 @@ namespace FASTER.test
             }
 
             var key2 = 23;
-            var input = new MyInput();
-            MyOutput g1 = new MyOutput();
+            MyInput input = new();
+            MyOutput g1 = new();
             var status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
-                session.CompletePending(true);
+                session.CompletePendingWithOutputs(out var outputs, wait:true);
+                (status, _) = GetSinglePendingResult(outputs);
             }
-            else
-            {
-                Assert.AreEqual(Status.OK, status);
-            }
+            Assert.IsTrue(status.IsFound);
 
             Assert.AreEqual(23, g1.value.value);
 
             key2 = 99999;
             status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
-                session.CompletePending(true);
+                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                (status, _) = GetSinglePendingResult(outputs);
             }
-            else
-            {
-                Assert.AreEqual(Status.NOTFOUND, status);
-            }
+            Assert.IsTrue(status.IsNotFound);
         }
 
         [Test]

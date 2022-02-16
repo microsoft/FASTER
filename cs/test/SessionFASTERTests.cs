@@ -4,6 +4,7 @@
 using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test.async
 {
@@ -16,8 +17,8 @@ namespace FASTER.test.async
         [SetUp]
         public void Setup()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
+            DeleteDirectory(MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
         }
@@ -29,7 +30,7 @@ namespace FASTER.test.async
             fht = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
         [Test]
@@ -47,15 +48,13 @@ namespace FASTER.test.async
             session.Upsert(ref key1, ref value, Empty.Default, 0);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
-                session.CompletePending(true);
-            }
-            else
-            {
-                Assert.AreEqual(Status.OK, status);
+                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                (status, output) = GetSinglePendingResult(outputs);
             }
 
+            Assert.IsTrue(status.IsFound);
             Assert.AreEqual(value.vfield1, output.value.vfield1);
             Assert.AreEqual(value.vfield2, output.value.vfield2);
         }
@@ -79,29 +78,25 @@ namespace FASTER.test.async
 
             var status = session1.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
-                session1.CompletePending(true);
-            }
-            else
-            {
-                Assert.AreEqual(Status.OK, status);
+                session1.CompletePendingWithOutputs(out var outputs, wait: true);
+                (status, output) = GetSinglePendingResult(outputs);
             }
 
+            Assert.IsTrue(status.IsFound);
             Assert.AreEqual(value1.vfield1, output.value.vfield1);
             Assert.AreEqual(value1.vfield2, output.value.vfield2);
 
             status = session2.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
-                session2.CompletePending(true);
-            }
-            else
-            {
-                Assert.AreEqual(Status.OK, status);
+                session2.CompletePendingWithOutputs(out var outputs, wait: true);
+                (status, output) = GetSinglePendingResult(outputs);
             }
 
+            Assert.IsTrue(status.IsFound);
             Assert.AreEqual(value2.vfield1, output.value.vfield1);
             Assert.AreEqual(value2.vfield2, output.value.vfield2);
         }
@@ -122,15 +117,13 @@ namespace FASTER.test.async
                 session.Upsert(ref key1, ref value, Empty.Default, 0);
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
-                    session.CompletePending(true);
-                }
-                else
-                {
-                    Assert.AreEqual(Status.OK, status);
+                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, output) = GetSinglePendingResult(outputs);
                 }
 
+                Assert.IsTrue(status.IsFound);
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
             }).Wait();
@@ -153,15 +146,13 @@ namespace FASTER.test.async
                 session1.Upsert(ref key1, ref value1, Empty.Default, 0);
                 var status = session1.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
-                    session1.CompletePending(true);
-                }
-                else
-                {
-                    Assert.AreEqual(Status.OK, status);
+                    session1.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, output) = GetSinglePendingResult(outputs);
                 }
 
+                Assert.IsTrue(status.IsFound);
                 Assert.AreEqual(value1.vfield1, output.value.vfield1);
                 Assert.AreEqual(value1.vfield2, output.value.vfield2);
             });
@@ -178,15 +169,13 @@ namespace FASTER.test.async
 
                 var status = session2.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
-                    session2.CompletePending(true);
-                }
-                else
-                {
-                    Assert.AreEqual(Status.OK, status);
+                    session2.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, output) = GetSinglePendingResult(outputs);
                 }
 
+                Assert.IsTrue(status.IsFound);
                 Assert.AreEqual(value2.vfield1, output.value.vfield1);
                 Assert.AreEqual(value2.vfield2, output.value.vfield2);
             });
@@ -210,15 +199,13 @@ namespace FASTER.test.async
             session.Upsert(ref key1, ref value1, Empty.Default, 0);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
-                session.CompletePending(true);
-            }
-            else
-            {
-                Assert.AreEqual(Status.OK, status);
+                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                (status, output) = GetSinglePendingResult(outputs);
             }
 
+            Assert.IsTrue(status.IsFound);
             Assert.AreEqual(value1.vfield1, output.value.vfield1);
             Assert.AreEqual(value1.vfield2, output.value.vfield2);
 
@@ -233,26 +220,22 @@ namespace FASTER.test.async
 
             status = session.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
-                session.CompletePending(true);
+                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                (status, output) = GetSinglePendingResult(outputs);
             }
-            else
-            {
-                Assert.AreEqual(Status.OK, status);
-            }
+            Assert.IsTrue(status.IsFound);
 
             status = session.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
-                session.CompletePending(true);
-            }
-            else
-            {
-                Assert.AreEqual(Status.OK, status);
+                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                (status, output) = GetSinglePendingResult(outputs);
             }
 
+            Assert.IsTrue(status.IsFound);
             Assert.AreEqual(value2.vfield1, output.value.vfield1);
             Assert.AreEqual(value2.vfield2, output.value.vfield2);
 

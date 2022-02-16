@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -73,14 +74,14 @@ namespace FASTER.test
                 var key = $"{i}";
                 var value = $"{i}";
 
-                if (session.Read(ref key, ref input, ref output, Empty.Default, 0) == Status.PENDING)
+                var status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
+                if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    session.CompletePendingWithOutputs(out var outputs, wait:true);
+                    (status, output) = GetSinglePendingResult(outputs);
                 }
-                else
-                {
-                    Assert.AreEqual(value, output);
-                }
+                Assert.IsTrue(status.IsFound);
+                Assert.AreEqual(value, output);
             }
         }
 
@@ -88,6 +89,7 @@ namespace FASTER.test
         {
             public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
+                Assert.IsTrue(status.IsFound);
                 Assert.AreEqual(key, output);
             }
         }

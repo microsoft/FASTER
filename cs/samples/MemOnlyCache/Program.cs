@@ -104,7 +104,7 @@ namespace MemOnlyCache
         {
             using var s = h.For(new CacheFunctions(sizeTracker)).NewSession<CacheFunctions>();
 
-            Random r = new Random(0);
+            Random r = new(0);
             Console.WriteLine("Writing random keys to fill cache");
 
             for (int i = 0; i < count; i++)
@@ -127,7 +127,7 @@ namespace MemOnlyCache
             for (int i = 0; i < kNumThreads; i++)
                 threads[i].Start();
 
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
             var _lastReads = totalReads;
             var _lastTime = sw.ElapsedMilliseconds;
@@ -205,7 +205,7 @@ namespace MemOnlyCache
                 {
                     var status = session.Read(ref key, ref output);
 
-                    if (status == Status.NOTFOUND)
+                    if (status.IsNotFound)
                     {
                         localStatusNotFound++;
                         if (UpsertOnCacheMiss)
@@ -214,7 +214,7 @@ namespace MemOnlyCache
                             session.Upsert(ref key, ref value);
                         }
                     }
-                    else if (status == Status.OK)
+                    else if (status.IsFound)
                     {
                         localStatusFound++;
                         if (output.value[0] != (byte)key.key)

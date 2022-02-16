@@ -166,7 +166,7 @@ namespace FASTER.test.LockTests
             for (int key = 0; key < numRecords; key++)
             {
                 // For this test we should be in-memory, so no pending
-                Assert.AreNotEqual(Status.PENDING, session.Upsert(key, key * valueMult));
+                Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
             }
 
             // Update
@@ -179,7 +179,7 @@ namespace FASTER.test.LockTests
             for (int key = 0; key < numRecords; key++)
             {
                 var expectedValue = key * valueMult + numThreads * numIters;
-                Assert.AreNotEqual(Status.PENDING, session.Read(key, out int value));
+                Assert.IsFalse(session.Read(key, out int value).IsPending);
                 Assert.AreEqual(expectedValue, value);
             }
         }
@@ -191,7 +191,7 @@ namespace FASTER.test.LockTests
                 for (int iter = 0; iter < numIters; iter++)
                 {
                     if ((iter & 7) == 7)
-                        Assert.AreNotEqual(Status.PENDING, session.Read(key).status);
+                        Assert.IsFalse(session.Read(key).status.IsPending);
 
                     // These will both just increment the stored value, ignoring the input argument.
                     if (useRMW)

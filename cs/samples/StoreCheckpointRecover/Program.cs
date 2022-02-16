@@ -51,15 +51,14 @@ namespace StoreCheckpointRecover
                 MyOutput g1 = default;
                 var status = s.Read(ref key, ref g1);
 
-                if (status == Status.OK && g1.value.value == key.key)
+                if (status.IsFound && g1.value.value == key.key)
                     Console.WriteLine("Success!");
                 else
                     Console.WriteLine("Error!");
             }
 
             // Take index + fold-over checkpoint of FASTER, wait to complete
-            store.TakeFullCheckpointAsync(CheckpointType.FoldOver)
-                .GetAwaiter().GetResult();
+            store.TakeFullCheckpointAsync(CheckpointType.FoldOver).AsTask().GetAwaiter().GetResult();
 
             // Dispose store instance
             store.Dispose();
@@ -89,7 +88,7 @@ namespace StoreCheckpointRecover
                 MyOutput g1 = default;
                 var status = s.Read(ref key, ref g1);
 
-                if (status == Status.OK && g1.value.value == key.key)
+                if (status.IsFound && g1.value.value == key.key)
                     Console.WriteLine("Success!");
                 else
                     Console.WriteLine("Error!");

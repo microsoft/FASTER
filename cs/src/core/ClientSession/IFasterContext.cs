@@ -284,7 +284,7 @@ namespace FASTER.core
         /// <remarks>The caller must await the return value to obtain the result, then call one of
         ///     <list type="bullet">
         ///     <item>result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status == <see cref="Status.PENDING"/></item>
+        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
         ///     </list>
         ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
         ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default);
@@ -303,7 +303,7 @@ namespace FASTER.core
         /// <remarks>The caller must await the return value to obtain the result, then call one of
         ///     <list type="bullet">
         ///     <item>result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status == <see cref="Status.PENDING"/></item>
+        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
         ///     </list>
         ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
         ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default);
@@ -321,7 +321,7 @@ namespace FASTER.core
         /// <remarks>The caller must await the return value to obtain the result, then call one of
         ///     <list type="bullet">
         ///     <item>result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status == <see cref="Status.PENDING"/></item>
+        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
         ///     </list>
         ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
         ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default);
@@ -340,7 +340,7 @@ namespace FASTER.core
         /// <remarks>The caller must await the return value to obtain the result, then call one of
         ///     <list type="bullet">
         ///     <item>result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status == <see cref="Status.PENDING"/></item>
+        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
         ///     </list>
         ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
         ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Input input, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default);
@@ -411,7 +411,7 @@ namespace FASTER.core
         /// <remarks>The caller must await the return value to obtain the result, then call one of
         ///     <list type="bullet">
         ///     <item>result.<see cref="FasterKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status == <see cref="Status.PENDING"/></item>
+        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
         ///     </list>
         ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
         ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default);
@@ -428,7 +428,7 @@ namespace FASTER.core
         /// <remarks>The caller must await the return value to obtain the result, then call one of
         ///     <list type="bullet">
         ///     <item>result.<see cref="FasterKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status == <see cref="Status.PENDING"/></item>
+        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
         ///     </list>
         ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
         ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default);
@@ -462,7 +462,7 @@ namespace FASTER.core
         /// <remarks>The caller must await the return value to obtain the result, then call one of
         ///     <list type="bullet">
         ///     <item>result.<see cref="FasterKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status == <see cref="Status.PENDING"/></item>
+        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
         ///     </list>
         ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
         ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default);
@@ -478,7 +478,7 @@ namespace FASTER.core
         /// <remarks>The caller must await the return value to obtain the result, then call one of
         ///     <list type="bullet">
         ///     <item>result.<see cref="FasterKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status == <see cref="Status.PENDING"/></item>
+        ///     <item>result = await result.<see cref="FasterKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
         ///     </list>
         ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
         ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default);

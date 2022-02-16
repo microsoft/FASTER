@@ -52,9 +52,9 @@ namespace AzureBackedStore
 
                 var status = s.Read(ref key, ref output, context);
 
-                if (status != Status.PENDING)
+                if (!status.IsPending)
                 {
-                    if (status == Status.OK && output == context)
+                    if (status.IsFound && output == context)
                         Console.WriteLine("Success!");
                     else
                         Console.WriteLine("Error!");
@@ -94,9 +94,9 @@ namespace AzureBackedStore
 
                 var status = s.Read(ref key, ref output, context);
 
-                if (status != Status.PENDING)
+                if (!status.IsPending)
                 {
-                    if (status == Status.OK && output == context)
+                    if (status.IsFound && output == context)
                         Console.WriteLine("Success!");
                     else
                         Console.WriteLine("Error!");

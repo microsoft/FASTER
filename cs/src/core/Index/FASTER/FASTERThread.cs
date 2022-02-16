@@ -189,19 +189,11 @@ namespace FASTER.core
                 }
             } while (internalStatus == OperationStatus.RETRY_NOW);
 
-            Status status;
-            // Handle operation status
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-            {
-                status = new(internalStatus);
-            }
-            else
-            {
+            if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                 status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, false, out _);
-            }
 
             // If done, callback user code.
-            if (status == Status.OK || status == Status.NOTFOUND)
+            if (status.IsCompletedSuccessfully)
             {
                 switch (pendingContext.type)
                 {
@@ -291,7 +283,7 @@ namespace FASTER.core
                 // Remove from pending dictionary
                 opCtx.ioPendingRequests.Remove(request.id);
                 var status = InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
-                if (completedOutputs is not null && (status == Status.OK || status == Status.NOTFOUND))
+                if (completedOutputs is not null && status.IsCompletedSuccessfully)
                     completedOutputs.Add(ref pendingContext, status);
                 else
                     pendingContext.Dispose();
@@ -313,38 +305,23 @@ namespace FASTER.core
 
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
             ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
-            OperationStatus internalStatus;
 
-            // Issue the continue command
-            if (pendingContext.type == OperationType.READ)
-            {
-                internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, fasterSession, currentCtx);
-            }
-            else
-            {
-                internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
-                Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
-            }
+            OperationStatus internalStatus = pendingContext.type == OperationType.READ
+                ? InternalContinuePendingRead(opCtx, request, ref pendingContext, fasterSession, currentCtx)
+                : InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
 
             request.Dispose();
 
-            Status status;
-            // Handle operation status
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
             {
-                status = new(internalStatus);
-            }
-            else if (internalStatus == OperationStatus.ALLOCATE_FAILED)
-            {
-                return Status.PENDING;  // This plus newRequest.IsDefault() means allocate failed
-            }
-            else
-            {
+                if (internalStatus == OperationStatus.ALLOCATE_FAILED)
+                    return new(StatusCode.Pending);  // This plus newRequest.IsDefault() means allocate failed
+
                 status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, asyncOp, out newRequest);
             }
 
             // If done, callback user code
-            if (status == Status.OK || status == Status.NOTFOUND)
+            if (status.IsCompletedSuccessfully)
             {
                 if (pendingContext.type == OperationType.READ)
                 {

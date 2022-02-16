@@ -544,7 +544,7 @@ namespace FASTER.test.statemachine
                 {
                     var status = s3.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, s3.SerialNo);
 
-                    if (status == Status.PENDING)
+                    if (status.IsPending)
                         s3.CompletePending(true);
                     else
                     {
@@ -576,7 +576,7 @@ namespace FASTER.test.statemachine
 
         public override void ReadCompletionCallback(ref AdId key, ref NumClicks input, ref NumClicks output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
             Assert.AreEqual(key.adId, output.numClicks);
         }
     }

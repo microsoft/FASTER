@@ -54,7 +54,7 @@ namespace FASTER.core
         #region CopyUpdater
         bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output);
         void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address);
-        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address);
+        void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address);
         #endregion CopyUpdater
 
         #region InPlaceUpdater

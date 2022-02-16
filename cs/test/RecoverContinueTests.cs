@@ -133,7 +133,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
                 inputArg.adId.adId = key;
                 var status = fht.Read(ref inputArg.adId, ref inputArg, ref outputArg, Empty.Default, fht.SerialNo);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                     fht.CompletePending(true);
                 else
                 {
@@ -165,7 +165,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
     {
         public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
             Assert.AreEqual(key.adId, output.value.numClicks);
         }
 

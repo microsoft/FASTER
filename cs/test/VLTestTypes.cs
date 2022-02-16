@@ -95,12 +95,13 @@ namespace FASTER.test
     {
         public override void RMWCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.IsCopyAppend);
         }
 
         public override void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
             for (int i = 0; i < output.Length; i++)
             {
                 Assert.AreEqual(output.Length, output[i]);
@@ -140,12 +141,13 @@ namespace FASTER.test
     {
         public override void RMWCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.IsCopyAppend);
         }
 
         public override void ReadCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
             for (int i = 0; i < output.Length; i++)
             {
                 Assert.AreEqual(output.Length, output[i]);

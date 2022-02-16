@@ -121,7 +121,7 @@ namespace AsyncStress
                 }
             }
 
-            Assert.True(status != Status.PENDING);
+            Assert.False(status.IsPending);
             _sessionPool.Return(session);
         }
 
@@ -173,10 +173,11 @@ namespace AsyncStress
 
             var (status, output) = (await task.ConfigureAwait(false)).Complete();
             _sessionPool.Return(session);
+            Assert.True(status.IsCompletedSuccessfully);
 
             using IMemoryOwner<byte> memoryOwner = output.Memory;
 
-            return (status, status != Status.OK ? default : MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory));
+            return (status, status.IsNotFound ? default : MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory));
         }
 
         public ValueTask<(Status, Value)> Read(Key key)
@@ -197,14 +198,15 @@ namespace AsyncStress
                 }
             }
 
-            if (result.Item1 == Status.PENDING)
+            if (result.Item1.IsPending)
             {
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 int count = 0;
                 for (; completedOutputs.Next(); ++count)
                 {
                     using IMemoryOwner<byte> memoryOwner = completedOutputs.Current.Output.Memory;
-                    userResult = (completedOutputs.Current.Status, completedOutputs.Current.Status != Status.OK ? default : MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory));
+                    Assert.True(completedOutputs.Current.Status.IsCompletedSuccessfully);
+                    userResult = (completedOutputs.Current.Status, completedOutputs.Current.Status.IsNotFound ? default : MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory));
                 }
                 completedOutputs.Dispose();
                 Assert.Equal(1, count);
@@ -212,7 +214,8 @@ namespace AsyncStress
             else
             {
                 using IMemoryOwner<byte> memoryOwner = result.Item2.Memory;
-                userResult = (result.Item1, result.Item1 != Status.OK ? default : MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory));
+                Assert.True(result.Item1.IsCompletedSuccessfully);
+                userResult = (result.Item1, result.Item1.IsNotFound ? default : MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory));
             }
             _sessionPool.Return(session);
             return new ValueTask<(Status, Value)>(userResult);

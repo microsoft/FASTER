@@ -47,7 +47,7 @@ namespace HelloWorld
 
             // Reads are served back from memory and return synchronously
             var status = session.Read(ref key, ref output);
-            if (status == Status.OK && output == value)
+            if (status.IsFound && output == value)
                 Console.WriteLine("(1) Success!");
             else
                 Console.WriteLine("(1) Error!");
@@ -56,7 +56,7 @@ namespace HelloWorld
             session.Delete(ref key);
 
             status = session.Read(ref key, ref output);
-            if (status == Status.NOTFOUND)
+            if (status.IsNotFound)
                 Console.WriteLine("(2) Success!");
             else
                 Console.WriteLine("(2) Error!");
@@ -70,7 +70,7 @@ namespace HelloWorld
 
             status = session.Read(ref key, ref output);
 
-            if (status == Status.OK && output == input1 + input2)
+            if (status.IsFound && output == input1 + input2)
                 Console.WriteLine("(3) Success!");
             else
                 Console.WriteLine("(3) Error!");
@@ -89,7 +89,7 @@ namespace HelloWorld
             // Read, result should be input1 (first TryAdd)
             var status3 = session.Read(ref key, ref output);
 
-            if (status == Status.NOTFOUND && status2 == Status.OK && status3 == Status.OK && output == input1)
+            if (status.IsNotFound && status2.IsFound && status3.IsFound && output == input1)
                 Console.WriteLine("(4) Success!");
             else
                 Console.WriteLine("(4) Error!");
@@ -127,7 +127,7 @@ namespace HelloWorld
                 // Take checkpoint so data is persisted for recovery
                 Console.WriteLine("Taking full checkpoint");
                 store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot);
-                store.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             }
             else
             {
@@ -136,7 +136,7 @@ namespace HelloWorld
 
             // Reads are served back from memory and return synchronously
             var status = session.Read(ref key, ref output);
-            if (status == Status.OK && output == value)
+            if (status.IsFound && output == value)
                 Console.WriteLine("(1) Success!");
             else
                 Console.WriteLine("(1) Error!");
@@ -147,12 +147,12 @@ namespace HelloWorld
             // Reads from disk will return PENDING status, result available via either asynchronous IFunctions callback
             // or on this thread via CompletePendingWithOutputs, shown below
             status = session.Read(ref key, ref output);
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var iter, true);
                 while (iter.Next())
                 {
-                    if (iter.Current.Status == Status.OK && iter.Current.Output == value)
+                    if (iter.Current.Status.IsFound && iter.Current.Output == value)
                         Console.WriteLine("(2) Success!");
                     else
                         Console.WriteLine("(2) Error!");
@@ -166,7 +166,7 @@ namespace HelloWorld
             session.Delete(ref key);
 
             status = session.Read(ref key, ref output);
-            if (status == Status.NOTFOUND)
+            if (status.IsNotFound)
                 Console.WriteLine("(3) Success!");
             else
                 Console.WriteLine("(3) Error!");
@@ -180,7 +180,7 @@ namespace HelloWorld
 
             status = session.Read(ref key, ref output);
 
-            if (status == Status.OK && output == input1 + input2)
+            if (status.IsFound && output == input1 + input2)
                 Console.WriteLine("(4) Success!");
             else
                 Console.WriteLine("(4) Error!");
@@ -199,7 +199,7 @@ namespace HelloWorld
             // Read, result should be input1 (first TryAdd)
             var status3 = session.Read(ref key, ref output);
 
-            if (status == Status.NOTFOUND && status2 == Status.OK && status3 == Status.OK && output == input1)
+            if (status.IsNotFound && status2.IsFound && status3.IsFound && output == input1)
                 Console.WriteLine("(5) Success!");
             else
                 Console.WriteLine("(5) Error!");

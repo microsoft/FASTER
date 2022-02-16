@@ -92,13 +92,14 @@ namespace FASTER.test
 
         public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
             Assert.AreEqual(output.value.value, key.key);
         }
 
         public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.IsAppend);
         }
 
         public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
@@ -151,13 +152,14 @@ namespace FASTER.test
 
         public override void ReadCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
             Assert.AreEqual(key.value, output.value.value);
         }
 
         public override void RMWCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.IsAppend);
         }
 
         public override bool SingleReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
@@ -212,21 +214,24 @@ namespace FASTER.test
         {
             if (ctx == 0)
             {
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound);
                 Assert.AreEqual(key.key, output.value.value);
             }
             else if (ctx == 1)
             {
-                Assert.AreEqual(Status.NOTFOUND, status);
+                Assert.IsTrue(status.IsNotFound);
             }
         }
 
         public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx == 0)
-                Assert.AreEqual(Status.OK, status);
+            {
+                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.IsAppend);
+            }
             else if (ctx == 1)
-                Assert.AreEqual(Status.NOTFOUND, status);
+                Assert.IsTrue(status.IsNotFound);
         }
 
         public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
@@ -330,7 +335,7 @@ namespace FASTER.test
     {
         public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.IsFound);
             for (int i = 0; i < output.value.value.Length; i++)
             {
                 Assert.AreEqual((byte)(output.value.value.Length + i), output.value.value[i]);

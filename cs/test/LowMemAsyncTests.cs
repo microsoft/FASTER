@@ -54,7 +54,7 @@ namespace FASTER.test.async
                 for (long key = 0; key < numOps; key++)
                 {
                     var result = await tasks[key].ConfigureAwait(false);
-                    if (result.Status == Status.PENDING)
+                    if (result.Status.IsPending)
                     {
                         done = false;
                         tasks[key] = result.CompleteAsync();
@@ -84,7 +84,7 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await readtasks[key].ConfigureAwait(false)).Complete();
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound);
                 Assert.AreEqual(key, output);
             }
         }
@@ -110,7 +110,7 @@ namespace FASTER.test.async
                 for (long key = 0; key < numOps; key++)
                 {
                     var result = await rmwtasks[key].ConfigureAwait(false);
-                    if (result.Status == Status.PENDING)
+                    if (result.Status.IsPending)
                     {
                         if (completeSync)
                         {
@@ -131,7 +131,7 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await readtasks[key].ConfigureAwait(false)).Complete();
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound);
                 Assert.AreEqual(key + key, output);
             }
         }

@@ -97,7 +97,7 @@ namespace FASTER.test.ReadCacheTests
             {
                 var key = lowChainKey + ii * mod;
                 var status = session.Read(key, out _);
-                Assert.AreEqual((immutable && key >= immutableSplitKey) ? Status.OK : Status.PENDING, status);
+                Assert.IsTrue((immutable && key >= immutableSplitKey) ? status.IsFound : status.IsPending);
                 session.CompletePending(wait: true);
                 if (ii == 0)
                     readCacheHighEvictionAddress = fht.ReadCache.TailAddress;
@@ -107,7 +107,7 @@ namespace FASTER.test.ReadCacheTests
             for (var ii = 0; ii < chainLen; ++ii)
             {
                 var status = session.Read(lowChainKey + ii * mod, out _);
-                Assert.AreNotEqual(Status.PENDING, status);
+                Assert.IsFalse(status.IsPending, status.ToString());
             }
 
             // Pass 3: Put in bunch of extra keys into the cache so when we FlushAndEvict we get all the ones of interest.
@@ -116,7 +116,7 @@ namespace FASTER.test.ReadCacheTests
                 if ((key % mod) != 0)
                 {
                     var status = session.Read(key, out _);
-                    Assert.AreEqual((immutable && key >= immutableSplitKey) ? Status.OK : Status.PENDING, status);
+                    Assert.IsTrue((immutable && key >= immutableSplitKey) ? status.IsFound : status.IsPending);
                     session.CompletePending(wait: true);
                 }
             }
@@ -238,10 +238,10 @@ namespace FASTER.test.ReadCacheTests
             void doTest(int key)
             {
                 var status = session.Delete(key);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound, status.ToString());
 
                 status = session.Read(key, out var value);
-                Assert.AreEqual(Status.NOTFOUND, status);
+                Assert.IsTrue(status.IsNotFound, status.ToString());
             }
 
             doTest(lowChainKey);
@@ -266,10 +266,10 @@ namespace FASTER.test.ReadCacheTests
             void doTest(int key)
             {
                 var status = session.Delete(key);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound, status.ToString());
 
                 status = session.Read(key, out var value);
-                Assert.AreEqual(Status.NOTFOUND, status);
+                Assert.IsTrue(status.IsNotFound, status.ToString());
             }
 
             // Delete all keys in the readcache chain.
@@ -313,23 +313,23 @@ namespace FASTER.test.ReadCacheTests
             void doTest(int key)
             {
                 var status = session.Read(key, out var value);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound, status.ToString());
 
                 if (useRMW)
                 {
                     // RMW will get the old value from disk, unlike Upsert
                     status = session.RMW(key, value + valueAdd);
-                    Assert.AreEqual(Status.PENDING, status);
+                    Assert.IsTrue(status.IsPending, status.ToString());
                     session.CompletePending(wait: true);
                 }
                 else
                 {
                     status = session.Upsert(key, value + valueAdd);
-                    Assert.AreEqual(Status.OK, status);
+                    Assert.IsTrue(status.IsNewAppend, status.ToString());
                 }
 
                 status = session.Read(key, out value);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound, status.ToString());
                 Assert.AreEqual(key + valueAdd * 2, value);
             }
 
@@ -356,7 +356,7 @@ namespace FASTER.test.ReadCacheTests
             RecordMetadata recordMetadata = default;
 
             var status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
-            Assert.AreEqual(Status.PENDING, status);
+            Assert.IsTrue(status.IsPending, status.ToString());
             session.CompletePending(wait: true);
 
             VerifySplicedInKey(key);
@@ -380,13 +380,13 @@ namespace FASTER.test.ReadCacheTests
             {
                 key = spliceInExistingKey;
                 var status = session.Upsert(key, key + valueAdd);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsNewAppend, status.ToString());
             }
             else
             {
                 key = spliceInNewKey;
                 var status = session.Upsert(key, key + valueAdd);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound, status.ToString());
             }
 
             VerifySplicedInKey(key);
@@ -408,7 +408,7 @@ namespace FASTER.test.ReadCacheTests
             {
                 key = spliceInExistingKey;
                 var status = session.RMW(key, key + valueAdd);
-                Assert.AreEqual(recordRegion == RecordRegion.OnDisk ? Status.PENDING : Status.OK, status);
+                Assert.IsTrue(recordRegion == RecordRegion.OnDisk ? status.IsPending : status.IsCopyAppend, status.ToString());
                 session.CompletePending(wait: true);
             }
             else
@@ -416,7 +416,7 @@ namespace FASTER.test.ReadCacheTests
                 key = spliceInNewKey;
                 var status = session.RMW(key, key + valueAdd);
                 // This NOTFOUND key will return PENDING because we have to trace back through the collisions.
-                Assert.AreEqual(Status.PENDING, status);
+                Assert.IsTrue(status.IsPending, status.ToString());
                 session.CompletePending(wait: true);
             }
 
@@ -439,13 +439,13 @@ namespace FASTER.test.ReadCacheTests
             {
                 key = spliceInExistingKey;
                 var status = session.Delete(key);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound, status.ToString());
             }
             else
             {
                 key = spliceInNewKey;
                 var status = session.Delete(key);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.IsFound, status.ToString());
             }
 
             VerifySplicedInKey(key);
@@ -542,7 +542,7 @@ namespace FASTER.test.ReadCacheTests
             foreach (var key in locks.Keys)
             {
                 var status = session.Read(key, out _);
-                Assert.AreEqual(Status.PENDING, status);
+                Assert.IsTrue(status.IsPending, status.ToString());
                 session.CompletePending(wait: true);
 
                 var lockType = locks[key];
