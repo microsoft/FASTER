@@ -102,7 +102,7 @@ namespace FASTER.server
 
         internal void DisposeActiveSessions()
         {
-            while (activeSessionCount > 0)
+            while (activeSessionCount >= 0)
             {
                 while (activeSessionCount > 0)
                 {
