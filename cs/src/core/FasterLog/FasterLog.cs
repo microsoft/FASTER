@@ -491,6 +491,42 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Try to append a user-defined blittable struct header and two SpanByte entries entries atomically to the log.
+        /// If it returns true, we are done. If it returns false, we need to retry.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item1"></param>
+        /// <param name="item2"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+            where THeader : unmanaged
+        {
+            logicalAddress = 0;
+            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            SetHeader(length, physicalAddress);
+            epoch.Suspend();
+            return true;
+        }
+
+        /// <summary>
         /// Try to append a user-defined blittable struct header and three SpanByte entries entries atomically to the log.
         /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
@@ -1790,8 +1826,15 @@ namespace FASTER.core
 
                 if (headAddress == 0)
                     headAddress = Constants.kFirstValidAddress;
-                
-                allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
+
+                try
+                {
+                    allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
+                }
+                catch
+                {
+                    if (!tolerateDeviceFailure) throw;
+                }
             }
 
             iterators = CompleteRestoreFromCommit(info);
@@ -1854,7 +1897,14 @@ namespace FASTER.core
 
                 if (headAddress == 0)
                     headAddress = Constants.kFirstValidAddress;
-                allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
+                try
+                {
+                    allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
+                }
+                catch
+                {
+                    if (!tolerateDeviceFailure) throw;
+                }
             }
 
             iterators = CompleteRestoreFromCommit(info);
