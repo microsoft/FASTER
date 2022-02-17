@@ -325,7 +325,7 @@ namespace FASTER.test.ReadCacheTests
                 else
                 {
                     status = session.Upsert(key, value + valueAdd);
-                    Assert.IsTrue(status.IsNewAppend, status.ToString());
+                    Assert.IsTrue(status.IsNewRecord, status.ToString());
                 }
 
                 status = session.Read(key, out value);
@@ -380,7 +380,7 @@ namespace FASTER.test.ReadCacheTests
             {
                 key = spliceInExistingKey;
                 var status = session.Upsert(key, key + valueAdd);
-                Assert.IsTrue(status.IsNewAppend, status.ToString());
+                Assert.IsTrue(status.IsNewRecord, status.ToString());
             }
             else
             {
@@ -408,7 +408,7 @@ namespace FASTER.test.ReadCacheTests
             {
                 key = spliceInExistingKey;
                 var status = session.RMW(key, key + valueAdd);
-                Assert.IsTrue(recordRegion == RecordRegion.OnDisk ? status.IsPending : status.IsCopyAppend, status.ToString());
+                Assert.IsTrue(recordRegion == RecordRegion.OnDisk ? status.IsPending : status.IsCopyRecord, status.ToString());
                 session.CompletePending(wait: true);
             }
             else

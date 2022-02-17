@@ -132,7 +132,7 @@ namespace FASTER.test
         public override void RMWCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.IsTrue(status.IsFound);
-            Assert.IsTrue(status.IsAppend);
+            Assert.IsTrue(status.IsAppendedRecord);
         }
 
         public override void ReadCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status, RecordMetadata recordMetadata)

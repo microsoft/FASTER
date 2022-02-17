@@ -164,7 +164,7 @@ namespace FASTER.test.InputOutputParameterTests
                         if (useRMW)
                             Assert.IsTrue(status.IsNotFound, status.ToString());
                         else
-                            Assert.IsTrue(status.IsNewAppend, status.ToString());
+                            Assert.IsTrue(status.IsNewRecord, status.ToString());
                         Assert.AreEqual(tailAddress, session.functions.lastWriteAddress);
                     }
                     else

@@ -527,7 +527,7 @@ namespace FASTER.test.Expiration
         {
             var key = ModifyKey;
             ExpirationInput input = new() { testOp = testOp };
-            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyAppend) : new(StatusCode.OK);
+            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyRecord) : new(StatusCode.OK);
             ExpirationOutput output = ExecuteRMW(key, ref input, isImmutable, expectedFoundRmwStatus);
             Assert.AreEqual(isImmutable ? Funcs.DidCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.Incremented, output.result);
@@ -576,7 +576,7 @@ namespace FASTER.test.Expiration
             MaybeMakeImmutable(isImmutable);
             const TestOp testOp = TestOp.ExpireDelete;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyAppend) : new(StatusCode.OK);
+            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyRecord) : new(StatusCode.OK);
 
             // Increment/Delete it
             ExpirationInput input = new() { testOp = testOp };
@@ -597,7 +597,7 @@ namespace FASTER.test.Expiration
             MaybeMakeImmutable(isImmutable);
             const TestOp testOp = TestOp.ExpireRollover;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyAppend) : new(StatusCode.OK);
+            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyRecord) : new(StatusCode.OK);
 
             // Increment/Rollover to initial state
             ExpirationInput input = new() { testOp = testOp };
@@ -620,7 +620,7 @@ namespace FASTER.test.Expiration
             MaybeMakeImmutable(isImmutable);
             const TestOp testOp = TestOp.SetIfKeyExists;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyAppend) : new(StatusCode.OK);
+            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyRecord) : new(StatusCode.OK);
 
             // Key exists - update it
             ExpirationInput input = new() { testOp = testOp, value = GetValue(key) + SetIncrement };
@@ -665,7 +665,7 @@ namespace FASTER.test.Expiration
             // Key doesn't exist - create it
             key += SetIncrement;
             input = new() { testOp = testOp, value = GetValue(key) };
-            output = ExecuteRMW(key, ref input, isImmutable, new(StatusCode.NotFound | StatusCode.NewAppend));
+            output = ExecuteRMW(key, ref input, isImmutable, new(StatusCode.NotFound | StatusCode.NewRecord));
             Assert.AreEqual(Funcs.InitialUpdater, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.Updated, output.result);
             Assert.AreEqual(input.value, output.retrievedValue);
@@ -684,7 +684,7 @@ namespace FASTER.test.Expiration
             MaybeMakeImmutable(isImmutable);
             const TestOp testOp = TestOp.SetIfValueEquals;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyAppend) : new(StatusCode.OK);
+            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyRecord) : new(StatusCode.OK);
 
             VerifyKeyNotCreated(testOp, isImmutable);
 
@@ -721,7 +721,7 @@ namespace FASTER.test.Expiration
             MaybeMakeImmutable(isImmutable);
             const TestOp testOp = TestOp.SetIfValueNotEquals;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyAppend) : new(StatusCode.OK);
+            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyRecord) : new(StatusCode.OK);
 
             VerifyKeyNotCreated(testOp, isImmutable);
 
@@ -755,7 +755,7 @@ namespace FASTER.test.Expiration
             MaybeMakeImmutable(isImmutable);
             const TestOp testOp = TestOp.DeleteIfValueEquals;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyAppend) : new(StatusCode.OK);
+            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyRecord) : new(StatusCode.OK);
 
             VerifyKeyNotCreated(testOp, isImmutable);
 
@@ -790,7 +790,7 @@ namespace FASTER.test.Expiration
             MaybeMakeImmutable(isImmutable);
             const TestOp testOp = TestOp.DeleteIfValueNotEquals;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyAppend) : new(StatusCode.OK);
+            Status expectedFoundRmwStatus = isImmutable ? new(StatusCode.CopyRecord) : new(StatusCode.OK);
 
             VerifyKeyNotCreated(testOp, isImmutable);
 

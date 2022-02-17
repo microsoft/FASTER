@@ -610,14 +610,14 @@ namespace FASTER.test.LockableUnsafeContext
                     key = transferToExistingKey;
                     AddLockTableEntry(luContext, key, recordRegion == ChainTests.RecordRegion.Immutable);
                     var status = luContext.Upsert(key, key * valueMult);
-                    Assert.IsTrue(status.IsNewAppend, status.ToString());
+                    Assert.IsTrue(status.IsNewRecord, status.ToString());
                 }
                 else
                 {
                     key = transferToNewKey;
                     AddLockTableEntry(luContext, key, immutable: false);
                     var status = luContext.Upsert(key, key * valueMult);
-                    Assert.IsTrue(status.IsNewAppend, status.ToString());
+                    Assert.IsTrue(status.IsNewRecord, status.ToString());
                 }
             }
             catch (Exception)
@@ -694,7 +694,7 @@ namespace FASTER.test.LockableUnsafeContext
                     key = transferToExistingKey;
                     AddLockTableEntry(luContext, key, recordRegion == ChainTests.RecordRegion.Immutable);
                     var status = luContext.Delete(key);
-                    Assert.IsTrue(status.IsNewAppend, status.ToString());
+                    Assert.IsTrue(status.IsNewRecord, status.ToString());
                 }
                 else
                 {
@@ -784,9 +784,9 @@ namespace FASTER.test.LockableUnsafeContext
                 };
                 Assert.IsFalse(status.IsError, $"Unexpected UpdateOp {updateOp}, status {status}");
                 if (updateOp == UpdateOp.RMW)
-                    Assert.IsTrue(status.IsCopyAppend, status.ToString());
+                    Assert.IsTrue(status.IsCopyRecord, status.ToString());
                 else
-                    Assert.IsTrue(status.IsNewAppend, status.ToString());
+                    Assert.IsTrue(status.IsNewRecord, status.ToString());
 
                 var (xlock, slock) = luContext.IsLocked(key);
                 Assert.IsTrue(xlock);
@@ -1141,7 +1141,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
 
                 var status = s1.Upsert(ref key, ref key);
-                Assert.IsTrue(status.IsInPlaceUpdate, status.ToString());
+                Assert.IsTrue(status.IsNewRecord, status.ToString());
                 luc1.Lock(key, LockType.Shared);
             }
 

@@ -72,7 +72,7 @@ namespace FASTER.server
             hrw.Write((MessageType)(ctx >> 32), ref dcurr, (int)(dend - dcurr));
             Write((int)(ctx & 0xffffffff), ref dcurr, (int)(dend - dcurr));
             Write(ref status, ref dcurr, (int)(dend - dcurr));
-            if (status != Status.NOTFOUND)
+            if (!status.IsNotFound)
                 serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
             msgnum++;
         }
@@ -89,7 +89,7 @@ namespace FASTER.server
             hrw.Write((MessageType)(ctx >> 32), ref dcurr, (int)(dend - dcurr));
             Write((int)(ctx & 0xffffffff), ref dcurr, (int)(dend - dcurr));
             Write(ref status, ref dcurr, (int)(dend - dcurr));
-            if (status == Status.OK || status == Status.NOTFOUND)
+            if (status.IsCompletedSuccessfully)
                 serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
             msgnum++;
         }
@@ -167,9 +167,9 @@ namespace FASTER.server
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                        if (status == Status.PENDING)
+                        if (status.IsPending)
                             Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                        else if (status == Status.OK)
+                        else if (status.IsOK)
                             serializer.SkipOutput(ref dcurr);
                         break;
 
@@ -186,9 +186,9 @@ namespace FASTER.server
 
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
-                        if (status == Status.PENDING)
+                        if (status.IsPending)
                             Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                        else if (status == Status.OK || status == Status.NOTFOUND)
+                        else if (status.IsCompletedSuccessfully)
                             serializer.SkipOutput(ref dcurr);
 
                         subscribeKVBroker?.Publish(keyPtr);
@@ -269,11 +269,11 @@ namespace FASTER.server
             else
                 outputDcurr = dcurr + 6;
 
-            var status = Status.OK;
+            Status status = Status.CreateOK();
             if (valPtr == null)
                 status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
 
-            if (status != Status.PENDING)
+            if (!status.IsPending)
             {
                 // Write six bytes (message | status | sid)
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
@@ -286,7 +286,7 @@ namespace FASTER.server
                     ref Value value = ref serializer.ReadValueByRef(ref valPtr);
                     serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
                 }
-                else if (status == Status.OK)
+                else if (status.IsOK)
                     serializer.SkipOutput(ref dcurr);
             }
             else
@@ -305,7 +305,7 @@ namespace FASTER.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe bool Write(ref Status s, ref byte* dst, int length)
+        private static unsafe bool Write(ref Status s, ref byte* dst, int length)
         {
             if (length < 1) return false;
             *dst++ = s.Value;
@@ -313,7 +313,7 @@ namespace FASTER.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe bool Write(int seqNo, ref byte* dst, int length)
+        private static unsafe bool Write(int seqNo, ref byte* dst, int length)
         {
             if (length < sizeof(int)) return false;
             *(int*)dst = seqNo;
@@ -361,7 +361,7 @@ namespace FASTER.server
                     serializer.ReadInputByRef(ref src);
 
                     int sid = subscribeKVBroker.Subscribe(ref keyStart, ref inputStart, this);
-                    var status = Status.PENDING;
+                    Status status = Status.CreatePending();
                     hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                     Write(ref status, ref dcurr, (int)(dend - dcurr));
                     Write(sid, ref dcurr, (int)(dend - dcurr));
@@ -383,7 +383,7 @@ namespace FASTER.server
                     serializer.ReadInputByRef(ref src);
 
                     sid = subscribeKVBroker.PSubscribe(ref keyStart, ref inputStart, this);
-                    status = Status.PENDING;
+                    status = Status.CreatePending();
                     hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                     Write(ref status, ref dcurr, (int)(dend - dcurr));
                     Write(sid, ref dcurr, (int)(dend - dcurr));
@@ -401,7 +401,7 @@ namespace FASTER.server
                     ref Value val = ref serializer.ReadValueByRef(ref src);
                     int valueLength = (int)(src - valPtr);
 
-                    status = Status.OK;
+                    status = Status.CreateOK();
                     hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                     Write(ref status, ref dcurr, (int)(dend - dcurr));
 
@@ -419,7 +419,7 @@ namespace FASTER.server
                     serializer.ReadKeyByRef(ref src);
 
                     sid = subscribeBroker.Subscribe(ref keyStart, this);
-                    status = Status.PENDING;
+                    status = Status.CreatePending();
                     hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                     Write(ref status, ref dcurr, (int)(dend - dcurr));
                     Write(sid, ref dcurr, (int)(dend - dcurr));
@@ -435,7 +435,7 @@ namespace FASTER.server
                     serializer.ReadKeyByRef(ref src);
 
                     sid = subscribeBroker.PSubscribe(ref keyStart, this);
-                    status = Status.PENDING;
+                    status = Status.CreatePending();
                     hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                     Write(ref status, ref dcurr, (int)(dend - dcurr));
                     Write(sid, ref dcurr, (int)(dend - dcurr));

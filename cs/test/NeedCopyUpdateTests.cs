@@ -76,7 +76,7 @@ namespace FASTER.test
             Assert.IsTrue(status.IsFound);
             session.CompletePending(true);
             fht.Log.FlushAndEvict(true);
-            status = session.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.NewAppend), 0); // PENDING + InitialUpdater + NOTFOUND
+            status = session.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.NewRecord), 0); // PENDING + InitialUpdater + NOTFOUND
             Assert.IsTrue(status.IsPending);
             session.CompletePending(true);
         }

@@ -36,8 +36,8 @@ namespace FASTER.core
         BASIC_MASK = 0xFF,
 
         ADVANCED_MASK = 0x700,
-        APPEND = (int)StatusCode.NewAppend << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPYAPPEND = (int)StatusCode.CopyAppend << OperationStatusUtils.OpStatusToStatusCodeShift
+        APPEND = (int)StatusCode.NewRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPYAPPEND = (int)StatusCode.CopyRecord << OperationStatusUtils.OpStatusToStatusCodeShift
     }
 
     internal static class OperationStatusUtils

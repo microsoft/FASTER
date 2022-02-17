@@ -245,7 +245,7 @@ namespace FASTER.core
                         while (status == OperationStatus.RETRY_NOW);
                         container.Dispose();
                         if (status == OperationStatus.SUCCESS)
-                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyAppend);
+                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyRecord);
                     }
                     return OperationStatus.SUCCESS;
                 }
@@ -696,7 +696,7 @@ namespace FASTER.core
                 recordInfo.SetTentativeAtomic(false);
                 pendingContext.recordInfo = recordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
-                return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.NewAppend);
+                return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.NewRecord);
             }
 
             // CAS failed - let user dispose similar to a deleted record
@@ -1081,7 +1081,7 @@ namespace FASTER.core
             {
                 fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                              ref recordInfo, newLogicalAddress);
-                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.NewAppend);
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.NewRecord);
             }
             else if (logicalAddress >= hlog.HeadAddress)
             {
@@ -1089,14 +1089,14 @@ namespace FASTER.core
                 {
                     fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                                  ref recordInfo, newLogicalAddress);
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.NewAppend);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.NewRecord);
                 }
                 else
                 {
                     fasterSession.CopyUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress),
                                             ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref recordInfo, newLogicalAddress);
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyAppend);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyRecord);
                 }
             }
             else
@@ -1471,7 +1471,7 @@ namespace FASTER.core
                     recordInfo.SetTentativeAtomic(false);
                     pendingContext.recordInfo = recordInfo;
                     pendingContext.logicalAddress = newLogicalAddress;
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.NewAppend);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.NewRecord);
                     goto LatchRelease;
                 }
                 else
@@ -1942,7 +1942,7 @@ namespace FASTER.core
                     fasterSession.InitialUpdater(ref key,
                                              ref pendingContext.input.Get(), ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                              ref pendingContext.output, ref recordInfo, newLogicalAddress);
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.NewAppend);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.NewRecord);
                 }
                 else
                 {
@@ -1950,7 +1950,7 @@ namespace FASTER.core
                                           ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request),
                                           ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                           ref pendingContext.output, ref recordInfo, newLogicalAddress);
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyAppend);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyRecord);
                 }
 
                 bool success = true;
@@ -2460,7 +2460,7 @@ namespace FASTER.core
                 fasterSession.SingleWriter(ref key, ref input, ref value,
                                         ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                         ref recordInfo, newLogicalAddress, reason);
-                advancedStatusCode = StatusCode.CopyAppend;
+                advancedStatusCode = StatusCode.CopyRecord;
             }
 
             bool success = true;

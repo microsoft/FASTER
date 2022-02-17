@@ -96,7 +96,7 @@ namespace FASTER.test
         public override void RMWCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.IsTrue(status.IsFound);
-            Assert.IsTrue(status.IsCopyAppend);
+            Assert.IsTrue(status.IsCopyRecord);
         }
 
         public override void ReadCompletionCallback(ref Key key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
@@ -142,7 +142,7 @@ namespace FASTER.test
         public override void RMWCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.IsTrue(status.IsFound);
-            Assert.IsTrue(status.IsCopyAppend);
+            Assert.IsTrue(status.IsCopyRecord);
         }
 
         public override void ReadCompletionCallback(ref VLValue key, ref Input input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
