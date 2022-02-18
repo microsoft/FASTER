@@ -199,7 +199,7 @@ namespace SumStore
             {
                 Output output = default;
                 var status = session.Read(ref inputArray[i].adId, ref inputArray[i], ref output, Empty.Default, i);
-                Debug.Assert(status.IsCompletedSuccessfully);
+                Debug.Assert(status.CompletedSuccessfully);
                 inputArray[i].numClicks.numClicks = output.value.numClicks;
             }
 

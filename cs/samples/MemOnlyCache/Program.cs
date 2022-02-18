@@ -205,7 +205,7 @@ namespace MemOnlyCache
                 {
                     var status = session.Read(ref key, ref output);
 
-                    if (status.IsNotFound)
+                    if (!status.Found)
                     {
                         localStatusNotFound++;
                         if (UpsertOnCacheMiss)
@@ -214,7 +214,7 @@ namespace MemOnlyCache
                             session.Upsert(ref key, ref value);
                         }
                     }
-                    else if (status.IsFound)
+                    else if (status.Found)
                     {
                         localStatusFound++;
                         if (output.value[0] != (byte)key.key)

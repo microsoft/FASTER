@@ -80,24 +80,24 @@ namespace FASTER.test
             MyOutput g1 = new();
             var status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status.IsPending)
+            if (status.Pending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait:true);
                 (status, _) = GetSinglePendingResult(outputs);
             }
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
 
             Assert.AreEqual(23, g1.value.value);
 
             key2 = 99999;
             status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status.IsPending)
+            if (status.Pending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, _) = GetSinglePendingResult(outputs);
             }
-            Assert.IsTrue(status.IsNotFound);
+            Assert.IsFalse(status.Found);
         }
 
         [Test]
@@ -123,17 +123,20 @@ namespace FASTER.test
                 key = new KeyStruct() { kfield1 = 1, kfield2 = 2 };
                 value = new ValueStruct() { vfield1 = 1000, vfield2 = 2000 };
 
-                session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata1);
+                var status = session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata1);
+                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
 
+                // ConcurrentWriter returns false, so we create a new record (and leave the old one sealed).
                 value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
-                session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata2);
+                status = session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata2);
+                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
 
                 Assert.Greater(recordMetadata2.Address, recordMetadata1.Address);
 
                 var recordCount = 0;
                 using (var iterator = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
                 {
-                    // We now seal before copying and unseal/set to Invalid after copying, so we only get one record.
+                    // We seal before copying and leave it sealed after copying, so we only get one record.
                     while (iterator.GetNext(out var info))
                     {
                         recordCount++;

@@ -32,7 +32,7 @@ namespace FASTER.core
                                                      pendingContext.serialNum, asyncOp, out flushEvent, out newDiskRequest);
                 output = pendingContext.output;
 
-                if (status.IsPending && !newDiskRequest.IsDefault())
+                if (status.Pending && !newDiskRequest.IsDefault())
                 {
                     flushEvent = default;
                     this.diskRequest = newDiskRequest;
@@ -56,7 +56,7 @@ namespace FASTER.core
                 var status = completedOutputs.Next() ? completedOutputs.Current.Status : new(StatusCode.Error);
                 completedOutputs.Dispose();
                 this.diskRequest = default;
-                return !status.IsPending;
+                return !status.Pending;
             }
 
             /// <inheritdoc/>
@@ -106,7 +106,7 @@ namespace FASTER.core
             /// <summary>Complete the RMW operation, issuing additional (rare) I/O asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
             /// <returns>ValueTask for RMW result. User needs to await again if result status is pending.</returns>
             public ValueTask<RmwAsyncResult<Input, TOutput, Context>> CompleteAsync(CancellationToken token = default) 
-                => this.Status.IsPending
+                => this.Status.Pending
                     ? updateAsyncInternal.CompleteAsync(token)
                     : new ValueTask<RmwAsyncResult<Input, TOutput, Context>>(new RmwAsyncResult<Input, TOutput, Context>(this.Status, this.Output, this.RecordMetadata));
 
@@ -119,7 +119,7 @@ namespace FASTER.core
             /// <returns>Status of RMW operation</returns>
             public (Status status, TOutput output) Complete(out RecordMetadata recordMetadata)
             {
-                if (!this.Status.IsPending)
+                if (!this.Status.Pending)
                 {
                     recordMetadata = this.RecordMetadata;
                     return (this.Status, this.Output);
@@ -151,7 +151,7 @@ namespace FASTER.core
             {
                 Output output = default;
                 var status = CallInternalRMW(fasterSession, currentCtx, ref pcontext, ref key, ref input, ref output, context, serialNo, asyncOp: true, out flushEvent, out diskRequest);
-                if (!status.IsPending)
+                if (!status.Pending)
                     return new ValueTask<RmwAsyncResult<Input, Output, Context>>(new RmwAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
             finally

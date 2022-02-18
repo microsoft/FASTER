@@ -80,19 +80,19 @@ namespace FASTER.core
             /// <summary>Complete the Upsert operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
             /// <returns>ValueTask for Upsert result. User needs to await again if result status is Status.PENDING.</returns>
             public ValueTask<UpsertAsyncResult<Input, TOutput, Context>> CompleteAsync(CancellationToken token = default) 
-                => this.Status.IsPending
+                => this.Status.Pending
                     ? updateAsyncInternal.CompleteAsync(token)
                     : new ValueTask<UpsertAsyncResult<Input, TOutput, Context>>(new UpsertAsyncResult<Input, TOutput, Context>(this.Status, this.Output, this.RecordMetadata));
 
             /// <summary>Complete the Upsert operation, issuing additional I/O synchronously if needed.</summary>
             /// <returns>Status of Upsert operation</returns>
-            public Status Complete() => this.Status.IsPending ? updateAsyncInternal.Complete().Status : this.Status;
+            public Status Complete() => this.Status.Pending ? updateAsyncInternal.Complete().Status : this.Status;
 
             /// <summary>Complete the Upsert operation, issuing additional I/O synchronously if needed.</summary>
             /// <returns>Status and Output of Upsert operation</returns>
             public (Status status, TOutput output) Complete(out RecordMetadata recordMetadata)
             {
-                if (!this.Status.IsPending)
+                if (!this.Status.Pending)
                 {
                     recordMetadata = this.RecordMetadata;
                     return (this.Status, this.Output);

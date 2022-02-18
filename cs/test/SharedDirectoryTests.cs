@@ -209,7 +209,7 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < numUniqueKeys; i++)
             {
                 var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 inputArray[i].numClicks = output.value;
             }
 

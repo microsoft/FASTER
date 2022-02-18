@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -43,41 +44,51 @@ namespace FASTER.test
         [Category("Smoke")]
         public void TryAddTest()
         {
-            using var session = fht.For(new TryAddTestFunctions()).NewSession<TryAddTestFunctions>();
+            TryAddTestFunctions functions = new();
+            using var session = fht.For(functions).NewSession<TryAddTestFunctions>();
 
             Status status;
             var key = 1;
             var value1 = new RMWValue { value = 1 };
             var value2 = new RMWValue { value = 2 };
 
+            functions.noNeedInitialUpdater = true;
+            status = session.RMW(ref key, ref value1); // needInitialUpdater false + NOTFOUND
+            Assert.IsFalse(status.Found, status.ToString());
+            Assert.IsFalse(value1.flag); // InitialUpdater is not called
+            functions.noNeedInitialUpdater = false;
+
             status = session.RMW(ref key, ref value1); // InitialUpdater + NOTFOUND
-            Assert.IsTrue(status.IsNotFound);
+            Assert.IsFalse(status.Found, status.ToString());
             Assert.IsTrue(value1.flag); // InitialUpdater is called
 
             status = session.RMW(ref key, ref value2); // InPlaceUpdater + OK
-            Assert.IsTrue(status.IsInPlaceUpdate);
+            Assert.IsTrue(status.InPlaceUpdatedRecord, status.ToString());
 
             fht.Log.Flush(true);
-            status = session.RMW(ref key, ref value2); // NeedCopyUpdate + OK
-            Assert.IsTrue(status.IsInPlaceUpdate);
+            status = session.RMW(ref key, ref value2); // NeedCopyUpdate returns false, so RMW returns simply Found
+            Assert.IsTrue(status.Found, status.ToString());
 
             fht.Log.FlushAndEvict(true);
             status = session.RMW(ref key, ref value2, new(StatusCode.OK), 0); // PENDING + NeedCopyUpdate + OK
-            Assert.IsTrue(status.IsPending);
-            session.CompletePending(true);
+            Assert.IsTrue(status.Pending, status.ToString());
+            session.CompletePendingWithOutputs(out var outputs, true);
+
+            var output = new RMWValue();
+            (status, output) = GetSinglePendingResult(outputs);
+            Assert.IsTrue(status.Found, status.ToString()); // NeedCopyUpdate returns false, so RMW returns simply Found
 
             // Test stored value. Should be value1
-            var output = new RMWValue();
             status = session.Read(ref key, ref value1, ref output, new(StatusCode.OK), 0);
-            Assert.IsTrue(status.IsPending);
+            Assert.IsTrue(status.Pending, status.ToString());
             session.CompletePending(true);
 
             status = session.Delete(ref key);
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
             session.CompletePending(true);
             fht.Log.FlushAndEvict(true);
-            status = session.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.NewRecord), 0); // PENDING + InitialUpdater + NOTFOUND
-            Assert.IsTrue(status.IsPending);
+            status = session.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.CreatedRecord), 0); // PENDING + InitialUpdater + NOTFOUND
+            Assert.IsTrue(status.Pending, status.ToString());
             session.CompletePending(true);
         }
     }
@@ -106,6 +117,13 @@ namespace FASTER.test
 
     internal class TryAddTestFunctions : TryAddFunctions<int, RMWValue, Status>
     {
+        internal bool noNeedInitialUpdater;
+
+        public override bool NeedInitialUpdate(ref int key, ref RMWValue input, ref RMWValue output)
+        {
+            return noNeedInitialUpdater ? false : base.NeedInitialUpdate(ref key, ref input, ref output);
+        }
+
         public override void InitialUpdater(ref int key, ref RMWValue input, ref RMWValue value, ref RMWValue output, ref RecordInfo recordInfo, long address)
         {
             input.flag = true;
@@ -121,7 +139,7 @@ namespace FASTER.test
         {
             Assert.AreEqual(ctx, status);
 
-            if (status.IsNotFound)
+            if (!status.Found)
                 Assert.IsTrue(input.flag); // InitialUpdater is called.
         }
 

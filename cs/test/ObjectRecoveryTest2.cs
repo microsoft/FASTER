@@ -124,13 +124,13 @@ namespace FASTER.test.recovery.objects
                 MyOutput g1 = new();
                 var status = session.Read(ref key, ref input, ref g1, context, 0);
 
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     session.CompletePending(true);
                     context.FinalizeRead(ref status, ref g1);
                 }
 
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(i.ToString(), g1.value.value);
             }
 
@@ -142,13 +142,13 @@ namespace FASTER.test.recovery.objects
                 session.Delete(ref key, context, 0);
                 var status = session.Read(ref key, ref input, ref output, context, 0);
 
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     session.CompletePending(true);
                     context.FinalizeRead(ref status, ref output);
                 }
 
-                Assert.IsTrue(status.IsNotFound);
+                Assert.IsFalse(status.Found);
             }
         }
     }

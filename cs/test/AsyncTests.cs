@@ -96,7 +96,7 @@ namespace FASTER.test.async
                 {
                     var status = s3.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, s3.SerialNo);
 
-                    if (status.IsPending)
+                    if (status.Pending)
                         s3.CompletePending(true,true);
                     else
                     {
@@ -115,7 +115,7 @@ namespace FASTER.test.async
     {
         public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
             Assert.AreEqual(key.adId, output.value.numClicks);
         }
 

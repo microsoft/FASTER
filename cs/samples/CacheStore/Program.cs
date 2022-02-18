@@ -144,14 +144,14 @@ namespace CacheStore
                 var key = new CacheKey(k);
                 var status = s.Read(ref key, ref output);
 
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     statusPending++;
                     if (statusPending % 100 == 0)
                         s.CompletePending(false);
                     break;
                 }
-                else if (status.IsFound)
+                else if (status.Found)
                 {
                     if (output.value != key.key)
                         throw new Exception("Read error!");
@@ -186,11 +186,11 @@ namespace CacheStore
 
                 context.ticks = Stopwatch.GetTimestamp();
                 var status = s.Read(ref key, ref output, context);
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     s.CompletePending(true);
                 }
-                else if (status.IsFound)
+                else if (status.Found)
                 {
                     long ticks = Stopwatch.GetTimestamp();
                     if (output.value != key.key)

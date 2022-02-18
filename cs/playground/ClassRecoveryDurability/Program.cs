@@ -90,7 +90,7 @@ namespace ClassRecoveryDurablity
                         
                         // Console.WriteLine("add=" + i);
 
-                        if (!addStatus.IsInPlaceUpdate)
+                        if (!addStatus.InPlaceUpdatedRecord)
                             throw new Exception();
                     }
 
@@ -109,7 +109,7 @@ namespace ClassRecoveryDurablity
                                 var deleteStatus = session.Delete(ref deteletKey, context2, 1);
                                 // Console.WriteLine("delete=" + i);
 
-                                if (!deleteStatus.IsInPlaceUpdate)
+                                if (!deleteStatus.InPlaceUpdatedRecord)
                                     throw new Exception();
                             }
                         }
@@ -195,13 +195,13 @@ namespace ClassRecoveryDurablity
                             var deleteStatus = session.Read(ref readKey, ref input1, ref output1, context, 1);
                             //Console.WriteLine("test delete=" + i);
 
-                            if (deleteStatus.IsPending)
+                            if (deleteStatus.Pending)
                             {
                                 session.CompletePending(true);
                                 context.FinalizeRead(ref deleteStatus, ref output1);
                             }
 
-                            if (!deleteStatus.IsNotFound)
+                            if (deleteStatus.Found)
                                 throw new Exception();
                         }
                         else
@@ -215,13 +215,13 @@ namespace ClassRecoveryDurablity
                             var addStatus = session.Read(ref readKey, ref input1, ref output1, context, 1);
                             //Console.WriteLine("test add=" + i);
 
-                            if (addStatus.IsPending)
+                            if (addStatus.Pending)
                             {
                                 session.CompletePending(true);
                                 context.FinalizeRead(ref addStatus, ref output1);
                             }
 
-                            if (!addStatus.IsFound)
+                            if (!addStatus.Found)
                                 throw new Exception();
 
                             if (output1.value.value.SequenceEqual(data.data) == false)

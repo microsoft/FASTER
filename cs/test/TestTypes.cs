@@ -59,15 +59,15 @@ namespace FASTER.test
     {
         public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.IsFound);
-            Assert.IsTrue(status.IsAppendedRecord);
+            Assert.IsTrue(status.Found);
+            Assert.IsTrue(status.CopyUpdatedRecord);
             Assert.AreEqual(key.kfield1 + input.ifield1, output.value.vfield1);
             Assert.AreEqual(key.kfield2 + input.ifield2, output.value.vfield2);
         }
 
         public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
             Assert.AreEqual(key.kfield1, output.value.vfield1);
             Assert.AreEqual(key.kfield2, output.value.vfield2);
         }
@@ -115,21 +115,21 @@ namespace FASTER.test
     {
         public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.IsFound);
-            Assert.IsTrue(status.IsAppendedRecord);
+            Assert.IsTrue(status.Found);
+            Assert.IsTrue(status.CopyUpdatedRecord);
         }
 
         public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx == 0)
             {
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key.kfield1, output.value.vfield1);
                 Assert.AreEqual(key.kfield2, output.value.vfield2);
             }
             else
             {
-                Assert.IsTrue(status.IsNotFound);
+                Assert.IsFalse(status.Found);
             }
         }
 
@@ -179,13 +179,13 @@ namespace FASTER.test
 
         public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.IsFound);
-            Assert.IsTrue(status.IsAppendedRecord);
+            Assert.IsTrue(status.Found);
+            Assert.IsTrue(status.CopyUpdatedRecord);
         }
 
         public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
             Assert.AreEqual(key.kfield1, output.value.vfield1);
             Assert.AreEqual(key.kfield2, output.value.vfield2);
         }

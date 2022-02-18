@@ -157,7 +157,7 @@ namespace FASTER.core
                 {
                     Status status = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx, asyncOp, out flushEvent, out Output output);
 
-                    if (!status.IsPending)
+                    if (!status.Pending)
                     {
                         _pendingContext.Dispose();
                         asyncResult = _asyncOperation.CreateResult(status, output, new RecordMetadata(_pendingContext.recordInfo, _pendingContext.logicalAddress));

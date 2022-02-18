@@ -188,7 +188,7 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < numUniqueKeys; i++)
             {
                 var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                Assert.IsTrue(status.IsFound, $"At tokenIndex {tokenIndex}, keyIndex {i}, AdId {inputArray[i].adId.adId}");
+                Assert.IsTrue(status.Found, $"At tokenIndex {tokenIndex}, keyIndex {i}, AdId {inputArray[i].adId.adId}");
                 inputArray[i].numClicks = output.value;
             }
 
@@ -467,7 +467,7 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < DeviceTypeRecoveryTests.numUniqueKeys; i++)
             {
                 var status = session.Read(i % DeviceTypeRecoveryTests.numUniqueKeys, default, out long output);
-                Assert.IsTrue(status.IsFound, $"keyIndex {i}");
+                Assert.IsTrue(status.Found, $"keyIndex {i}");
                 Assert.AreEqual(ExpectedValue(i), output);
             }
         }
@@ -493,7 +493,7 @@ namespace FASTER.test.recovery.sumstore
                 int[] output = null;
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(len, output[0], "Length");
                 Assert.AreEqual(ExpectedValue(i), output[1], "field1");
                 for (int j = 2; j < len; j++)
@@ -515,7 +515,7 @@ namespace FASTER.test.recovery.sumstore
             {
                 var key = new MyValue { value = i };
                 var status = session.Read(key, default, out MyOutput output);
-                Assert.IsTrue(status.IsFound, $"keyIndex {i}");
+                Assert.IsTrue(status.Found, $"keyIndex {i}");
                 Assert.AreEqual(ExpectedValue(i), output.value.value);
             }
         }

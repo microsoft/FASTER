@@ -7,6 +7,7 @@ using System;
 using System.Threading;
 using FASTER.test.ReadCacheTests;
 using static FASTER.test.TestUtils;
+using System.Threading.Tasks;
 
 namespace FASTER.test.LockTests
 {
@@ -117,21 +118,23 @@ namespace FASTER.test.LockTests
         [Test]
         [Category(TestUtils.FasterKVTestCategory)]
         [Category(TestUtils.LockTestCategory)]
-        public void SameKeyInsertAndCTTTest()
+        public async ValueTask SameKeyInsertAndCTTTest()
         {
             Populate(evict: true);
             Functions functions = new();
             using var session = fkv.NewSession(functions);
             var iter = 0;
- 
-            TestUtils.DoTwoThreadTest(numKeys,
+
+            await DoTwoThreadRandomKeyTest(numKeys,
                 key =>
                 {
                     int output = 0;
                     var sleepFlag = (iter % 5 == 0) ? LockFunctionFlags.None : LockFunctionFlags.SleepAfterEventOperation;
                     Input input = new() { flags = LockFunctionFlags.WaitForEvent | sleepFlag, sleepRangeMs = 10 };
                     var status = session.Upsert(key, input, key + valueAdd * 2, ref output);
-                    Assert.IsTrue(status.IsOK, $"Key = {key}");
+
+                    // Don't test for .Found because we are doing random keys so may upsert one we have already seen, even on iter == 0
+                    //Assert.IsTrue(status.Found, $"Key = {key}, status = {status}");
                 },
                 key =>
                 {
@@ -144,22 +147,23 @@ namespace FASTER.test.LockTests
                     var status = session.Read(ref key, ref functions.readCacheInput, ref output, ref recordMetadata);
 
                     // If the Upsert completed before the Read started, we may Read() the Upserted value.
-                    if (status.IsCompleted)
+                    if (!status.Pending)
                     {
-                        Assert.IsTrue(status.IsOK, $"Key = {key}, status {status}");
+                        Assert.IsTrue(status.Found, $"Key = {key}, status {status}");
                         Assert.AreEqual(key + valueAdd * 2, output, $"Key = {key}");
                     }
                     else
                     {
-                        Assert.IsTrue(status.IsPending, $"Key = {key}");
+                        Assert.IsTrue(status.Pending, $"Key = {key}, status = {status}");
                         session.CompletePending(wait: true);
+                        // Output is not clear here and we are testing only threading aspects, so don't verify
                     }
                 },
                 key =>
                 {
                     int output = default;
                     var status = session.Read(ref key, ref output);
-                    Assert.IsTrue(status.IsFound, $"Key = {key}");
+                    Assert.IsTrue(status.Found, $"Key = {key}, status = {status}");
                     Assert.AreEqual(key + valueAdd * 2, output, $"Key = {key}");
                     functions.mres.Reset();
                     ++iter;

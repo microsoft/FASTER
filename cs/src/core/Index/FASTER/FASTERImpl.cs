@@ -245,7 +245,7 @@ namespace FASTER.core
                         while (status == OperationStatus.RETRY_NOW);
                         container.Dispose();
                         if (status == OperationStatus.SUCCESS)
-                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyRecord);
+                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopiedRecord);
                     }
                     return OperationStatus.SUCCESS;
                 }
@@ -420,7 +420,7 @@ namespace FASTER.core
                             hlog.MarkPage(logicalAddress, sessionCtx.version);
                             pendingContext.recordInfo = recordInfo;
                             pendingContext.logicalAddress = logicalAddress;
-                            return OperationStatus.SUCCESS;
+                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         }
 
                         // ConcurrentWriter failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
@@ -449,9 +449,7 @@ namespace FASTER.core
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                     ref Value recordValue = ref hlog.GetValue(physicalAddress);
                     if (recordInfo.IsIntermediate(out status))
-                    {
                         goto LatchRelease; // Release shared latch (if acquired)
-                    }
 
                     if (!recordInfo.Tombstone)
                     {
@@ -463,7 +461,7 @@ namespace FASTER.core
                                 hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
                             pendingContext.recordInfo = recordInfo;
                             pendingContext.logicalAddress = logicalAddress;
-                            status = OperationStatus.SUCCESS;
+                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                             goto LatchRelease; // Release shared latch (if acquired)
                         }
 
@@ -515,8 +513,10 @@ namespace FASTER.core
                 // Immutable region or new record
                 status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, tag, entry,
                                                latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, unsealPhysicalAddress);
-                if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
+                if (!OperationStatusUtils.IsAppend(status))
                 {
+                    // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
+                    Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
                     if (unsealPhysicalAddress != Constants.kInvalidAddress)
                     {
                         // Operation failed, so unseal the old record.
@@ -696,7 +696,7 @@ namespace FASTER.core
                 recordInfo.SetTentativeAtomic(false);
                 pendingContext.recordInfo = recordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
-                return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.NewRecord);
+                return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
             }
 
             // CAS failed - let user dispose similar to a deleted record
@@ -824,7 +824,7 @@ namespace FASTER.core
                         hlog.MarkPage(logicalAddress, sessionCtx.version);
                         pendingContext.recordInfo = recordInfo;
                         pendingContext.logicalAddress = logicalAddress;
-                        return OperationStatus.SUCCESS;
+                        return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                     }
 
                     // InPlaceUpdater failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
@@ -864,7 +864,7 @@ namespace FASTER.core
                                 hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
                             pendingContext.recordInfo = recordInfo;
                             pendingContext.logicalAddress = logicalAddress;
-                            status = OperationStatus.SUCCESS;
+                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopiedRecord);
                             goto LatchRelease; // Release shared latch (if acquired)
                         }
 
@@ -926,8 +926,9 @@ namespace FASTER.core
             {
                 status = CreateNewRecordRMW(ref key, ref input, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
                                             latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, unsealPhysicalAddress);
-                if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
+                if (!OperationStatusUtils.IsAppend(status))
                 {
+                    // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
                     if (unsealPhysicalAddress != Constants.kInvalidAddress)
                     {
                         // Operation failed, so unseal the old record.
@@ -1056,7 +1057,7 @@ namespace FASTER.core
             else
             {
                 if (!fasterSession.NeedInitialUpdate(ref key, ref input, ref output))
-                    return OperationStatus.SUCCESS;
+                    return OperationStatus.NOTFOUND;
             }
 
             // Allocate and initialize the new record
@@ -1081,7 +1082,7 @@ namespace FASTER.core
             {
                 fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                              ref recordInfo, newLogicalAddress);
-                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.NewRecord);
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
             }
             else if (logicalAddress >= hlog.HeadAddress)
             {
@@ -1089,14 +1090,14 @@ namespace FASTER.core
                 {
                     fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                                  ref recordInfo, newLogicalAddress);
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.NewRecord);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
                 }
                 else
                 {
                     fasterSession.CopyUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress),
                                             ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref recordInfo, newLogicalAddress);
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyRecord);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
                 }
             }
             else
@@ -1366,7 +1367,7 @@ namespace FASTER.core
                     Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word);
                 }
 
-                status = OperationStatus.SUCCESS;
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                 goto LatchRelease; // Release shared latch (if acquired)
             }
             else if (logicalAddress >= hlog.HeadAddress)
@@ -1471,7 +1472,7 @@ namespace FASTER.core
                     recordInfo.SetTentativeAtomic(false);
                     pendingContext.recordInfo = recordInfo;
                     pendingContext.logicalAddress = newLogicalAddress;
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.NewRecord);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
                     goto LatchRelease;
                 }
                 else
@@ -1910,7 +1911,7 @@ namespace FASTER.core
                 else
                 {
                     if (!fasterSession.NeedInitialUpdate(ref key, ref pendingContext.input.Get(), ref pendingContext.output))
-                        return OperationStatus.SUCCESS;
+                        return OperationStatus.NOTFOUND;
                 }
 
                 // Allocate and initialize the new record
@@ -1942,7 +1943,7 @@ namespace FASTER.core
                     fasterSession.InitialUpdater(ref key,
                                              ref pendingContext.input.Get(), ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                              ref pendingContext.output, ref recordInfo, newLogicalAddress);
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.NewRecord);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
                 }
                 else
                 {
@@ -1950,7 +1951,7 @@ namespace FASTER.core
                                           ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request),
                                           ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                           ref pendingContext.output, ref recordInfo, newLogicalAddress);
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyRecord);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
                 }
 
                 bool success = true;
@@ -2424,7 +2425,7 @@ namespace FASTER.core
             long newLogicalAddress, newPhysicalAddress;
             bool copyToReadCache = UseReadCache && reason == WriteReason.CopyToReadCache;
 
-            StatusCode advancedStatusCode = StatusCode.None;
+            StatusCode advancedStatusCode = StatusCode.OK;
             if (copyToReadCache)
             {
                 BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);
@@ -2441,6 +2442,7 @@ namespace FASTER.core
                 fasterSession.SingleWriter(ref key, ref input, ref value,
                                         ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                         ref recordInfo, Constants.kInvalidAddress, WriteReason.CopyToReadCache); // We do not expose readcache addresses
+                advancedStatusCode = StatusCode.CopiedRecordToReadCache;
             }
             else
             {
@@ -2460,7 +2462,7 @@ namespace FASTER.core
                 fasterSession.SingleWriter(ref key, ref input, ref value,
                                         ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                         ref recordInfo, newLogicalAddress, reason);
-                advancedStatusCode = StatusCode.CopyRecord;
+                advancedStatusCode = StatusCode.CopiedRecord;
             }
 
             bool success = true;

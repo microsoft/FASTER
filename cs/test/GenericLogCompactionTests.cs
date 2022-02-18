@@ -102,16 +102,16 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, 0, 0);
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     Assert.IsTrue(completedOutputs.Next());
-                    Assert.IsTrue(completedOutputs.Current.Status.IsFound);
+                    Assert.IsTrue(completedOutputs.Current.Status.Found);
                     output = completedOutputs.Current.Output;
                     Assert.IsFalse(completedOutputs.Next());
                     completedOutputs.Dispose();
                 }
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(value.value, output.value.value);
             }
         }
@@ -160,11 +160,11 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, 0, 0);
-                if (status.IsPending)
+                if (status.Pending)
                     session.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status.IsFound);
+                    Assert.IsTrue(status.Found);
                     Assert.AreEqual(value.value, output.value.value);
                 }
             }
@@ -212,18 +212,18 @@ namespace FASTER.test
                 int ctx = ((i < 500) && (i % 2 == 0)) ? 1 : 0;
 
                 var status = session.Read(ref key1, ref input, ref output, ctx, 0);
-                if (status.IsPending)
+                if (status.Pending)
                     session.CompletePending(true);
                 else
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status.IsFound);
+                        Assert.IsTrue(status.Found);
                         Assert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsTrue(status.IsNotFound);
+                        Assert.IsFalse(status.Found);
                     }
                 }
             }
@@ -264,7 +264,7 @@ namespace FASTER.test
                 var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
 
                 var status = session.Read(ref key1, ref input, ref output, ctx, 0);
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     session.CompletePending(true);
                 }
@@ -272,12 +272,12 @@ namespace FASTER.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status.IsFound);
+                        Assert.IsTrue(status.Found);
                         Assert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsTrue(status.IsNotFound);
+                        Assert.IsFalse(status.Found);
                     }
                 }
             }
@@ -313,12 +313,12 @@ namespace FASTER.test
             var input = default(MyInput);
             var output = default(MyOutput);
             var status = session.Read(ref key, ref input, ref output, 0, 0);
-            if (status.IsPending)
+            if (status.Pending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
             }
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
             Assert.AreEqual(value.value, output.value.value);
         }
 

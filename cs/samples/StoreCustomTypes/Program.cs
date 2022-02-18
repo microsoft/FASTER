@@ -56,7 +56,7 @@ namespace StoreCustomTypes
             MyOutput g1 = new();
             var status = s.Read(ref key, ref input, ref g1, context, 0);
 
-            if (status.IsFound && g1.value.value == key.key)
+            if (status.Found && g1.value.value == key.key)
                 Console.WriteLine("Success!");
             else
                 Console.WriteLine("Error!");
@@ -65,7 +65,7 @@ namespace StoreCustomTypes
             key = new MyKey { key = 46 };
             status = s.Read(ref key, ref input, ref g2, context, 0);
 
-            if (status.IsFound && g2.value.value == key.key)
+            if (status.Found && g2.value.value == key.key)
                 Console.WriteLine("Success!");
             else
                 Console.WriteLine("Error!");
@@ -78,7 +78,7 @@ namespace StoreCustomTypes
             status = s.Read(ref key, ref input, ref g2, context, 0);
 
             // We will receive the result via ReadCompletionCallback in Functions 
-            if (!status.IsPending)
+            if (!status.Pending)
                 Console.WriteLine("Error!");
 
             // End session when done

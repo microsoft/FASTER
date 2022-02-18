@@ -59,13 +59,13 @@ namespace FASTER.test
                 int[] output = null;
                 var status = s.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     s.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(len, output.Length);
                 for (int j = 0; j < len; j++)
                 {
@@ -129,13 +129,13 @@ namespace FASTER.test
                 int[] output = null;
                 var status = s.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     s.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(len, output.Length);
                 for (int j = 0; j < len; j++)
                 {

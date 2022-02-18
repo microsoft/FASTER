@@ -75,12 +75,12 @@ namespace FASTER.test
                 var value = $"{i}";
 
                 var status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     session.CompletePendingWithOutputs(out var outputs, wait:true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(value, output);
             }
         }
@@ -89,7 +89,7 @@ namespace FASTER.test
         {
             public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
         }

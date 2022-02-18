@@ -157,7 +157,7 @@ namespace ReadAddress
                 var status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.SkipCopyReads, serialNo: maxLap + 1);
 
                 // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     using (completedOutputs)
@@ -195,7 +195,7 @@ namespace ReadAddress
 
         private static bool ProcessRecord(FasterKV<Key, Value> store, Status status, RecordInfo recordInfo, int lap, ref Value output)
         {
-            Debug.Assert(status.IsNotFound == recordInfo.Tombstone);
+            Debug.Assert(status.Found == !recordInfo.Tombstone);
             Debug.Assert((lap == deleteLap) == recordInfo.Tombstone);
             var value = recordInfo.Tombstone ? "<deleted>" : output.value.ToString();
             Console.WriteLine($"  {value}; PrevAddress: {recordInfo.PreviousAddress}");

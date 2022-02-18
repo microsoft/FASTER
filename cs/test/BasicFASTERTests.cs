@@ -53,7 +53,7 @@ namespace FASTER.test
 
         private void AssertCompleted(Status expected, Status actual)
         {
-            if (actual.IsPending)
+            if (actual.Pending)
                 (actual, _) = CompletePendingResult();
             Assert.AreEqual(expected, actual);
         }
@@ -211,7 +211,7 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
+                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0).Pending)
                 {
                     session.CompletePending(true);
                 }
@@ -229,7 +229,7 @@ namespace FASTER.test
                 var i = r.Next(10000);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                Assert.IsTrue(session.Read(ref key1, ref input, ref output, Empty.Default, 0).IsNotFound);
+                Assert.IsFalse(session.Read(ref key1, ref input, ref output, Empty.Default, 0).Found);
             }
         }
 
@@ -266,7 +266,7 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
+                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0).Pending)
                 {
                     Assert.AreEqual(value.vfield1, output.value.vfield1);
                     Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -286,7 +286,7 @@ namespace FASTER.test
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 Status foundStatus = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(foundStatus.IsPending);
+                Assert.IsTrue(foundStatus.Pending);
             }
 
             session.CompletePendingWithOutputs(out var outputs, wait: true);
@@ -333,7 +333,7 @@ namespace FASTER.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                if (session.RMW(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
+                if (session.RMW(ref key1, ref input, ref output, Empty.Default, 0).Pending)
                 {
                     session.CompletePending(true);
                 }
@@ -634,19 +634,19 @@ namespace FASTER.test
 
             void VerifyResult()
             {
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     skipReadCacheSession.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
                 }
-                Assert.IsTrue(status.IsOK);
+                Assert.IsTrue(status.Found);
                 VerifyOutput();
             }
 
             // This will just be an ordinary read, as the record is in memory.
             functions.expectedReadAddress = readAtAddress;
             status = skipReadCacheSession.Read(ref key1, ref input, ref output);
-            Assert.IsTrue(status.IsOK);
+            Assert.IsTrue(status.Found);
             VerifyOutput();
 
             // ReadCache is used when the record is read from disk.
@@ -676,7 +676,7 @@ namespace FASTER.test
             // Now this will read from the read cache.
             functions.expectedReadAddress = Constants.kInvalidAddress;
             status = skipReadCacheSession.Read(ref key1, ref input, ref output);
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
             VerifyOutput();
         }
 

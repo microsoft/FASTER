@@ -104,25 +104,25 @@ namespace FASTER.test
             MyOutput g1 = new();
             var status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status.IsPending)
+            if (status.Pending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, g1) = GetSinglePendingResult(outputs);
             }
 
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
             Assert.AreEqual(23, g1.value.value);
 
             key2 = new MyKey { key = 99999 };
             status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status.IsPending)
+            if (status.Pending)
             {
                 session.CompletePending(true);
             }
             else
             {
-                Assert.IsTrue(status.IsNotFound);
+                Assert.IsFalse(status.Found);
             }
 
             // Update first 100 using RMW from storage
@@ -131,7 +131,7 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 input = new MyInput { value = 1 };
                 status = session.RMW(ref key1, ref input, Empty.Default, 0);
-                if (status.IsPending)
+                if (status.Pending)
                     session.CompletePending(true);
             }
 
@@ -141,7 +141,7 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
+                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0).Pending)
                 {
                     session.CompletePending(true);
                 }
@@ -174,7 +174,7 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var r = await session.UpsertAsync(ref key, ref value);
-                while (r.Status.IsPending)
+                while (r.Status.Pending)
                     r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
@@ -182,21 +182,21 @@ namespace FASTER.test
             var input = new MyInput();
             var readResult = await session.ReadAsync(ref key1, ref input, Empty.Default);
             var result = readResult.Complete();
-            Assert.IsTrue(result.status.IsFound);
+            Assert.IsTrue(result.status.Found);
             Assert.AreEqual(1989, result.output.value.value);
 
             var key2 = new MyKey { key = 23 };
             readResult = await session.ReadAsync(ref key2, ref input, Empty.Default);
             result = readResult.Complete();
 
-            Assert.IsTrue(result.status.IsFound);
+            Assert.IsTrue(result.status.Found);
             Assert.AreEqual(23, result.output.value.value);
 
             var key3 = new MyKey { key = 9999 };
             readResult = await session.ReadAsync(ref key3, ref input, Empty.Default);
             result = readResult.Complete();
 
-            Assert.IsTrue(result.status.IsNotFound);
+            Assert.IsFalse(result.status.Found);
 
             // Update last 100 using RMW in memory
             for (int i = 1900; i < 2000; i++)
@@ -204,7 +204,7 @@ namespace FASTER.test
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
                 var r = await session.RMWAsync(ref key, ref input, Empty.Default);
-                while (r.Status.IsPending)
+                while (r.Status.Pending)
                 {
                     r = await r.CompleteAsync(); // test async version of RMW completion
                 }
@@ -226,7 +226,7 @@ namespace FASTER.test
 
                 readResult = await session.ReadAsync(ref key, ref input, Empty.Default);
                 result = readResult.Complete();
-                Assert.IsTrue(result.status.IsFound);
+                Assert.IsTrue(result.status.Found);
                 if (i < 100 || i >= 1900)
                     Assert.AreEqual(value.value + 1, result.output.value.value);
                 else

@@ -69,13 +69,13 @@ namespace FASTER.core
             /// <summary>Complete the Delete operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
             /// <returns>ValueTask for Delete result. User needs to await again if result status is Status.PENDING.</returns>
             public ValueTask<DeleteAsyncResult<Input, Output, Context>> CompleteAsync(CancellationToken token = default)
-                => this.Status.IsPending
+                => this.Status.Pending
                     ? updateAsyncInternal.CompleteAsync(token)
                     : new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>(this.Status));
 
             /// <summary>Complete the Delete operation, issuing additional I/O synchronously if needed.</summary>
             /// <returns>Status of Delete operation</returns>
-            public Status Complete() => this.Status.IsPending ? updateAsyncInternal.Complete().Status : this.Status;
+            public Status Complete() => this.Status.Pending ? updateAsyncInternal.Complete().Status : this.Status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

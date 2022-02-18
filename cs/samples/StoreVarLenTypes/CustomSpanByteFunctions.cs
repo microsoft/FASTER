@@ -18,7 +18,7 @@ namespace StoreVarLenTypes
         // Read completion callback
         public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref byte[] output, byte ctx, Status status, RecordMetadata recordMetadata)
         {
-            if (!status.IsFound)
+            if (!status.Found)
             {
                 Console.WriteLine("Error!");
                 return;

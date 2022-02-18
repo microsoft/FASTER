@@ -142,7 +142,7 @@ namespace StoreDiskReadBenchmark
                         else
                         {
                             var (status, output) = (await session.ReadAsync(ref key, ref input)).Complete();
-                            if (!status.IsFound || output.value.vfield1 != key.key)
+                            if (!status.Found || output.value.vfield1 != key.key)
                             {
                                 if (!simultaneousReadWrite)
                                     throw new Exception("Wrong value found");
@@ -155,7 +155,7 @@ namespace StoreDiskReadBenchmark
                         var result = session.Read(ref key, ref input, ref output, Empty.Default, 0);
                         if (readBatching)
                         {
-                            if (!result.IsPending)
+                            if (!result.Pending)
                             {
                                 if (output.value.vfield1 != key.key)
                                 {
@@ -166,7 +166,7 @@ namespace StoreDiskReadBenchmark
                         }
                         else
                         {
-                            if (result.IsPending)
+                            if (result.Pending)
                             {
                                 session.CompletePending(true);
                             }
@@ -188,7 +188,7 @@ namespace StoreDiskReadBenchmark
                             for (int j = 0; j < readBatchSize; j++)
                             {
                                 var (status, output) = (await tasks[j].Item2).Complete();
-                                if (!status.IsFound || output.value.vfield1 != tasks[j].Item1)
+                                if (!status.Found || output.value.vfield1 != tasks[j].Item1)
                                 {
                                     if (!simultaneousReadWrite)
                                         throw new Exception($"Wrong value found. Found: {output.value.vfield1}, Expected: {tasks[j].Item1}");

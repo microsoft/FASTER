@@ -110,7 +110,7 @@ namespace StoreLogCompaction
             {
                 long ticks = DateTime.Now.Ticks - ctx.ticks;
 
-                if (status.IsNotFound)
+                if (!status.Found)
                     Console.WriteLine("Async: Value not found, latency = {0}ms", new TimeSpan(ticks).TotalMilliseconds);
 
                 if (output.value.value != key.key)

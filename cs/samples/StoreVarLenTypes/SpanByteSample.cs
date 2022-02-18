@@ -91,13 +91,13 @@ namespace StoreVarLenTypes
                 var expectedValue = valueMem.Slice(0, valLen);
                 expectedValue.Fill((byte)valLen);
 
-                if (status.IsPending)
+                if (status.Pending)
                 {
                     s.CompletePending(true);
                 }
                 else
                 {
-                    if (!status.IsFound || (!output.SequenceEqual(expectedValue.ToArray())))
+                    if (!status.Found || (!output.SequenceEqual(expectedValue.ToArray())))
                     {
                         success = false;
                         break;

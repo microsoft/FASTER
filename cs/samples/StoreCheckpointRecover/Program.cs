@@ -51,7 +51,7 @@ namespace StoreCheckpointRecover
                 MyOutput g1 = default;
                 var status = s.Read(ref key, ref g1);
 
-                if (status.IsFound && g1.value.value == key.key)
+                if (status.Found && g1.value.value == key.key)
                     Console.WriteLine("Success!");
                 else
                     Console.WriteLine("Error!");
@@ -88,7 +88,7 @@ namespace StoreCheckpointRecover
                 MyOutput g1 = default;
                 var status = s.Read(ref key, ref g1);
 
-                if (status.IsFound && g1.value.value == key.key)
+                if (status.Found && g1.value.value == key.key)
                     Console.WriteLine("Success!");
                 else
                     Console.WriteLine("Error!");

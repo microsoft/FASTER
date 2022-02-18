@@ -56,7 +56,7 @@ namespace FASTER.test.UnsafeContext
 
         private void AssertCompleted(Status expected, Status actual)
         {
-            if (actual.IsPending)
+            if (actual.Pending)
                 (actual, _) = CompletePendingResult();
             Assert.AreEqual(expected, actual);
         }
@@ -231,7 +231,7 @@ namespace FASTER.test.UnsafeContext
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                    if (uContext.Read(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
+                    if (uContext.Read(ref key1, ref input, ref output, Empty.Default, 0).Pending)
                     {
                         uContext.CompletePending(true);
                     }
@@ -249,7 +249,7 @@ namespace FASTER.test.UnsafeContext
                     var i = r.Next(10000);
                     OutputStruct output = default;
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                    Assert.IsTrue(uContext.Read(ref key1, ref input, ref output, Empty.Default, 0).IsNotFound);
+                    Assert.IsFalse(uContext.Read(ref key1, ref input, ref output, Empty.Default, 0).Found);
                 }
             }
             finally
@@ -294,7 +294,7 @@ namespace FASTER.test.UnsafeContext
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                    if (!uContext.Read(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
+                    if (!uContext.Read(ref key1, ref input, ref output, Empty.Default, 0).Pending)
                     {
                         Assert.AreEqual(value.vfield1, output.value.vfield1);
                         Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -314,7 +314,7 @@ namespace FASTER.test.UnsafeContext
                     OutputStruct output = default;
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     Status foundStatus = uContext.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                    Assert.IsTrue(foundStatus.IsPending);
+                    Assert.IsTrue(foundStatus.Pending);
                 }
 
                 uContext.CompletePendingWithOutputs(out var outputs, wait: true);
@@ -369,7 +369,7 @@ namespace FASTER.test.UnsafeContext
                     var i = nums[j];
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                    if (uContext.RMW(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
+                    if (uContext.RMW(ref key1, ref input, ref output, Empty.Default, 0).Pending)
                     {
                         uContext.CompletePending(true);
                     }

@@ -33,21 +33,24 @@ namespace FASTER.core
         CPR_SHIFT_DETECTED,
         CPR_PENDING_DETECTED,
         ALLOCATE_FAILED,
-        BASIC_MASK = 0xFF,
+        BASIC_MASK = 0xFF,      // Leave plenty of space for future expansion
 
-        ADVANCED_MASK = 0x700,
-        APPEND = (int)StatusCode.NewRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPYAPPEND = (int)StatusCode.CopyRecord << OperationStatusUtils.OpStatusToStatusCodeShift
+        ADVANCED_MASK = 0x700,  // Coordinate any changes with OperationStatusUtils.OpStatusToStatusCodeShif
+        CREATED_RECORD = (int)StatusCode.CreatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPY_UPDATED_RECORD = (int)StatusCode.CopyUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift
     }
 
     internal static class OperationStatusUtils
     {
-        internal const int OpStatusToStatusCodeShift = 8;
+        // StatusCode has this in the high nybble of the first (only) byte; put it in the low nybble of the second byte here).
+        // Coordinate any changes with OperationStatus.ADVANCED_MASK.
+        internal const int OpStatusToStatusCodeShift = 4;
 
         internal static OperationStatus BasicOpCode(OperationStatus status) => status & OperationStatus.BASIC_MASK;
 
         internal static OperationStatus AdvancedOpCode(OperationStatus status, StatusCode advancedStatusCode) => status | (OperationStatus)((int)advancedStatusCode << OpStatusToStatusCodeShift);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool TryConvertToStatusCode(OperationStatus advInternalStatus, out Status statusCode)
         {
             var internalStatus = BasicOpCode(advInternalStatus);
@@ -58,6 +61,13 @@ namespace FASTER.core
             }
             statusCode = default;
             return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool IsAppend(OperationStatus internalStatus)
+        {
+            var advInternalStatus = internalStatus & OperationStatus.ADVANCED_MASK;
+            return advInternalStatus == OperationStatus.CREATED_RECORD || advInternalStatus == OperationStatus.COPY_UPDATED_RECORD;
         }
     }
 

@@ -121,7 +121,7 @@ namespace AsyncStress
                 }
             }
 
-            Assert.False(status.IsPending);
+            Assert.False(status.Pending);
             _sessionPool.Return(session);
         }
 
@@ -173,11 +173,11 @@ namespace AsyncStress
 
             var (status, output) = (await task.ConfigureAwait(false)).Complete();
             _sessionPool.Return(session);
-            Assert.True(status.IsCompletedSuccessfully);
+            Assert.True(status.CompletedSuccessfully);
 
             using IMemoryOwner<byte> memoryOwner = output.Memory;
 
-            return (status, status.IsNotFound ? default : MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory));
+            return (status, status.Found ? MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory) : default);
         }
 
         public ValueTask<(Status, Value)> Read(Key key)
@@ -198,15 +198,15 @@ namespace AsyncStress
                 }
             }
 
-            if (result.Item1.IsPending)
+            if (result.Item1.Pending)
             {
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 int count = 0;
                 for (; completedOutputs.Next(); ++count)
                 {
                     using IMemoryOwner<byte> memoryOwner = completedOutputs.Current.Output.Memory;
-                    Assert.True(completedOutputs.Current.Status.IsCompletedSuccessfully);
-                    userResult = (completedOutputs.Current.Status, completedOutputs.Current.Status.IsNotFound ? default : MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory));
+                    Assert.True(completedOutputs.Current.Status.CompletedSuccessfully);
+                    userResult = (completedOutputs.Current.Status, completedOutputs.Current.Status.Found ? MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory) : default);
                 }
                 completedOutputs.Dispose();
                 Assert.Equal(1, count);
@@ -214,8 +214,8 @@ namespace AsyncStress
             else
             {
                 using IMemoryOwner<byte> memoryOwner = result.Item2.Memory;
-                Assert.True(result.Item1.IsCompletedSuccessfully);
-                userResult = (result.Item1, result.Item1.IsNotFound ? default : MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory));
+                Assert.True(result.Item1.CompletedSuccessfully);
+                userResult = (result.Item1, result.Item1.Found ? MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory) : default);
             }
             _sessionPool.Return(session);
             return new ValueTask<(Status, Value)>(userResult);

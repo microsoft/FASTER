@@ -57,14 +57,14 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var r = await s1.UpsertAsync(ref key, ref key);
-                while (r.Status.IsPending)
+                while (r.Status.Pending)
                     r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(ref key)).Complete();
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
         }
@@ -86,7 +86,7 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(ref key, Empty.Default, 99, cancellationToken)).Complete();
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
         }
@@ -107,7 +107,7 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(key,Empty.Default, 99)).Complete();
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
         }
@@ -129,7 +129,7 @@ namespace FASTER.test.async
             for (key = 0; key < numOps; key++)
             {
                 (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
@@ -142,7 +142,7 @@ namespace FASTER.test.async
             (await t2).Complete(); // should trigger RMW re-do
 
             (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }
 
@@ -159,14 +159,14 @@ namespace FASTER.test.async
             for (key = 0; key < numOps; key++)
             {
                 (status, output) = (await s1.RMWAsync(ref key, ref key, Empty.Default)).Complete();
-                Assert.IsFalse(status.IsPending);
+                Assert.IsFalse(status.Pending);
                 Assert.AreEqual(key, output);
             }
 
             for (key = 0; key < numOps; key++)
             {
                 (status, output) = (await s1.ReadAsync(key, output)).Complete();
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
@@ -179,7 +179,7 @@ namespace FASTER.test.async
             (await t2).Complete(); // should trigger RMW re-do
 
             (status, output) = (await s1.ReadAsync(key, output,Empty.Default, 129)).Complete();
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }
 
@@ -193,7 +193,7 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var r = await s1.UpsertAsync(ref key, ref key);
-                while (r.Status.IsPending)
+                while (r.Status.Pending)
                     r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
@@ -202,18 +202,18 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(ref key)).Complete();
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
             {   // Scope for variables
                 long deleteKey = 99;
                 var r = await s1.DeleteAsync(ref deleteKey);
-                while (r.Status.IsPending)
+                while (r.Status.Pending)
                     r = await r.CompleteAsync(); // test async version of Delete completion
 
                 var (status, _) = (await s1.ReadAsync(ref deleteKey)).Complete();
-                Assert.IsTrue(status.IsNotFound);
+                Assert.IsFalse(status.Found);
             }
         }
 
@@ -227,7 +227,7 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var status = (await s1.UpsertAsync(key, key)).Complete();   // test sync version of Upsert completion
-                Assert.IsFalse(status.IsPending);
+                Assert.IsFalse(status.Pending);
             }
 
             Assert.Greater(numOps, 100);
@@ -235,17 +235,17 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await s1.ReadAsync(key)).Complete();
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
             {   // Scope for variables
                 long deleteKey = 99;
                 var status = (await s1.DeleteAsync(deleteKey)).Complete(); // test sync version of Delete completion
-                Assert.IsFalse(status.IsPending);
+                Assert.IsFalse(status.Pending);
 
                 (status, _) = (await s1.ReadAsync(deleteKey)).Complete();
-                Assert.IsTrue(status.IsNotFound);
+                Assert.IsFalse(status.Found);
             }
         }
 
@@ -270,14 +270,14 @@ namespace FASTER.test.async
                 // subtract after the insert to get record start address.
                 (status, output) = (await s1.RMWAsync(ref key, ref key)).Complete();
                 addresses[key] = fht1.Log.TailAddress - recordSize;
-                Assert.IsFalse(status.IsPending);
+                Assert.IsFalse(status.Pending);
                 Assert.AreEqual(key, output);
             }
 
             for (key = 0; key < numOps; key++)
             {
                 (status, output) = (await s1.ReadAsync(ref key, ref output, addresses[key], ReadFlags.None)).Complete();
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
@@ -294,7 +294,7 @@ namespace FASTER.test.async
             addresses[key] = fht1.Log.TailAddress - recordSize;
 
             (status, output) = (await s1.ReadAsync(ref key, ref output, addresses[key], ReadFlags.None, Empty.Default, 129)).Complete();
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }
 
@@ -310,14 +310,14 @@ namespace FASTER.test.async
             for (key = 0; key < numOps; key++)
             {
                 var asyncResult = await (await s1.RMWAsync(key, key)).CompleteAsync();
-                Assert.IsFalse(asyncResult.Status.IsPending);
+                Assert.IsFalse(asyncResult.Status.Pending);
                 Assert.AreEqual(key, asyncResult.Output);
             }
 
             for (key = 0; key < numOps; key++)
             {
                 (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
@@ -330,7 +330,7 @@ namespace FASTER.test.async
             (await t2).Complete(); // should trigger RMW re-do
 
             (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }
 
@@ -354,7 +354,7 @@ namespace FASTER.test.async
             for (key = 0; key < numOps; key++)
             {
                 (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-                Assert.IsTrue(status.IsFound);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
@@ -367,7 +367,7 @@ namespace FASTER.test.async
             (await t2).Complete(); // should trigger RMW re-do
 
             (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
-            Assert.IsTrue(status.IsFound);
+            Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }
 
@@ -384,7 +384,7 @@ namespace FASTER.test.async
             {
                 if (completeAsync)
                 {
-                    while (ar.Status.IsPending)
+                    while (ar.Status.Pending)
                         ar = await ar.CompleteAsync(); // test async version of Upsert completion
                     return;
                 }
@@ -395,7 +395,7 @@ namespace FASTER.test.async
             {
                 if (completeAsync)
                 {
-                    while (ar.Status.IsPending)
+                    while (ar.Status.Pending)
                         ar = await ar.CompleteAsync(); // test async version of Upsert completion
                     return;
                 }
