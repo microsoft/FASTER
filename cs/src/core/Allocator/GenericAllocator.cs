@@ -191,6 +191,13 @@ namespace FASTER.core
         /// </summary>
         public override void Dispose()
         {
+            // Dispose base allocator
+            base.Dispose();
+
+            // Ensure pending IO on object log device is completed
+            objectLogDevice.CompletePending();
+
+            // Clean up data structures
             if (values != null)
             {
                 for (int i = 0; i < values.Length; i++)
@@ -200,7 +207,6 @@ namespace FASTER.core
                 values = null;
             }
             overflowPagePool.Dispose();
-            base.Dispose();
         }
 
         /// <summary>

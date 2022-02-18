@@ -840,6 +840,7 @@ namespace FASTER.core
         public virtual void Dispose()
         {
             disposed = true;
+            device.CompletePending();
 
             if (ownedEpoch)
                 epoch.Dispose();

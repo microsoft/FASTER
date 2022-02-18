@@ -184,8 +184,8 @@ namespace FASTER.core
         /// </summary>
         public override void Dispose()
         {
-            foreach (var q in ioQueue)
-                while (q.Count != 0) { }
+            CompletePending();
+
             terminated = true;
             for (int i = 0; i != ioProcessors.Length; i++)
             {
@@ -196,6 +196,13 @@ namespace FASTER.core
                 ram_segment_handles[i].Free();
                 ram_segments[i] = null;
             }
+        }
+
+        /// <inheritdoc />
+        public override void CompletePending()
+        {
+            foreach (var q in ioQueue)
+                while (!q.IsEmpty) Thread.Yield();
         }
     }
 }

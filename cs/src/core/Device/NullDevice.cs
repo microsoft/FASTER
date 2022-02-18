@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
 
 namespace FASTER.core
 {
@@ -65,6 +64,11 @@ namespace FASTER.core
 
         /// <inheritdoc />
         public override void Dispose()
+        {
+        }
+
+        /// <inheritdoc />
+        public override void CompletePending()
         {
         }
     }

@@ -302,6 +302,9 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
+        public abstract void CompletePending();
+
+        /// <inheritdoc/>
         public virtual long GetFileSize(int segment)
         {
             if (segmentSize > 0) return segmentSize;

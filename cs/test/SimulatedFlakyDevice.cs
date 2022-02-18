@@ -151,5 +151,10 @@ namespace FASTER.test
         {
             underlying.Dispose();
         }
+
+        public override void CompletePending()
+        {
+            underlying.CompletePending();
+        }
     }
 }

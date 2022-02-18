@@ -83,6 +83,11 @@ namespace FASTER.core
         /// <returns></returns>
         bool Throttle();
 
+        /// <summary>
+        /// Complete all outstanding read and write operations on the device
+        /// </summary>
+        void CompletePending();
+
         /* Segmented addressing API */
         /// <summary>
         /// Write

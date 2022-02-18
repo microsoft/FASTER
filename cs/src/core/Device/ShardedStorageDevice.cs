@@ -293,5 +293,11 @@ namespace FASTER.core
                 countdown.Dispose();
             }
         }
+
+        public override void CompletePending()
+        {
+            foreach (var device in partitions.Devices)
+                device.CompletePending();
+        }
     }
 }

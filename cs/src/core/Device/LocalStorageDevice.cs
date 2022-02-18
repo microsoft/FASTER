@@ -80,6 +80,13 @@ namespace FASTER.core
         /// <inheritdoc />
         public override bool Throttle() => numPending > ThrottleLimit;
 
+        /// <inheritdoc />
+        public override void CompletePending()
+        {
+            while (numPending > 0)
+                Thread.Yield();
+        }
+
         /// <summary>
         /// Constructor with more options for derived classes
         /// </summary>
@@ -333,6 +340,8 @@ namespace FASTER.core
         public override void Dispose()
         {
             _disposed = true;
+            CompletePending();
+
             foreach (var logHandle in logHandles.Values)
                 logHandle.Dispose();
 

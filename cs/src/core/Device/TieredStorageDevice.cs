@@ -65,10 +65,8 @@ namespace FASTER.core
 
         public override void Dispose()
         {
-            foreach (IDevice device in devices)
-            {
+            foreach (var device in devices)
                 device.Dispose();
-            }
         }
 
         public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
@@ -169,6 +167,12 @@ namespace FASTER.core
                 if (devices[i].StartSegment <= segment) return i;
             }
             throw new ArgumentException("No such address exists");
+        }
+
+        public override void CompletePending()
+        {
+            foreach (var device in devices)
+                device.CompletePending();
         }
     }
 }

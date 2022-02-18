@@ -61,6 +61,13 @@ namespace FASTER.core
         // We do not throttle ManagedLocalStorageDevice because our AsyncPool of handles takes care of this
         public override bool Throttle() => false;
 
+        /// <inheritdoc />
+        public override void CompletePending()
+        {
+            while (numPending > 0)
+                Thread.Yield();
+        }
+
         private void RecoverFiles()
         {
             FileInfo fi = new(FileName); // may not exist
@@ -456,6 +463,8 @@ namespace FASTER.core
         public override void Dispose()
         {
             _disposed = true;
+            CompletePending();
+
             foreach (var entry in logHandles)
             {
                 entry.Value.Item1.Dispose();

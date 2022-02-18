@@ -24,6 +24,11 @@ namespace FASTER.devices
         private readonly string blobName;
         private readonly bool underLease;
 
+        /// <summary>
+        /// Number of pending reads or writes on device
+        /// </summary>
+        private int numPending = 0;
+
         internal BlobRequestOptions BlobRequestOptionsWithoutRetry { get; private set; }
         internal BlobRequestOptions BlobRequestOptionsWithRetry { get; private set; }
 
@@ -167,6 +172,9 @@ namespace FASTER.devices
         /// <inheritdoc />
         public override void Dispose()
         {
+            // Complete outstanding IO
+            CompletePending();
+
             // Unlike in LocalStorageDevice, we explicitly remove all page blobs if the deleteOnClose flag is set, instead of relying on the operating system
             // to delete files after the end of our process. This leads to potential problems if multiple instances are sharing the same underlying page blobs.
             // Since this flag is only used for testing, it is probably fine.
@@ -369,20 +377,22 @@ namespace FASTER.devices
                 throw new FasterException(exception.Message, exception);
             }
 
+            Interlocked.Increment(ref numPending);
             var t = this.ReadFromBlobUnsafeAsync(blobEntry.PageBlob, (long)sourceAddress, (long)destinationAddress, readLength);
             t.GetAwaiter().OnCompleted(() =>                                // REVIEW: this method cannot avoid GetAwaiter
             {
+                Interlocked.Decrement(ref numPending);
                 if (t.IsFaulted)
-                      {
-                          Debug.WriteLine("AzureStorageDevice.ReadAsync Returned (Failure)");
-                          callback(uint.MaxValue, readLength, context);
-                      }
-                      else
-                      {
-                          Debug.WriteLine("AzureStorageDevice.ReadAsync Returned");
-                          callback(0, readLength, context);
-                      }
-                  });
+                {
+                    Debug.WriteLine("AzureStorageDevice.ReadAsync Returned (Failure)");
+                    callback(uint.MaxValue, readLength, context);
+                }
+                else
+                {
+                    Debug.WriteLine("AzureStorageDevice.ReadAsync Returned");
+                    callback(0, readLength, context);
+                }
+            });
         }
 
         /// <summary>
@@ -430,9 +440,11 @@ namespace FASTER.devices
         {
             Debug.WriteLine($"AzureStorageDevice.WriteToBlobAsync Called target={blob.Name}");
 
+            Interlocked.Increment(ref numPending);
             var t = this.WriteToBlobAsync(blob, sourceAddress, (long)destinationAddress, numBytesToWrite);
             t.GetAwaiter().OnCompleted(() =>                                // REVIEW: this method cannot avoid GetAwaiter
             {
+                Interlocked.Decrement(ref numPending);
                 if (t.IsFaulted)
                 {
                     Debug.WriteLine("AzureStorageDevice.WriteAsync Returned (Failure)");
@@ -475,6 +487,13 @@ namespace FASTER.devices
                 return true;
             }
             return false;
+        }
+
+        /// <inheritdoc />
+        public override void CompletePending()
+        {
+            while (numPending > 0)
+                Thread.Yield();
         }
     }
 }
