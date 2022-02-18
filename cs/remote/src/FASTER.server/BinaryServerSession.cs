@@ -72,7 +72,7 @@ namespace FASTER.server
             hrw.Write((MessageType)(ctx >> 32), ref dcurr, (int)(dend - dcurr));
             Write((int)(ctx & 0xffffffff), ref dcurr, (int)(dend - dcurr));
             Write(ref status, ref dcurr, (int)(dend - dcurr));
-            if (!status.IsNotFound)
+            if (status.Found)
                 serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
             msgnum++;
         }
@@ -89,7 +89,7 @@ namespace FASTER.server
             hrw.Write((MessageType)(ctx >> 32), ref dcurr, (int)(dend - dcurr));
             Write((int)(ctx & 0xffffffff), ref dcurr, (int)(dend - dcurr));
             Write(ref status, ref dcurr, (int)(dend - dcurr));
-            if (status.IsCompletedSuccessfully)
+            if (status.CompletedSuccessfully)
                 serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
             msgnum++;
         }
@@ -167,9 +167,9 @@ namespace FASTER.server
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                        if (status.IsPending)
+                        if (status.Pending)
                             Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                        else if (status.IsOK)
+                        else if (status.Found)
                             serializer.SkipOutput(ref dcurr);
                         break;
 
@@ -186,9 +186,9 @@ namespace FASTER.server
 
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
-                        if (status.IsPending)
+                        if (status.Pending)
                             Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                        else if (status.IsCompletedSuccessfully)
+                        else if (status.CompletedSuccessfully)
                             serializer.SkipOutput(ref dcurr);
 
                         subscribeKVBroker?.Publish(keyPtr);
@@ -269,11 +269,11 @@ namespace FASTER.server
             else
                 outputDcurr = dcurr + 6;
 
-            Status status = Status.CreateOK();
+            Status status = Status.CreateFound();
             if (valPtr == null)
                 status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
 
-            if (!status.IsPending)
+            if (!status.Pending)
             {
                 // Write six bytes (message | status | sid)
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
@@ -286,7 +286,7 @@ namespace FASTER.server
                     ref Value value = ref serializer.ReadValueByRef(ref valPtr);
                     serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
                 }
-                else if (status.IsOK)
+                else if (status.Found)
                     serializer.SkipOutput(ref dcurr);
             }
             else
@@ -401,7 +401,7 @@ namespace FASTER.server
                     ref Value val = ref serializer.ReadValueByRef(ref src);
                     int valueLength = (int)(src - valPtr);
 
-                    status = Status.CreateOK();
+                    status = Status.CreateFound();
                     hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                     Write(ref status, ref dcurr, (int)(dend - dcurr));
 
