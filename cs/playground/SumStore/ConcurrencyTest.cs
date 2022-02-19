@@ -119,7 +119,7 @@ namespace SumStore
             {
                 var status = session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
-                if (status != Status.OK && status != Status.NOTFOUND)
+                if (!status.CompletedSuccessfully)
                     throw new Exception();
 
                 if (i % completePendingInterval == 0)
@@ -156,7 +156,7 @@ namespace SumStore
                 Input input = default;
                 Output output = default;
                 var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                if (status == Status.PENDING)
+                if (status.Pending)
                     throw new NotImplementedException();
 
                 inputArray[i].numClicks = output.value;

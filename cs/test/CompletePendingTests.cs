@@ -117,7 +117,7 @@ namespace FASTER.test
             internal static void VerifyOneNotFound(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, ref KeyStruct keyStruct)
             {
                 Assert.IsTrue(completedOutputs.Next());
-                Assert.AreEqual(Status.NOTFOUND, completedOutputs.Current.Status);
+                Assert.IsFalse(completedOutputs.Current.Status.Found);
                 Assert.AreEqual(keyStruct, completedOutputs.Current.Key);
                 Assert.IsFalse(completedOutputs.Next());
                 completedOutputs.Dispose();
@@ -131,7 +131,7 @@ namespace FASTER.test
             using var session = fht.For(new FunctionsWithContext<ContextStruct>()).NewSession<FunctionsWithContext<ContextStruct>>();
             Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
 
-            ProcessPending processPending = new ProcessPending();
+            ProcessPending processPending = new();
 
             for (var key = 0; key < numRecords; ++key)
             {
@@ -157,7 +157,7 @@ namespace FASTER.test
                 {
                     var ksUnfound = keyStruct;
                     ksUnfound.kfield1 += numRecords * 10;
-                    if (session.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct) == Status.PENDING)
+                    if (session.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct).Pending)
                     {
                         CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
                         if (isAsync)
@@ -172,7 +172,7 @@ namespace FASTER.test
                 var status = useRMW
                     ? session.RMW(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct)
                     : session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
-                if (status == Status.PENDING)
+                if (status.Pending)
                 {
                     if (processPending.IsFirst())
                     {
@@ -192,7 +192,7 @@ namespace FASTER.test
                     }
                     continue;
                 }
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.Found);
             }
             processPending.VerifyNoDeferredPending();
 
@@ -210,7 +210,7 @@ namespace FASTER.test
                 // This should not be pending since we've not flushed.
                 var localKey = key;
                 var status = session.Read(ref localKey, ref inputStruct, ref outputStruct, ref recordMetadata);
-                Assert.AreNotEqual(Status.PENDING, status);
+                Assert.IsFalse(status.Pending);
                 Assert.AreEqual(address, recordMetadata.Address);
             }
         }

@@ -37,7 +37,7 @@ namespace FASTER.test
             /// <inheritdoc/>
             public override void CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, long address) { newValue = oldValue; }
             /// <inheritdoc/>
-            public override bool PostCopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, long address) { this.pcuAddress = address; return true; }
+            public override void PostCopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, long address) { this.pcuAddress = address; }
 
             public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, long address) { this.psdAddress = address; }
             public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, long address) => false;

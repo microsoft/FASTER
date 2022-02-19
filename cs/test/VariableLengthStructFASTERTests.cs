@@ -4,6 +4,7 @@
 using System;
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -58,18 +59,17 @@ namespace FASTER.test
                 int[] output = null;
                 var status = s.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.Pending)
                 {
-                    s.CompletePending(true);
+                    s.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, output) = GetSinglePendingResult(outputs);
                 }
-                else
+
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(len, output.Length);
+                for (int j = 0; j < len; j++)
                 {
-                    Assert.AreEqual(Status.OK, status);
-                    Assert.AreEqual(len, output.Length);
-                    for (int j = 0; j < len; j++)
-                    {
-                        Assert.AreEqual(len, output[j]);
-                    }
+                    Assert.AreEqual(len, output[j]);
                 }
             }
             s.Dispose();
@@ -129,18 +129,17 @@ namespace FASTER.test
                 int[] output = null;
                 var status = s.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.Pending)
                 {
-                    s.CompletePending(true);
+                    s.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, output) = GetSinglePendingResult(outputs);
                 }
-                else
+
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(len, output.Length);
+                for (int j = 0; j < len; j++)
                 {
-                    Assert.AreEqual(Status.OK, status);
-                    Assert.AreEqual(len, output.Length);
-                    for (int j = 0; j < len; j++)
-                    {
-                        Assert.AreEqual(len, output[j]);
-                    }
+                    Assert.AreEqual(len, output[j]);
                 }
             }
 

@@ -48,7 +48,7 @@ namespace FASTER.test.recovery
         {
             public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.AreEqual(Status.OK, status, $"status = {status}");
+                Assert.IsTrue(status.Found, $"status = {status}");
                 Assert.AreEqual(key, output, $"output = {output}");
             }
         }
@@ -62,7 +62,7 @@ namespace FASTER.test.recovery
 
             internal static void Verify(Status status, long key, long output)
             {
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.Found);
                 if (key < 950)
                     Assert.AreEqual(key, output);
                 else
@@ -106,9 +106,9 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s1.Read(ref key, ref output);
-                    if (status != Status.PENDING)
+                    if (!status.Pending)
                     {
-                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
                     }
                 }
@@ -143,9 +143,9 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s2.Read(ref key, ref output);
-                if (status != Status.PENDING)
+                if (!status.Pending)
                 {
-                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.IsTrue(status.Found, $"status = {status}");
                     Assert.AreEqual(key, output, $"output = {output}");
                 }
             }
@@ -195,9 +195,9 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (status != Status.PENDING)
+                        if (!status.Pending)
                         {
-                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.IsTrue(status.Found, $"status = {status}");
                             Assert.AreEqual(key, output, $"output = {output}");
                         }
                     }
@@ -226,9 +226,9 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (status != Status.PENDING)
+                    if (!status.Pending)
                     {
-                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
                     }
                 }
@@ -278,9 +278,9 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (status != Status.PENDING)
+                    if (!status.Pending)
                     {
-                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
                     }
                 }
@@ -330,9 +330,9 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (status != Status.PENDING)
+                        if (!status.Pending)
                         {
-                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.IsTrue(status.Found, $"status = {status}");
                             Assert.AreEqual(key, output, $"output = {output}");
                         }
                     }
@@ -361,9 +361,9 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (status != Status.PENDING)
+                    if (!status.Pending)
                     {
-                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
                     }
                 }
@@ -414,9 +414,9 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (status != Status.PENDING)
+                        if (!status.Pending)
                         {
-                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.IsTrue(status.Found, $"status = {status}");
                             Assert.AreEqual(key, output, $"output = {output}");
                         }
                     }
@@ -448,9 +448,9 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (status != Status.PENDING)
+                    if (!status.Pending)
                     {
-                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
                     }
                 }
@@ -493,9 +493,9 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s1.Read(ref key, ref output);
-                    if (status != Status.PENDING)
+                    if (!status.Pending)
                     {
-                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
                     }
                 }
@@ -508,9 +508,9 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s1.Read(ref key, ref output);
-                if (status != Status.PENDING)
+                if (!status.Pending)
                 {
-                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.IsTrue(status.Found, $"status = {status}");
                     Assert.AreEqual(key, output, $"output = {output}");
                 }
             }
@@ -544,9 +544,9 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s2.Read(ref key, ref output);
-                if (status != Status.PENDING)
+                if (!status.Pending)
                 {
-                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.IsTrue(status.Found, $"status = {status}");
                     Assert.AreEqual(key, output, $"output = {output}");
                 }
             }
@@ -646,7 +646,7 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s2.Read(ref key, ref output);
-                if (status != Status.PENDING)
+                if (!status.Pending)
                 {
                     MyFunctions2.Verify(status, key, output);
                 }
@@ -668,7 +668,7 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s3.Read(ref key, ref output);
-                if (status != Status.PENDING)
+                if (!status.Pending)
                 {
                     MyFunctions2.Verify(status, key, output);
                 }

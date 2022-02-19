@@ -6,6 +6,7 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test.ReadCacheTests
 {
@@ -45,9 +46,9 @@ namespace FASTER.test.ReadCacheTests
         [SetUp]
         public void Setup()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/NativeReadCacheTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(MethodTestDir + "/NativeReadCacheTests.log", deleteOnClose: true);
             fht = new FasterKV<int, int>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
                 comparer: new ChainComparer(mod));
@@ -60,19 +61,22 @@ namespace FASTER.test.ReadCacheTests
             fht = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
-        void PopulateAndEvict(bool immutable = false)
+        public enum RecordRegion { Immutable, OnDisk, Mutable };
+
+        void PopulateAndEvict(RecordRegion recordRegion = RecordRegion.OnDisk)
         {
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
 
-            if (!immutable)
+            if (recordRegion != RecordRegion.Immutable)
             {
                 for (int key = 0; key < numKeys; key++)
                     session.Upsert(key, key + valueAdd);
                 session.CompletePending(true);
-                fht.Log.FlushAndEvict(true);
+                if (recordRegion == RecordRegion.OnDisk)
+                    fht.Log.FlushAndEvict(true);
                 return;
             }
 
@@ -88,17 +92,25 @@ namespace FASTER.test.ReadCacheTests
             fht.Log.ShiftReadOnlyAddress(fht.Log.TailAddress, wait: true);
         }
 
-        void CreateChain(bool immutable = false)
+        void CreateChain(RecordRegion recordRegion = RecordRegion.OnDisk)
         {
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            int output = -1;
+            bool expectPending(int key) => recordRegion == RecordRegion.OnDisk || (recordRegion == RecordRegion.Immutable && key < immutableSplitKey);
 
             // Pass1: PENDING reads and populate the cache
             for (var ii = 0; ii < chainLen; ++ii)
             {
                 var key = lowChainKey + ii * mod;
                 var status = session.Read(key, out _);
-                Assert.AreEqual((immutable && key >= immutableSplitKey) ? Status.OK : Status.PENDING, status);
-                session.CompletePending(wait: true);
+                if (expectPending(key))
+                {
+                    Assert.IsTrue(status.Pending, status.ToString());
+                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, output) = GetSinglePendingResult(outputs);
+                    Assert.IsTrue(status.CopiedRecordToReadCache, status.ToString());
+                }
+                Assert.IsTrue(status.Found, status.ToString());
                 if (ii == 0)
                     readCacheHighEvictionAddress = fht.ReadCache.TailAddress;
             }
@@ -107,7 +119,7 @@ namespace FASTER.test.ReadCacheTests
             for (var ii = 0; ii < chainLen; ++ii)
             {
                 var status = session.Read(lowChainKey + ii * mod, out _);
-                Assert.AreNotEqual(Status.PENDING, status);
+                Assert.IsTrue(!status.Pending && status.Found, status.ToString());
             }
 
             // Pass 3: Put in bunch of extra keys into the cache so when we FlushAndEvict we get all the ones of interest.
@@ -116,7 +128,14 @@ namespace FASTER.test.ReadCacheTests
                 if ((key % mod) != 0)
                 {
                     var status = session.Read(key, out _);
-                    Assert.AreEqual((immutable && key >= immutableSplitKey) ? Status.OK : Status.PENDING, status);
+                    if (expectPending(key))
+                    {
+                        Assert.IsTrue(status.Pending);
+                        session.CompletePendingWithOutputs(out var outputs, wait: true);
+                        (status, output) = GetSinglePendingResult(outputs);
+                        Assert.IsTrue(status.CopiedRecordToReadCache, status.ToString());
+                    }
+                    Assert.IsTrue(status.Found, status.ToString());
                     session.CompletePending(wait: true);
                 }
             }
@@ -214,9 +233,9 @@ namespace FASTER.test.ReadCacheTests
         }
 
         [Test]
-        [Category(TestUtils.FasterKVTestCategory)]
-        [Category(TestUtils.ReadCacheTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        [Category(SmokeTestCategory)]
         public void ChainVerificationTest()
         {
             PopulateAndEvict();
@@ -226,9 +245,9 @@ namespace FASTER.test.ReadCacheTests
         }
 
         [Test]
-        [Category(TestUtils.FasterKVTestCategory)]
-        [Category(TestUtils.ReadCacheTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        [Category(SmokeTestCategory)]
         public void DeleteCacheRecordTest()
         {
             PopulateAndEvict();
@@ -238,10 +257,10 @@ namespace FASTER.test.ReadCacheTests
             void doTest(int key)
             {
                 var status = session.Delete(key);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
 
                 status = session.Read(key, out var value);
-                Assert.AreEqual(Status.NOTFOUND, status);
+                Assert.IsFalse(status.Found, status.ToString());
             }
 
             doTest(lowChainKey);
@@ -254,9 +273,9 @@ namespace FASTER.test.ReadCacheTests
         }
 
         [Test]
-        [Category(TestUtils.FasterKVTestCategory)]
-        [Category(TestUtils.ReadCacheTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        [Category(SmokeTestCategory)]
         public void DeleteAllCacheRecordsTest()
         {
             PopulateAndEvict();
@@ -266,10 +285,10 @@ namespace FASTER.test.ReadCacheTests
             void doTest(int key)
             {
                 var status = session.Delete(key);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
 
                 status = session.Read(key, out var value);
-                Assert.AreEqual(Status.NOTFOUND, status);
+                Assert.IsFalse(status.Found, status.ToString());
             }
 
             // Delete all keys in the readcache chain.
@@ -287,18 +306,18 @@ namespace FASTER.test.ReadCacheTests
         }
 
         [Test]
-        [Category(TestUtils.FasterKVTestCategory)]
-        [Category(TestUtils.ReadCacheTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        [Category(SmokeTestCategory)]
         public void UpsertCacheRecordTest()
         {
             DoUpdateTest(useRMW: false);
         }
 
         [Test]
-        [Category(TestUtils.FasterKVTestCategory)]
-        [Category(TestUtils.ReadCacheTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        [Category(SmokeTestCategory)]
         public void RMWCacheRecordTest()
         {
             DoUpdateTest(useRMW: true);
@@ -313,23 +332,23 @@ namespace FASTER.test.ReadCacheTests
             void doTest(int key)
             {
                 var status = session.Read(key, out var value);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.Found, status.ToString());
 
                 if (useRMW)
                 {
                     // RMW will get the old value from disk, unlike Upsert
                     status = session.RMW(key, value + valueAdd);
-                    Assert.AreEqual(Status.PENDING, status);
+                    Assert.IsTrue(status.Pending, status.ToString());
                     session.CompletePending(wait: true);
                 }
                 else
                 {
                     status = session.Upsert(key, value + valueAdd);
-                    Assert.AreEqual(Status.OK, status);
+                    Assert.IsTrue(status.CreatedRecord, status.ToString());
                 }
 
                 status = session.Read(key, out value);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.Found, status.ToString());
                 Assert.AreEqual(key + valueAdd * 2, value);
             }
 
@@ -343,9 +362,9 @@ namespace FASTER.test.ReadCacheTests
         }
 
         [Test]
-        [Category(TestUtils.FasterKVTestCategory)]
-        [Category(TestUtils.ReadCacheTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        [Category(SmokeTestCategory)]
         public void SpliceInFromCTTTest()
         {
             PopulateAndEvict();
@@ -356,22 +375,20 @@ namespace FASTER.test.ReadCacheTests
             RecordMetadata recordMetadata = default;
 
             var status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
-            Assert.AreEqual(Status.PENDING, status);
+            Assert.IsTrue(status.Pending, status.ToString());
             session.CompletePending(wait: true);
 
             VerifySplicedInKey(key);
         }
 
-        public enum RecordRegion { Immutable, OnDisk, NotFound };
-
         [Test]
-        [Category(TestUtils.FasterKVTestCategory)]
-        [Category(TestUtils.ReadCacheTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        [Category(SmokeTestCategory)]
         public void SpliceInFromUpsertTest([Values] RecordRegion recordRegion)
         {
-            PopulateAndEvict(recordRegion == RecordRegion.Immutable);
-            CreateChain(recordRegion == RecordRegion.Immutable);
+            PopulateAndEvict(recordRegion);
+            CreateChain(recordRegion);
 
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
             int key = -1;
@@ -380,57 +397,72 @@ namespace FASTER.test.ReadCacheTests
             {
                 key = spliceInExistingKey;
                 var status = session.Upsert(key, key + valueAdd);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
             }
             else
             {
                 key = spliceInNewKey;
                 var status = session.Upsert(key, key + valueAdd);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
             }
 
             VerifySplicedInKey(key);
         }
 
         [Test]
-        [Category(TestUtils.FasterKVTestCategory)]
-        [Category(TestUtils.ReadCacheTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        [Category(SmokeTestCategory)]
         public void SpliceInFromRMWTest([Values] RecordRegion recordRegion)
         {
-            PopulateAndEvict(recordRegion == RecordRegion.Immutable);
-            CreateChain(recordRegion == RecordRegion.Immutable);
+            PopulateAndEvict(recordRegion);
+            CreateChain(recordRegion);
 
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            int key = -1;
+            int key = -1, output = -1;
 
             if (recordRegion == RecordRegion.Immutable || recordRegion == RecordRegion.OnDisk)
             {
+                // Existing key
                 key = spliceInExistingKey;
                 var status = session.RMW(key, key + valueAdd);
-                Assert.AreEqual(recordRegion == RecordRegion.OnDisk ? Status.PENDING : Status.OK, status);
-                session.CompletePending(wait: true);
+                if (recordRegion == RecordRegion.OnDisk)
+                {
+                    Assert.IsTrue(status.Pending, status.ToString());
+                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, output) = GetSinglePendingResult(outputs);
+                }
+                Assert.IsTrue(status.Found && status.CopyUpdatedRecord, status.ToString());
+
+                { // New key
+                    key = spliceInNewKey;
+                    status = session.RMW(key, key + valueAdd);
+
+                    // This NOTFOUND key will return PENDING because we have to trace back through the collisions.
+                    Assert.IsTrue(status.Pending, status.ToString());
+                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, output) = GetSinglePendingResult(outputs);
+                    Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                }
             }
             else
             {
                 key = spliceInNewKey;
                 var status = session.RMW(key, key + valueAdd);
-                // This NOTFOUND key will return PENDING because we have to trace back through the collisions.
-                Assert.AreEqual(Status.PENDING, status);
-                session.CompletePending(wait: true);
+                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
             }
 
             VerifySplicedInKey(key);
         }
 
         [Test]
-        [Category(TestUtils.FasterKVTestCategory)]
-        [Category(TestUtils.ReadCacheTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        [Category(SmokeTestCategory)]
         public void SpliceInFromDeleteTest([Values] RecordRegion recordRegion)
         {
-            PopulateAndEvict(recordRegion == RecordRegion.Immutable);
-            CreateChain(recordRegion == RecordRegion.Immutable);
+            PopulateAndEvict(recordRegion);
+            CreateChain(recordRegion);
 
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
             int key = -1;
@@ -439,22 +471,22 @@ namespace FASTER.test.ReadCacheTests
             {
                 key = spliceInExistingKey;
                 var status = session.Delete(key);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
             }
             else
             {
                 key = spliceInNewKey;
                 var status = session.Delete(key);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
             }
 
             VerifySplicedInKey(key);
         }
 
         [Test]
-        [Category(TestUtils.FasterKVTestCategory)]
-        [Category(TestUtils.ReadCacheTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        [Category(SmokeTestCategory)]
         public void EvictFromReadCacheToLockTableTest()
         {
             PopulateAndEvict();
@@ -496,9 +528,9 @@ namespace FASTER.test.ReadCacheTests
         }
 
         [Test]
-        [Category(TestUtils.FasterKVTestCategory)]
-        [Category(TestUtils.ReadCacheTestCategory)]
-        [Category(TestUtils.SmokeTestCategory)]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        [Category(SmokeTestCategory)]
         public void TransferFromLockTableToReadCacheTest()
         {
             PopulateAndEvict();
@@ -542,7 +574,7 @@ namespace FASTER.test.ReadCacheTests
             foreach (var key in locks.Keys)
             {
                 var status = session.Read(key, out _);
-                Assert.AreEqual(Status.PENDING, status);
+                Assert.IsTrue(status.Pending, status.ToString());
                 session.CompletePending(wait: true);
 
                 var lockType = locks[key];

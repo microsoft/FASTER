@@ -53,7 +53,7 @@ namespace FASTER.core
                             try
                             {
                                 var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _);
-                                Debug.Assert(status != Status.PENDING);
+                                Debug.Assert(!status.Pending);
                                 _result = (status, _pendingContext.output);
                                 _recordMetadata = new(_pendingContext.recordInfo, _pendingContext.logicalAddress);
                                 _pendingContext.Dispose();
@@ -114,7 +114,7 @@ namespace FASTER.core
                 FasterExecutionContext<Input, Output, Context> currentCtx,
                 PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
             {
-                status = Status.PENDING;
+                status = new(StatusCode.Pending);
                 output = default;
                 this.recordMetadata = default;
                 readAsyncInternal = new ReadAsyncInternal<Input, Output, Context>(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
@@ -126,9 +126,8 @@ namespace FASTER.core
             /// <returns>The read result, or throws an exception if error encountered.</returns>
             public (Status status, Output output) Complete()
             {
-                if (status != Status.PENDING)
+                if (!status.Pending)
                     return (status, output);
-
                 return readAsyncInternal.Complete();
             }
 
@@ -138,7 +137,7 @@ namespace FASTER.core
             /// <returns>The read result and the previous address in the Read key's hash chain, or throws an exception if error encountered.</returns>
             public (Status status, Output output) Complete(out RecordMetadata recordMetadata)
             {
-                if (status != Status.PENDING)
+                if (!status.Pending)
                 {
                     recordMetadata = this.recordMetadata;
                     return (status, output);
@@ -167,17 +166,12 @@ namespace FASTER.core
                 while (internalStatus == OperationStatus.RETRY_NOW);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);
 
-                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-                {
-                    return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>((Status)internalStatus, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
-                }
-                else
-                {
-                    var status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, true, out diskRequest);
+                if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
+                    return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(new(internalStatus), output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
 
-                    if (status != Status.PENDING)
-                        return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
-                }
+                status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, true, out diskRequest);
+                if (!status.Pending)
+                    return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
             finally
             {
