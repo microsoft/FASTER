@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <time.h>
 #include <stdio.h>
 #include <stdarg.h>
 
@@ -33,7 +32,7 @@ inline void logMsg(Lvl level, int line, const char* func,
   // Do not print messages below the current level.
   if (level < static_cast<Lvl>(LEVEL)) return;
 
-  auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
+  const auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
 
   va_list argptr;
   va_start(argptr, fmt);
@@ -54,10 +53,10 @@ inline void logMsg(Lvl level, int line, const char* func,
     break;
   }
 
-  fprintf(stderr, "[%010lu.%09lu]::%s::%s:%s:%d:: %s\n",
-          (unsigned long) std::chrono::duration_cast<std::chrono::seconds>(now).count(),
-          (unsigned long) std::chrono::duration_cast<std::chrono::nanoseconds>(now).count(),
-          l, file, func, line, buffer);
+  const auto s = std::chrono::duration_cast<std::chrono::seconds>(now);
+  const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now) - s;
+  fprintf(stderr, "[%010lld.%09lld]::%s::%s:%s:%d:: %s\n",
+          s.count(), ns.count(), l, file, func, line, buffer);
 
   va_end(argptr);
 }
