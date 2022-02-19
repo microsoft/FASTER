@@ -83,7 +83,7 @@ namespace FASTER.benchmark
             newValue.value = input.value + oldValue.value;
         }
 
-        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) => true;
+        public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, long address) { }
 
         public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output) => true;
 

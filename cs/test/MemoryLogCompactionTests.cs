@@ -84,13 +84,13 @@ namespace FASTER.test
                 key.Span.Fill(i);
 
                 var (status, output) = session.Read(key, userContext: i < 10 ? 1 : 0); 
-                if (status != Status.PENDING)
+                if (!status.Pending)
                 {
                     if (i < 10)
-                        Assert.AreEqual(Status.NOTFOUND, status);
+                        Assert.IsFalse(status.Found);
                     else
                     {
-                        Assert.AreEqual(Status.OK, status);
+                        Assert.IsTrue(status.Found);
                         Assert.IsTrue(output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(key.Span));
                         output.Item1.Dispose();
                     }
@@ -131,7 +131,8 @@ namespace FASTER.test
     {
         public override void RMWCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.Found);
+            Assert.IsTrue(status.CopyUpdatedRecord);
         }
 
         public override void ReadCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status, RecordMetadata recordMetadata)
@@ -140,17 +141,18 @@ namespace FASTER.test
             {
                 if (ctx == 0)
                 {
-                    Assert.AreEqual(Status.OK, status);
+                    Assert.IsTrue(status.Found);
                     Assert.IsTrue(output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(key.Span));
                 }
                 else
                 {
-                    Assert.AreEqual(Status.NOTFOUND, status);
+                    Assert.IsFalse(status.Found);
                 }
             }
             finally
             {
-                if (status == Status.OK) output.Item1.Dispose();
+                if (status.Found)
+                    output.Item1.Dispose();
             }
         }
     }

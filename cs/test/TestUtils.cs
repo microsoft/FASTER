@@ -8,6 +8,7 @@ using FASTER.core;
 using FASTER.devices;
 using System.Threading;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 namespace FASTER.test
 {
@@ -190,31 +191,18 @@ namespace FASTER.test
             return result;
         }
 
-        internal static void DoTwoThreadTest(int count, Action<int> first, Action<int> second, Action<int> verification, int randSleepRangeMs = -1)
+        internal async static ValueTask DoTwoThreadRandomKeyTest(int count, Action<int> first, Action<int> second, Action<int> verification)
         {
-            Thread[] threads = new Thread[2];
+            Task[] tasks = new Task[2];
 
             var rng = new Random(101);
             for (var iter = 0; iter < count; ++iter)
             {
                 var arg = rng.Next(count);
-                threads[0] = new Thread(() => first(arg));
-                threads[1] = new Thread(() => second(arg));
+                tasks[0] = Task.Factory.StartNew(() => first(arg));
+                tasks[1] = Task.Factory.StartNew(() => second(arg));
 
-                var doSleep = randSleepRangeMs >= 0;
-                for (int t = 0; t < threads.Length; t++)
-                {
-                    if (doSleep)
-                    {
-                        if (randSleepRangeMs > 0)
-                            Thread.Sleep(rng.Next(10));
-                        else
-                            Thread.Yield();
-                    }
-                    threads[t].Start();
-                }
-                for (int t = 0; t < threads.Length; t++)
-                    threads[t].Join();
+                await Task.WhenAll(tasks);
 
                 verification(arg);
             }

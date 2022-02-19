@@ -56,7 +56,7 @@ namespace AsyncStress
         async ValueTask<int> CompleteAsync(FasterKV<Key, Value>.UpsertAsyncResult<Value, Value, Empty> result)
         {
             var numPending = 0;
-            for (; result.Status == Status.PENDING; ++numPending)
+            for (; result.Status.Pending; ++numPending)
                 result = await result.CompleteAsync().ConfigureAwait(false);
             return numPending;
         }
@@ -64,7 +64,7 @@ namespace AsyncStress
         async ValueTask<int> CompleteAsync(FasterKV<Key, Value>.RmwAsyncResult<Value, Value, Empty> result)
         {
             var numPending = 0;
-            for (; result.Status == Status.PENDING; ++numPending)
+            for (; result.Status.Pending; ++numPending)
                 result = await result.CompleteAsync().ConfigureAwait(false);
             return numPending;
         }
@@ -82,7 +82,7 @@ namespace AsyncStress
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
             var status = session.Upsert(key, value);
-            Assert.True(status != Status.PENDING);
+            Assert.False(status.Pending);
             _sessionPool.Return(session);
         }
 
@@ -109,7 +109,7 @@ namespace AsyncStress
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
             var status = session.RMW(key, value);
-            Assert.True(status != Status.PENDING);
+            Assert.False(status.Pending);
             _sessionPool.Return(session);
         }
 
@@ -137,14 +137,14 @@ namespace AsyncStress
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
             var result = session.Read(key);
-            if (result.status == Status.PENDING)
+            if (result.status.Pending)
             {
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 int count = 0;
                 for (; completedOutputs.Next(); ++count)
                 {
                     Assert.Equal(key, completedOutputs.Current.Key);
-                    result = (Status.OK, completedOutputs.Current.Output);
+                    result = (completedOutputs.Current.Status, completedOutputs.Current.Output);
                 }
                 completedOutputs.Dispose();
                 Assert.Equal(1, count);

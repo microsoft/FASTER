@@ -59,7 +59,7 @@ namespace StoreVarLenTypes
                 store.Log.FlushAndEvict(true); // Flush and evict all records to disk
                 var _status = s.RMW(_key, _input); // CopyUpdater to 270 (due to immutable source value on disk)
 
-                if (_status != Status.PENDING)
+                if (_status.Pending)
                 {
                     Console.WriteLine("Error!");
                     return;
@@ -79,7 +79,7 @@ namespace StoreVarLenTypes
 
             // Read does not go pending, and the output should fit in the provided space (10 bytes)
             // Hence, no Memory will be allocated by FASTER
-            if (status != Status.OK || !outputWrapper.IsSpanByte)
+            if (!status.Found || !outputWrapper.IsSpanByte)
             {
                 Console.WriteLine("Error!");
                 return;

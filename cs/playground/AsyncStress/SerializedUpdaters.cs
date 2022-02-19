@@ -26,7 +26,7 @@ namespace AsyncStress
             public async ValueTask<int> CompleteAsync(FasterKV<SpanByte, SpanByte>.UpsertAsyncResult<SpanByte, SpanByteAndMemory, Empty> result)
             {
                 var numPending = 0;
-                for (; result.Status == Status.PENDING; ++numPending)
+                for (; result.Status.Pending; ++numPending)
                     result = await result.CompleteAsync().ConfigureAwait(false);
                 return numPending;
             }
@@ -43,7 +43,7 @@ namespace AsyncStress
             public async ValueTask<int> CompleteAsync(FasterKV<SpanByte, SpanByte>.RmwAsyncResult<SpanByte, SpanByteAndMemory, Empty> result)
             {
                 var numPending = 0;
-                for (; result.Status == Status.PENDING; ++numPending)
+                for (; result.Status.Pending; ++numPending)
                     result = await result.CompleteAsync().ConfigureAwait(false);
                 return numPending;
             }

@@ -128,7 +128,7 @@ namespace FASTER.test.LockableUnsafeContext
         void Populate()
         {
             for (int key = 0; key < numRecords; key++)
-                Assert.AreNotEqual(Status.PENDING, session.Upsert(key, key * valueMult));
+                Assert.IsFalse(session.Upsert(key, key * valueMult).Pending);
         }
 
         static void AssertIsLocked(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext, int key, bool xlock, bool slock)
@@ -153,6 +153,13 @@ namespace FASTER.test.LockableUnsafeContext
             luContext.exclusiveLockCount = 0;
         }
 
+        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
+        {
+            // If we already have an exception, clear these counts so "Run" will not report them spuriously.
+            luContext.sharedLockCount = 0;
+            luContext.exclusiveLockCount = 0;
+        }
+
         void EnsureNoLocks()
         {
             using var iter = this.fht.Log.Scan(this.fht.Log.BeginAddress, this.fht.Log.TailAddress);
@@ -160,7 +167,7 @@ namespace FASTER.test.LockableUnsafeContext
             while (iter.GetNext(out var recordInfo, out var key, out var value))
             {
                 ++count;
-                Assert.False(recordInfo.IsLocked, $"Unexpected Locked record: {(recordInfo.NumLockedShared > 0 ? "S" : "")} {(recordInfo.IsLockedExclusive ? "X" : "")}");
+                Assert.False(recordInfo.IsLocked, $"Unexpected Locked record for key {key}: {(recordInfo.NumLockedShared > 0 ? "S" : "")} {(recordInfo.IsLockedExclusive ? "X" : "")}");
             }
 
             // We delete some records so just make sure the test worked.
@@ -214,7 +221,7 @@ namespace FASTER.test.LockableUnsafeContext
                         status = luContext.Read(24, out var value24);
                         if (flushMode == FlushMode.OnDisk)
                         {
-                            if (status == Status.PENDING)
+                            if (status.Pending)
                             {
                                 luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                                 Assert.True(completedOutputs.Next());
@@ -227,13 +234,13 @@ namespace FASTER.test.LockableUnsafeContext
                         }
                         else
                         {
-                            Assert.AreNotEqual(Status.PENDING, status);
+                            Assert.IsFalse(status.Pending, status.ToString());
                         }
 
                         status = luContext.Read(51, out var value51);
                         if (flushMode == FlushMode.OnDisk)
                         {
-                            if (status == Status.PENDING)
+                            if (status.Pending)
                             {
                                 luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                                 Assert.True(completedOutputs.Next());
@@ -246,7 +253,7 @@ namespace FASTER.test.LockableUnsafeContext
                         }
                         else
                         {
-                            Assert.AreNotEqual(Status.PENDING, status);
+                            Assert.IsFalse(status.Pending, status.ToString());
                         }
 
                         // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
@@ -257,7 +264,7 @@ namespace FASTER.test.LockableUnsafeContext
                             : luContext.Upsert(ref resultKey, ref dummyInOut, ref expectedResult, ref dummyInOut, out recordMetadata);
                         if (flushMode == FlushMode.OnDisk)
                         {
-                            if (status == Status.PENDING)
+                            if (status.Pending)
                             {
                                 luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                                 Assert.True(completedOutputs.Next());
@@ -270,12 +277,12 @@ namespace FASTER.test.LockableUnsafeContext
                         }
                         else
                         {
-                            Assert.AreNotEqual(Status.PENDING, status);
+                            Assert.IsFalse(status.Pending, status.ToString());
                         }
 
                         // Reread the destination to verify
                         status = luContext.Read(resultKey, out resultValue);
-                        Assert.AreNotEqual(Status.PENDING, status);
+                        Assert.IsFalse(status.Pending, status.ToString());
                         Assert.AreEqual(expectedResult, resultValue);
                     }
                     foreach (var key in locks.Keys.OrderBy(key => -key))
@@ -294,7 +301,7 @@ namespace FASTER.test.LockableUnsafeContext
 
             // Verify reading the destination from the full session.
             status = session.Read(resultKey, out resultValue);
-            Assert.AreNotEqual(Status.PENDING, status);
+            Assert.IsFalse(status.Pending, status.ToString());
             Assert.AreEqual(expectedResult, resultValue);
             EnsureNoLocks();
         }
@@ -325,20 +332,20 @@ namespace FASTER.test.LockableUnsafeContext
                 status = luContext.Read(24, out var value24);
                 if (flushMode == FlushMode.OnDisk)
                 {
-                    Assert.AreEqual(Status.PENDING, status);
+                    Assert.IsTrue(status.Pending, status.ToString());
                     luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     (status, value24) = GetSinglePendingResult(completedOutputs);
-                    Assert.AreEqual(Status.OK, status);
+                    Assert.IsTrue(status.Found, status.ToString());
                     Assert.AreEqual(24 * valueMult, value24);
                 }
                 else
-                    Assert.AreNotEqual(Status.PENDING, status);
+                    Assert.IsFalse(status.Pending, status.ToString());
 
                 // We just locked this above, but for FlushMode.OnDisk it will be in the LockTable and will still be PENDING.
                 status = luContext.Read(51, out var value51);
                 if (flushMode == FlushMode.OnDisk)
                 {
-                    if (status == Status.PENDING)
+                    if (status.Pending)
                     {
                         luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         Assert.True(completedOutputs.Next());
@@ -351,7 +358,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
                 else
                 {
-                    Assert.AreNotEqual(Status.PENDING, status);
+                    Assert.IsFalse(status.Pending, status.ToString());
                 }
                 Assert.AreEqual(51 * valueMult, value51);
 
@@ -360,10 +367,10 @@ namespace FASTER.test.LockableUnsafeContext
                 status = useRMW
                     ? luContext.RMW(resultKey, value24 + value51)
                     : luContext.Upsert(resultKey, value24 + value51);
-                Assert.AreNotEqual(Status.PENDING, status);
+                Assert.IsFalse(status.Pending, status.ToString());
 
                 status = luContext.Read(resultKey, out resultValue);
-                Assert.AreNotEqual(Status.PENDING, status);
+                Assert.IsFalse(status.Pending, status.ToString());
                 Assert.AreEqual(expectedResult, resultValue);
 
                 luContext.Unlock(51, LockType.Exclusive);
@@ -380,7 +387,7 @@ namespace FASTER.test.LockableUnsafeContext
 
             // Verify from the full session.
             status = session.Read(resultKey, out resultValue);
-            Assert.AreNotEqual(Status.PENDING, status);
+            Assert.IsFalse(status.Pending, status.ToString());
             Assert.AreEqual(expectedResult, resultValue);
             EnsureNoLocks();
         }
@@ -417,11 +424,11 @@ namespace FASTER.test.LockableUnsafeContext
                     // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
                     session.ctx.phase = phase;
                     status = luContext.Delete(ref resultKey);
-                    Assert.AreNotEqual(Status.PENDING, status);
+                    Assert.IsFalse(status.Pending, status.ToString());
 
                     // Reread the destination to verify
                     status = luContext.Read(resultKey, out var _);
-                    Assert.AreEqual(Status.NOTFOUND, status);
+                    Assert.IsFalse(status.Found, status.ToString());
 
                     foreach (var key in locks.Keys.OrderBy(key => key))
                         luContext.Unlock(key, locks[key]);
@@ -439,7 +446,7 @@ namespace FASTER.test.LockableUnsafeContext
 
             // Verify reading the destination from the full session.
             status = session.Read(resultKey, out var _);
-            Assert.AreEqual(Status.NOTFOUND, status);
+            Assert.IsFalse(status.Found, status.ToString());
             EnsureNoLocks();
         }
 
@@ -534,7 +541,7 @@ namespace FASTER.test.LockableUnsafeContext
             Assert.IsTrue(recordInfo.IsLockedExclusive);
         }
 
-        void VerifySplicedInKey(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext, int expectedKey)
+        void VerifyAndUnlockSplicedInKey(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext, int expectedKey)
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = ChainTests.SkipReadCacheChain(fht, expectedKey);
@@ -568,10 +575,10 @@ namespace FASTER.test.LockableUnsafeContext
             AddLockTableEntry(luContext, key, immutable: false);
 
             var status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
-            Assert.AreEqual(Status.PENDING, status);
+            Assert.IsTrue(status.Pending, status.ToString());
             session.CompletePending(wait: true);
 
-            VerifySplicedInKey(luContext, key);
+            VerifyAndUnlockSplicedInKey(luContext, key);
         }
 
         void PopulateAndEvict(bool immutable = false)
@@ -603,21 +610,26 @@ namespace FASTER.test.LockableUnsafeContext
                     key = transferToExistingKey;
                     AddLockTableEntry(luContext, key, recordRegion == ChainTests.RecordRegion.Immutable);
                     var status = luContext.Upsert(key, key * valueMult);
-                    Assert.AreEqual(Status.OK, status);
+                    Assert.IsTrue(status.CreatedRecord, status.ToString());
                 }
                 else
                 {
                     key = transferToNewKey;
                     AddLockTableEntry(luContext, key, immutable: false);
                     var status = luContext.Upsert(key, key * valueMult);
-                    Assert.AreEqual(Status.OK, status);
+                    Assert.IsTrue(status.CreatedRecord, status.ToString());
                 }
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(luContext);
+                throw;
             }
             finally
             {
                 luContext.SuspendThread();
             }
-            VerifySplicedInKey(luContext, key);
+            VerifyAndUnlockSplicedInKey(luContext, key);
         }
 
         [Test]
@@ -639,7 +651,7 @@ namespace FASTER.test.LockableUnsafeContext
                     key = transferToExistingKey;
                     AddLockTableEntry(luContext, key, recordRegion == ChainTests.RecordRegion.Immutable);
                     var status = luContext.RMW(key, key * valueMult);
-                    Assert.AreEqual(recordRegion == ChainTests.RecordRegion.OnDisk ? Status.PENDING : Status.OK, status);
+                    Assert.IsTrue(recordRegion == ChainTests.RecordRegion.OnDisk ? status.Pending : status.Found);
                     luContext.CompletePending(wait: true);
                 }
                 else
@@ -647,15 +659,20 @@ namespace FASTER.test.LockableUnsafeContext
                     key = transferToNewKey;
                     AddLockTableEntry(luContext, key, immutable: false);
                     var status = luContext.RMW(key, key * valueMult);
-                    Assert.AreEqual(Status.NOTFOUND, status);
+                    Assert.IsFalse(status.Found, status.ToString());
                 }
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(luContext);
+                throw;
             }
             finally
             {
                 luContext.SuspendThread();
             }
 
-            VerifySplicedInKey(luContext, key);
+            VerifyAndUnlockSplicedInKey(luContext, key);
         }
 
         [Test]
@@ -677,24 +694,32 @@ namespace FASTER.test.LockableUnsafeContext
                     key = transferToExistingKey;
                     AddLockTableEntry(luContext, key, recordRegion == ChainTests.RecordRegion.Immutable);
                     var status = luContext.Delete(key);
-                    Assert.AreEqual(Status.OK, status);
+
+                    // Delete does not search outside mutable region so the key will not be found
+                    Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+
+                    VerifyAndUnlockSplicedInKey(luContext, key);
                 }
                 else
                 {
                     key = transferToNewKey;
                     AddLockTableEntry(luContext, key, immutable: false);
                     var status = luContext.Delete(key);
-                    Assert.AreEqual(Status.NOTFOUND, status);
-                    luContext.Unlock(key, LockType.Exclusive);  // TODO Delete should do this
+                    Assert.IsFalse(status.Found, status.ToString());
+
+                    // The mutable portion of this test does not transfer because the key is not found
+                    luContext.Unlock(key, LockType.Exclusive);
                 }
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(luContext);
+                throw;
             }
             finally
             {
                 luContext.SuspendThread();
             }
-
-            if (recordRegion != ChainTests.RecordRegion.NotFound)
-                VerifySplicedInKey(luContext, key);
         }
 
         [Test]
@@ -747,7 +772,7 @@ namespace FASTER.test.LockableUnsafeContext
             const int key = 42;
             luContext.Lock(key, LockType.Exclusive);
 
-            int getValue(int key) => key + valueMult;
+            static int getValue(int key) => key + valueMult;
 
             luContext.ResumeThread();
 
@@ -758,14 +783,22 @@ namespace FASTER.test.LockableUnsafeContext
                     UpdateOp.Upsert => luContext.Upsert(key, getValue(key)),
                     UpdateOp.RMW => luContext.RMW(key, getValue(key)),
                     UpdateOp.Delete => luContext.Delete(key),
-                    _ => Status.ERROR
+                    _ => new(StatusCode.Error)
                 };
-                Assert.AreNotEqual(Status.ERROR, status, $"Unexpected UpdateOp {updateOp}");
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsFalse(status.Faulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+                if (updateOp == UpdateOp.RMW)
+                    Assert.IsTrue(status.CopyUpdatedRecord, status.ToString());
+                else
+                    Assert.IsTrue(status.CreatedRecord, status.ToString());
 
                 var (xlock, slock) = luContext.IsLocked(key);
                 Assert.IsTrue(xlock);
                 Assert.AreEqual(0, slock);
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(luContext);
+                throw;
             }
             finally
             {
@@ -777,7 +810,6 @@ namespace FASTER.test.LockableUnsafeContext
 
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
-        [Category(SmokeTestCategory)]
         public void LockNewRecordCompeteWithUpdateTest([Values(LockOperationType.Lock, LockOperationType.Unlock)] LockOperationType lockOp, [Values] UpdateOp updateOp)
         {
             const int numNewRecords = 100;
@@ -795,7 +827,7 @@ namespace FASTER.test.LockableUnsafeContext
             if (updateOp == UpdateOp.Delete)
             {
                 for (var key = numRecords; key < numRecords + numNewRecords; ++key)
-                    Assert.AreNotEqual(Status.PENDING, session.Upsert(key, key * valueMult));
+                    Assert.IsFalse(session.Upsert(key, key * valueMult).Pending);
                 fht.Log.FlushAndEvict(wait: true);
             }
 
@@ -824,31 +856,39 @@ namespace FASTER.test.LockableUnsafeContext
             // Sleep at varying durations for each call to comparer.GetHashCode, which is called at the start of Lock/Unlock and Upsert/RMW/Delete.
             comparer.maxSleepMs = 20;
 
-            for (var key = numRecords; key < numRecords + numNewRecords; ++key)
+            try
             {
-                // Use Task instead of Thread because this propagates exceptions (such as Assert.* failures) back to this thread.
-                Task.WaitAll(Task.Run(() => locker(key)), Task.Run(() => updater(key)));
-                var (xlock, slockCount) = lockLuContext.IsLocked(key);
-                var expectedXlock = getLockType(key) == LockType.Exclusive && lockOp != LockOperationType.Unlock;
-                var expectedSlock = getLockType(key) == LockType.Shared && lockOp != LockOperationType.Unlock;
-                Assert.AreEqual(expectedXlock, xlock);
-                Assert.AreEqual(expectedSlock, slockCount > 0);
+                for (var key = numRecords; key < numRecords + numNewRecords; ++key)
+                {
+                    // Use Task instead of Thread because this propagates exceptions (such as Assert.* failures) back to this thread.
+                    Task.WaitAll(Task.Run(() => locker(key)), Task.Run(() => updater(key)));
+                    var (xlock, slockCount) = lockLuContext.IsLocked(key);
+                    var expectedXlock = getLockType(key) == LockType.Exclusive && lockOp != LockOperationType.Unlock;
+                    var expectedSlock = getLockType(key) == LockType.Shared && lockOp != LockOperationType.Unlock;
+                    Assert.AreEqual(expectedXlock, xlock);
+                    Assert.AreEqual(expectedSlock, slockCount > 0);
 
-                if (lockOp == LockOperationType.Lock)
-                {
-                    // There should be no entries in the locktable now; they should all be on the RecordInfo.
-                    Assert.IsFalse(fht.LockTable.IsActive, $"count = {fht.LockTable.dict.Count}");
+                    if (lockOp == LockOperationType.Lock)
+                    {
+                        // There should be no entries in the locktable now; they should all be on the RecordInfo.
+                        Assert.IsFalse(fht.LockTable.IsActive, $"count = {fht.LockTable.dict.Count}");
+                    }
+                    else
+                    {
+                        // We are unlocking so should remove one record for each iteration.
+                        Assert.AreEqual(numNewRecords + numRecords - key - 1, fht.LockTable.dict.Count);
+                    }
                 }
-                else
-                {
-                    // We are unlocking so should remove one record for each iteration.
-                    Assert.AreEqual(numNewRecords + numRecords - key - 1, fht.LockTable.dict.Count);
-                }
+
+                // Unlock all the keys we are expecting to unlock, which ensures all the locks were applied to RecordInfos as expected.
+                foreach (var key in locks.ToArray())
+                    unlockKey(key);
             }
-
-            // Unlock all the keys we are expecting to unlock, which ensures all the locks were applied to RecordInfos as expected.
-            foreach (var key in locks.ToArray())
-                unlockKey(key);
+            catch (Exception)
+            {
+                ClearCountsOnError(lockLuContext);
+                throw;
+            }
 
             void locker(int key)
             {
@@ -859,6 +899,11 @@ namespace FASTER.test.LockableUnsafeContext
                         lockKey(key);
                     else
                         unlockKey(key);
+                }
+                catch (Exception)
+                {
+                    ClearCountsOnError(lockLuContext);
+                    throw;
                 }
                 finally
                 {
@@ -873,19 +918,22 @@ namespace FASTER.test.LockableUnsafeContext
                 try
                 {
                     // Use the LuContext here even though we're not doing locking, because we don't want the ephemeral locks to be tried for this test
-                    // (the test will hang as we try to acquire the lock).
+                    // (the test would hang when trying to acquire the ephemeral lock).
                     var status = updateOp switch
                     {
                         UpdateOp.Upsert => updateLuContext.Upsert(key, getValue(key)),
                         UpdateOp.RMW => updateLuContext.RMW(key, getValue(key)),
                         UpdateOp.Delete => updateLuContext.Delete(key),
-                        _ => Status.ERROR
+                        _ => new(StatusCode.Error)
                     };
-                    Assert.AreNotEqual(Status.ERROR, status, $"Unexpected UpdateOp {updateOp}");
-                    if (updateOp == UpdateOp.RMW)
-                        Assert.AreEqual(Status.NOTFOUND, status);
-                    else
-                        Assert.AreEqual(Status.OK, status);
+                    Assert.IsFalse(status.Faulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+                    Assert.IsFalse(status.Found, status.ToString());
+                    Assert.IsTrue(status.CreatedRecord, status.ToString());
+                }
+                catch (Exception)
+                {
+                    ClearCountsOnError(updateLuContext);
+                    throw;
                 }
                 finally
                 {
@@ -966,7 +1014,7 @@ namespace FASTER.test.LockableUnsafeContext
                 int input = 0, output = 0, localKey = key;
                 RecordMetadata recordMetadata = default;
                 var status = session.Read(ref localKey, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
-                Assert.AreEqual(Status.PENDING, status);
+                Assert.IsTrue(status.Pending, status.ToString());
                 session.CompletePending(wait: true);
 
                 Assert.IsFalse(fht.LockTable.Get(key, out _));
@@ -1101,7 +1149,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
 
                 var status = s1.Upsert(ref key, ref key);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.CreatedRecord, status.ToString());
                 luc1.Lock(key, LockType.Shared);
             }
 
@@ -1141,7 +1189,7 @@ namespace FASTER.test.LockableUnsafeContext
                 while (true)
                 {
                     var status = s1.Read(ref key, ref output);
-                    if (status == Status.NOTFOUND)
+                    if (!status.Found)
                     {
                         // Key {key} not found at secondary; performing recovery to catch up
                         Thread.Sleep(500);

@@ -122,7 +122,7 @@ namespace FASTER.test.readaddress
 
             public override void ReadCompletionCallback(ref Key key, ref Value input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                if (status == Status.OK)
+                if (status.Found)
                 {
                     if (this.useReadCache && !this.readFlags.HasFlag(ReadFlags.SkipReadCache))
                         Assert.AreEqual(Constants.kInvalidAddress, recordMetadata.Address, $"key {key}");
@@ -133,7 +133,7 @@ namespace FASTER.test.readaddress
 
             public override void RMWCompletionCallback(ref Key key, ref Value input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                if (status == Status.OK)
+                if (status.Found)
                     Assert.AreEqual(output.address, recordMetadata.Address);
             }
         }
@@ -211,7 +211,7 @@ namespace FASTER.test.readaddress
                             : session.RMW(ref key, ref value, serialNo: lap)
                         : session.Upsert(ref key, ref value, serialNo: lap);
 
-                    if (status == Status.PENDING)
+                    if (status.Pending)
                         await session.CompletePendingAsync();
 
                     InsertAddresses[ii] = functions.lastWriteAddress;
@@ -231,7 +231,7 @@ namespace FASTER.test.readaddress
                 Assert.GreaterOrEqual(lap, 0);
                 long expectedValue = SetReadOutput(defaultKeyToScan, LapOffset(lap) + defaultKeyToScan);
 
-                Assert.AreEqual(status == Status.NOTFOUND, recordInfo.Tombstone, $"status({status}) == NOTFOUND != Tombstone ({recordInfo.Tombstone}) on lap {lap}");
+                Assert.AreEqual(status.Found, !recordInfo.Tombstone, $"status({status}) == NOTFOUND != Tombstone ({recordInfo.Tombstone}) on lap {lap}");
                 Assert.AreEqual(lap == deleteLap, recordInfo.Tombstone, $"lap({lap}) == deleteLap({deleteLap}) != Tombstone ({recordInfo.Tombstone})");
                 if (!recordInfo.Tombstone)
                     Assert.AreEqual(expectedValue, actualOutput.value, $"lap({lap})");
@@ -242,7 +242,7 @@ namespace FASTER.test.readaddress
 
             internal static void ProcessNoKeyRecord(Status status, ref Output actualOutput, int keyOrdinal)
             {
-                if (status != Status.NOTFOUND)
+                if (status.Found)
                 {
                     var keyToScan = keyOrdinal % keyMod;
                     var lap = keyOrdinal / keyMod;
@@ -285,7 +285,7 @@ namespace FASTER.test.readaddress
                 {
                     var status = session.Read(ref key, ref input, ref output, ref recordMetadata, session.functions.readFlags, serialNo: maxLap + 1);
 
-                    if (status == Status.PENDING)
+                    if (status.Pending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -352,7 +352,7 @@ namespace FASTER.test.readaddress
                     var readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
 
                     var status = session.Read(ref key, ref input, ref output, ref recordMetadata, session.functions.readFlags, serialNo: maxLap + 1);
-                    if (status == Status.PENDING)
+                    if (status.Pending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -368,7 +368,7 @@ namespace FASTER.test.readaddress
                         var saveRecordMetadata = recordMetadata;
 
                         status = session.ReadAtAddress(readAtAddress, ref input, ref output, session.functions.readFlags, serialNo: maxLap + 1);
-                        if (status == Status.PENDING)
+                        if (status.Pending)
                         {
                             // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -538,7 +538,7 @@ namespace FASTER.test.readaddress
                     var keyOrdinal = rng.Next(numKeys);
 
                     var status = session.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, session.functions.readFlags, serialNo: maxLap + 1);
-                    if (status == Status.PENDING)
+                    if (status.Pending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -651,27 +651,27 @@ namespace FASTER.test.readaddress
                 {
                     RecordMetadata recordMetadata = new(new RecordInfo { PreviousAddress = minAddress });
                     status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.MinAddress);
-                    if (status == Status.PENDING)
+                    if (status.Pending)
                     {
                         Assert.IsTrue(session.CompletePendingWithOutputs(out var completedOutputs, wait: true));
                         (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
                     }
                 }
                 Assert.AreEqual(expectedStatus, status);
-                if (status != Status.NOTFOUND)
+                if (status.Found)
                     Assert.AreEqual(output, makeValue(key));
             }
 
             async ValueTask RunTests()
             {
                 // First read at the pivot, to verify that and make sure the rest of the test works
-                await ReadMin(pivotKey, Status.OK);
+                await ReadMin(pivotKey, new(StatusCode.OK));
 
                 // Read a Key that is below the min address
-                await ReadMin(pivotKey - 1, Status.NOTFOUND);
+                await ReadMin(pivotKey - 1, new(StatusCode.NotFound));
 
                 // Read a Key that is above the min address
-                await ReadMin(pivotKey + 1, Status.OK);
+                await ReadMin(pivotKey + 1, new(StatusCode.OK));
             }
 
             await RunTests();

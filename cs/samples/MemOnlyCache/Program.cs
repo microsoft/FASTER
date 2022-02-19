@@ -104,7 +104,7 @@ namespace MemOnlyCache
         {
             using var s = h.For(new CacheFunctions(sizeTracker)).NewSession<CacheFunctions>();
 
-            Random r = new Random(0);
+            Random r = new(0);
             Console.WriteLine("Writing random keys to fill cache");
 
             for (int i = 0; i < count; i++)
@@ -127,7 +127,7 @@ namespace MemOnlyCache
             for (int i = 0; i < kNumThreads; i++)
                 threads[i].Start();
 
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
             var _lastReads = totalReads;
             var _lastTime = sw.ElapsedMilliseconds;
@@ -205,24 +205,23 @@ namespace MemOnlyCache
                 {
                     var status = session.Read(ref key, ref output);
 
-                    switch (status)
+                    if (!status.Found)
                     {
-                        case Status.NOTFOUND:
-                            localStatusNotFound++;
-                            if (UpsertOnCacheMiss)
-                            {
-                                var value = new CacheValue(1 + rnd.Next(MaxValueSize - 1), (byte)key.key);
-                                session.Upsert(ref key, ref value);
-                            }
-                            break;
-                        case Status.OK:
-                            localStatusFound++;
-                            if (output.value[0] != (byte)key.key)
-                                throw new Exception("Read error!");
-                            break;
-                        default:
-                            throw new Exception("Error!");
+                        localStatusNotFound++;
+                        if (UpsertOnCacheMiss)
+                        {
+                            var value = new CacheValue(1 + rnd.Next(MaxValueSize - 1), (byte)key.key);
+                            session.Upsert(ref key, ref value);
+                        }
                     }
+                    else if (status.Found)
+                    {
+                        localStatusFound++;
+                        if (output.value[0] != (byte)key.key)
+                            throw new Exception("Read error!");
+                    }
+                    else
+                        throw new Exception("Error!");
                 }
                 i++;
             }

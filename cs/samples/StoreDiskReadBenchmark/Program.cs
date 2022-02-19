@@ -118,7 +118,7 @@ namespace StoreDiskReadBenchmark
         static async Task AsyncReadOperator(int id)
         {
             using var session = faster.For(new MyFuncs()).NewSession<MyFuncs>(id.ToString() + "read");
-            Random rand = new Random(id);
+            Random rand = new(id);
 
             await Task.Yield();
 
@@ -141,8 +141,8 @@ namespace StoreDiskReadBenchmark
                         }
                         else
                         {
-                            var result = (await session.ReadAsync(ref key, ref input)).Complete();
-                            if (result.Item1 != Status.OK || result.Item2.value.vfield1 != key.key)
+                            var (status, output) = (await session.ReadAsync(ref key, ref input)).Complete();
+                            if (!status.Found || output.value.vfield1 != key.key)
                             {
                                 if (!simultaneousReadWrite)
                                     throw new Exception("Wrong value found");
@@ -151,11 +151,11 @@ namespace StoreDiskReadBenchmark
                     }
                     else
                     {
-                        Output output = new Output();
+                        Output output = new();
                         var result = session.Read(ref key, ref input, ref output, Empty.Default, 0);
                         if (readBatching)
                         {
-                            if (result != Status.PENDING)
+                            if (!result.Pending)
                             {
                                 if (output.value.vfield1 != key.key)
                                 {
@@ -166,7 +166,7 @@ namespace StoreDiskReadBenchmark
                         }
                         else
                         {
-                            if (result == Status.PENDING)
+                            if (result.Pending)
                             {
                                 session.CompletePending(true);
                             }
@@ -187,11 +187,11 @@ namespace StoreDiskReadBenchmark
                         {
                             for (int j = 0; j < readBatchSize; j++)
                             {
-                                var result = (await tasks[j].Item2).Complete();
-                                if (result.Item1 != Status.OK || result.Item2.value.vfield1 != tasks[j].Item1)
+                                var (status, output) = (await tasks[j].Item2).Complete();
+                                if (!status.Found || output.value.vfield1 != tasks[j].Item1)
                                 {
                                     if (!simultaneousReadWrite)
-                                        throw new Exception($"Wrong value found. Found: {result.Item2.value.vfield1}, Expected: {tasks[j].Item1}");
+                                        throw new Exception($"Wrong value found. Found: {output.value.vfield1}, Expected: {tasks[j].Item1}");
                                 }
                             }
                         }
@@ -218,7 +218,7 @@ namespace StoreDiskReadBenchmark
             long lastTime = 0;
             long lastValue = numOps;
 
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
 
             while (true)

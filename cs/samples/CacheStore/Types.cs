@@ -93,7 +93,7 @@ namespace CacheStore
             {
                 long ticks = Stopwatch.GetTimestamp() - ctx.ticks;
 
-                if (status == Status.NOTFOUND)
+                if (!status.Found)
                     Console.WriteLine("Async: Value not found, latency = {0}ms", 1000 * (ticks - ctx.ticks) / (double)Stopwatch.Frequency);
 
                 if (output.value != key.key)
