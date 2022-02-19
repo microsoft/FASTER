@@ -41,23 +41,23 @@ inline void logMsg(Lvl level, int line, const char* func,
   char buffer[1024];
   vsnprintf(buffer, 1024, fmt, argptr);
 
-  std::string l;
+  const char *l;
   switch (level) {
   case Lvl::DEBUG:
-    l = std::string("DEBUG");
+    l = "DEBUG";
     break;
   case Lvl::INFO:
-    l = std::string("INFO");
+    l = "INFO";
     break;
   default:
-    l = std::string("ERROR");
+    l = "ERROR";
     break;
   }
 
   fprintf(stderr, "[%010lu.%09lu]::%s::%s:%s:%d:: %s\n",
           (unsigned long) std::chrono::duration_cast<std::chrono::seconds>(now).count(),
           (unsigned long) std::chrono::duration_cast<std::chrono::nanoseconds>(now).count(),
-          l.c_str(), file, func, line, buffer);
+          l, file, func, line, buffer);
 
   va_end(argptr);
 }
