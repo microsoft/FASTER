@@ -20,6 +20,7 @@ namespace FASTER.core
             while (true)
             {
                 var tempSemaphore = this.semaphore;
+                if (tempSemaphore == null) break;
                 if (Interlocked.CompareExchange(ref this.semaphore, newSemaphore, tempSemaphore) == tempSemaphore)
                 {
                     // Release all waiting threads
