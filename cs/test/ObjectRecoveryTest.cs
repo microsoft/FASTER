@@ -102,7 +102,7 @@ namespace FASTER.test.recovery.objectstore
             // Register thread with FASTER
             var session = fht.NewSession(new Functions());
 
-            // Prpcess the batch of input data
+            // Process the batch of input data
             bool first = true;
             for (int i = 0; i < numOps; i++)
             {

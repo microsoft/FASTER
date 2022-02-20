@@ -119,18 +119,18 @@ namespace FASTER.test
     {
         internal bool noNeedInitialUpdater;
 
-        public override bool NeedInitialUpdate(ref int key, ref RMWValue input, ref RMWValue output)
+        public override bool NeedInitialUpdate(ref int key, ref RMWValue input, ref RMWValue output, ref UpdateInfo updateInfo)
         {
-            return noNeedInitialUpdater ? false : base.NeedInitialUpdate(ref key, ref input, ref output);
+            return !noNeedInitialUpdater && base.NeedInitialUpdate(ref key, ref input, ref output, ref updateInfo);
         }
 
-        public override void InitialUpdater(ref int key, ref RMWValue input, ref RMWValue value, ref RMWValue output, ref RecordInfo recordInfo, long address)
+        public override void InitialUpdater(ref int key, ref RMWValue input, ref RMWValue value, ref RMWValue output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
         {
             input.flag = true;
-            base.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+            base.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref updateInfo);
         }
 
-        public override void CopyUpdater(ref int key, ref RMWValue input, ref RMWValue oldValue, ref RMWValue newValue, ref RMWValue output, ref RecordInfo recordInfo, long address)
+        public override void CopyUpdater(ref int key, ref RMWValue input, ref RMWValue oldValue, ref RMWValue newValue, ref RMWValue output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
         {
             Assert.Fail("CopyUpdater");
         }

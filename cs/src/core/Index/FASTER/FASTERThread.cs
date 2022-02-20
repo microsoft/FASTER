@@ -204,16 +204,6 @@ namespace FASTER.core
                                                 pendingContext.userContext, status,
                                                 new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
                         break;
-                    case OperationType.UPSERT:
-                        fasterSession.UpsertCompletionCallback(ref key,
-                                                 ref pendingContext.input.Get(),
-                                                 ref pendingContext.value.Get(),
-                                                 pendingContext.userContext);
-                        break;
-                    case OperationType.DELETE:
-                        fasterSession.DeleteCompletionCallback(ref key,
-                                                 pendingContext.userContext);
-                        break;
                     default:
                         throw new FasterException("Operation type not allowed for retry");
                 }

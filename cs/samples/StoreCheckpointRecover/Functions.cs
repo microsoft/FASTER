@@ -8,13 +8,13 @@ namespace StoreCheckpointRecover
 {
     public sealed class Functions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, long address) => value.value = input.value;
-        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RecordInfo recordInfo, long address) => newValue = oldValue;
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, long address) { value.value += input.value; return true; }
+        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) => value.value = input.value;
+        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) => newValue = oldValue;
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) { value.value += input.value; return true; }
 
-        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
         { dst = new MyOutput(); dst.value = value; return true; }
-        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
         { dst = new MyOutput(); dst.value = value; return true; }
 
         public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status, RecordMetadata recordMetadata)

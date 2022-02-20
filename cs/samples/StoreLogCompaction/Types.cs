@@ -87,13 +87,13 @@ namespace StoreLogCompaction
 
     public sealed class CacheFunctions : FunctionsBase<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext>
     {
-        public override bool SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, ref RecordInfo recordInfo, long address)
+        public override bool SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
         {
             dst.value = value;
             return true;
         }
 
-        public override bool ConcurrentReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
         {
             dst.value = value;
             return true;
