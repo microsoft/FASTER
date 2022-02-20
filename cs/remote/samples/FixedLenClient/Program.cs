@@ -133,7 +133,7 @@ namespace FixedLenClient
             // By default, we flush async operations as soon as they are issued
             // To instead flush manually, set forceFlush = false in calls below
             var (status, output) = await session.ReadAsync(23);
-            if (status != Status.OK || output != 23 + 10000)
+            if (!status.Found || output != 23 + 10000)
                 throw new Exception("Error!");
 
             // Measure read latency
@@ -153,35 +153,35 @@ namespace FixedLenClient
 
             long key = 25;
             (status, _) = await session.ReadAsync(key);
-            if (status != Status.NOTFOUND)
+            if (!status.NotFound)
                 throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
 
             key = 9999;
             (status, _) = await session.ReadAsync(9999);
-            if (status != Status.NOTFOUND)
+            if (!status.NotFound)
                 throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
 
             key = 9998;
             await session.DeleteAsync(key);
 
             (status, _) = await session.ReadAsync(9998);
-            if (status != Status.NOTFOUND)
+            if (!status.NotFound)
                 throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
 
             (status, output) = await session.RMWAsync(9998, 10);
-            if (status != Status.NOTFOUND || output != 10)
+            if (!status.Found || output != 10)
                 throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}; output = expected {10}, actual {output}");
 
             (status, output) = await session.ReadAsync(key);
-            if (status != Status.OK || output != 10)
+            if (!status.Found || output != 10)
                 throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status}; output = expected {10}, actual {output}");
 
             (status, output) = await session.RMWAsync(key, 10);
-            if (status != Status.OK || output != 20)
+            if (!status.Found || output != 20)
                 throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status} output = expected {10}, actual {output}");
 
             (status, output) = await session.ReadAsync(key);
-            if (status != Status.OK || output != 20)
+            if (!status.Found || output != 20)
                 throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status}, output = expected {10}, actual {output}");
         }
     }

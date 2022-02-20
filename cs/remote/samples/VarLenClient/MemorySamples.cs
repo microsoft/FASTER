@@ -69,19 +69,19 @@ namespace VarLenClient
             session.Upsert(key, value);
 
             var (status, output) = await session.ReadAsync(key);
-            if (status != Status.OK || !output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(value.Span))
+            if (!status.Found || !output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(value.Span))
                 throw new Exception("Error!");
 
             await session.DeleteAsync(key);
 
             (status, _) = await session.ReadAsync(key);
-            if (status != Status.NOTFOUND)
+            if (!status.NotFound)
                 throw new Exception("Error!");
 
             key.Span.Fill(9999);
 
             (status, _) = await session.ReadAsync(key);
-            if (status != Status.NOTFOUND)
+            if (!status.NotFound)
                 throw new Exception("Error!");
         }
     }

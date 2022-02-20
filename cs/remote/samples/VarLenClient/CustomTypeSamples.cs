@@ -114,17 +114,17 @@ namespace VarLenClient
             session.Upsert(new CustomType(25), new CustomType(25 + 10000));
 
             var (status, output) = await session.ReadAsync(new CustomType(25));
-            if (status != Status.OK || output.payload != 25 + 10000)
+            if (!status.Found || output.payload != 25 + 10000)
                 throw new Exception("Error!");
 
             await session.DeleteAsync(new CustomType(25));
 
             (status, _) = await session.ReadAsync(new CustomType(25));
-            if (status != Status.NOTFOUND)
+            if (!status.NotFound)
                 throw new Exception("Error!");
 
             (status, _) = await session.ReadAsync(new CustomType(9999));
-            if (status != Status.NOTFOUND)
+            if (!status.NotFound)
                 throw new Exception("Error!");
         }
     }

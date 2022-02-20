@@ -41,10 +41,14 @@ namespace FASTER.core
         public static Status CreatePending() => new(StatusCode.Pending);
 
         /// <summary>
-        /// Whether a Read or RMW completed successfully (is not currently pending). Either may have appended, especially if the operation completed after going Pending.
-        /// Note that Pending must be checked for and handled by the app, because CompletePendingWithOutputs() will return a non-Pending status.
+        /// Whether a Read or RMW found the key
         /// </summary>
         public bool Found => (statusCode & StatusCode.BasicMask) == StatusCode.OK;
+
+        /// <summary>
+        /// Whether a Read or RMW did not find the key
+        /// </summary>
+        public bool NotFound => (statusCode & StatusCode.BasicMask) == StatusCode.NotFound;
 
         /// <summary>
         /// Whether the operation went pending

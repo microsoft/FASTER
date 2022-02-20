@@ -39,14 +39,14 @@ namespace FASTER.remote.test
 
         public override void ReadCompletionCallback(ref long key, ref long input, ref long output, long ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(status.Found);
             Assert.IsTrue(output == ctx);
         }
 
         /// <inheritdoc />
         public override void SubscribeKVCallback(ref long key, ref long input, ref long output, long ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(status.Found);
             Assert.IsTrue(output == 23);
             evt.Set();
         }

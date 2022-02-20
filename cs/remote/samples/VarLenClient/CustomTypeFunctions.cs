@@ -15,12 +15,12 @@ namespace VarLenClient
         {
             if (ctx == 0)
             {
-                if (status != Status.OK || key.payload + 10000 != output.payload)
+                if (!status.Found || key.payload + 10000 != output.payload)
                     throw new Exception("Incorrect read result");
             }
             else if (ctx == 1)
             {
-                if (status != Status.OK || key.payload + 10000 + 25 + 25 != output.payload)
+                if (!status.Found || key.payload + 10000 + 25 + 25 != output.payload)
                     throw new Exception("Incorrect read result");
             }
             else

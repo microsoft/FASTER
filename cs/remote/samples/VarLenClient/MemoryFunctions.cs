@@ -18,13 +18,13 @@ namespace VarLenClient
                 if (ctx == 0)
                 {
                     expected.Span.Fill(key.Span[0] + 10000);
-                    if (status != Status.OK || !expected.Span.SequenceEqual(output.Item1.Memory.Span.Slice(0, output.Item2)))
+                    if (!status.Found || !expected.Span.SequenceEqual(output.Item1.Memory.Span.Slice(0, output.Item2)))
                         throw new Exception("Incorrect read result");
                 }
                 else if (ctx == 1)
                 {
                     expected.Span.Fill(key.Span[0] + 10000 + 25 + 25);
-                    if (status != Status.OK || !expected.Span.SequenceEqual(output.Item1.Memory.Span.Slice(0, output.Item2)))
+                    if (!status.Found || !expected.Span.SequenceEqual(output.Item1.Memory.Span.Slice(0, output.Item2)))
                         throw new Exception("Incorrect read result");
                 }
                 else
@@ -47,7 +47,7 @@ namespace VarLenClient
             {
                 if (ctx == 0)
                 {
-                    if (status != Status.OK || !key.Span.SequenceEqual(output.Item1.Memory.Span.Slice(0, output.Item2)))
+                    if (!status.Found || !key.Span.SequenceEqual(output.Item1.Memory.Span.Slice(0, output.Item2)))
                         throw new Exception("Incorrect read result");
                 }
                 else
