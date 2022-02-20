@@ -209,13 +209,12 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < numUniqueKeys; i++)
             {
                 var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.Found);
                 inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests
             session.CompletePending(true);
-
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];

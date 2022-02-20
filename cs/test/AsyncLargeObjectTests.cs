@@ -84,7 +84,7 @@ namespace FASTER.test.async
                     var key = new MyKey { key = keycnt };
                     var status = s2.Read(ref key, ref input, ref output, Empty.Default, 0);
 
-                    if (status == Status.PENDING)
+                    if (status.Pending)
                         await s2.CompletePendingAsync();
                     else
                     {

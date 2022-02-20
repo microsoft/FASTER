@@ -76,7 +76,7 @@ namespace FASTER.test.SingleWriter
             int input = (int)WriteReason.Upsert;
             int output = 0;
             for (int key = 0; key < numRecords; key++)
-                Assert.AreNotEqual(Status.PENDING, session.Upsert(key, input, key * valueMult, ref output));
+                Assert.False(session.Upsert(key, input, key * valueMult, ref output).Pending);
         }
 
         [Test]
@@ -95,7 +95,7 @@ namespace FASTER.test.SingleWriter
             WriteReason expectedReason = readCopyDestination == ReadCopyDestination.ReadCache ? WriteReason.CopyToReadCache : WriteReason.CopyToTail;
             int input = (int)expectedReason;
             var status = session.Read(key, input, out int output);
-            Assert.AreEqual(Status.PENDING, status);
+            Assert.IsTrue(status.Pending);
             session.CompletePending(wait: true);
             Assert.AreEqual(expectedReason, functions.actualReason);
 
@@ -105,7 +105,7 @@ namespace FASTER.test.SingleWriter
             input = (int)expectedReason;
             RecordMetadata recordMetadata = default;
             status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
-            Assert.AreEqual(Status.PENDING, status);
+            Assert.IsTrue(status.Pending);
             session.CompletePending(wait: true);
             Assert.AreEqual(expectedReason, functions.actualReason);
 

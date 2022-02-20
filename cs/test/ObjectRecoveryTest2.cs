@@ -119,36 +119,36 @@ namespace FASTER.test.recovery.objects
         {
             for (int i = 0; i < iterations; i++)
             {
-                var key = new MyKey { key = i, name = i.ToString() };
-                var input = default(MyInput);
-                MyOutput g1 = new MyOutput();
+                MyKey key = new() { key = i, name = i.ToString() };
+                MyInput input = default;
+                MyOutput g1 = new();
                 var status = session.Read(ref key, ref input, ref g1, context, 0);
 
-                if (status == Status.PENDING)
+                if (status.Pending)
                 {
                     session.CompletePending(true);
                     context.FinalizeRead(ref status, ref g1);
                 }
 
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(i.ToString(), g1.value.value);
             }
 
             if (delete)
             {
-                var key = new MyKey { key = 1, name = "1" };
-                var input = default(MyInput);
-                var output = new MyOutput();
+                MyKey key = new() { key = 1, name = "1" };
+                MyInput input = default;
+                MyOutput output = new();
                 session.Delete(ref key, context, 0);
                 var status = session.Read(ref key, ref input, ref output, context, 0);
 
-                if (status == Status.PENDING)
+                if (status.Pending)
                 {
                     session.CompletePending(true);
                     context.FinalizeRead(ref status, ref output);
                 }
 
-                Assert.AreEqual(Status.NOTFOUND, status);
+                Assert.IsFalse(status.Found);
             }
         }
     }

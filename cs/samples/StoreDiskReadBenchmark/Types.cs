@@ -79,7 +79,7 @@ namespace StoreDiskReadBenchmark
         // Completion callbacks
         public override void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            if (status != Status.OK || output.value.vfield1 != key.key)
+            if (!status.Found || output.value.vfield1 != key.key)
             {
                 if (!Program.simultaneousReadWrite)
                     throw new Exception("Wrong value found");

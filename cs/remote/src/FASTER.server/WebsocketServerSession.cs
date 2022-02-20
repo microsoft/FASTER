@@ -89,7 +89,7 @@ namespace FASTER.server
             hrw.Write((MessageType)(ctx >> 32), ref dcurr, (int)(dend - dcurr));
             Write((int)(ctx & 0xffffffff), ref dcurr, (int)(dend - dcurr));
             Write(ref status, ref dcurr, (int)(dend - dcurr));
-            if (status != core.Status.NOTFOUND)
+            if (status.Found)
                 serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
             msgnum++;
         }
@@ -106,7 +106,7 @@ namespace FASTER.server
             hrw.Write((MessageType)(ctx >> 32), ref dcurr, (int)(dend - dcurr));
             Write((int)(ctx & 0xffffffff), ref dcurr, (int)(dend - dcurr));
             Write(ref status, ref dcurr, (int)(dend - dcurr));
-            if (status == Status.OK || status == Status.NOTFOUND)
+            if (status.CompletedSuccessfully)
                 serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
             msgnum++;
 
@@ -126,7 +126,7 @@ namespace FASTER.server
             return true;
         }
 
-        private unsafe void CreateSendPacketHeader(ref byte* d, int payloadLen)
+        private static unsafe void CreateSendPacketHeader(ref byte* d, int payloadLen)
         {
             if (payloadLen < 126)
             {
@@ -384,9 +384,9 @@ namespace FASTER.server
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                            if (status == core.Status.PENDING)
+                            if (status.Pending)
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                            else if (status == core.Status.OK)
+                            else if (status.Found)
                                 serializer.SkipOutput(ref dcurr);
 
                             break;
@@ -403,7 +403,7 @@ namespace FASTER.server
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
-                            if (status == Status.PENDING)
+                            if (status.Pending)
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
 
                             if (subscribeKVBroker != null)
@@ -439,7 +439,7 @@ namespace FASTER.server
                             ref Input input = ref serializer.ReadInputByRef(ref src);
 
                             int sid = subscribeKVBroker.Subscribe(ref keyStart, ref inputStart, this);
-                            status = Status.PENDING;
+                            status = Status.CreatePending();
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
@@ -461,7 +461,7 @@ namespace FASTER.server
                             input = ref serializer.ReadInputByRef(ref src);
 
                             sid = subscribeKVBroker.PSubscribe(ref keyStart, ref inputStart, this);
-                            status = Status.PENDING;
+                            status = Status.CreatePending();
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
@@ -482,7 +482,7 @@ namespace FASTER.server
                             ref Value val = ref serializer.ReadValueByRef(ref src);
                             int valueLength = (int)(src - valPtr);
 
-                            status = Status.OK;
+                            status = Status.CreateFound();
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
@@ -500,7 +500,7 @@ namespace FASTER.server
                             serializer.ReadKeyByRef(ref src);
 
                             sid = subscribeBroker.Subscribe(ref keyStart, this);
-                            status = Status.PENDING;
+                            status = Status.CreatePending();
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
                             Write(sid, ref dcurr, (int)(dend - dcurr));
@@ -516,7 +516,7 @@ namespace FASTER.server
                             serializer.ReadKeyByRef(ref src);
 
                             sid = subscribeBroker.PSubscribe(ref keyStart, this);
-                            status = Status.PENDING;
+                            status = Status.CreatePending();
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
                             Write(sid, ref dcurr, (int)(dend - dcurr));
@@ -585,11 +585,11 @@ namespace FASTER.server
             else
                 outputDcurr = dcurr + 6;
 
-            var status = Status.OK;
+            Status status = Status.CreateFound();
             if (valPtr == null)
                 status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
 
-            if (status != Status.PENDING)
+            if (!status.Pending)
             {
                 // Write six bytes (message | status | sid)
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
@@ -602,7 +602,7 @@ namespace FASTER.server
                     ref Value value = ref serializer.ReadValueByRef(ref valPtr);
                     serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
                 }
-                else if (status == Status.OK)
+                else if (status.Found)
                     serializer.SkipOutput(ref dcurr);
             }
             else
@@ -622,7 +622,7 @@ namespace FASTER.server
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe bool WriteOpSeqId(ref int o, ref byte* dst, int length)
+        private static unsafe bool WriteOpSeqId(ref int o, ref byte* dst, int length)
         {
             if (length < sizeof(int)) return false;
             *(int*)dst = o;
@@ -632,15 +632,15 @@ namespace FASTER.server
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe bool Write(ref Status s, ref byte* dst, int length)
+        private static unsafe bool Write(ref Status s, ref byte* dst, int length)
         {
             if (length < 1) return false;
-            *dst++ = (byte)s;
+            *dst++ = s.Value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe bool Write(int seqNo, ref byte* dst, int length)
+        private static unsafe bool Write(int seqNo, ref byte* dst, int length)
         {
             if (length < sizeof(int)) return false;
             *(int*)dst = seqNo;

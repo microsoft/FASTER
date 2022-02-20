@@ -24,7 +24,7 @@ namespace FASTER.core
         SkipReadCache = 0x00000001,
 
         /// <summary>
-        /// The minimum address at which to resolve the Key; return <see cref="Status.NOTFOUND"/> if the key is not found at this address or higher
+        /// The minimum address at which to resolve the Key; return <see cref="Status.Found"/> false if the key is not found at this address or higher
         /// </summary>
         MinAddress = 0x00000002,
 

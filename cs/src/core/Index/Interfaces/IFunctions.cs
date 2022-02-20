@@ -158,8 +158,7 @@ namespace FASTER.core
         /// <param name="output">The location where <paramref name="newValue"/> is to be copied</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
         /// <param name="updateInfo">Information about this update operation and its context</param>
-        /// <returns>True if the value was successfully updated, else false (e.g. the value was expired)</returns>
-        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo);
+        void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo);
         #endregion CopyUpdater
 
         #region InPlaceUpdater

@@ -148,7 +148,7 @@ var status = (await s1.UpsertAsync(ref key, ref value)).Complete();
 
 // Fully async (completions may themselves need to go async)
 var r = await session.UpsertAsync(ref key, ref value);
-while (r.Status == Status.PENDING)
+while (r.Status.IsPending)
    r = await r.CompleteAsync();
 ```
 
@@ -165,7 +165,7 @@ var status = (await session.RMWAsync(ref key, ref input)).Complete();
 
 // Fully async (completion may rarely go async and require multiple iterations)
 var r = await session.RMWAsync(ref key, ref input);
-while (r.Status == Status.PENDING)
+while (r.Status.IsPending)
    r = await r.CompleteAsync();
 Console.WriteLine(r.Output);
 ```
@@ -182,7 +182,7 @@ var status = (await s1.DeleteAsync(ref key)).Complete();
 
 // Fully async
 var r = await session.DeleteAsync(ref key);
-while (r.Status == Status.PENDING)
+while (r.Status.IsPending)
    r = await r.CompleteAsync();
 ```
 

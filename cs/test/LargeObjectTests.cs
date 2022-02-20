@@ -84,7 +84,7 @@ namespace FASTER.test.largeobjects
                 var key = new MyKey { key = keycnt };
                 var status = session2.Read(ref key, ref input, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.Pending)
                     session2.CompletePending(true);
                 else
                 {
