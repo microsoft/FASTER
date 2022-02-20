@@ -43,7 +43,7 @@ namespace FASTER.remote.test
         {
             try
             {
-                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(status.Found);
                 int check = key.Span[0];
                 int len = key.Span[1];
                 Assert.IsTrue(check == ctx);
@@ -69,7 +69,7 @@ namespace FASTER.remote.test
         {
             try
             {
-                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(status.Found);
                 int check = key.Span[0];
                 int len = key.Span[1];
                 Assert.IsTrue(output.Item2 == len);

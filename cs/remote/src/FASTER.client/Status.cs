@@ -1,30 +1,60 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Runtime.InteropServices;
+
 namespace FASTER.client
 {
     /// <summary>
-    /// Status result of operation (compatible with FASTER status)
+    /// Client-side status result of operation (compatible with FASTER (basic) Status)
     /// </summary>
-    public enum Status : byte
+    [StructLayout(LayoutKind.Explicit, Size = 1)]
+    public struct Status
     {
+        [FieldOffset(0)]
+        private readonly StatusCode statusCode;
+
         /// <summary>
-        /// For Read and RMW, item being read was found, and
-        /// the operation completed successfully
-        /// For Upsert, item was upserted successfully
+        /// Create status from given status code
         /// </summary>
-        OK,
+        /// <param name="statusCode"></param>
+        internal Status(StatusCode statusCode) => this.statusCode = statusCode;
+
         /// <summary>
-        /// For Read and RMW, item being read was not found
+        /// Create a <see cref="Pending"/> Status value. Use the Is* properties to query.
         /// </summary>
-        NOTFOUND,
+        internal static Status CreatePending() => new(StatusCode.Pending);
+
         /// <summary>
-        /// Operation went pending (async)
+        /// Whether a Read or RMW found the key
         /// </summary>
-        PENDING,
+        public bool Found => (statusCode & StatusCode.BasicMask) == StatusCode.OK;
+
         /// <summary>
-        /// Operation resulted in some error
+        /// Whether a Read or RMW did not find the key
         /// </summary>
-        ERROR
+        public bool NotFound => (statusCode & StatusCode.BasicMask) == StatusCode.NotFound;
+
+        /// <summary>
+        /// Whether the operation went pending
+        /// </summary>
+        public bool Pending => statusCode == StatusCode.Pending;
+
+        /// <summary>
+        /// Whether the operation is in an error state
+        /// </summary>
+        public bool Faulted => statusCode == StatusCode.Error;
+
+        /// <summary>
+        /// Whether the operation completed successfully, i.e., it is not pending and did not error out
+        /// </summary>
+        public bool CompletedSuccessfully
+        {
+            get
+            {
+                var basicCode = statusCode & StatusCode.BasicMask;
+                return basicCode != StatusCode.Pending && basicCode != StatusCode.Error;
+            }
+        }
     }
 }
