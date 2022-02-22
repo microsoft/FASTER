@@ -39,40 +39,40 @@ namespace FASTER.test.InputOutputParameterTests
             }
 
             /// <inheritdoc/>
-            public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+            public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
             {
-                SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref updateInfo, WriteReason.Upsert);
+                SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, WriteReason.Upsert);
                 return true;
             }
             /// <inheritdoc/>
-            public override void SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, WriteReason reason)
+            public override void SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
             {
-                lastWriteAddress = updateInfo.Address;
+                lastWriteAddress = upsertInfo.Address;
                 dst = output = src * input;
             }
 
             /// <inheritdoc/>
-            public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, WriteReason reasons)
+            public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reasons)
             {
-                Assert.AreEqual(lastWriteAddress, updateInfo.Address);
+                Assert.AreEqual(lastWriteAddress, upsertInfo.Address);
                 Assert.AreEqual(key * input, dst);
                 Assert.AreEqual(dst, output);
             }
 
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
-                InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref updateInfo);
+                InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
                 return true;
             }
-            public override void InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+            public override void InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
-                lastWriteAddress = updateInfo.Address;
+                lastWriteAddress = rmwInfo.Address;
                 value = output = key * input;
             }
             /// <inheritdoc/>
-            public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+            public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
-                Assert.AreEqual(lastWriteAddress, updateInfo.Address);
+                Assert.AreEqual(lastWriteAddress, rmwInfo.Address);
                 Assert.AreEqual(key * input, value);
                 Assert.AreEqual(value, output);
             }

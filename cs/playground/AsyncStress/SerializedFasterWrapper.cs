@@ -173,7 +173,7 @@ namespace AsyncStress
 
             var (status, output) = (await task.ConfigureAwait(false)).Complete();
             _sessionPool.Return(session);
-            Assert.True(status.CompletedSuccessfully);
+            Assert.True(status.IsCompletedSuccessfully);
 
             using IMemoryOwner<byte> memoryOwner = output.Memory;
 
@@ -205,7 +205,7 @@ namespace AsyncStress
                 for (; completedOutputs.Next(); ++count)
                 {
                     using IMemoryOwner<byte> memoryOwner = completedOutputs.Current.Output.Memory;
-                    Assert.True(completedOutputs.Current.Status.CompletedSuccessfully);
+                    Assert.True(completedOutputs.Current.Status.IsCompletedSuccessfully);
                     userResult = (completedOutputs.Current.Status, completedOutputs.Current.Status.Found ? MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory) : default);
                 }
                 completedOutputs.Dispose();
@@ -214,7 +214,7 @@ namespace AsyncStress
             else
             {
                 using IMemoryOwner<byte> memoryOwner = result.Item2.Memory;
-                Assert.True(result.Item1.CompletedSuccessfully);
+                Assert.True(result.Item1.IsCompletedSuccessfully);
                 userResult = (result.Item1, result.Item1.Found ? MessagePackSerializer.Deserialize<Value>(memoryOwner.Memory) : default);
             }
             _sessionPool.Return(session);

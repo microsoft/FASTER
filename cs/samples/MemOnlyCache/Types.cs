@@ -52,20 +52,20 @@ namespace MemOnlyCache
             this.sizeTracker = sizeTracker;
         }
 
-        public override bool ConcurrentWriter(ref CacheKey key, ref CacheValue input, ref CacheValue src, ref CacheValue dst, ref CacheValue output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+        public override bool ConcurrentWriter(ref CacheKey key, ref CacheValue input, ref CacheValue src, ref CacheValue dst, ref CacheValue output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
         {
             var old = Interlocked.Exchange(ref dst, src);
             sizeTracker.AddTrackedSize(dst.GetSize - old.GetSize);
             return true;
         }
 
-        public override void PostSingleWriter(ref CacheKey key, ref CacheValue input, ref CacheValue src, ref CacheValue dst, ref CacheValue output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, WriteReason reason)
+        public override void PostSingleWriter(ref CacheKey key, ref CacheValue input, ref CacheValue src, ref CacheValue dst, ref CacheValue output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             dst = src;
             sizeTracker.AddTrackedSize(key.GetSize + src.GetSize);
         }
 
-        public override bool ConcurrentDeleter(ref CacheKey key, ref CacheValue value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+        public override bool ConcurrentDeleter(ref CacheKey key, ref CacheValue value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
         {
             sizeTracker.AddTrackedSize(-value.GetSize);
 

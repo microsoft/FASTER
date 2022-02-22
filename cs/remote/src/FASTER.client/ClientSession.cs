@@ -412,7 +412,7 @@ namespace FASTER.client
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingContext.Add(p, result);
                                 }
-                                else if (status.CompletedSuccessfully)
+                                else if (status.IsCompletedSuccessfully)
                                 {
                                     result.Item3 = serializer.ReadOutput(ref src);
                                     functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
@@ -431,7 +431,7 @@ namespace FASTER.client
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingTcs.Add(p, tcs);
                                 }
-                                else if (status.CompletedSuccessfully)
+                                else if (status.IsCompletedSuccessfully)
                                     tcs.SetResult((status, serializer.ReadOutput(ref src)));
                                 else
                                     tcs.SetResult((status, default));
@@ -614,7 +614,7 @@ namespace FASTER.client
                         readRmwPendingContext.TryGetValue(p, out var result);
                         readRmwPendingContext.Remove(p);
 #endif
-                        if (status.CompletedSuccessfully)
+                        if (status.IsCompletedSuccessfully)
                         {
                             result.Item3 = serializer.ReadOutput(ref src);
                             functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
@@ -632,7 +632,7 @@ namespace FASTER.client
                         readRmwPendingTcs.TryGetValue(p, out var result);
                         readRmwPendingTcs.Remove(p);
 #endif
-                        if (status.CompletedSuccessfully)
+                        if (status.IsCompletedSuccessfully)
                             result.SetResult((status, serializer.ReadOutput(ref src)));
                         else
                             result.SetResult((status, default));

@@ -95,28 +95,28 @@ namespace FASTER.test.readaddress
             }
 
             // Return false to force a chain of values.
-            public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) => false;
+            public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo) => false;
 
-            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo) => false;
+            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) => false;
 
             // Record addresses
-            public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, WriteReason reason)
+            public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 dst = src;
-                this.lastWriteAddress = updateInfo.Address;
+                this.lastWriteAddress = upsertInfo.Address;
             }
 
-            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
-                this.lastWriteAddress = updateInfo.Address;
-                output.address = updateInfo.Address;
+                this.lastWriteAddress = rmwInfo.Address;
+                output.address = rmwInfo.Address;
                 output.value = value.value = input.value;
             }
 
-            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
-                this.lastWriteAddress = updateInfo.Address;
-                output.address = updateInfo.Address;
+                this.lastWriteAddress = rmwInfo.Address;
+                output.address = rmwInfo.Address;
                 output.value = newValue.value = input.value;
             }
 
@@ -231,7 +231,7 @@ namespace FASTER.test.readaddress
                 Assert.GreaterOrEqual(lap, 0);
                 long expectedValue = SetReadOutput(defaultKeyToScan, LapOffset(lap) + defaultKeyToScan);
 
-                Assert.AreEqual(status.Found, !recordInfo.Tombstone, $"status({status}) == NOTFOUND != Tombstone ({recordInfo.Tombstone}) on lap {lap}");
+                Assert.AreEqual(status.NotFound, recordInfo.Tombstone, $"status({status}) == NOTFOUND != Tombstone ({recordInfo.Tombstone}) on lap {lap}");
                 Assert.AreEqual(lap == deleteLap, recordInfo.Tombstone, $"lap({lap}) == deleteLap({deleteLap}) != Tombstone ({recordInfo.Tombstone})");
                 if (!recordInfo.Tombstone)
                     Assert.AreEqual(expectedValue, actualOutput.value, $"lap({lap})");

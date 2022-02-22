@@ -41,14 +41,19 @@ namespace FASTER.client
         public bool Pending => statusCode == StatusCode.Pending;
 
         /// <summary>
+        /// Whether the operation went pending
+        /// </summary>
+        public bool IsCompleted => !Pending;
+
+        /// <summary>
         /// Whether the operation is in an error state
         /// </summary>
-        public bool Faulted => statusCode == StatusCode.Error;
+        public bool IsFaulted => statusCode == StatusCode.Error;
 
         /// <summary>
         /// Whether the operation completed successfully, i.e., it is not pending and did not error out
         /// </summary>
-        public bool CompletedSuccessfully
+        public bool IsCompletedSuccessfully
         {
             get
             {

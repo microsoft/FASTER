@@ -21,14 +21,14 @@ namespace FASTER.test.LockableUnsafeContext
     {
         internal long deletedRecordAddress;
 
-        public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+        public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
         {
-            deletedRecordAddress = updateInfo.Address;
+            deletedRecordAddress = deleteInfo.Address;
         }
 
-        public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+        public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
         {
-            deletedRecordAddress = updateInfo.Address;
+            deletedRecordAddress = deleteInfo.Address;
             return true;
         }
     }
@@ -785,7 +785,7 @@ namespace FASTER.test.LockableUnsafeContext
                     UpdateOp.Delete => luContext.Delete(key),
                     _ => new(StatusCode.Error)
                 };
-                Assert.IsFalse(status.Faulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+                Assert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                 if (updateOp == UpdateOp.RMW)
                     Assert.IsTrue(status.CopyUpdatedRecord, status.ToString());
                 else
@@ -926,7 +926,7 @@ namespace FASTER.test.LockableUnsafeContext
                         UpdateOp.Delete => updateLuContext.Delete(key),
                         _ => new(StatusCode.Error)
                     };
-                    Assert.IsFalse(status.Faulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+                    Assert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                     Assert.IsFalse(status.Found, status.ToString());
                     Assert.IsTrue(status.CreatedRecord, status.ToString());
                 }

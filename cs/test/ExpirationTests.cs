@@ -134,7 +134,7 @@ namespace FASTER.test.Expiration
 
             static bool IsExpired(int key, int value) => value == GetValue(key) + 2;
 
-            public override bool NeedInitialUpdate(ref int key, ref ExpirationInput input, ref ExpirationOutput output, ref UpdateInfo updateInfo)
+            public override bool NeedInitialUpdate(ref int key, ref ExpirationInput input, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.NeedInitialUpdate);
                 switch (input.testOp)
@@ -164,7 +164,7 @@ namespace FASTER.test.Expiration
                 }
             }
 
-            public override bool NeedCopyUpdate(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref ExpirationOutput output, ref UpdateInfo updateInfo)
+            public override bool NeedCopyUpdate(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.NeedCopyUpdate);
                 switch (input.testOp)
@@ -195,7 +195,7 @@ namespace FASTER.test.Expiration
             }
 
             /// <inheritdoc/>
-            public override void CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+            public override void CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.CopyUpdater);
                 switch (input.testOp)
@@ -285,7 +285,7 @@ namespace FASTER.test.Expiration
                 }
             }
 
-            public override void InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+            public override void InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.InitialUpdater);
                 value.field1 = input.value;
@@ -293,7 +293,7 @@ namespace FASTER.test.Expiration
                 output.retrievedValue = value.field1;
             }
 
-            public override bool InPlaceUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+            public override bool InPlaceUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.InPlaceUpdater);
                 switch (input.testOp)
@@ -408,12 +408,12 @@ namespace FASTER.test.Expiration
             }
 
             // Upsert functions
-            public override void SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, WriteReason reason)
+            public override void SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 src.CopyTo(ref dst);
             }
 
-            public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+            public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
             {
                 src.CopyTo(ref dst);
                 return true;

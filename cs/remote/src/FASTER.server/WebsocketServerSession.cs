@@ -106,7 +106,7 @@ namespace FASTER.server
             hrw.Write((MessageType)(ctx >> 32), ref dcurr, (int)(dend - dcurr));
             Write((int)(ctx & 0xffffffff), ref dcurr, (int)(dend - dcurr));
             Write(ref status, ref dcurr, (int)(dend - dcurr));
-            if (status.CompletedSuccessfully)
+            if (status.IsCompletedSuccessfully)
                 serializer.Write(ref output, ref dcurr, (int)(dend - dcurr));
             msgnum++;
 

@@ -296,7 +296,7 @@ namespace FASTER.test.recovery.sumstore.simple
 
             var session2 = fht2.NewSession(functions2);
 
-            // Just need one operation here to verify readInfo/updateInfo in the functions
+            // Just need one operation here to verify readInfo/upsertInfo in the functions
             var lastKey = inputArray.Length - 1;
             var status = session2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default, 0);
             Assert.IsFalse(status.Pending, status.ToString());
@@ -362,32 +362,32 @@ namespace FASTER.test.recovery.sumstore.simple
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, updateInfo.Version);
+                Assert.AreEqual(expectedVersion, rmwInfo.Version);
             value = input.numClicks;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, updateInfo.Version);
+                Assert.AreEqual(expectedVersion, rmwInfo.Version);
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output, ref UpdateInfo updateInfo)
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, updateInfo.Version);
+                Assert.AreEqual(expectedVersion, rmwInfo.Version);
             return true;
         }
 
-        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo)
+        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, updateInfo.Version);
+                Assert.AreEqual(expectedVersion, rmwInfo.Version);
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
         }
     }

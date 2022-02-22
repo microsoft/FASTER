@@ -29,7 +29,59 @@ namespace FASTER.core
     /// <summary>
     /// Information passed to <see cref="IFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
     /// </summary>
-    public struct UpdateInfo
+    public struct UpsertInfo
+    {
+        /// <summary>
+        /// The type of session context executing the operation
+        /// </summary>
+        public SessionType SessionType { get; internal set; }
+
+        /// <summary>
+        /// The FASTER execution context version of the operation
+        /// </summary>
+        public long Version { get; internal set; }
+
+        /// <summary>
+        /// The logical address of the record being operated on
+        /// </summary>
+        public long Address { get; internal set; }
+
+        /// <summary>
+        /// Utility ctor
+        /// </summary>
+        public UpsertInfo(ref RMWInfo rmwInfo)
+        {
+            this.SessionType = rmwInfo.SessionType;
+            this.Version = rmwInfo.Version;
+            this.Address = rmwInfo.Address;
+        }
+    }
+
+    /// <summary>
+    /// Information passed to <see cref="IFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// </summary>
+    public struct RMWInfo
+    {
+        /// <summary>
+        /// The type of session context executing the operation
+        /// </summary>
+        public SessionType SessionType { get; internal set; }
+
+        /// <summary>
+        /// The FASTER execution context version of the operation
+        /// </summary>
+        public long Version { get; internal set; }
+
+        /// <summary>
+        /// The logical address of the record being operated on
+        /// </summary>
+        public long Address { get; internal set; }
+    }
+
+    /// <summary>
+    /// Information passed to <see cref="IFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// </summary>
+    public struct DeleteInfo
     {
         /// <summary>
         /// The type of session context executing the operation

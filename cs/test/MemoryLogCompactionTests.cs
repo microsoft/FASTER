@@ -84,7 +84,7 @@ namespace FASTER.test
                 key.Span.Fill(i);
 
                 var (status, output) = session.Read(key, userContext: i < 10 ? 1 : 0); 
-                if (!status.Pending)
+                if (status.IsCompleted)
                 {
                     if (i < 10)
                         Assert.IsFalse(status.Found);
