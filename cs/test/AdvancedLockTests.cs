@@ -40,7 +40,7 @@ namespace FASTER.test.LockTests
 
             internal Input readCacheInput;
 
-            public override void SingleWriter(ref int key, ref Input input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, WriteReason reason)
+            public override void SingleWriter(ref int key, ref Input input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 // In the wait case we are waiting for a signal that something else has completed, e.g. a pending Read, by the thread with SetEvent.
                 if ((input.flags & LockFunctionFlags.WaitForEvent) != 0)
@@ -147,7 +147,7 @@ namespace FASTER.test.LockTests
                     var status = session.Read(ref key, ref functions.readCacheInput, ref output, ref recordMetadata);
 
                     // If the Upsert completed before the Read started, we may Read() the Upserted value.
-                    if (!status.Pending)
+                    if (status.IsCompleted)
                     {
                         Assert.IsTrue(status.Found, $"Key = {key}, status {status}");
                         Assert.AreEqual(key + valueAdd * 2, output, $"Key = {key}");

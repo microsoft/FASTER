@@ -119,7 +119,7 @@ namespace SumStore
             {
                 var status = session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
 
-                if (!status.CompletedSuccessfully)
+                if (!status.IsCompletedSuccessfully)
                     throw new Exception();
 
                 if (i % completePendingInterval == 0)

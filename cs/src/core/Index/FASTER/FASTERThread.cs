@@ -193,7 +193,7 @@ namespace FASTER.core
                 status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, false, out _);
 
             // If done, callback user code.
-            if (status.CompletedSuccessfully)
+            if (status.IsCompletedSuccessfully)
             {
                 switch (pendingContext.type)
                 {
@@ -273,7 +273,7 @@ namespace FASTER.core
                 // Remove from pending dictionary
                 opCtx.ioPendingRequests.Remove(request.id);
                 var status = InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
-                if (completedOutputs is not null && status.CompletedSuccessfully)
+                if (completedOutputs is not null && status.IsCompletedSuccessfully)
                     completedOutputs.Add(ref pendingContext, status);
                 else
                     pendingContext.Dispose();
@@ -311,7 +311,7 @@ namespace FASTER.core
             }
 
             // If done, callback user code
-            if (status.CompletedSuccessfully)
+            if (status.IsCompletedSuccessfully)
             {
                 if (pendingContext.type == OperationType.READ)
                 {
