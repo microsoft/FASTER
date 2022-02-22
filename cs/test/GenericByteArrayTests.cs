@@ -73,7 +73,7 @@ namespace FASTER.test
                 var key = GetByteArray(i);
                 var value = GetByteArray(i);
 
-                if (session.Read(ref key, ref input, ref output, Empty.Default, 0).Pending)
+                if (session.Read(ref key, ref input, ref output, Empty.Default, 0).IsPending)
                 {
                     session.CompletePending(true);
                 }

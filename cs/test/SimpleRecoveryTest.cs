@@ -141,7 +141,7 @@ namespace FASTER.test.recovery.sumstore.simple
             {
                 var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
 
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session2.CompletePendingWithOutputs(out var outputs, wait: true);
                     Assert.IsTrue(outputs.Next());
@@ -198,7 +198,7 @@ namespace FASTER.test.recovery.sumstore.simple
             {
                 var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
 
-                if (status.Pending)
+                if (status.IsPending)
                     session2.CompletePending(true);
                 else
                 {
@@ -299,15 +299,15 @@ namespace FASTER.test.recovery.sumstore.simple
             // Just need one operation here to verify readInfo/upsertInfo in the functions
             var lastKey = inputArray.Length - 1;
             var status = session2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default, 0);
-            Assert.IsFalse(status.Pending, status.ToString());
+            Assert.IsFalse(status.IsPending, status.ToString());
 
             value.numClicks = lastKey;
             status = session2.Upsert(ref inputArray[lastKey], ref value, Empty.Default, 0);
-            Assert.IsFalse(status.Pending, status.ToString());
+            Assert.IsFalse(status.IsPending, status.ToString());
 
             inputArg = new() { adId = inputArray[lastKey], numClicks = new NumClicks { numClicks = 0} }; // CopyUpdater adds, so make this 0
             status = session2.RMW(ref inputArray[lastKey], ref inputArg);
-            Assert.IsFalse(status.Pending, status.ToString());
+            Assert.IsFalse(status.IsPending, status.ToString());
 
             // Now verify Pending
             fht2.Log.FlushAndEvict(wait: true);
@@ -315,7 +315,7 @@ namespace FASTER.test.recovery.sumstore.simple
             output.value = new() { numClicks = lastKey };
             inputArg.numClicks = new() { numClicks = lastKey };
             status = session2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default, 0);
-            Assert.IsTrue(status.Pending, status.ToString());
+            Assert.IsTrue(status.IsPending, status.ToString());
             session2.CompletePending(wait: true);
 
             // Upsert does not go pending so is skipped here
@@ -324,7 +324,7 @@ namespace FASTER.test.recovery.sumstore.simple
             output.value = new() { numClicks = lastKey };
             inputArg.numClicks = new() { numClicks = lastKey };
             status = session2.RMW(ref inputArray[lastKey], ref inputArg);
-            Assert.IsTrue(status.Pending, status.ToString());
+            Assert.IsTrue(status.IsPending, status.ToString());
             session2.CompletePending(wait: true);
 
             session2.Dispose();

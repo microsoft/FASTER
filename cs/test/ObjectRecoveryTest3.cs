@@ -129,7 +129,7 @@ namespace FASTER.test.recovery.objects
                 MyOutput g1 = new();
                 var status = session.Read(ref key, ref input, ref g1, context, 0);
 
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session.CompletePending(true);
                     context.FinalizeRead(ref status, ref g1);
@@ -147,7 +147,7 @@ namespace FASTER.test.recovery.objects
                 session.Delete(ref key, context, 0);
                 var status = session.Read(ref key, ref input, ref output, context, 0);
 
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session.CompletePending(true);
                     context.FinalizeRead(ref status, ref output);

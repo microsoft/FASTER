@@ -105,10 +105,10 @@ namespace FASTER.test.ReadCacheTests
                 var status = session.Read(key, out _);
                 if (expectPending(key))
                 {
-                    Assert.IsTrue(status.Pending, status.ToString());
+                    Assert.IsTrue(status.IsPending, status.ToString());
                     session.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
-                    Assert.IsTrue(status.CopiedRecordToReadCache, status.ToString());
+                    Assert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
                 }
                 Assert.IsTrue(status.Found, status.ToString());
                 if (ii == 0)
@@ -119,7 +119,7 @@ namespace FASTER.test.ReadCacheTests
             for (var ii = 0; ii < chainLen; ++ii)
             {
                 var status = session.Read(lowChainKey + ii * mod, out _);
-                Assert.IsTrue(!status.Pending && status.Found, status.ToString());
+                Assert.IsTrue(!status.IsPending && status.Found, status.ToString());
             }
 
             // Pass 3: Put in bunch of extra keys into the cache so when we FlushAndEvict we get all the ones of interest.
@@ -130,10 +130,10 @@ namespace FASTER.test.ReadCacheTests
                     var status = session.Read(key, out _);
                     if (expectPending(key))
                     {
-                        Assert.IsTrue(status.Pending);
+                        Assert.IsTrue(status.IsPending);
                         session.CompletePendingWithOutputs(out var outputs, wait: true);
                         (status, output) = GetSinglePendingResult(outputs);
-                        Assert.IsTrue(status.CopiedRecordToReadCache, status.ToString());
+                        Assert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
                     }
                     Assert.IsTrue(status.Found, status.ToString());
                     session.CompletePending(wait: true);
@@ -257,7 +257,7 @@ namespace FASTER.test.ReadCacheTests
             void doTest(int key)
             {
                 var status = session.Delete(key);
-                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
                 status = session.Read(key, out var value);
                 Assert.IsFalse(status.Found, status.ToString());
@@ -285,7 +285,7 @@ namespace FASTER.test.ReadCacheTests
             void doTest(int key)
             {
                 var status = session.Delete(key);
-                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
                 status = session.Read(key, out var value);
                 Assert.IsFalse(status.Found, status.ToString());
@@ -338,13 +338,13 @@ namespace FASTER.test.ReadCacheTests
                 {
                     // RMW will get the old value from disk, unlike Upsert
                     status = session.RMW(key, value + valueAdd);
-                    Assert.IsTrue(status.Pending, status.ToString());
+                    Assert.IsTrue(status.IsPending, status.ToString());
                     session.CompletePending(wait: true);
                 }
                 else
                 {
                     status = session.Upsert(key, value + valueAdd);
-                    Assert.IsTrue(status.CreatedRecord, status.ToString());
+                    Assert.IsTrue(status.Record.Created, status.ToString());
                 }
 
                 status = session.Read(key, out value);
@@ -375,7 +375,7 @@ namespace FASTER.test.ReadCacheTests
             RecordMetadata recordMetadata = default;
 
             var status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
-            Assert.IsTrue(status.Pending, status.ToString());
+            Assert.IsTrue(status.IsPending, status.ToString());
             session.CompletePending(wait: true);
 
             VerifySplicedInKey(key);
@@ -397,13 +397,13 @@ namespace FASTER.test.ReadCacheTests
             {
                 key = spliceInExistingKey;
                 var status = session.Upsert(key, key + valueAdd);
-                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
             else
             {
                 key = spliceInNewKey;
                 var status = session.Upsert(key, key + valueAdd);
-                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
             VerifySplicedInKey(key);
@@ -428,28 +428,28 @@ namespace FASTER.test.ReadCacheTests
                 var status = session.RMW(key, key + valueAdd);
                 if (recordRegion == RecordRegion.OnDisk)
                 {
-                    Assert.IsTrue(status.Pending, status.ToString());
+                    Assert.IsTrue(status.IsPending, status.ToString());
                     session.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
-                Assert.IsTrue(status.Found && status.CopyUpdatedRecord, status.ToString());
+                Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
 
                 { // New key
                     key = spliceInNewKey;
                     status = session.RMW(key, key + valueAdd);
 
                     // This NOTFOUND key will return PENDING because we have to trace back through the collisions.
-                    Assert.IsTrue(status.Pending, status.ToString());
+                    Assert.IsTrue(status.IsPending, status.ToString());
                     session.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
-                    Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                    Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
             }
             else
             {
                 key = spliceInNewKey;
                 var status = session.RMW(key, key + valueAdd);
-                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
             VerifySplicedInKey(key);
@@ -471,13 +471,13 @@ namespace FASTER.test.ReadCacheTests
             {
                 key = spliceInExistingKey;
                 var status = session.Delete(key);
-                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
             else
             {
                 key = spliceInNewKey;
                 var status = session.Delete(key);
-                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
             VerifySplicedInKey(key);
@@ -574,7 +574,7 @@ namespace FASTER.test.ReadCacheTests
             foreach (var key in locks.Keys)
             {
                 var status = session.Read(key, out _);
-                Assert.IsTrue(status.Pending, status.ToString());
+                Assert.IsTrue(status.IsPending, status.ToString());
                 session.CompletePending(wait: true);
 
                 var lockType = locks[key];

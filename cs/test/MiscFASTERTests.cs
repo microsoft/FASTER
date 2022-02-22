@@ -80,7 +80,7 @@ namespace FASTER.test
             MyOutput g1 = new();
             var status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait:true);
                 (status, _) = GetSinglePendingResult(outputs);
@@ -92,7 +92,7 @@ namespace FASTER.test
             key2 = 99999;
             status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, _) = GetSinglePendingResult(outputs);
@@ -124,12 +124,12 @@ namespace FASTER.test
                 value = new ValueStruct() { vfield1 = 1000, vfield2 = 2000 };
 
                 var status = session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata1);
-                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
                 // ConcurrentWriter returns false, so we create a new record (and leave the old one sealed).
                 value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
                 status = session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata2);
-                Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
                 Assert.Greater(recordMetadata2.Address, recordMetadata1.Address);
 

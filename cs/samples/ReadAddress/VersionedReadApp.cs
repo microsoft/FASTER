@@ -157,7 +157,7 @@ namespace ReadAddress
                 var status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.SkipCopyReads, serialNo: maxLap + 1);
 
                 // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     using (completedOutputs)

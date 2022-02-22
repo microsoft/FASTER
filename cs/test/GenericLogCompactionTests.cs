@@ -102,7 +102,7 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, 0, 0);
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     Assert.IsTrue(completedOutputs.Next());
@@ -160,7 +160,7 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, 0, 0);
-                if (status.Pending)
+                if (status.IsPending)
                     session.CompletePending(true);
                 else
                 {
@@ -212,7 +212,7 @@ namespace FASTER.test
                 int ctx = ((i < 500) && (i % 2 == 0)) ? 1 : 0;
 
                 var status = session.Read(ref key1, ref input, ref output, ctx, 0);
-                if (status.Pending)
+                if (status.IsPending)
                     session.CompletePending(true);
                 else
                 {
@@ -264,7 +264,7 @@ namespace FASTER.test
                 var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
 
                 var status = session.Read(ref key1, ref input, ref output, ctx, 0);
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session.CompletePending(true);
                 }
@@ -313,7 +313,7 @@ namespace FASTER.test
             var input = default(MyInput);
             var output = default(MyOutput);
             var status = session.Read(ref key, ref input, ref output, 0, 0);
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);

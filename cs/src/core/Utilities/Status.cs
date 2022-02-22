@@ -11,19 +11,61 @@ namespace FASTER.core
     /// Status result of operation on FASTER
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 1)]
+    public struct RecordStatus
+    {
+        [FieldOffset(0)]
+        internal readonly StatusCode statusCode;
+
+        /// <summary>
+        /// Whether a new record for a previously non-existent key was appended to the log.
+        /// Indicates that an existing record was updated in place.
+        /// </summary>
+        public bool Created => (statusCode & StatusCode.AdvancedMask) == StatusCode.CreatedRecord;
+
+        /// <summary>
+        /// Whether existing record was updated in place.
+        /// </summary>
+        public bool InPlaceUpdated => (statusCode & StatusCode.AdvancedMask) == StatusCode.InPlaceUpdatedRecord;
+
+        /// <summary>
+        /// Whether an existing record key was copied, updated, and appended to the log.
+        /// </summary>
+        public bool CopyUpdated => (statusCode & StatusCode.AdvancedMask) == StatusCode.CopyUpdatedRecord;
+
+        /// <summary>
+        /// Whether an existing record key was copied and appended to the log.
+        /// </summary>
+        public bool Copied => (statusCode & StatusCode.AdvancedMask) == StatusCode.CopiedRecord;
+
+        /// <summary>
+        /// Whether an existing record key was copied, updated, and added to the readcache.
+        /// </summary>
+        public bool CopiedToReadCache => (statusCode & StatusCode.AdvancedMask) == StatusCode.CopiedRecordToReadCache;
+    }
+
+    /// <summary>
+    /// Status result of operation on FASTER
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 1)]
     public struct Status
     {
         [FieldOffset(0)]
-        private readonly StatusCode statusCode;
+        internal readonly StatusCode statusCode;
+
+        /// <summary>
+        /// Status specific to the record
+        /// </summary>
+        [FieldOffset(0)]
+        public RecordStatus Record;
 
         /// <summary>
         /// Create status from given status code
         /// </summary>
         /// <param name="statusCode"></param>
-        internal Status(StatusCode statusCode) => this.statusCode = statusCode;
+        internal Status(StatusCode statusCode) : this() => this.statusCode = statusCode;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status(OperationStatus operationStatus)
+        internal Status(OperationStatus operationStatus) : this()
         {
             var basicOperationStatus = OperationStatusUtils.BasicOpCode(operationStatus);
             Debug.Assert(basicOperationStatus == OperationStatus.SUCCESS || basicOperationStatus == OperationStatus.NOTFOUND);
@@ -36,14 +78,14 @@ namespace FASTER.core
         public static Status CreateFound() => new(StatusCode.OK);
 
         /// <summary>
-        /// Create a <see cref="Pending"/> Status value. Use the Is* properties to query.
+        /// Create a <see cref="IsPending"/> Status value. Use the Is* properties to query.
         /// </summary>
         public static Status CreatePending() => new(StatusCode.Pending);
 
         /// <summary>
         /// Whether a Read or RMW found the key
         /// </summary>
-        public bool Found => (statusCode & StatusCode.BasicMask) == StatusCode.OK;
+        public bool Found => (this.Record.statusCode & StatusCode.BasicMask) == StatusCode.OK;
 
         /// <summary>
         /// Whether a Read or RMW did not find the key
@@ -53,12 +95,12 @@ namespace FASTER.core
         /// <summary>
         /// Whether the operation went pending
         /// </summary>
-        public bool Pending => statusCode == StatusCode.Pending;
+        public bool IsPending => statusCode == StatusCode.Pending;
 
         /// <summary>
         /// Whether the operation went pending
         /// </summary>
-        public bool IsCompleted => !Pending;
+        public bool IsCompleted => !IsPending;
 
         /// <summary>
         /// Whether the operation is in an error state
@@ -76,34 +118,6 @@ namespace FASTER.core
                 return basicCode != StatusCode.Pending && basicCode != StatusCode.Error;
             }
         }
-
-        #region Advanced status
-        /// <summary>
-        /// Whether a new record for a previously non-existent key was appended to the log.
-        /// Indicates that an existing record was updated in place.
-        /// </summary>
-        public bool CreatedRecord => (statusCode & StatusCode.AdvancedMask) == StatusCode.CreatedRecord;
-
-        /// <summary>
-        /// Whether existing record was updated in place.
-        /// </summary>
-        public bool InPlaceUpdatedRecord => (statusCode & StatusCode.AdvancedMask) == StatusCode.InPlaceUpdatedRecord;
-
-        /// <summary>
-        /// Whether an existing record key was copied, updated, and appended to the log.
-        /// </summary>
-        public bool CopyUpdatedRecord => (statusCode & StatusCode.AdvancedMask) == StatusCode.CopyUpdatedRecord;
-
-        /// <summary>
-        /// Whether an existing record key was copied and appended to the log.
-        /// </summary>
-        public bool CopiedRecord => (statusCode & StatusCode.AdvancedMask) == StatusCode.CopiedRecord;
-
-        /// <summary>
-        /// Whether an existing record key was copied, updated, and added to the readcache.
-        /// </summary>
-        public bool CopiedRecordToReadCache => (statusCode & StatusCode.AdvancedMask) == StatusCode.CopiedRecordToReadCache;
-        #endregion
 
         /// <summary>
         /// Get the underlying status code value

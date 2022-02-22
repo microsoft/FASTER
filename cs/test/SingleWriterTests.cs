@@ -76,7 +76,7 @@ namespace FASTER.test.SingleWriter
             int input = (int)WriteReason.Upsert;
             int output = 0;
             for (int key = 0; key < numRecords; key++)
-                Assert.False(session.Upsert(key, input, key * valueMult, ref output).Pending);
+                Assert.False(session.Upsert(key, input, key * valueMult, ref output).IsPending);
         }
 
         [Test]
@@ -95,7 +95,7 @@ namespace FASTER.test.SingleWriter
             WriteReason expectedReason = readCopyDestination == ReadCopyDestination.ReadCache ? WriteReason.CopyToReadCache : WriteReason.CopyToTail;
             int input = (int)expectedReason;
             var status = session.Read(key, input, out int output);
-            Assert.IsTrue(status.Pending);
+            Assert.IsTrue(status.IsPending);
             session.CompletePending(wait: true);
             Assert.AreEqual(expectedReason, functions.actualReason);
 
@@ -105,8 +105,11 @@ namespace FASTER.test.SingleWriter
             input = (int)expectedReason;
             RecordMetadata recordMetadata = default;
             status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
-            Assert.IsTrue(status.Pending);
-            session.CompletePending(wait: true);
+            Assert.IsTrue(status.IsPending && !status.IsCompleted);
+            session.CompletePendingWithOutputs(out var outputs, wait: true);
+            (status, output) = GetSinglePendingResult(outputs);
+            Assert.IsTrue(!status.IsPending && status.IsCompleted && status.IsCompletedSuccessfully);
+            Assert.IsTrue(status.Found && !status.NotFound && status.Record.Copied);
             Assert.AreEqual(expectedReason, functions.actualReason);
 
             functions.actualReason = NoReason;

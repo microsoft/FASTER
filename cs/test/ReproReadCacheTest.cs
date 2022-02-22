@@ -81,7 +81,7 @@ namespace FASTER.test.ReadCacheTests
                         return;
                     }
 
-                    Assert.IsTrue(status.Pending, $"was not OK or PENDING: {keyString}");
+                    Assert.IsTrue(status.IsPending, $"was not OK or PENDING: {keyString}");
 
                     session.CompletePending(wait: true);
                 }
@@ -98,7 +98,7 @@ namespace FASTER.test.ReadCacheTests
                 {
                     var sb = SpanByte.FromFixedSpan(key);
                     var status = session.Upsert(sb, i * 2);
-                    Assert.IsTrue(!status.Found && status.CreatedRecord, status.ToString());
+                    Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
             }
 

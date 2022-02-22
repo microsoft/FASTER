@@ -157,7 +157,7 @@ namespace FASTER.test
                 {
                     var ksUnfound = keyStruct;
                     ksUnfound.kfield1 += numRecords * 10;
-                    if (session.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct).Pending)
+                    if (session.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct).IsPending)
                     {
                         CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
                         if (isAsync)
@@ -172,7 +172,7 @@ namespace FASTER.test
                 var status = useRMW
                     ? session.RMW(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct)
                     : session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     if (processPending.IsFirst())
                     {
@@ -210,7 +210,7 @@ namespace FASTER.test
                 // This should not be pending since we've not flushed.
                 var localKey = key;
                 var status = session.Read(ref localKey, ref inputStruct, ref outputStruct, ref recordMetadata);
-                Assert.IsFalse(status.Pending);
+                Assert.IsFalse(status.IsPending);
                 Assert.AreEqual(address, recordMetadata.Address);
             }
         }

@@ -478,7 +478,7 @@ namespace FASTER.test.Expiration
             ExpirationOutput output = new();
 
             var status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
-            if (status.Pending)
+            if (status.IsPending)
             {
                 Assert.IsTrue(isOnDisk);
                 session.CompletePendingWithOutputs(out var completedOutputs, wait:true);
@@ -493,7 +493,7 @@ namespace FASTER.test.Expiration
         {
             ExpirationOutput output = new ();
             var status = session.RMW(ref key, ref input, ref output);
-            if (status.Pending)
+            if (status.IsPending)
             {
                 Assert.IsTrue(isOnDisk);
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);

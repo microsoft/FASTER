@@ -54,7 +54,7 @@ namespace FASTER.test.async
                 for (long key = 0; key < numOps; key++)
                 {
                     var result = await tasks[key].ConfigureAwait(false);
-                    if (result.Status.Pending)
+                    if (result.Status.IsPending)
                     {
                         done = false;
                         tasks[key] = result.CompleteAsync();
@@ -110,7 +110,7 @@ namespace FASTER.test.async
                 for (long key = 0; key < numOps; key++)
                 {
                     var result = await rmwtasks[key].ConfigureAwait(false);
-                    if (result.Status.Pending)
+                    if (result.Status.IsPending)
                     {
                         if (completeSync)
                         {

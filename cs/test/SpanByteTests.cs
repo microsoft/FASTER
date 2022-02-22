@@ -96,7 +96,7 @@ namespace FASTER.test
                         status = session.Read(key: SpanByte.FromFixedSpan(key), out var unused);
 
                     // All keys need to be fetched from disk
-                    Assert.IsTrue(status.Pending);
+                    Assert.IsTrue(status.IsPending);
 
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
 

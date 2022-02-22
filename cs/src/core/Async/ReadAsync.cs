@@ -53,7 +53,7 @@ namespace FASTER.core
                             try
                             {
                                 var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _);
-                                Debug.Assert(!status.Pending);
+                                Debug.Assert(!status.IsPending);
                                 _result = (status, _pendingContext.output);
                                 _recordMetadata = new(_pendingContext.recordInfo, _pendingContext.logicalAddress);
                                 _pendingContext.Dispose();
@@ -126,7 +126,7 @@ namespace FASTER.core
             /// <returns>The read result, or throws an exception if error encountered.</returns>
             public (Status status, Output output) Complete()
             {
-                if (!status.Pending)
+                if (!status.IsPending)
                     return (status, output);
                 return readAsyncInternal.Complete();
             }
@@ -137,7 +137,7 @@ namespace FASTER.core
             /// <returns>The read result and the previous address in the Read key's hash chain, or throws an exception if error encountered.</returns>
             public (Status status, Output output) Complete(out RecordMetadata recordMetadata)
             {
-                if (!status.Pending)
+                if (!status.IsPending)
                 {
                     recordMetadata = this.recordMetadata;
                     return (status, output);
@@ -170,7 +170,7 @@ namespace FASTER.core
                     return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(new(internalStatus), output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
 
                 status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, true, out diskRequest);
-                if (!status.Pending)
+                if (!status.IsPending)
                     return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
             finally
