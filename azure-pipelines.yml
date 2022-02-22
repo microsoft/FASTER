@@ -77,10 +77,10 @@ jobs:
 
   steps:
   - task: CMake@1
-    displayName: 'CMake .. -G"Visual Studio 16 2019"'
+    displayName: 'CMake .. -G"Visual Studio 16 2022"'
     inputs:
       workingDirectory: 'cc/build'
-      cmakeArgs: '.. -G"Visual Studio 16 2019"'
+      cmakeArgs: '.. -G"Visual Studio 16 2022"'
 
   - task: MSBuild@1
     displayName: 'Build solution cc/build/FASTER.sln'
@@ -178,10 +178,10 @@ jobs:
 
 #   steps:
 #   - task: CMake@1
-#     displayName: 'CMake .. -G"Visual Studio 16 2019" -DUSE_BLOBS=ON'
+#     displayName: 'CMake .. -G"Visual Studio 16 2022" -DUSE_BLOBS=ON'
 #     inputs:
 #       workingDirectory: 'cc/build'
-#       cmakeArgs: '.. -G"Visual Studio 16 2019" -DUSE_BLOBS=ON'
+#       cmakeArgs: '.. -G"Visual Studio 16 2022" -DUSE_BLOBS=ON'
 
 #   - script: 'git clone https://github.com/microsoft/vcpkg'
 #     workingDirectory: 'cc/build'
