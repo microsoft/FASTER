@@ -6,7 +6,7 @@ variables:
 jobs:
 - job: 'csharpWindows'
   pool:
-    vmImage: windows-latest
+    vmImage: windows-2022
   displayName: 'C# (Windows)'
   timeoutInMinutes: 75 
 
@@ -62,7 +62,7 @@ jobs:
 
 - job: 'cppWindows'
   pool:
-    vmImage: windows-latest
+    vmImage: windows-2022
   displayName: 'C++ (Windows)'
 
   strategy:
@@ -163,7 +163,7 @@ jobs:
 
 # - job: 'cppBlobsWindows'
 #   pool:
-#     vmImage: windows-latest
+#     vmImage: windows-2022
 #   displayName: 'C++ Blobs (Windows)'
 
 #   strategy:
