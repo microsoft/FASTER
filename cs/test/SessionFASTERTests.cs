@@ -48,7 +48,7 @@ namespace FASTER.test.async
             session.Upsert(ref key1, ref value, Empty.Default, 0);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
@@ -78,7 +78,7 @@ namespace FASTER.test.async
 
             var status = session1.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session1.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
@@ -90,7 +90,7 @@ namespace FASTER.test.async
 
             status = session2.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session2.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
@@ -117,7 +117,7 @@ namespace FASTER.test.async
                 session.Upsert(ref key1, ref value, Empty.Default, 0);
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
@@ -146,7 +146,7 @@ namespace FASTER.test.async
                 session1.Upsert(ref key1, ref value1, Empty.Default, 0);
                 var status = session1.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session1.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
@@ -169,7 +169,7 @@ namespace FASTER.test.async
 
                 var status = session2.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session2.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
@@ -199,7 +199,7 @@ namespace FASTER.test.async
             session.Upsert(ref key1, ref value1, Empty.Default, 0);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
@@ -220,7 +220,7 @@ namespace FASTER.test.async
 
             status = session.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
@@ -229,7 +229,7 @@ namespace FASTER.test.async
 
             status = session.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);

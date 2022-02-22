@@ -37,7 +37,10 @@ namespace FASTER.core
 
         ADVANCED_MASK = 0x700,  // Coordinate any changes with OperationStatusUtils.OpStatusToStatusCodeShif
         CREATED_RECORD = (int)StatusCode.CreatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPY_UPDATED_RECORD = (int)StatusCode.CopyUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift
+        INPLACE_UPDATED_RECORD = (int)StatusCode.InPlaceUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPY_UPDATED_RECORD = (int)StatusCode.CopyUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPIED_RECORD = (int)StatusCode.CopiedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPIED_RECORD_TO_READ_CACHE = (int)StatusCode.CopiedRecordToReadCache << OperationStatusUtils.OpStatusToStatusCodeShift
     }
 
     internal static class OperationStatusUtils

@@ -167,7 +167,7 @@ namespace FASTER.server
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
 
-                        if (status.Pending)
+                        if (status.IsPending)
                             Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
                         else if (status.Found)
                             serializer.SkipOutput(ref dcurr);
@@ -186,7 +186,7 @@ namespace FASTER.server
 
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
-                        if (status.Pending)
+                        if (status.IsPending)
                             Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
                         else if (status.IsCompletedSuccessfully)
                             serializer.SkipOutput(ref dcurr);
@@ -273,7 +273,7 @@ namespace FASTER.server
             if (valPtr == null)
                 status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
 
-            if (!status.Pending)
+            if (!status.IsPending)
             {
                 // Write six bytes (message | status | sid)
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));

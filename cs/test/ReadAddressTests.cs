@@ -211,7 +211,7 @@ namespace FASTER.test.readaddress
                             : session.RMW(ref key, ref value, serialNo: lap)
                         : session.Upsert(ref key, ref value, serialNo: lap);
 
-                    if (status.Pending)
+                    if (status.IsPending)
                         await session.CompletePendingAsync();
 
                     InsertAddresses[ii] = functions.lastWriteAddress;
@@ -285,7 +285,7 @@ namespace FASTER.test.readaddress
                 {
                     var status = session.Read(ref key, ref input, ref output, ref recordMetadata, session.functions.readFlags, serialNo: maxLap + 1);
 
-                    if (status.Pending)
+                    if (status.IsPending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -352,7 +352,7 @@ namespace FASTER.test.readaddress
                     var readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
 
                     var status = session.Read(ref key, ref input, ref output, ref recordMetadata, session.functions.readFlags, serialNo: maxLap + 1);
-                    if (status.Pending)
+                    if (status.IsPending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -368,7 +368,7 @@ namespace FASTER.test.readaddress
                         var saveRecordMetadata = recordMetadata;
 
                         status = session.ReadAtAddress(readAtAddress, ref input, ref output, session.functions.readFlags, serialNo: maxLap + 1);
-                        if (status.Pending)
+                        if (status.IsPending)
                         {
                             // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -538,7 +538,7 @@ namespace FASTER.test.readaddress
                     var keyOrdinal = rng.Next(numKeys);
 
                     var status = session.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, session.functions.readFlags, serialNo: maxLap + 1);
-                    if (status.Pending)
+                    if (status.IsPending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -651,7 +651,7 @@ namespace FASTER.test.readaddress
                 {
                     RecordMetadata recordMetadata = new(new RecordInfo { PreviousAddress = minAddress });
                     status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.MinAddress);
-                    if (status.Pending)
+                    if (status.IsPending)
                     {
                         Assert.IsTrue(session.CompletePendingWithOutputs(out var completedOutputs, wait: true));
                         (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);

@@ -57,7 +57,7 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var r = await s1.UpsertAsync(ref key, ref key);
-                while (r.Status.Pending)
+                while (r.Status.IsPending)
                     r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
@@ -159,7 +159,7 @@ namespace FASTER.test.async
             for (key = 0; key < numOps; key++)
             {
                 (status, output) = (await s1.RMWAsync(ref key, ref key, Empty.Default)).Complete();
-                Assert.IsFalse(status.Pending);
+                Assert.IsFalse(status.IsPending);
                 Assert.AreEqual(key, output);
             }
 
@@ -193,7 +193,7 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var r = await s1.UpsertAsync(ref key, ref key);
-                while (r.Status.Pending)
+                while (r.Status.IsPending)
                     r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
@@ -209,7 +209,7 @@ namespace FASTER.test.async
             {   // Scope for variables
                 long deleteKey = 99;
                 var r = await s1.DeleteAsync(ref deleteKey);
-                while (r.Status.Pending)
+                while (r.Status.IsPending)
                     r = await r.CompleteAsync(); // test async version of Delete completion
 
                 var (status, _) = (await s1.ReadAsync(ref deleteKey)).Complete();
@@ -227,7 +227,7 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var status = (await s1.UpsertAsync(key, key)).Complete();   // test sync version of Upsert completion
-                Assert.IsFalse(status.Pending);
+                Assert.IsFalse(status.IsPending);
             }
 
             Assert.Greater(numOps, 100);
@@ -242,7 +242,7 @@ namespace FASTER.test.async
             {   // Scope for variables
                 long deleteKey = 99;
                 var status = (await s1.DeleteAsync(deleteKey)).Complete(); // test sync version of Delete completion
-                Assert.IsFalse(status.Pending);
+                Assert.IsFalse(status.IsPending);
 
                 (status, _) = (await s1.ReadAsync(deleteKey)).Complete();
                 Assert.IsFalse(status.Found);
@@ -270,7 +270,7 @@ namespace FASTER.test.async
                 // subtract after the insert to get record start address.
                 (status, output) = (await s1.RMWAsync(ref key, ref key)).Complete();
                 addresses[key] = fht1.Log.TailAddress - recordSize;
-                Assert.IsFalse(status.Pending);
+                Assert.IsFalse(status.IsPending);
                 Assert.AreEqual(key, output);
             }
 
@@ -310,7 +310,7 @@ namespace FASTER.test.async
             for (key = 0; key < numOps; key++)
             {
                 var asyncResult = await (await s1.RMWAsync(key, key)).CompleteAsync();
-                Assert.IsFalse(asyncResult.Status.Pending);
+                Assert.IsFalse(asyncResult.Status.IsPending);
                 Assert.AreEqual(key, asyncResult.Output);
             }
 
@@ -384,7 +384,7 @@ namespace FASTER.test.async
             {
                 if (completeAsync)
                 {
-                    while (ar.Status.Pending)
+                    while (ar.Status.IsPending)
                         ar = await ar.CompleteAsync(); // test async version of Upsert completion
                     return;
                 }
@@ -395,7 +395,7 @@ namespace FASTER.test.async
             {
                 if (completeAsync)
                 {
-                    while (ar.Status.Pending)
+                    while (ar.Status.IsPending)
                         ar = await ar.CompleteAsync(); // test async version of Upsert completion
                     return;
                 }

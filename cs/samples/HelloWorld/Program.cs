@@ -147,7 +147,7 @@ namespace HelloWorld
             // Reads from disk will return PENDING status, result available via either asynchronous IFunctions callback
             // or on this thread via CompletePendingWithOutputs, shown below
             status = session.Read(ref key, ref output);
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var iter, true);
                 while (iter.Next())

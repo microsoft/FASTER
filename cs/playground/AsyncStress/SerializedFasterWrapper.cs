@@ -121,7 +121,7 @@ namespace AsyncStress
                 }
             }
 
-            Assert.False(status.Pending);
+            Assert.False(status.IsPending);
             _sessionPool.Return(session);
         }
 
@@ -198,7 +198,7 @@ namespace AsyncStress
                 }
             }
 
-            if (result.Item1.Pending)
+            if (result.Item1.IsPending)
             {
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 int count = 0;

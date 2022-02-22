@@ -156,7 +156,7 @@ namespace SumStore
                 Input input = default;
                 Output output = default;
                 var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                if (status.Pending)
+                if (status.IsPending)
                     throw new NotImplementedException();
 
                 inputArray[i].numClicks = output.value;

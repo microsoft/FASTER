@@ -106,7 +106,7 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s1.Read(ref key, ref output);
-                    if (!status.Pending)
+                    if (!status.IsPending)
                     {
                         Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
@@ -143,7 +143,7 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s2.Read(ref key, ref output);
-                if (!status.Pending)
+                if (!status.IsPending)
                 {
                     Assert.IsTrue(status.Found, $"status = {status}");
                     Assert.AreEqual(key, output, $"output = {output}");
@@ -195,7 +195,7 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (!status.Pending)
+                        if (!status.IsPending)
                         {
                             Assert.IsTrue(status.Found, $"status = {status}");
                             Assert.AreEqual(key, output, $"output = {output}");
@@ -226,7 +226,7 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (!status.Pending)
+                    if (!status.IsPending)
                     {
                         Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
@@ -278,7 +278,7 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (!status.Pending)
+                    if (!status.IsPending)
                     {
                         Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
@@ -330,7 +330,7 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (!status.Pending)
+                        if (!status.IsPending)
                         {
                             Assert.IsTrue(status.Found, $"status = {status}");
                             Assert.AreEqual(key, output, $"output = {output}");
@@ -361,7 +361,7 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (!status.Pending)
+                    if (!status.IsPending)
                     {
                         Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
@@ -414,7 +414,7 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (!status.Pending)
+                        if (!status.IsPending)
                         {
                             Assert.IsTrue(status.Found, $"status = {status}");
                             Assert.AreEqual(key, output, $"output = {output}");
@@ -448,7 +448,7 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (!status.Pending)
+                    if (!status.IsPending)
                     {
                         Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
@@ -493,7 +493,7 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s1.Read(ref key, ref output);
-                    if (!status.Pending)
+                    if (!status.IsPending)
                     {
                         Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
@@ -508,7 +508,7 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s1.Read(ref key, ref output);
-                if (!status.Pending)
+                if (!status.IsPending)
                 {
                     Assert.IsTrue(status.Found, $"status = {status}");
                     Assert.AreEqual(key, output, $"output = {output}");
@@ -544,7 +544,7 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s2.Read(ref key, ref output);
-                if (!status.Pending)
+                if (!status.IsPending)
                 {
                     Assert.IsTrue(status.Found, $"status = {status}");
                     Assert.AreEqual(key, output, $"output = {output}");
@@ -646,7 +646,7 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s2.Read(ref key, ref output);
-                if (!status.Pending)
+                if (!status.IsPending)
                 {
                     MyFunctions2.Verify(status, key, output);
                 }
@@ -668,7 +668,7 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s3.Read(ref key, ref output);
-                if (!status.Pending)
+                if (!status.IsPending)
                 {
                     MyFunctions2.Verify(status, key, output);
                 }

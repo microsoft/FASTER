@@ -104,7 +104,7 @@ namespace FASTER.test
             MyOutput g1 = new();
             var status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, g1) = GetSinglePendingResult(outputs);
@@ -116,7 +116,7 @@ namespace FASTER.test
             key2 = new MyKey { key = 99999 };
             status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status.Pending)
+            if (status.IsPending)
             {
                 session.CompletePending(true);
             }
@@ -131,7 +131,7 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 input = new MyInput { value = 1 };
                 status = session.RMW(ref key1, ref input, Empty.Default, 0);
-                if (status.Pending)
+                if (status.IsPending)
                     session.CompletePending(true);
             }
 
@@ -141,7 +141,7 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0).Pending)
+                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
                 {
                     session.CompletePending(true);
                 }
@@ -174,7 +174,7 @@ namespace FASTER.test
                 var value = new MyValue { value = i };
 
                 var r = await session.UpsertAsync(ref key, ref value);
-                while (r.Status.Pending)
+                while (r.Status.IsPending)
                     r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
@@ -204,7 +204,7 @@ namespace FASTER.test
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
                 var r = await session.RMWAsync(ref key, ref input, Empty.Default);
-                while (r.Status.Pending)
+                while (r.Status.IsPending)
                 {
                     r = await r.CompleteAsync(); // test async version of RMW completion
                 }
