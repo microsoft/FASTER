@@ -90,7 +90,7 @@ namespace ClassRecoveryDurablity
                         
                         // Console.WriteLine("add=" + i);
 
-                        if (!addStatus.InPlaceUpdatedRecord)
+                        if (!addStatus.Record.InPlaceUpdated)
                             throw new Exception();
                     }
 
@@ -109,7 +109,7 @@ namespace ClassRecoveryDurablity
                                 var deleteStatus = session.Delete(ref deteletKey, context2, 1);
                                 // Console.WriteLine("delete=" + i);
 
-                                if (!deleteStatus.InPlaceUpdatedRecord)
+                                if (!deleteStatus.Record.InPlaceUpdated)
                                     throw new Exception();
                             }
                         }
@@ -195,7 +195,7 @@ namespace ClassRecoveryDurablity
                             var deleteStatus = session.Read(ref readKey, ref input1, ref output1, context, 1);
                             //Console.WriteLine("test delete=" + i);
 
-                            if (deleteStatus.Pending)
+                            if (deleteStatus.IsPending)
                             {
                                 session.CompletePending(true);
                                 context.FinalizeRead(ref deleteStatus, ref output1);
@@ -215,7 +215,7 @@ namespace ClassRecoveryDurablity
                             var addStatus = session.Read(ref readKey, ref input1, ref output1, context, 1);
                             //Console.WriteLine("test add=" + i);
 
-                            if (addStatus.Pending)
+                            if (addStatus.IsPending)
                             {
                                 session.CompletePending(true);
                                 context.FinalizeRead(ref addStatus, ref output1);

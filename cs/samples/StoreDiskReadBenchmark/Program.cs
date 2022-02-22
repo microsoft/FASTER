@@ -155,7 +155,7 @@ namespace StoreDiskReadBenchmark
                         var result = session.Read(ref key, ref input, ref output, Empty.Default, 0);
                         if (readBatching)
                         {
-                            if (!result.Pending)
+                            if (!result.IsPending)
                             {
                                 if (output.value.vfield1 != key.key)
                                 {
@@ -166,7 +166,7 @@ namespace StoreDiskReadBenchmark
                         }
                         else
                         {
-                            if (result.Pending)
+                            if (result.IsPending)
                             {
                                 session.CompletePending(true);
                             }

@@ -60,7 +60,7 @@ namespace FASTER.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Pending);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 
@@ -88,7 +88,7 @@ namespace FASTER.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Pending);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 
@@ -120,7 +120,7 @@ namespace FASTER.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = 1, ifield2 = 1 };
                 var status = session.RMW(ref key1, ref input, ref output, Empty.Default, 0);
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session.CompletePending(true);
                 }
@@ -172,7 +172,7 @@ namespace FASTER.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Pending);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 
@@ -200,7 +200,7 @@ namespace FASTER.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Pending);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 

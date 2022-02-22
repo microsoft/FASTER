@@ -87,7 +87,7 @@ namespace StoreAsyncApi
                         if (asyncUpsert)
                         {
                             var r = await session.UpsertAsync(ref key, ref value, context, seqNo++);
-                            while (r.Status.Pending)
+                            while (r.Status.IsPending)
                                 r = await r.CompleteAsync();
                         }
                         else
@@ -130,7 +130,7 @@ namespace StoreAsyncApi
                             for (int i = 0; i < batchSize; i++)
                             {
                                 var r = await taskBatch[i];
-                                while (r.Status.Pending)
+                                while (r.Status.IsPending)
                                     r = await r.CompleteAsync();
                             }
                         }

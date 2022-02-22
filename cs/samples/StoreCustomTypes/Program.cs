@@ -78,7 +78,7 @@ namespace StoreCustomTypes
             status = s.Read(ref key, ref input, ref g2, context, 0);
 
             // We will receive the result via ReadCompletionCallback in Functions 
-            if (!status.Pending)
+            if (!status.IsPending)
                 Console.WriteLine("Error!");
 
             // End session when done

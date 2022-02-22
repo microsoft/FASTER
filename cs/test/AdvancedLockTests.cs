@@ -154,7 +154,7 @@ namespace FASTER.test.LockTests
                     }
                     else
                     {
-                        Assert.IsTrue(status.Pending, $"Key = {key}, status = {status}");
+                        Assert.IsTrue(status.IsPending, $"Key = {key}, status = {status}");
                         session.CompletePending(wait: true);
                         // Output is not clear here and we are testing only threading aspects, so don't verify
                     }

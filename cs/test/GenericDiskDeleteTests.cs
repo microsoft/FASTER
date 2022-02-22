@@ -66,7 +66,7 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                if (session.Read(ref key1, ref input, ref output, 0, 0).Pending)
+                if (session.Read(ref key1, ref input, ref output, 0, 0).IsPending)
                 {
                     session.CompletePending(true);
                 }
@@ -90,7 +90,7 @@ namespace FASTER.test
 
                 var status = session.Read(ref key1, ref input, ref output, 1, 0);
                 
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, _) = GetSinglePendingResult(outputs);
@@ -162,12 +162,12 @@ namespace FASTER.test
                 session.Upsert(ref _key, ref _value, 0, 0);
             }
             status = session.Read(ref key100, ref input, ref output, 1, 0);
-            Assert.IsTrue(status.Pending);
+            Assert.IsTrue(status.IsPending);
             session.CompletePending(true);
 
             // This RMW should create new initial value, since item is deleted
             status = session.RMW(ref key200, ref input, 1, 0);
-            Assert.IsTrue(status.Pending);
+            Assert.IsTrue(status.IsPending);
             session.CompletePending(true);
 
             status = session.Read(ref key200, ref input, ref output, 0, 0);

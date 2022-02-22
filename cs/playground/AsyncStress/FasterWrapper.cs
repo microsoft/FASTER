@@ -56,7 +56,7 @@ namespace AsyncStress
         async ValueTask<int> CompleteAsync(FasterKV<Key, Value>.UpsertAsyncResult<Value, Value, Empty> result)
         {
             var numPending = 0;
-            for (; result.Status.Pending; ++numPending)
+            for (; result.Status.IsPending; ++numPending)
                 result = await result.CompleteAsync().ConfigureAwait(false);
             return numPending;
         }
@@ -64,7 +64,7 @@ namespace AsyncStress
         async ValueTask<int> CompleteAsync(FasterKV<Key, Value>.RmwAsyncResult<Value, Value, Empty> result)
         {
             var numPending = 0;
-            for (; result.Status.Pending; ++numPending)
+            for (; result.Status.IsPending; ++numPending)
                 result = await result.CompleteAsync().ConfigureAwait(false);
             return numPending;
         }
@@ -82,7 +82,7 @@ namespace AsyncStress
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
             var status = session.Upsert(key, value);
-            Assert.False(status.Pending);
+            Assert.False(status.IsPending);
             _sessionPool.Return(session);
         }
 
@@ -109,7 +109,7 @@ namespace AsyncStress
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
             var status = session.RMW(key, value);
-            Assert.False(status.Pending);
+            Assert.False(status.IsPending);
             _sessionPool.Return(session);
         }
 
@@ -137,7 +137,7 @@ namespace AsyncStress
             if (!_sessionPool.TryGet(out var session))
                 session = _sessionPool.GetAsync().GetAwaiter().GetResult();
             var result = session.Read(key);
-            if (result.status.Pending)
+            if (result.status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 int count = 0;

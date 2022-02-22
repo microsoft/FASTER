@@ -175,7 +175,7 @@ namespace CacheStoreConcurrent
                 var key = new CacheKey(k);
                 var status = hts.Read(ref key, ref output);
 
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     statusPending++;
                 }

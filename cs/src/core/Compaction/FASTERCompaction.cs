@@ -61,7 +61,7 @@ namespace FASTER.core
 
                             // For now, we perform each record compaction separately. In order to do this in parallel to maximize IOPS,
                             // we need a new Conditional Upsert API (CopyToTailIfNotExists)
-                            if (status.Pending)
+                            if (status.IsPending)
                             {
                                 fhtSession.CompletePendingWithOutputs(out var completedOutput, true);
                                 try

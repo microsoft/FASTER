@@ -96,7 +96,7 @@ namespace FASTER.test.async
                 {
                     var status = s3.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, s3.SerialNo);
 
-                    if (status.Pending)
+                    if (status.IsPending)
                         s3.CompletePending(true,true);
                     else
                     {

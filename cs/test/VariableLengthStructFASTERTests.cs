@@ -59,7 +59,7 @@ namespace FASTER.test
                 int[] output = null;
                 var status = s.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     s.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
@@ -129,7 +129,7 @@ namespace FASTER.test
                 int[] output = null;
                 var status = s.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     s.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);

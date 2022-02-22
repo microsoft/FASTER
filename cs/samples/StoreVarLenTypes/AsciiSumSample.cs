@@ -59,7 +59,7 @@ namespace StoreVarLenTypes
                 store.Log.FlushAndEvict(true); // Flush and evict all records to disk
                 var _status = s.RMW(_key, _input); // CopyUpdater to 270 (due to immutable source value on disk)
 
-                if (_status.Pending)
+                if (_status.IsPending)
                 {
                     Console.WriteLine("Error!");
                     return;

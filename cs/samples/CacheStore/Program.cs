@@ -144,7 +144,7 @@ namespace CacheStore
                 var key = new CacheKey(k);
                 var status = s.Read(ref key, ref output);
 
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     statusPending++;
                     if (statusPending % 100 == 0)
@@ -186,7 +186,7 @@ namespace CacheStore
 
                 context.ticks = Stopwatch.GetTimestamp();
                 var status = s.Read(ref key, ref output, context);
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     s.CompletePending(true);
                 }

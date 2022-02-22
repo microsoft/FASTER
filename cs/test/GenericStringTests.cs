@@ -75,7 +75,7 @@ namespace FASTER.test
                 var value = $"{i}";
 
                 var status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
-                if (status.Pending)
+                if (status.IsPending)
                 {
                     session.CompletePendingWithOutputs(out var outputs, wait:true);
                     (status, output) = GetSinglePendingResult(outputs);

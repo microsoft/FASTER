@@ -99,7 +99,7 @@ namespace FASTER.test
         public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.IsTrue(status.Found);
-            Assert.IsTrue(status.CopyUpdatedRecord);
+            Assert.IsTrue(status.Record.CopyUpdated);
         }
 
         public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
@@ -159,7 +159,7 @@ namespace FASTER.test
         public override void RMWCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.IsTrue(status.Found);
-            Assert.IsTrue(status.CopyUpdatedRecord);
+            Assert.IsTrue(status.Record.CopyUpdated);
         }
 
         public override bool SingleReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
@@ -228,7 +228,7 @@ namespace FASTER.test
             if (ctx == 0)
             {
                 Assert.IsTrue(status.Found);
-                Assert.IsTrue(status.CopyUpdatedRecord);
+                Assert.IsTrue(status.Record.CopyUpdated);
             }
             else if (ctx == 1)
                 Assert.IsFalse(status.Found);

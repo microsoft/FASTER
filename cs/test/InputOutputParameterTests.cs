@@ -125,7 +125,7 @@ namespace FASTER.test.InputOutputParameterTests
                             var r = await session.RMWAsync(ref key, ref input);
                             if ((key & 0x1) == 0)
                             {
-                                while (r.Status.Pending)
+                                while (r.Status.IsPending)
                                     r = await r.CompleteAsync();
                                 status = r.Status;
                                 output = r.Output;
@@ -141,7 +141,7 @@ namespace FASTER.test.InputOutputParameterTests
                             var r = await session.UpsertAsync(ref key, ref input, ref key);
                             if ((key & 0x1) == 0)
                             {
-                                while (r.Status.Pending)
+                                while (r.Status.IsPending)
                                     r = await r.CompleteAsync();
                                 status = r.Status;
                                 output = r.Output;
@@ -164,11 +164,11 @@ namespace FASTER.test.InputOutputParameterTests
                         if (useRMW)
                             Assert.IsFalse(status.Found, status.ToString());
                         else
-                            Assert.IsTrue(status.CreatedRecord, status.ToString());
+                            Assert.IsTrue(status.Record.Created, status.ToString());
                         Assert.AreEqual(tailAddress, session.functions.lastWriteAddress);
                     }
                     else
-                        Assert.IsTrue(status.InPlaceUpdatedRecord, status.ToString());
+                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
 
                     Assert.AreEqual(key * input, output);
                     Assert.AreEqual(session.functions.lastWriteAddress, recordMetadata.Address);

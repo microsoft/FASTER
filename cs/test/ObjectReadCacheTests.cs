@@ -67,7 +67,7 @@ namespace FASTER.test.ReadCacheTests
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Pending);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 
@@ -94,7 +94,7 @@ namespace FASTER.test.ReadCacheTests
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Pending);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 
@@ -125,7 +125,7 @@ namespace FASTER.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 input = new MyInput { value = 1 };
                 var status = session.RMW(ref key1, ref input, Empty.Default, 0);
-                if (status.Pending)
+                if (status.IsPending)
                     session.CompletePending(true);
             }
 
@@ -169,7 +169,7 @@ namespace FASTER.test.ReadCacheTests
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Pending);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 
@@ -196,7 +196,7 @@ namespace FASTER.test.ReadCacheTests
                 var value = new MyValue { value = i };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Pending);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 
