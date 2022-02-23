@@ -32,7 +32,7 @@
             switch (op) {
                 case MessageType.Read:
                     var key = this.readrmwQueue.dequeue();
-                    if (status == Status.OK) {
+                    if (status == Status.FOUND) {
                         output = this.serializer.ReadOutput(arrayBuf, arrIdx);
                         arrIdx += output.length + 4;
                         this.functions.ReadCompletionCallback(key, output, status);
@@ -58,7 +58,7 @@
 
                 case MessageType.RMW:
                     var key = this.readrmwQueue.dequeue();
-                    if (status == Status.OK || status == Status.NOTFOUND) {
+                    if (status == Status.FOUND || status == Status.NOTFOUND) {
                         output = this.serializer.ReadOutput(arrayBuf, arrIdx);
                         arrIdx += output.length + 4;
                         this.functions.RMWCompletionCallback(key, output, status);
@@ -75,7 +75,7 @@
                 case MessageType.SubscribeKV:
                     var sid = this.intSerializer.deserialize(arrayBuf, arrIdx);
                     arrIdx += 4;
-                    if (status == Status.OK || status == Status.NOTFOUND) {
+                    if (status == Status.FOUND || status == Status.NOTFOUND) {
                         var key = this.readrmwPendingContext[sid];
                         output = this.serializer.ReadOutput(arrayBuf, arrIdx);
                         arrIdx += output.length + 4;
@@ -93,7 +93,7 @@
                 case MessageType.Subscribe:
                     var sid = this.intSerializer.deserialize(arrayBuf, arrIdx);
                     arrIdx += 4;
-                    if (status == Status.OK || status == Status.NOTFOUND) {
+                    if (status == Status.FOUND || status == Status.NOTFOUND) {
                         var key = this.pubsubPendingContext[sid];
                         output = this.serializer.ReadOutput(arrayBuf, arrIdx);
                         arrIdx += output.length + 4;
@@ -130,7 +130,7 @@
             case MessageType.Read:
                 var key = this.readrmwPendingContext[p];
                 delete this.readrmwPendingContext[p];
-                if (status == Status.OK) {
+                if (status == Status.FOUND) {
                     output = this.serializer.ReadOutput(arrayBuf, arrIdx);
                     arrIdx += output.length + 4;
                 }
@@ -140,7 +140,7 @@
             case MessageType.RMW:
                 var key = this.readrmwPendingContext[p];
                 delete this.readrmwPendingContext[p];
-                if (status == Status.OK) {
+                if (status == Status.FOUND) {
                     output = this.serializer.ReadOutput(arrayBuf, arrIdx);
                     arrIdx += output.length + 4;
                 }
@@ -149,7 +149,7 @@
 
             case MessageType.SubscribeKV:
                 var key = this.readrmwPendingContext[p];
-                if (status == Status.OK) {
+                if (status == Status.FOUND) {
                     output = this.serializer.ReadOutput(arrayBuf, arrIdx);
                     arrIdx += output.length + 4;
                 }

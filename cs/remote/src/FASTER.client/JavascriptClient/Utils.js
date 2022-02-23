@@ -27,7 +27,7 @@ class JSUtils
 }
 
 const Status = {
-    OK: 0,
+    FOUND: 0,
     NOTFOUND: 1,
     PENDING: 2,
     ERROR: 3
