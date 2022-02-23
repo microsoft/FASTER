@@ -306,6 +306,7 @@ namespace FASTER.server
                         dataStart = nextBufOffset + 4
                     };
                     decoderInfoList.Add(nextDecoderInfo);
+                    totalMsgLen += nextMsgLen; // Message length without the mask
                     nextBufOffset += 4; // 4 bytes of masking
                     nextBufOffset += nextMsgLen; // remaining message length                }
                 }
