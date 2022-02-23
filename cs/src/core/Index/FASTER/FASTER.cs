@@ -77,13 +77,13 @@ namespace FASTER.core
         /// <summary>
         /// Create FasterKV instance
         /// </summary>
-        /// <param name="fasterKVConfig">Config settings</param>
-        public FasterKV(FasterKVSettings<Key, Value> fasterKVConfig) :
+        /// <param name="fasterKVSettings">Config settings</param>
+        public FasterKV(FasterKVSettings<Key, Value> fasterKVSettings) :
             this(
-                fasterKVConfig.GetIndexSizeCacheLines(), fasterKVConfig.GetLogSettings(),
-                fasterKVConfig.GetCheckpointSettings(), fasterKVConfig.GetSerializerSettings(),
-                fasterKVConfig.EqualityComparer, fasterKVConfig.GetVariableLengthStructSettings(),
-                fasterKVConfig.TryRecoverLatest, fasterKVConfig.DisableLocking)
+                fasterKVSettings.GetIndexSizeCacheLines(), fasterKVSettings.GetLogSettings(),
+                fasterKVSettings.GetCheckpointSettings(), fasterKVSettings.GetSerializerSettings(),
+                fasterKVSettings.EqualityComparer, fasterKVSettings.GetVariableLengthStructSettings(),
+                fasterKVSettings.TryRecoverLatest, fasterKVSettings.DisableLocking)
         { }
 
         /// <summary>
