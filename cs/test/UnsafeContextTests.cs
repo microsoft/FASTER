@@ -86,7 +86,7 @@ namespace FASTER.test.UnsafeContext
                 uContext.Upsert(ref key1, ref value, Empty.Default, 0);
                 var status = uContext.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                AssertCompleted(new (StatusCode.OK), status);
+                AssertCompleted(new (StatusCode.Found), status);
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
@@ -114,7 +114,7 @@ namespace FASTER.test.UnsafeContext
 
                 uContext.Upsert(ref key1, ref value, Empty.Default, 0);
                 var status = uContext.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
 
                 uContext.Delete(ref key1, Empty.Default, 0);
 
@@ -127,7 +127,7 @@ namespace FASTER.test.UnsafeContext
                 uContext.Upsert(ref key2, ref value2, Empty.Default, 0);
                 status = uContext.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
                 Assert.AreEqual(value2.vfield1, output.value.vfield1);
                 Assert.AreEqual(value2.vfield2, output.value.vfield2);
             }
@@ -186,7 +186,7 @@ namespace FASTER.test.UnsafeContext
                 {
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                     var status = uContext.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                    AssertCompleted(new(StatusCode.OK), status);
+                    AssertCompleted(new(StatusCode.Found), status);
                 }
             }
             finally
@@ -392,7 +392,7 @@ namespace FASTER.test.UnsafeContext
 
                     status = uContext.Read(ref key, ref input, ref output, Empty.Default, 0);
 
-                    AssertCompleted(new(StatusCode.OK), status);
+                    AssertCompleted(new(StatusCode.Found), status);
                     Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
                     Assert.AreEqual(2 * value.vfield2, output.value.vfield2);
                 }
@@ -457,7 +457,7 @@ namespace FASTER.test.UnsafeContext
 
                     status = uContext.Read(ref key, ref input, ref output, Empty.Default, 0);
 
-                    AssertCompleted(new(StatusCode.OK), status);
+                    AssertCompleted(new(StatusCode.Found), status);
                     Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
                     Assert.AreEqual(2 * value.vfield2, output.value.vfield2);
                 }
@@ -490,7 +490,7 @@ namespace FASTER.test.UnsafeContext
 
                 uContext.Upsert(ref key1, ref value, Empty.Default, 0);
                 var status = uContext.Read(key1, input, out OutputStruct output, Empty.Default, 111);
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
 
                 // Verify the read data
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -519,7 +519,7 @@ namespace FASTER.test.UnsafeContext
 
                 uContext.Upsert(ref key1, ref value, Empty.Default, 0);
                 var status = uContext.Read(key1, out OutputStruct output, Empty.Default, 1);
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
 
                 // Verify the read data
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -552,7 +552,7 @@ namespace FASTER.test.UnsafeContext
 
                 uContext.Upsert(ref key1, ref value, Empty.Default, 0);
                 var status = uContext.Read(ref key1, ref output, Empty.Default, 99);
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
 
                 // Verify the read data
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -588,7 +588,7 @@ namespace FASTER.test.UnsafeContext
 
                 uContext.Upsert(ref key1, ref value, Empty.Default, 0);
                 var status = uContext.Read(ref key1, ref input, ref output, Empty.Default);
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
 
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -618,7 +618,7 @@ namespace FASTER.test.UnsafeContext
                 uContext.Upsert(ref key1, ref value, Empty.Default, 0);
 
                 var (status, output) = uContext.Read(key1);
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
 
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -654,7 +654,7 @@ namespace FASTER.test.UnsafeContext
 
                 uContext.Upsert(ref key1, ref value, Empty.Default, 0);
                 var status = uContext.ReadAtAddress(readAtAddress, ref input, ref output, ReadFlags.None, Empty.Default, 0);
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
 
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);

@@ -507,9 +507,9 @@ namespace FASTER.test.Expiration
         private Status GetMutableVsOnDiskStatus(bool isOnDisk)
         {
             // The behavior is different for OnDisk vs. mutable:
-            //  - OnDisk results in a call to NeedCopyUpdate which returns false, so RMW returns OK
+            //  - OnDisk results in a call to NeedCopyUpdate which returns false, so RMW returns Found
             //  - Mutable results in a call to IPU which returns true, so RMW returns InPlaceUpdatedRecord.
-            return new(isOnDisk ? StatusCode.OK : StatusCode.InPlaceUpdatedRecord);
+            return new(isOnDisk ? StatusCode.Found : StatusCode.InPlaceUpdatedRecord);
         }
 
         void InitialIncrement()
@@ -521,7 +521,7 @@ namespace FASTER.test.Expiration
 
         private void InitialRead(bool isOnDisk, bool afterIncrement)
         {
-            var output = GetRecord(ModifyKey, new(StatusCode.OK), isOnDisk);
+            var output = GetRecord(ModifyKey, new(StatusCode.Found), isOnDisk);
             Assert.AreEqual(GetValue(ModifyKey) + (afterIncrement ? 1 : 0), output.retrievedValue);
             Assert.AreEqual(isOnDisk ? (Funcs.SingleReader | Funcs.ReadCompletionCallback) : Funcs.ConcurrentReader, output.functionsCalled);
         }
@@ -611,7 +611,7 @@ namespace FASTER.test.Expiration
             Assert.AreEqual(GetValue(key), output.retrievedValue);
 
             // Verify it's there with initial state
-            output = GetRecord(key, new(StatusCode.OK), isOnDisk:false /* update was appended */);
+            output = GetRecord(key, new(StatusCode.Found), isOnDisk:false /* update was appended */);
             Assert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
@@ -634,7 +634,7 @@ namespace FASTER.test.Expiration
             Assert.AreEqual(input.value, output.retrievedValue);
 
             // Verify it's there with updated value
-            output = GetRecord(key, new(StatusCode.OK), isOnDisk: false /* update was appended */);
+            output = GetRecord(key, new(StatusCode.Found), isOnDisk: false /* update was appended */);
             Assert.AreEqual(input.value, output.retrievedValue);
 
             // Key doesn't exist - no-op
@@ -663,7 +663,7 @@ namespace FASTER.test.Expiration
             Assert.AreEqual(isOnDisk ? Funcs.SkippedCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
 
             // Verify it's there with unchanged value
-            output = GetRecord(key, new(StatusCode.OK), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
             Assert.AreEqual(GetValue(key) + 1, output.retrievedValue);
 
             // Key doesn't exist - create it
@@ -675,7 +675,7 @@ namespace FASTER.test.Expiration
             Assert.AreEqual(input.value, output.retrievedValue);
 
             // Verify it's there with specified value
-            output = GetRecord(key, new(StatusCode.OK), isOnDisk: false /* was just added */);
+            output = GetRecord(key, new(StatusCode.Found), isOnDisk: false /* was just added */);
             Assert.AreEqual(input.value, output.retrievedValue);
         }
 
@@ -700,7 +700,7 @@ namespace FASTER.test.Expiration
             Assert.AreEqual(input.value, output.retrievedValue);
 
             // Verify it's there with updated value
-            output = GetRecord(key, new(StatusCode.OK), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
             Assert.AreEqual(input.value, output.retrievedValue);
 
             // Value doesn't equal - no-op
@@ -712,7 +712,7 @@ namespace FASTER.test.Expiration
             Assert.AreEqual(isOnDisk ? 0 : GetValue(key), output.retrievedValue);
 
             // Verify it's there with unchanged value; note that it has not been InitialIncrement()ed
-            output = GetRecord(key, new(StatusCode.OK), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
             Assert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
@@ -736,7 +736,7 @@ namespace FASTER.test.Expiration
             Assert.AreEqual(isOnDisk ? ExpirationResult.None : ExpirationResult.NotUpdated, output.result);
             Assert.AreEqual(isOnDisk ? 0 : GetValue(key) + 1, output.retrievedValue);
 
-            output = GetRecord(key, new(StatusCode.OK), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
             Assert.AreEqual(GetValue(key) + 1, output.retrievedValue);
 
             // Value doesn't equal
@@ -746,7 +746,7 @@ namespace FASTER.test.Expiration
             Assert.AreEqual(ExpirationResult.Updated, output.result);
             Assert.AreEqual(GetValue(key) + SetIncrement, output.retrievedValue);
 
-            output = GetRecord(key, new(StatusCode.OK), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
             Assert.AreEqual(GetValue(key) + SetIncrement, output.retrievedValue);
         }
 
@@ -781,7 +781,7 @@ namespace FASTER.test.Expiration
             Assert.AreEqual(isOnDisk ? 0 : GetValue(key), output.retrievedValue);
 
             // Verify it's there with unchanged value; note that it has not been InitialIncrement()ed
-            output = GetRecord(key, new(StatusCode.OK), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
             Assert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
@@ -806,7 +806,7 @@ namespace FASTER.test.Expiration
             Assert.AreEqual(isOnDisk ? 0 : GetValue(key) + 1, output.retrievedValue);
 
             // Verify it's there with unchanged value
-            output = GetRecord(key, new(StatusCode.OK), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
             Assert.AreEqual(GetValue(key) + 1, output.retrievedValue);
 
             // Value doesn't equal - delete it

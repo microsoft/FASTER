@@ -18,25 +18,25 @@ namespace FASTER.core
         /// </summary>
         /// <remarks>
         /// <list type="bullet">
-        /// <item>Upsert ConcurrentWriter: <see cref="OK"/> | <see cref="InPlaceUpdatedRecord"/></item>
-        /// <item>RMW InPlaceUpdater: <see cref="OK"/> | <see cref="InPlaceUpdatedRecord"/></item>
-        /// <item>RMW CopyUpdater: <see cref="OK"/> | <see cref="CopyUpdatedRecord"/></item>
+        /// <item>Upsert ConcurrentWriter: <see cref="Found"/> | <see cref="InPlaceUpdatedRecord"/></item>
+        /// <item>RMW InPlaceUpdater: <see cref="Found"/> | <see cref="InPlaceUpdatedRecord"/></item>
+        /// <item>RMW CopyUpdater: <see cref="Found"/> | <see cref="CopyUpdatedRecord"/></item>
         /// <list type="bullet">
-        ///   <item>If NeedCopyUpdate returns false: <see cref="OK"/></item>
+        ///   <item>If NeedCopyUpdate returns false: <see cref="Found"/></item>
         /// </list>
-        /// <item>Delete ConcurrentDeleter: <see cref="OK"/> | <see cref="InPlaceUpdatedRecord"/></item>
-        /// <item>Read ConcurrentReader: <see cref="OK"/></item>
+        /// <item>Delete ConcurrentDeleter: <see cref="Found"/> | <see cref="InPlaceUpdatedRecord"/></item>
+        /// <item>Read ConcurrentReader: <see cref="Found"/></item>
         /// <list type="bullet">
-        ///   <item>If in immutable region and copying to tail: <see cref="OK"/> | <see cref="CopiedRecord"/></item>
+        ///   <item>If in immutable region and copying to tail: <see cref="Found"/> | <see cref="CopiedRecord"/></item>
         /// </list>
-        /// <item>Read Pending to SingleReader: <see cref="OK"/></item>
+        /// <item>Read Pending to SingleReader: <see cref="Found"/></item>
         /// <list type="bullet">
-        ///   <item>If copying to tail: <see cref="OK"/> | <see cref="CopiedRecord"/></item>
-        ///   <item>If copying to readCache: <see cref="OK"/> | <see cref="CopiedRecordToReadCache"/></item>
+        ///   <item>If copying to tail: <see cref="Found"/> | <see cref="CopiedRecord"/></item>
+        ///   <item>If copying to readCache: <see cref="Found"/> | <see cref="CopiedRecordToReadCache"/></item>
         /// </list>
         /// </list>
         /// </remarks>
-        OK = 0x00,
+        Found = 0x00,
 
         /// <summary>
         /// The key for the operation was not found. For Read, that is all that is returned for an unfound key. For other operations, see
@@ -72,11 +72,8 @@ namespace FASTER.core
         BasicMask = 0x0F,
         #endregion
 
-        // These are the advanced codes for additional info such as "did we CopyToTail?" or detailed info like "how exactly did this operation achieve its OK status?"
+        // These are the advanced codes for additional info such as "did we CopyToTail?" or detailed info like "how exactly did this operation achieve its Found status?"
         #region Advanced status codes
-        // Placeholder for "no advanced bit set"; we want nothing to show in debugger for this ("OK" is shown if the StatusCode is 0)
-        // None = 0x00,
-
         /// <summary>
         /// Indicates that a new record for a previously non-existent key was appended to the log.
         /// </summary>

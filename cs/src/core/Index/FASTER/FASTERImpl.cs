@@ -1745,7 +1745,7 @@ namespace FASTER.core
                         return new(StatusCode.NotFound);
                     }
                     else
-                        return new(StatusCode.OK);
+                        return new(StatusCode.Found);
                 }
                 else
                 {
@@ -2105,22 +2105,7 @@ namespace FASTER.core
         /// <param name="operationStatus">Internal status of the trial.</param>
         /// <param name="asyncOp">When operation issued via async call</param>
         /// <param name="request">IO request, if operation went pending</param>
-        /// <returns>
-        /// <list type="table">
-        ///     <listheader>
-        ///     <term>Value</term>
-        ///     <term>Description</term>
-        ///     </listheader>
-        ///     <item>
-        ///     <term>OK</term>
-        ///     <term>The operation has been completed successfully.</term>
-        ///     </item>
-        ///     <item>
-        ///     <term>PENDING</term>
-        ///     <term>The operation is still pending and will callback when done.</term>
-        ///     </item>
-        /// </list>
-        /// </returns>
+        /// <returns>Operation status</returns>
         internal Status HandleOperationStatus<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> opCtx,
             FasterExecutionContext<Input, Output, Context> currentCtx,
@@ -2492,7 +2477,7 @@ namespace FASTER.core
                 Address = Constants.kInvalidAddress
             };
 
-            StatusCode advancedStatusCode = StatusCode.OK;
+            StatusCode advancedStatusCode = StatusCode.Found;
             if (copyToReadCache)
             {
                 BlockAllocateReadCache(allocatedSize, out newLogicalAddress, currentCtx, fasterSession);

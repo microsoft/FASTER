@@ -10,7 +10,7 @@ namespace FASTER.client
         /// the operation completed successfully
         /// For Upsert, item was upserted successfully
         /// </summary>
-        OK,
+        Found,
         /// <summary>
         /// For Read and RMW, item being read was not found
         /// </summary>

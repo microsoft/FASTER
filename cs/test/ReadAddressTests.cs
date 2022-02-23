@@ -665,13 +665,13 @@ namespace FASTER.test.readaddress
             async ValueTask RunTests()
             {
                 // First read at the pivot, to verify that and make sure the rest of the test works
-                await ReadMin(pivotKey, new(StatusCode.OK));
+                await ReadMin(pivotKey, new(StatusCode.Found));
 
                 // Read a Key that is below the min address
                 await ReadMin(pivotKey - 1, new(StatusCode.NotFound));
 
                 // Read a Key that is above the min address
-                await ReadMin(pivotKey + 1, new(StatusCode.OK));
+                await ReadMin(pivotKey + 1, new(StatusCode.Found));
             }
 
             await RunTests();

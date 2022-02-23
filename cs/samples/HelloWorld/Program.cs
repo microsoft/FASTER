@@ -80,16 +80,16 @@ namespace HelloWorld
             using var tryAddSession = store.NewSession(new TryAddFunctions<long, long>());
             key = 3; input1 = 30; input2 = 31;
 
-            // First TryAdd - success; status should be NOTFOUND (does not already exist)
+            // First TryAdd - success; status should be NotFound (does not already exist)
             status = tryAddSession.RMW(ref key, ref input1);
 
-            // Second TryAdd - failure; status should be OK (already exists)
+            // Second TryAdd - failure; status should be Found (already exists)
             var status2 = tryAddSession.RMW(ref key, ref input2);
 
             // Read, result should be input1 (first TryAdd)
             var status3 = session.Read(ref key, ref output);
 
-            if (!status.Found && status2.Found && status3.Found && output == input1)
+            if (status.NotFound && status2.Found && status3.Found && output == input1)
                 Console.WriteLine("(4) Success!");
             else
                 Console.WriteLine("(4) Error!");

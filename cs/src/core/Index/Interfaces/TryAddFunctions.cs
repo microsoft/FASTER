@@ -5,8 +5,8 @@ namespace FASTER.core
 {
     /// <summary>
     /// Functions that make RMW behave as an atomic TryAdd operation, where Input is the value being added.
-    /// Return Status.NOTFOUND => TryAdd succeededed (item added).
-    /// Return Status.OK => TryAdd failed (item not added, key was already present).
+    /// Return Status.NotFound => TryAdd succeededed (item added).
+    /// Return Status.Found => TryAdd failed (item not added, key was already present).
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
@@ -21,8 +21,8 @@ namespace FASTER.core
 
     /// <summary>
     /// Functions that make RMW behave as an atomic TryAdd operation, where Input is the value being added.
-    /// Return Status.NOTFOUND => TryAdd succeededed (item added)
-    /// Return Status.OK => TryAdd failed (item not added, key was already present)
+    /// Return Status.NotFound => TryAdd succeededed (item added)
+    /// Return Status.Found => TryAdd failed (item not added, key was already present)
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>

@@ -89,7 +89,7 @@ namespace FASTER.test
             session.Upsert(ref key1, ref value, Empty.Default, 0);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-            AssertCompleted(new(StatusCode.OK), status);
+            AssertCompleted(new(StatusCode.Found), status);
             Assert.AreEqual(value.vfield1, output.value.vfield1);
             Assert.AreEqual(value.vfield2, output.value.vfield2);
         }
@@ -109,7 +109,7 @@ namespace FASTER.test
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-            AssertCompleted(new(StatusCode.OK), status);
+            AssertCompleted(new(StatusCode.Found), status);
 
             session.Delete(ref key1, Empty.Default, 0);
 
@@ -122,7 +122,7 @@ namespace FASTER.test
             session.Upsert(ref key2, ref value2, Empty.Default, 0);
             status = session.Read(ref key2, ref input, ref output, Empty.Default, 0);
 
-            AssertCompleted(new(StatusCode.OK), status);
+            AssertCompleted(new(StatusCode.Found), status);
             Assert.AreEqual(value2.vfield1, output.value.vfield1);
             Assert.AreEqual(value2.vfield2, output.value.vfield2);
         }
@@ -173,7 +173,7 @@ namespace FASTER.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
             }
         }
 
@@ -356,7 +356,7 @@ namespace FASTER.test
 
                 status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
 
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
                 Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
                 Assert.AreEqual(2 * value.vfield2, output.value.vfield2);
             }
@@ -413,7 +413,7 @@ namespace FASTER.test
 
                 status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
 
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
                 Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
                 Assert.AreEqual(2 * value.vfield2, output.value.vfield2);
             }
@@ -438,7 +438,7 @@ namespace FASTER.test
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
             var status = session.Read(key1, input, out OutputStruct output, Empty.Default, 111);
-            AssertCompleted(new(StatusCode.OK), status);
+            AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -459,7 +459,7 @@ namespace FASTER.test
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
             var status = session.Read(key1, out OutputStruct output, Empty.Default, 1);
-            AssertCompleted(new(StatusCode.OK), status);
+            AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -484,7 +484,7 @@ namespace FASTER.test
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
             var status = session.Read(ref key1, ref output, Empty.Default, 99);
-            AssertCompleted(new(StatusCode.OK), status);
+            AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -513,7 +513,7 @@ namespace FASTER.test
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default);
-            AssertCompleted(new(StatusCode.OK), status);
+            AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(value.vfield1, output.value.vfield1);
             Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -535,7 +535,7 @@ namespace FASTER.test
             session.Upsert(ref key1, ref value, Empty.Default, 0);
 
             var (status, output) = session.Read(key1);
-            AssertCompleted(new(StatusCode.OK), status);
+            AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(value.vfield1, output.value.vfield1);
             Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -563,7 +563,7 @@ namespace FASTER.test
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
             var status = session.ReadAtAddress(readAtAddress, ref input, ref output, ReadFlags.None, Empty.Default, 0);
-            AssertCompleted(new(StatusCode.OK), status);
+            AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(value.vfield1, output.value.vfield1);
             Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -698,7 +698,7 @@ namespace FASTER.test
 
             session.Upsert(ref key1, ref value);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-            AssertCompleted(new(StatusCode.OK), status);
+            AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(1, fht.EntryCount);
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -724,7 +724,7 @@ namespace FASTER.test
 
             session.Upsert(key1, value, Empty.Default, 0);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-            AssertCompleted(new(StatusCode.OK), status);
+            AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(value.vfield1, output.value.vfield1);
             Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -763,7 +763,7 @@ namespace FASTER.test
             {
                 var status = session.Read(ref key, ref input, ref output, serialNo: maxLap + 1);
 
-                AssertCompleted(new(StatusCode.OK), status);
+                AssertCompleted(new(StatusCode.Found), status);
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
