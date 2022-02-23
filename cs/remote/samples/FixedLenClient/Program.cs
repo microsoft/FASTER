@@ -154,35 +154,35 @@ namespace FixedLenClient
             long key = 25;
             (status, _) = await session.ReadAsync(key);
             if (!status.NotFound)
-                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
+                throw new Exception($"Error! Key = {key}; Status = expected NotFound, actual {status}");
 
             key = 9999;
             (status, _) = await session.ReadAsync(9999);
             if (!status.NotFound)
-                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
+                throw new Exception($"Error! Key = {key}; Status = expected NotFound, actual {status}");
 
             key = 9998;
             await session.DeleteAsync(key);
 
             (status, _) = await session.ReadAsync(9998);
             if (!status.NotFound)
-                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
+                throw new Exception($"Error! Key = {key}; Status = expected NotFound, actual {status}");
 
             (status, output) = await session.RMWAsync(9998, 10);
             if (!status.Found || output != 10)
-                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}; output = expected {10}, actual {output}");
+                throw new Exception($"Error! Key = {key}; Status = expected NotFound, actual {status}; output = expected {10}, actual {output}");
 
             (status, output) = await session.ReadAsync(key);
             if (!status.Found || output != 10)
-                throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status}; output = expected {10}, actual {output}");
+                throw new Exception($"Error! Key = {key}; Status = expected Found, actual {status}; output = expected {10}, actual {output}");
 
             (status, output) = await session.RMWAsync(key, 10);
             if (!status.Found || output != 20)
-                throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status} output = expected {10}, actual {output}");
+                throw new Exception($"Error! Key = {key}; Status = expected Found, actual {status} output = expected {10}, actual {output}");
 
             (status, output) = await session.ReadAsync(key);
             if (!status.Found || output != 20)
-                throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status}, output = expected {10}, actual {output}");
+                throw new Exception($"Error! Key = {key}; Status = expected Found, actual {status}, output = expected {10}, actual {output}");
         }
     }
 }

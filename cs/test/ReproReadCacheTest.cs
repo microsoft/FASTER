@@ -81,7 +81,7 @@ namespace FASTER.test.ReadCacheTests
                         return;
                     }
 
-                    Assert.IsTrue(status.IsPending, $"was not OK or PENDING: {keyString}");
+                    Assert.IsTrue(status.IsPending, $"was not Pending: {keyString}");
 
                     session.CompletePending(wait: true);
                 }

@@ -28,7 +28,7 @@ namespace FASTER.client
         /// <summary>
         /// Whether a Read or RMW found the key
         /// </summary>
-        public bool Found => (statusCode & StatusCode.BasicMask) == StatusCode.OK;
+        public bool Found => (statusCode & StatusCode.BasicMask) == StatusCode.Found;
 
         /// <summary>
         /// Whether a Read or RMW did not find the key
@@ -61,5 +61,8 @@ namespace FASTER.client
                 return basicCode != StatusCode.Pending && basicCode != StatusCode.Error;
             }
         }
+
+        /// <inheritdoc />
+        public override string ToString() => this.statusCode.ToString();
     }
 }

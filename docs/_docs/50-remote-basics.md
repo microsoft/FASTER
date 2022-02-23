@@ -191,7 +191,7 @@ async read as follows:
 
 ```cs
 var (status, output) = await session.ReadAsync(23);
-if (status != Status.OK || output != 10023)
+if (status.NotFound || output != 10023)
    throw new Exception("Error!");
 ```
 

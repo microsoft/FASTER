@@ -278,7 +278,7 @@ namespace FASTER.core
             Free(1);
             epoch.Dispose();
             overflowBucketsAllocator.Dispose();
-            return new(StatusCode.OK);
+            return new(StatusCode.Found);
         }
 
         private Status Free(int version)
@@ -288,7 +288,7 @@ namespace FASTER.core
 
             state[version].tableRaw = null;
             state[version].tableAligned = null;
-            return new(StatusCode.OK);
+            return new(StatusCode.Found);
         }
 
         /// <summary>

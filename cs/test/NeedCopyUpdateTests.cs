@@ -58,11 +58,11 @@ namespace FASTER.test
             Assert.IsFalse(value1.flag); // InitialUpdater is not called
             functions.noNeedInitialUpdater = false;
 
-            status = session.RMW(ref key, ref value1); // InitialUpdater + NOTFOUND
+            status = session.RMW(ref key, ref value1); // InitialUpdater + NotFound
             Assert.IsFalse(status.Found, status.ToString());
             Assert.IsTrue(value1.flag); // InitialUpdater is called
 
-            status = session.RMW(ref key, ref value2); // InPlaceUpdater + OK
+            status = session.RMW(ref key, ref value2); // InPlaceUpdater + Found
             Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
 
             fht.Log.Flush(true);
@@ -70,7 +70,7 @@ namespace FASTER.test
             Assert.IsTrue(status.Found, status.ToString());
 
             fht.Log.FlushAndEvict(true);
-            status = session.RMW(ref key, ref value2, new(StatusCode.OK), 0); // PENDING + NeedCopyUpdate + OK
+            status = session.RMW(ref key, ref value2, new(StatusCode.Found), 0); // PENDING + NeedCopyUpdate + Found
             Assert.IsTrue(status.IsPending, status.ToString());
             session.CompletePendingWithOutputs(out var outputs, true);
 
@@ -79,7 +79,7 @@ namespace FASTER.test
             Assert.IsTrue(status.Found, status.ToString()); // NeedCopyUpdate returns false, so RMW returns simply Found
 
             // Test stored value. Should be value1
-            status = session.Read(ref key, ref value1, ref output, new(StatusCode.OK), 0);
+            status = session.Read(ref key, ref value1, ref output, new(StatusCode.Found), 0);
             Assert.IsTrue(status.IsPending, status.ToString());
             session.CompletePending(true);
 

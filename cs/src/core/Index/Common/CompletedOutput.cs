@@ -108,7 +108,7 @@ namespace FASTER.core
         public RecordMetadata RecordMetadata;
 
         /// <summary>
-        /// The status of the operation: OK or NOTFOUND
+        /// The status of the operation
         /// </summary>
         public Status Status;
 

@@ -75,7 +75,7 @@ namespace FASTER.core
         /// <summary>
         /// Create a <see cref="Found"/> Status value.
         /// </summary>
-        public static Status CreateFound() => new(StatusCode.OK);
+        public static Status CreateFound() => new(StatusCode.Found);
 
         /// <summary>
         /// Create a <see cref="IsPending"/> Status value. Use the Is* properties to query.
@@ -85,7 +85,7 @@ namespace FASTER.core
         /// <summary>
         /// Whether a Read or RMW found the key
         /// </summary>
-        public bool Found => (this.Record.statusCode & StatusCode.BasicMask) == StatusCode.OK;
+        public bool Found => (this.Record.statusCode & StatusCode.BasicMask) == StatusCode.Found;
 
         /// <summary>
         /// Whether a Read or RMW did not find the key
