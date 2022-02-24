@@ -115,11 +115,11 @@ IFunctions calls receive data through reference parameters to Keys and their ass
 - **UpdateInfo**: Contains the session Version, session type, and logical address, as well as two aspects of the value length that are important for reuse of variable-length records, either by shrinking and re-growing the value, or by revivifying a tombstoned record:
   - **FullValueLength**: The full size of the allocated value space.
   - **UsedValueLength**: The amount of the allocated value space that is in use. This is initially set by FASTER to the FullValueLength, and is reset by the application's IFunctions callback as appopriate.
-  - **DeleteRecord**: Always False coming in from FASTER; may be set True by the app if, for example, expiration has been detected.
+  - **DeleteRecord**: Always False coming in from FASTER; may be set True by the app if, for example, expiration has been detected. In this case, FASTER will set the Tombstone. It will assume deletion logic has already been done; that is, it will not call SingleDeleter or ConcurrentDeleter.
   - **CancelOperation**: Always False coming in from FASTER; may be set True by the app if it detects a condition in the callback that makes the operation no longer desired.
 
 Additionally, the callback return values control some aspects of the operation, particularly related to:
-- The ***Required Length*** to insert or update a value exceeds the available value length
+- The ***Required Length*** to insert or update a value exceeds the available value length.
 - Record ***Expiration*** is detected
 - The application wants to ***Cancel*** the current operation
 
@@ -127,73 +127,82 @@ Additionally, the callback return values control some aspects of the operation, 
 - `SingleReader`:
   - ***Required Length***: Irrelevant because this is not an update
   - ***Expiration***: The app sets readInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by forcing a CopyToTail of the current record with the Tombstone set, and Read will return (!status.Found && status.CreatedRecord).
-  - ***Cancellation***: The app sets readInfo.CancelOperation True and returns false. Read() returns (!status.Found).
+  - ***Cancellation***: The app sets readInfo.CancelOperation True and returns false. Read() returns (status.Canceled).
 - `ConcurrentReader`
   - ***Required Length***: Irrelevant because this is not an update
-  - ***Expiration***: The app sets readInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by in-place update, and Read will return (!status.Found).
-  - ***Cancellation***: The app sets readInfo.CancelOperation True and returns false. Read() returns (!status.Found).
+  - ***Expiration***: The app sets readInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by in-place update, and Read will return (status.NotFound).
+  - ***Cancellation***: The app sets readInfo.CancelOperation True and returns false. Read() returns (status.Canceled).
 
 **RMW**
+
+  In all cases of **RequiredLength**, on input FASTER sets rmwInfo.FullValueLength to the full allocated length of the Value portion of the record, and rmwInfo.UsedValueLength to the VarLengthStructSettings result or revivification info. 
+
   - `InPlaceUpdater`
-    - ***Required Length***: The app sets updateInfo.FullValueLength and updateInfo.UsedValueLength to the existing lengths and returns false. FASTER will allocate a record with the required length and call `CopyUpdater`.
-    - ***Expiration***: The app sets updateInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by in-place update, and RMW will return (!status.Found).
-    - ***Cancellation***: The app sets updateInfo.CancelOperation True and returns false. RMW() returns (!status.Found).
+    - ***Required Length***:
+      - If rmwInfo.UsedValueLength is sufficient, the app performs the update and returns true, and RMW returns (status.Found | status.Record.InPlaceUpdated). 
+      - Otherwise, the app sets rmwInfo.UsedValueLength to the required length and returns false. FASTER will allocate a record with the required length and enter the `CopyUpdater` path.
+    - ***Expiration***: The app sets rmwInfo.DeleteRecord true and returns false. FASTER will handle this as if the record was not found, and will enter the `NeedInitialUpdater` path, unless ***Cancellation*** was also done; see that item for more detail.
+      - The app may do its own internal "expire and reset" logic within the `InPlaceUpdater` call and return true, which to FASTER is indistinguishable from any other successful `InPlaceUpdater` call.
+    - ***Cancellation***: The app sets rmwInfo.CancelOperation True and returns false. If Expiration was also done, RMW() returns (status.NotFound | status.InPlaceUpdated); otherwise, RMW() returns (status.Canceled).
   - *InitialUpdater*
     - `NeedInitialUpdate`
-      - ***Required Length***: FASTER sets updateInfo.FullValueLength and updateInfo.UsedValueLength on input to the VarLengthStructSettings result or revivification info. The app sets it to the required length if necessary. FASTER will allocate a record with the required length and call `InitialUpdater`.
-      - ***Expiration***: The app sets updateInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by continuing with InitialUpdater, and RMW will return (!status.Found && status.CreatedRecord).
-      - ***Cancellation***: The app sets updateInfo.CancelOperation True and returns false. RMW() returns (!status.Found).
+      - ***Required Length***:
+        - If any app-internal evaluations are successful, the app returns true, updates rmwInfo.UsedValueLength as necessary to ensure enough space is requested, and RMW allocates a record with the required length and enters the `InitialUpdater` path.
+        - Otherwise, the app returns false, which has the same effect as ***Cancellation***.
+      - ***Expiration***: Irrelevant because there is no existing record.
+      - ***Cancellation***: The app sets rmwInfo.CancelOperation True and returns false. RMW() returns (status.Canceled).
     - `InitialUpdater`
-      - ***Required Length***: FASTER sets updateInfo.FullValueLength and updateInfo.UsedValueLength on input to the values previously obtained.
-        - If the length is sufficient, the app sets updateInfo.UsedValueLength to the used length and returns true.
-        - Otherwise, the app sets updateInfo.UsedValueLength to the required length and returns false. RMW will return RETRY_NOW and FASTER will retry the operation.
-      - ***Expiration***: The app sets updateInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by continuing with the CAS, and RMW will return (!status.Found && status.CreatedRecord).
-      - ***Cancellation***: The app sets updateInfo.CancelOperation True and returns false. RMW() returns (!status.Found).
-    - `InPlaceUpdater`
-      - ***Required Length***: FASTER sets updateInfo.FullValueLength and updateInfo.UsedValueLength on input to the values previously obtained.
-        - If the length is sufficient, the app sets updateInfo.UsedValueLength to the used length and returns true.
-        - Otherwise, the app sets updateInfo.UsedValueLength to the required length and returns false. FASTER will allocate a record with the required length and call `InitialUpdater`.
-      - ***Expiration***: The app sets updateInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by in-place update, and RMW will return (!status.Found).
-      - ***Cancellation***: The app sets updateInfo.CancelOperation True and returns false. RMW() returns (!status.Found).
+      - ***Required Length***:
+        - If the length is sufficient, the app performs the update, sets rmwInfo.UsedValueLength to the used length, and returns true. FASTER will return (status.NotFound | status.Record.Created).
+        - Otherwise, the app sets rmwInfo.UsedValueLength to the required length and returns false. RMW will return RETRY_NOW and FASTER will retry the operation.
+      - ***Expiration***: Irrelevant because there is no existing record.
+      - ***Cancellation***: The app sets rmwInfo.CancelOperation True and returns false.  If Expiration was also done, RMW() returns (status.NotFound | status.CreatedRecord); otherwise, RMW() returns (status.Canceled).
+    - `PostInitialUpdater`
+      - This is void because the record has already been CAS'd into the hash table, so it must perform operations that do not fail.
   - *CopyUpdater*
     - `NeedCopyUpdate`
-      - ***Required Length***: FASTER sets updateInfo.FullValueLength and updateInfo.UsedValueLength on input to the VarLengthStructSettings result or revivificatgion info. The app sets it to the required length if necessary. FASTER will allocate a record with the required length and call `CopyUpdater`.
-      - ***Expiration***: The app sets updateInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by calling InitialUpdater, and RMW will return (!status.Found && status.CreatedRecord).
-      - ***Cancellation***: The app sets updateInfo.CancelOperation True and returns false. RMW() returns (!status.Found).
+      - ***Required Length***:
+        - If any app-internal evaluations are successful, the app returns true, updates rmwInfo.UsedValueLength as necessary to ensure enough space is requested, and RMW allocates a record with the required length and enters the `CopyUpdater` path.
+        - Otherwise, the app returns false, which has the same effect as ***Cancellation***.
+      - ***Expiration***: Irrelevant because there is no RecordInfo available.
+      - ***Cancellation***: The app sets rmwInfo.CancelOperation True and returns false. RMW() returns (status.Canceled).
     - `CopyUpdater`
-      - ***Required Length***: FASTER sets updateInfo.FullValueLength and updateInfo.UsedValueLength on input to the values previously obtained.
-        - If the length is sufficient, the app sets updateInfo.UsedValueLength to the used length and returns true.
-        - Otherwise, the app sets updateInfo.UsedValueLength to the required length and returns false. RMW will return RETRY_NOW and FASTER will retry the operation.
-      - ***Expiration***: The app sets updateInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by continuing with the CAS, and RMW will return (!status.Found && status.CreatedRecord).
-      - ***Cancellation***: The app sets updateInfo.CancelOperation True and returns false. RMW() returns (!status.Found).
+      - ***Required Length***:
+        - If the length is sufficient, the app performs the update, sets rmwInfo.UsedValueLength to the used length, and returns true. RMW returns (status.Found | status.Record.CopyUpdated).
+        - Otherwise, the app sets rmwInfo.UsedValueLength to the required length and returns false. RMW will return RETRY_NOW and FASTER will retry the operation.
+      - ***Expiration***: The app sets rmwInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by setting the record's Tombstone and continuing with the CAS, and RMW will return (status.NotFound && status.Record.CreatedRecord).
+      - ***Cancellation***: The app sets rmwInfo.CancelOperation True and returns false.  If Expiration was also done, RMW() returns (status.NotFound | status.Record.Created); otherwise, RMW() returns (status.Canceled).
     - `PostCopyUpdater`
       - This is void because the record has already been CAS'd into the hash table, so it must perform operations that do not fail.
 
 **Upsert**
+
+  In all cases of **RequiredLength**, FASTER sets upsertInfo.FullValueLength to the full allocated length of the Value portion of the record.
+
   - `ConcurrentWriter`
-      - ***Required Length***: FASTER sets updateInfo.FullValueLength and updateInfo.UsedValueLength on input to the values previously obtained.
-        - If the length is sufficient, the app sets updateInfo.UsedValueLength to the used length and returns true.
-        - Otherwise, the app sets updateInfo.UsedValueLength to the required length and returns false. FASTER will allocate a record with the required length and call `SingleWriter`.
-      - ***Expiration***: The app sets updateInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by in-place update, and Upsert will return (!status.Found).
-      - ***Cancellation***: The app sets updateInfo.CancelOperation True and returns false. Upsert() returns (!status.Found).
+    - ***Required Length***:
+      - If upsertInfo.UsedValueLength is sufficient, the app performs the update and returns true, and RMW returns (status.Found). 
+      - Otherwise, the app sets upsertInfo.UsedValueLength to the required length and returns false. FASTER will allocate a record with the required length and enter the `CopyUpdater` path.
+    - ***Expiration***: Irrelevant because this is a blind update.
+    - ***Cancellation***: The app sets upsertInfo.CancelOperation True and returns false. Upsert() returns (status.Canceled).
   - `SingleWriter`
-      - ***Required Length***: FASTER sets updateInfo.FullValueLength and updateInfo.UsedValueLength on input to the VarLengthStructSettings result or revivification info.
-        - If the length is sufficient, the app sets updateInfo.UsedValueLength to the used length and returns true.
-        - Otherwise, the app sets updateInfo.UsedValueLength to the required length and returns false. Upsert will return RETRY_NOW and FASTER will retry the operation.
-      - ***Expiration***: The app sets updateInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by continuing with the CAS, and Upsert will return (!status.Found && status.CreatedRecord).
-      - ***Cancellation***: The app sets updateInfo.CancelOperation True and returns false. RMW() returns (!status.Found).
+    - ***Required Length***:
+      - If the length is sufficient, the app performs the update, sets upsertInfo.UsedValueLength to the used length, and returns true.
+      - Otherwise, the app sets upsertInfo.UsedValueLength to the required length and returns false. RMW will return RETRY_NOW and FASTER will retry the operation.
+      - ***Expiration***: Irrelevant because there is no existing record.
+    - ***Cancellation***: The app sets upsertInfo.CancelOperation True and returns false.  If Expiration was also done, RMW() returns (status.NotFound | status.CreatedRecord); otherwise, RMW() returns (status.Canceled).
   - `PostSingleWriter`
-      - This is void because the record has already been CAS'd into the hash table, so it must perform operations that do not fail.
+    - This is void because the record has already been CAS'd into the hash table, so it must perform operations that do not fail.
 
 **Delete**
   - `ConcurrentDeleter`
       - ***Required Length***: Not relevant, because it will not grow.
       - ***Expiration***: Not relevant, because we're already deleting.
-      - ***Cancellation***: The app sets updateInfo.CancelOperation True and returns false. Upsert() returns (!status.Found).
+      - ***Cancellation***: The app sets deleteInfo.CancelOperation True and returns false. Delete() returns (status.Canceled).
   - `SingleDeleter`
       - ***Required Length***: Not relevant, because it will always use the default(Value) length.
       - ***Expiration***: Not relevant, because we're already deleting.
-      - ***Cancellation***: The app sets updateInfo.CancelOperation True and returns false. Upsert() returns (!status.Found).
+      - ***Cancellation***: The app sets deleteInfo.CancelOperation True and returns false. Delete() returns (status.Canceled).
   - `PostSingleDeleter`
       - This is void because the record has already been CAS'd into the hash table, so it must perform operations that do not fail.
 

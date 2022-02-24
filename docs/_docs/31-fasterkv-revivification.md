@@ -35,27 +35,34 @@ The FreeList hierarchy consists of:
   - The Address is stored similarly to `RecordInfo.PreviousAddress`, with the same number of bits
   - The Size is shifted above the address, using the remaining bits. Thus it is limited to 16 bits; any free records over that size go into the oversize bin.
     - The smallest bin is of size 16, allowing reuse of records large enough to hold an integer key and value. 
+    - The largest bin is of size 16 * 2^16. This is because each FreeRecord holds only a long for storage, and 48 bits of that must be used for the address, leaving only 16 for the size. However, we scale the bin sizes by 16 since that is the minimum size.
 
 #### Fixed vs. VarLen
 For non-variable-length types, the record size is fixed, so the FreeRecordPool has only the one bin for it. Otherwise, it has the full range of variable-length bins.
 
 #### Enqueueing
-Bins hold records up to their maxium size, which is a power of 2. Enqueuing will enqueue a record into the "smallest" bin it fits into.
+Bins hold records up to their maximum size, which is a power of 2. Enqueuing will enqueue a record into the "smallest" bin it fits into.
+
+Enqueueing starts in a partition that is determined by a murmur3 hash of the thread ID, and if that partition is full, it searches the next, wrapping until all partitions have been tried before returning false (the bin is full).
 
 #### Dequeueing
 Records stored in a bin have lengths that are *between* the lowest and highest sizes of a bin, *not* the highest size of the bin. Therefore, for performance we have to retrieve from the next-highest bin; e.g. 48 will come from the [64-127] bin because the [32-63] bin might not have anything larger than 42, so we can't satisfy the request and it would take too much time to find that out before moving to the larger bin.
+
+Dequeueing takes a "minimum address" parameter to maintain the invariant that hash chains point downward; when requesting a record for dequeueing, the `HashTableEntry.Address` is passed. This is either a valid lower address or an invalid address (below BeginAddress).
+
+Dequeueing starts in a partition that is determined by a murmur3 hash of the thread ID, and if that partition is empty, it searches the next, wrapping until all partitions have been tried before returning false (the bin is empty).
 
 ## Revivifying a record
 The FreeRecordList is used for:
 - An Upsert, RMW, or Delete that adds a new record
 - A Pending Read or RMW that does CopyToTail (Revivification is not used for the ReadCache).
 
-If there is a record available, it is reused; otherwise, the usual BlockAllocate is done.
+If there is a record available (that is greater than the minimum address), it is reused; otherwise, the usual BlockAllocate is done.
 
 ### Record Length Management
 There are two lengths we are concerned with: The FullValueLength (allocated space), and the UsedValueLength within that that the application has used. These are properties of the new `UpdateInfo` structure passed by reference to `IFunctions` update callbacks for Upsert, RMW, and Delete.
 
-The used space is for a new record is equal to the full allocation space; by default, "all space is used". Note that SpanByte actually initializes itself to include space for the entire record. However, other data types may not do this.
+The used space is for a new record is equal to the full allocation space; by default, "all space is used". The `VariableLenghtBlittableAllocator.GetValue` overload with (physicalAddress, physicalAddress + allocatedSize) that calls the default SpanByte implementation of `IVariableLengthStructureSettings` actually initializes the value space to be a valid SpanByte that includes the entire space (up to the maximum number of elements that can fit). However, other data types may not do this.
 
 For non-Tombstoned records, the full value (not record) length is stored in an integer immediately following (4-byte aligned) the used value space. FasterImpl.cs contains some utility functions at the top that set the full value length into and retrieve it from the value space, based upon this offset. If there is extra length in the record (UsedValueLength < FullValueLength by at least the (aligned) space of an integer), the length is written and the Filler bit is set. Otherwise, the Filler bit is cleared.
 
