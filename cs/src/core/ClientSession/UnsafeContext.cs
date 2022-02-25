@@ -68,27 +68,14 @@ namespace FASTER.core
         /// </summary>
         public int LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
 
-        /// <summary>
-        /// Synchronously complete outstanding pending synchronous operations.
-        /// Async operations must be completed individually.
-        /// </summary>
-        /// <param name="wait">Wait for all pending operations on session to complete</param>
-        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
-        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
             return this.clientSession.UnsafeCompletePending(this.FasterSession, false, wait, spinWaitForCommit);
         }
 
-        /// <summary>
-        /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
-        /// Assumes epoch protection is managed by user. Async operations must be completed individually.
-        /// </summary>
-        /// <param name="completedOutputs">Outputs completed by this operation</param>
-        /// <param name="wait">Wait for all pending operations on session to complete</param>
-        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
-        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        /// <inheritdoc/>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
