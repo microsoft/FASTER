@@ -11,14 +11,14 @@ class FASTERFunctions extends CallbackFunctionsBase {
     }
 
     ReadCompletionCallback(keyBytes, outputBytes, status) {
-        if (status == Status.FOUND) {
+        if (status == Status.Found) {
             var output = deserialize(outputBytes, 0, outputBytes.length);
             writeToScreen("<span> value: " + output + " </span>");
         }
     }
 
     UpsertCompletionCallback(keyBytes, valueBytes, status) {
-        if (status == Status.FOUND) {
+        if (status == Status.Found) {
             writeToScreen("<span> PUT OK </span>");
         }
     }
@@ -29,7 +29,7 @@ class FASTERFunctions extends CallbackFunctionsBase {
 
     SubscribeKVCompletionCallback(keyBytes, outputBytes, status)
     {
-        if (status == Status.FOUND) {
+        if (status == Status.Found) {
             var key = deserialize(keyBytes, 0, keyBytes.length);
             var output = deserialize(outputBytes, 0, outputBytes.length);
             writeToScreen("<span> subscribed key: " + key + " value: " + output + " </span>");
@@ -38,7 +38,7 @@ class FASTERFunctions extends CallbackFunctionsBase {
 
     SubscribeCompletionCallback(keyBytes, valueBytes, status)
     {
-        if (status == Status.FOUND) {
+        if (status == Status.Found) {
             var key = deserialize(keyBytes, 0, keyBytes.length);
             var value = deserialize(valueBytes, 0, valueBytes.length);
             writeToScreen("<span> subscribed key: " + key + " value: " + value + " </span>");
