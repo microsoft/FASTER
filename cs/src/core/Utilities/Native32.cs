@@ -416,5 +416,10 @@ namespace FASTER.core
             return unchecked(((int)0x80070000) | errorCode);
         }
         #endregion
+
+        #region Other ops
+        [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "RtlZeroMemory")]
+        internal static extern int ZeroMemory(byte* destination, int length);
+        #endregion
     }
 }

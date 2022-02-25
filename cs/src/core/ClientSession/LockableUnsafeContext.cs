@@ -614,7 +614,7 @@ namespace FASTER.core
                 {
                     if (_clientSession.fht.WriteDefaultOnDelete)
                         value = default;
-                    _clientSession.fht.SetDeletedValueLength(physicalAddress, ref recordInfo, updateInfo.FullValueLength);
+                    _clientSession.fht.SetDeletedValueLengths(physicalAddress, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
                     return true;
                 }
                 return false;

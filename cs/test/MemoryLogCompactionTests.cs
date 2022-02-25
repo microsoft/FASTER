@@ -36,7 +36,6 @@ namespace FASTER.test
             TestUtils.DeleteDirectory(path);
         }
 
-#if false // TODOtest
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
@@ -126,7 +125,6 @@ namespace FASTER.test
                 Assert.AreEqual(195, count);  
             }
         }
-#endif
     }
 
     public class MemoryCompaction : MemoryFunctions<ReadOnlyMemory<int>, int, int>

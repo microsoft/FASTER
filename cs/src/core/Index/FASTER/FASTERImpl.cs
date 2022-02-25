@@ -71,12 +71,18 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int* GetValueLengthPointer(long physicalAddress, int usedValueLength)
         {
-            Debug.Assert(RoundupLength(usedValueLength) == usedValueLength, "usedValueLength should have record-aligned length");
+            Debug.Assert(RoundupLength(usedValueLength) == usedValueLength, "usedValueLength should have int-aligned length");
             return (int*)((byte*)physicalAddress + GetValueOffset(physicalAddress) + usedValueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int GetValueOffset(long physicalAddress) => (int)(varLenAllocator.ValueOffset(physicalAddress) - physicalAddress);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int GetValueOffset(long physicalAddress, ref Value recordValue) => (int)((long)Unsafe.AsPointer(ref recordValue) - physicalAddress);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int GetRecordLength(long physicalAddress, ref Value recordValue, int fullValueLength) => (int)((long)Unsafe.AsPointer(ref recordValue) - physicalAddress) + fullValueLength;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void SetLengths(long physicalAddress, ref Value value, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
@@ -97,36 +103,34 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private (int usedValueLength, int fullValueLength) GetLengths(int allocatedSize, long newPhysicalAddress)
+        private (int usedValueLength, int fullValueLength) GetLengths(int actualSize, int allocatedSize, long newPhysicalAddress)
         {
             if (IsFixedLengthReviv)
                 return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length);
 
             int valueOffset = GetValueOffset(newPhysicalAddress);
+            int actualValueLength = actualSize - valueOffset;
             int fullValueLength = allocatedSize - valueOffset;
+            Debug.Assert(actualValueLength >= 0, $"actualValueLength {actualValueLength}");
             Debug.Assert(fullValueLength >= 0, $"fullValueLength {fullValueLength}");
 
-            // Return usedValueLength with the default value of "all space is used".
-            return (fullValueLength, fullValueLength);
+            return (actualValueLength, fullValueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private (int usedValueLength, int fullValueLength) GetLengths<Input, Output, Context, FasterSession>(long physicalAddress, ref Value value, ref RecordInfo recordInfo, FasterSession fasterSession)
+        private (int usedValueLength, int fullValueLength) GetLengthsFromFiller<Input, Output, Context, FasterSession>(long physicalAddress, ref Value value, ref RecordInfo recordInfo, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (IsFixedLengthReviv)
-                return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length);
-            if (recordInfo.Tombstone)
-                return (0, GetDeletedValueLength(physicalAddress, ref recordInfo));
+            Debug.Assert(!IsFixedLengthReviv, "Callers should have handled IsFixedLengthReviv");
+            Debug.Assert(!recordInfo.Tombstone, "Callers should have handled recordInfo.Tombstone");
+            Debug.Assert(recordInfo.Filler, "Callers should have ensured recordInfo.Filler");
 
-            int usedValueLength = varLenValueOnlyLengthStruct.GetLength(ref value);
-            usedValueLength = RoundupLength(usedValueLength);
-            int fullValueLength = recordInfo.Filler
-                ? *GetValueLengthPointer(physicalAddress, usedValueLength)  // Get the length from the Value space after usedLength
-                : usedValueLength;                                          // There is no filler, so we have no idea how to get the true full length
+            int actualValueLength = varLenValueOnlyLengthStruct.GetLength(ref value);
+            int usedValueLength = RoundupLength(actualValueLength);
+            int fullValueLength = *GetValueLengthPointer(physicalAddress, usedValueLength); // Get the length from the Value space after usedValueLength
             Debug.Assert(fullValueLength >= 0, $"fullValueLength {fullValueLength}");
             Debug.Assert(fullValueLength >= usedValueLength, $"usedValueLength {usedValueLength}, fullValueLength {fullValueLength}");
-            return (usedValueLength, fullValueLength);
+            return (actualValueLength, fullValueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -136,17 +140,20 @@ namespace FASTER.core
             if (IsFixedLengthReviv)
                 return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length);
             if (recordInfo.Tombstone)
-                return (0, GetDeletedValueLength(physicalAddress, ref recordInfo));
+                return (GetDeletedValueLengths(physicalAddress, ref recordInfo));
 
             // Only get valueOffset if we need it.
             if (recordInfo.Filler)
-                return GetLengths<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
+                return GetLengthsFromFiller<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
 
             // Get the full record length (including key), not just the value length.
-            var (_, fullRecordLength) = hlog.GetRecordSize(physicalAddress);
-            var fullValueLength = fullRecordLength - GetValueOffset(physicalAddress);
+            var (actualRecordLength, fullRecordLength) = hlog.GetRecordSize(physicalAddress);
+            var valueOffset = GetValueOffset(physicalAddress);
+            var usedValueLength = actualRecordLength - valueOffset;
+            var fullValueLength = fullRecordLength - valueOffset;
+            Debug.Assert(usedValueLength >= 0, $"usedValueLength {usedValueLength}");
             Debug.Assert(fullValueLength >= 0, $"fullValueLength {fullValueLength}");
-            return (fullValueLength, fullValueLength);
+            return (usedValueLength, fullValueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -159,25 +166,29 @@ namespace FASTER.core
                 (_, fullRecordLength) = hlog.GetRecordSize(physicalAddress);
                 return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length, fullRecordLength);
             }
+
+            int valueOffset = GetValueOffset(physicalAddress);
+            int usedValueLength, fullValueLength;
             if (recordInfo.Tombstone)
             {
-                fullRecordLength = GetDeletedValueLength(physicalAddress, ref recordInfo);
-                return (0, fullRecordLength, fullRecordLength);
+                (usedValueLength, fullValueLength) = GetDeletedValueLengths(physicalAddress, ref recordInfo);
+                return (usedValueLength, fullValueLength, valueOffset + fullValueLength);
             }
 
-            int usedValueLength, fullValueLength;
-            int valueOffset = GetValueOffset(physicalAddress);
             if (recordInfo.Filler)
             {
-                (usedValueLength, fullValueLength) = GetLengths<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
+                (usedValueLength, fullValueLength) = GetLengthsFromFiller<Input, Output, Context, FasterSession>(physicalAddress, ref recordValue, ref recordInfo, fasterSession);
                 fullRecordLength = valueOffset + fullValueLength;
             }
             else
             {
                 // Get the full record length (including key), not just the value length.
-                (_, fullRecordLength) = hlog.GetRecordSize(physicalAddress);
-                usedValueLength = fullValueLength = fullRecordLength - valueOffset;
+                int actualSize;
+                (actualSize, fullRecordLength) = hlog.GetRecordSize(physicalAddress);
+                usedValueLength = actualSize - valueOffset;
+                fullValueLength = fullRecordLength - valueOffset;
             }
+            Debug.Assert(usedValueLength >= 0, $"usedValueLength {usedValueLength}");
             Debug.Assert(fullValueLength >= 0, $"fullValueLength {fullValueLength}");
             Debug.Assert(fullRecordLength >= 0, $"fullRecordLength {fullRecordLength}");
             return (usedValueLength, fullValueLength, fullRecordLength);
@@ -185,30 +196,34 @@ namespace FASTER.core
 
         // Deleted value invariant: the full value length starts at the beginning of the value offset.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void SetDeletedValueLength(long physicalAddress, ref RecordInfo recordInfo, int fullValueLength)
+        internal unsafe void SetDeletedValueLengths(long physicalAddress, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
         {
             if (!IsFixedLengthReviv)
             {
-                Debug.Assert(fullValueLength > 0 && RoundupLength(fullValueLength) == fullValueLength, "VarLen GetRecordSize() should have ensured nonzero record-aligned length");
-                *GetValueLengthPointer(physicalAddress, 0) = fullValueLength;
+                Debug.Assert(usedValueLength >= 0, $"usedValueLength {usedValueLength}");
+                Debug.Assert(fullValueLength >= sizeof(long) && RoundupLength(fullValueLength) == fullValueLength, "VarLen GetRecordSize() should have ensured nonzero record-aligned length");
+                int* ptr = GetValueLengthPointer(physicalAddress, 0);
+                *ptr = fullValueLength;
+                *(ptr + 1) = usedValueLength;
                 recordInfo.Filler = true;
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int GetDeletedValueLength(long physicalAddress, ref RecordInfo recordInfo)
+        private (int usedValueLength, int fullValueLength) GetDeletedValueLengths(long physicalAddress, ref RecordInfo recordInfo)
         {
             Debug.Assert(recordInfo.Filler, "Should have filler set");
             if (IsFixedLengthReviv)
-                return FixedLengthStruct<Value>.Length;
-            return *GetValueLengthPointer(physicalAddress, 0);
+                return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length);
+            int* ptr = GetValueLengthPointer(physicalAddress, 0);
+            return (*(ptr + 1), *ptr);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int GetDeletedRecordLength(long physicalAddress, ref RecordInfo recordInfo)
         {
             int valueOffset = GetValueOffset(physicalAddress);
-            return valueOffset + GetDeletedValueLength(physicalAddress, ref recordInfo);
+            return valueOffset + GetDeletedValueLengths(physicalAddress, ref recordInfo).fullValueLength;
         }
 
         bool TryDequeueFreeRecord(ref int allocatedSize, HashBucketEntry entry, out long logicalAddress, out long physicalAddress)
@@ -224,12 +239,22 @@ namespace FASTER.core
                 {
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                     int valueOffset = GetValueOffset(physicalAddress);
-                    allocatedSize = valueOffset + GetDeletedValueLength(physicalAddress, ref recordInfo);
+                    allocatedSize = valueOffset + GetDeletedValueLengths(physicalAddress, ref recordInfo).fullValueLength;
                 }
                 return true;
             }
             logicalAddress = physicalAddress = default;
             return false;
+        }
+
+        private int ReInitialize(long physicalAddress, int actualSize, int fullValueLength, RecordInfo recordInfo, ref Value recordValue)
+        {
+            // Zero memory, call GetValue to re-initialize, and remove Filler
+            byte* valuePointer = (byte*)Unsafe.AsPointer(ref recordValue);
+            Native32.ZeroMemory((byte*)valuePointer, fullValueLength);
+            hlog.FormatAsValue(physicalAddress, physicalAddress + actualSize);
+            recordInfo.Filler = false;
+            return (int)(physicalAddress + actualSize - (long)valuePointer);
         }
 
         internal enum LatchOperation : byte
@@ -617,10 +642,17 @@ namespace FASTER.core
                             if (recordInfo.Tombstone && recordInfo.Filler)
                             {
                                 recordInfo.Tombstone = false;
-                                updateInfo.FullValueLength = GetDeletedValueLength(physicalAddress, ref recordInfo);
-                                updateInfo.UsedValueLength = updateInfo.FullValueLength;
+                                (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetDeletedValueLengths(physicalAddress, ref recordInfo);
 
-                                if (fasterSession.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref recordInfo, ref updateInfo, logicalAddress, WriteReason.Upsert))
+                                bool ok = true;
+                                if (!IsFixedLengthReviv)
+                                {
+                                    var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref input, ref value, fasterSession);
+                                    if (ok = GetRecordLength(physicalAddress, ref recordValue, updateInfo.FullValueLength) >= allocatedSize)
+                                        updateInfo.UsedValueLength = ReInitialize(physicalAddress, actualSize, updateInfo.FullValueLength, recordInfo, ref recordValue);
+                                }
+
+                                if (ok && fasterSession.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref recordInfo, ref updateInfo, logicalAddress, WriteReason.Upsert))
                                 {
                                     SetLengths(physicalAddress, ref recordValue, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
                                     hlog.MarkPage(logicalAddress, sessionCtx.version);
@@ -629,6 +661,9 @@ namespace FASTER.core
                                     recordInfo.Unseal();
                                     return OperationStatus.SUCCESS;
                                 }
+
+                                // Restore the lengths (which restores Filler) on failure
+                                SetLengths(physicalAddress, ref recordValue, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
                                 recordInfo.Tombstone = true;
                             }
                             recordInfo.Unseal();
@@ -681,10 +716,17 @@ namespace FASTER.core
                             if (recordInfo.Tombstone && recordInfo.Filler)
                             {
                                 recordInfo.Tombstone = false;
-                                updateInfo.FullValueLength = GetDeletedValueLength(physicalAddress, ref recordInfo);
-                                updateInfo.UsedValueLength = updateInfo.FullValueLength;
+                                (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetDeletedValueLengths(physicalAddress, ref recordInfo);
 
-                                if (fasterSession.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref recordInfo, ref updateInfo, logicalAddress, WriteReason.Upsert))
+                                bool ok = true;
+                                if (!IsFixedLengthReviv)
+                                {
+                                    var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref input, ref value, fasterSession);
+                                    if (ok = GetRecordLength(physicalAddress, ref recordValue, updateInfo.FullValueLength) >= allocatedSize)
+                                        updateInfo.UsedValueLength = ReInitialize(physicalAddress, actualSize, updateInfo.FullValueLength, recordInfo, ref recordValue);
+                                }
+
+                                if (ok && fasterSession.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref recordInfo, ref updateInfo, logicalAddress, WriteReason.Upsert))
                                 {
                                     SetLengths(physicalAddress, ref recordValue, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
                                     if (sessionCtx.phase == Phase.REST)
@@ -697,6 +739,9 @@ namespace FASTER.core
                                     status = OperationStatus.SUCCESS;
                                     goto LatchRelease; // Release shared latch (if acquired)
                                 }
+
+                                // Restore the lengths (which restores Filler) on failure
+                                SetLengths(physicalAddress, ref recordValue, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
                                 recordInfo.Tombstone = true;
                             }
                             recordInfo.Unseal();
@@ -899,14 +944,14 @@ namespace FASTER.core
                            latestLogicalAddress);
             recordInfo.Tentative = true;
             hlog.Serialize(ref key, newPhysicalAddress);
-            ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+            ref Value newValue = ref hlog.FormatAsValue(newPhysicalAddress, newPhysicalAddress + actualSize);
 
             UpdateInfo updateInfo = new()
             {
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
             };
-            (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
+            (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
             if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, ref updateInfo, newLogicalAddress, WriteReason.Upsert))
                 return OperationStatus.RETRY_NOW;
             SetLengths(newPhysicalAddress, ref newValue, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
@@ -1089,9 +1134,17 @@ namespace FASTER.core
                         if (recordInfo.Tombstone && recordInfo.Filler)
                         {
                             recordInfo.Tombstone = false;
-                            updateInfo.FullValueLength = GetDeletedValueLength(physicalAddress, ref recordInfo);
-                            updateInfo.UsedValueLength = updateInfo.FullValueLength;
-                            if (fasterSession.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref recordInfo, ref updateInfo, logicalAddress))
+                            (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetDeletedValueLengths(physicalAddress, ref recordInfo);
+
+                            bool ok = true;
+                            if (!IsFixedLengthReviv)
+                            {
+                                var (actualSize, allocatedSize) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+                                if (ok = GetRecordLength(physicalAddress, ref recordValue, updateInfo.FullValueLength) >= allocatedSize)
+                                    updateInfo.UsedValueLength = ReInitialize(physicalAddress, actualSize, updateInfo.FullValueLength, recordInfo, ref recordValue);
+                            }
+
+                            if (ok && fasterSession.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref recordInfo, ref updateInfo, logicalAddress))
                             {
                                 SetLengths(physicalAddress, ref recordValue, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
                                 hlog.MarkPage(logicalAddress, sessionCtx.version);
@@ -1100,6 +1153,9 @@ namespace FASTER.core
                                 recordInfo.Unseal();
                                 return OperationStatus.SUCCESS;
                             }
+
+                            // Restore the lengths (which restores Filler) on failure
+                            SetLengths(physicalAddress, ref recordValue, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
                             recordInfo.Tombstone = true;
                         }
                         recordInfo.Unseal();
@@ -1151,9 +1207,20 @@ namespace FASTER.core
                             if (recordInfo.Tombstone && recordInfo.Filler)
                             {
                                 recordInfo.Tombstone = false;
-                                updateInfo.FullValueLength = GetDeletedValueLength(physicalAddress, ref recordInfo);
-                                updateInfo.UsedValueLength = updateInfo.FullValueLength;
-                                if (fasterSession.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref recordInfo, ref updateInfo, logicalAddress))
+                                (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetDeletedValueLengths(physicalAddress, ref recordInfo);
+
+                                bool ok = true;
+                                if (!IsFixedLengthReviv)
+                                {
+                                    var (actualSize, allocatedSize) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+                                    if (ok = GetRecordLength(physicalAddress, ref recordValue, updateInfo.FullValueLength) >= allocatedSize)
+                                    {
+                                        updateInfo.UsedValueLength = actualSize;
+                                        ReInitialize(physicalAddress, updateInfo.UsedValueLength, updateInfo.FullValueLength, recordInfo, ref recordValue);
+                                    }
+                                }
+
+                                if (ok && fasterSession.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref recordInfo, ref updateInfo, logicalAddress))
                                 {
                                     SetLengths(physicalAddress, ref recordValue, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
                                     if (sessionCtx.phase == Phase.REST)
@@ -1166,6 +1233,9 @@ namespace FASTER.core
                                     status = OperationStatus.SUCCESS;
                                     goto LatchRelease; // Release shared latch (if acquired)
                                 }
+
+                                // Restore the lengths (which restores Filler) on failure
+                                SetLengths(physicalAddress, ref recordValue, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
                                 recordInfo.Tombstone = true;
                             }
                             recordInfo.Unseal();
@@ -1409,8 +1479,8 @@ namespace FASTER.core
 
             // Populate the new record
             OperationStatus status;
-            ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-            (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
+            ref Value newValue = ref hlog.FormatAsValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+            (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
             if (logicalAddress < hlog.BeginAddress)
             {
                 status = fasterSession.InitialUpdater(ref key, ref input, ref newValue, ref output, ref recordInfo, ref updateInfo, newLogicalAddress)
@@ -1671,7 +1741,6 @@ namespace FASTER.core
             }
             #endregion
 
-
             #region Normal processing
 
             // Mutable Region: Update the record in-place
@@ -1704,6 +1773,7 @@ namespace FASTER.core
                             hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
 
                         // Try to update hash chain and completely elide record only if previous address points to invalid address
+                        // (otherwise if there is an earlier record for this key, it would be reachable again).
                         if (!recordInfo.IsLocked && entry.Address == logicalAddress && recordInfo.PreviousAddress < hlog.BeginAddress && this.EnableFreeRecordPool)
                         {
                             var updatedEntry = default(HashBucketEntry);
@@ -1790,10 +1860,10 @@ namespace FASTER.core
                 recordInfo.Tentative = true;
                 hlog.Serialize(ref key, newPhysicalAddress);
 
-                ref Value newValue = ref hlog.GetValue(newPhysicalAddress);
-                (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
+                ref Value newValue = ref hlog.GetValue(newPhysicalAddress);     // No endAddress arg, so no varlen Initialize() is done
+                (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
                 fasterSession.SingleDeleter(ref key, ref newValue, ref recordInfo, ref updateInfo, newLogicalAddress);
-                SetDeletedValueLength(newPhysicalAddress, ref recordInfo, updateInfo.FullValueLength);
+                SetDeletedValueLengths(newPhysicalAddress, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
 
                 bool success = true;
                 if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
@@ -2333,10 +2403,10 @@ namespace FASTER.core
                 hlog.Serialize(ref key, newPhysicalAddress);
 
                 // Populate the new record
-                (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
+                (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
                 if ((request.logicalAddress < hlog.BeginAddress) || oldRecordInfo.Tombstone)
                 {
-                    ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+                    ref Value newValue = ref hlog.FormatAsValue(newPhysicalAddress, newPhysicalAddress + actualSize);
                     status = fasterSession.InitialUpdater(ref key, ref pendingContext.input.Get(), ref newValue,
                                              ref pendingContext.output, ref recordInfo, ref updateInfo, newLogicalAddress)
                         ? OperationStatus.NOTFOUND : OperationStatus.RETRY_NOW;
@@ -2345,7 +2415,7 @@ namespace FASTER.core
                 else
                 {
                     ref Value value = ref hlog.GetContextRecordValue(ref request);
-                    ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+                    ref Value newValue = ref hlog.FormatAsValue(newPhysicalAddress, newPhysicalAddress + actualSize);
                     status = fasterSession.CopyUpdater(ref key, ref pendingContext.input.Get(), ref value, ref newValue,
                                           ref pendingContext.output, ref recordInfo, ref updateInfo, newLogicalAddress)
                         ? OperationStatus.SUCCESS : OperationStatus.RETRY_NOW;
@@ -2859,7 +2929,7 @@ namespace FASTER.core
                 updateInfo.UsedValueLength = actualSize;
                 updateInfo.FullValueLength = allocatedSize;
                 fasterSession.SingleWriter(ref key, ref input, ref value,
-                                        ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
+                                        ref readcache.FormatAsValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                         ref recordInfo, ref updateInfo, Constants.kInvalidAddress, WriteReason.CopyToReadCache); // We do not expose readcache addresses
             }
             else
@@ -2880,11 +2950,10 @@ namespace FASTER.core
                 if (reason == WriteReason.CopyToReadCache)
                     reason = WriteReason.CopyToTail;
 
-                ref Value newValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-                (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetLengths(allocatedSize, newPhysicalAddress);
-
-                fasterSession.SingleWriter(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
-                                        ref recordInfo, ref updateInfo, newLogicalAddress, reason);
+                ref Value newValue = ref hlog.FormatAsValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+                (updateInfo.UsedValueLength, updateInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
+                fasterSession.SingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref recordInfo, ref updateInfo, newLogicalAddress, reason);
+                SetLengths(newPhysicalAddress, ref newValue, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
             }
 
             bool success = true;
@@ -2975,7 +3044,7 @@ namespace FASTER.core
                 pendingContext.recordInfo = recordInfo;
                 pendingContext.logicalAddress = copyToReadCache ? Constants.kInvalidAddress /* We do not expose readcache addresses */ : newLogicalAddress;
                 fasterSession.PostSingleWriter(ref key, ref input, ref value,
-                                        ref log.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
+                                        ref log.FormatAsValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                         ref recordInfo, ref updateInfo, pendingContext.logicalAddress, reason);
                 recordInfo.SetTentativeAtomic(false);
                 return OperationStatus.SUCCESS;

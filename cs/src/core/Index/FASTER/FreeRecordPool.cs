@@ -172,10 +172,11 @@ namespace FASTER.core
         internal unsafe FreeRecord* GetPartitionStart(int partitionIndex) => records + partitionSize * (partitionIndex % partitionCount);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Enqueue(long address, int size)
-        {
-            var initialPartitionIndex = GetInitialPartitionIndex();
+        public bool Enqueue(long address, int size) => Enqueue(address, size, GetInitialPartitionIndex());
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Enqueue(long address, int size, int initialPartitionIndex)
+        {
             for (var iPart = 0; iPart < this.partitionCount; ++iPart)
             {
                 FreeRecord* partitionStart = GetPartitionStart(initialPartitionIndex + iPart);

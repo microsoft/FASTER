@@ -83,7 +83,7 @@ namespace FASTER.core
             return ref ValueLength.AsRef((byte*)ValueOffset(physicalAddress));
         }
 
-        public override ref Value GetValue(long physicalAddress, long endAddress)
+        public override ref Value FormatAsValue(long physicalAddress, long endAddress)
         {
             var src = (byte*)ValueOffset(physicalAddress);
             ValueLength.Initialize(src, (void*)endAddress);
@@ -116,9 +116,13 @@ namespace FASTER.core
             {
                 var l = RecordInfo.GetLength();
                 return (l, l);
-            }                
+            }
 
-            var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + ValueSize(physicalAddress);
+            var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress);
+            if (recordInfo.Tombstone && recordInfo.Filler)
+                size += *(int*)(ValueOffset(physicalAddress));
+            else
+                size += ValueSize(physicalAddress);
             return (size, (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
@@ -152,7 +156,12 @@ namespace FASTER.core
             }
 
             // We need at least [record size] + [actual key size] + [actual value size]
-            reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + ValueSize(physicalAddress);
+            reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress);
+            ref RecordInfo recordInfo = ref GetInfo(physicalAddress);
+            if (recordInfo.Tombstone && recordInfo.Filler)
+                reqBytes += *(int*)(ValueOffset(physicalAddress));
+            else
+                reqBytes += ValueSize(physicalAddress);
             reqBytes = (reqBytes + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
             return reqBytes;
         }

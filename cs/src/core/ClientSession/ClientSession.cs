@@ -868,9 +868,6 @@ namespace FASTER.core
 
             #endregion IFunctions - Reads
 
-            // Except for readcache/copy-to-tail usage of SingleWriter, all operations that append a record must lock in the <Operation>() call and unlock
-            // in the Post<Operation> call; otherwise another session can try to access the record as soon as it's CAS'd and before Post<Operation> is called.
-
             #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address, WriteReason reason) 
@@ -1034,7 +1031,7 @@ namespace FASTER.core
                 {
                     if (_clientSession.fht.WriteDefaultOnDelete)
                         value = default;
-                    _clientSession.fht.SetDeletedValueLength(physicalAddress, ref recordInfo, updateInfo.FullValueLength);
+                    _clientSession.fht.SetDeletedValueLengths(physicalAddress, ref recordInfo, updateInfo.UsedValueLength, updateInfo.FullValueLength);
                     return true;
                 }
                 return false;

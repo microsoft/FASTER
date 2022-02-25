@@ -309,7 +309,7 @@ namespace FASTER.core
         /// <param name="physicalAddress"></param>
         /// <param name="endPhysicalAddress"></param>
         /// <returns></returns>
-        public virtual ref Value GetValue(long physicalAddress, long endPhysicalAddress) => ref GetValue(physicalAddress);
+        public virtual ref Value FormatAsValue(long physicalAddress, long endPhysicalAddress) => ref GetValue(physicalAddress);
 
         /// <summary>
         /// Get address info for key
