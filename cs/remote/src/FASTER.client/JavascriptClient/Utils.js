@@ -27,10 +27,10 @@ class JSUtils
 }
 
 const Status = {
-    OK: 0,
-    NOTFOUND: 1,
-    PENDING: 2,
-    ERROR: 3
+    Found: 0,
+    NotFound: 1,
+    IsPending: 2,
+    IsFaulted: 3
 };
 
 const MessageType = {

@@ -273,33 +273,28 @@ namespace FASTER.server
                 }
 
                 var nextBufOffset = offset;
+                nextBufOffset += msglen;
 
                 while (fin == false)
                 {
-                    nextBufOffset += msglen;
-
-                    fin = ((buf[nextBufOffset]) & 0b10000000) != 0;
+                    fin = (buf[nextBufOffset] & 0b10000000) != 0;
 
                     nextBufOffset++;
-                    var nextMsgLen = buf[nextBufOffset] - 128; // & 0111 1111
+                    int nextMsgLen = buf[nextBufOffset] & 0b01111111;
 
-                    offset++;
                     nextBufOffset++;
 
                     if (nextMsgLen < 125)
                     {
                         nextBufOffset++;
-                        offset++;
                     }
                     else if (nextMsgLen == 126)
                     {
-                        offset += 3;
                         nextMsgLen = BitConverter.ToUInt16(new byte[] { buf[nextBufOffset + 1], buf[nextBufOffset] }, 0);
                         nextBufOffset += 2;
                     }
                     else if (nextMsgLen == 127)
                     {
-                        offset += 9;
                         nextMsgLen = (int)BitConverter.ToUInt64(new byte[] { buf[nextBufOffset + 7], buf[nextBufOffset + 6], buf[nextBufOffset + 5], buf[nextBufOffset + 4], buf[nextBufOffset + 3], buf[nextBufOffset + 2], buf[nextBufOffset + 1], buf[nextBufOffset] }, 0);
                         nextBufOffset += 8;
                     }
@@ -311,10 +306,18 @@ namespace FASTER.server
                         dataStart = nextBufOffset + 4
                     };
                     decoderInfoList.Add(nextDecoderInfo);
-                    totalMsgLen += nextMsgLen;
-                    offset += 4;
+                    totalMsgLen += nextMsgLen; // Message length without the mask
+                    nextBufOffset += 4; // 4 bytes of masking
+                    nextBufOffset += nextMsgLen; // remaining message length                }
                 }
 
+                if (msglen == 2)
+                {
+                    this.Dispose();
+                    return false;
+                }
+
+                offset = nextBufOffset;
                 completeWSCommand = true;
 
                 var decodedIndex = 0;
@@ -330,7 +333,6 @@ namespace FASTER.server
                     }
                 }
 
-                offset += totalMsgLen;
                 readHead = offset;
             }
 
@@ -573,7 +575,7 @@ namespace FASTER.server
 
             byte* d = networkSender.GetResponseObjectHead();
             var dend = networkSender.GetResponseObjectTail();
-            var dcurr = d + sizeof(int); // reserve space for size
+            var dcurr = d + 10 + sizeof(int); // reserve space for websocket header and size
             byte* outputDcurr;
 
             dcurr += BatchHeader.Size;
@@ -611,13 +613,16 @@ namespace FASTER.server
             }
 
             // Send replies
-            var dstart = d + sizeof(int);
+            var dtemp = d + 10;
+            var dstart = dtemp + sizeof(int);
             Unsafe.AsRef<BatchHeader>(dstart).NumMessages = 1;
             Unsafe.AsRef<BatchHeader>(dstart).SeqNo = 0;
-            int payloadSize = (int)(dcurr - d);
-            // Set packet size in header
-            *(int*)networkSender.GetResponseObjectHead() = -(payloadSize - sizeof(int));
-            networkSender.SendResponse(0, payloadSize);
+            int packetLen = (int)((dcurr - 10) - d);
+
+            CreateSendPacketHeader(ref d, packetLen);
+
+            *(int*)dtemp = (packetLen - sizeof(int));
+            networkSender.SendResponse((int) (d - networkSender.GetResponseObjectHead()), (int)(dcurr - d));
         }
 
 
