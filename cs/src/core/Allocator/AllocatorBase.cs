@@ -148,12 +148,6 @@ namespace FASTER.core
         public long SafeHeadAddress;
 
         /// <summary>
-        /// Tentative head address. Threads do not take any record locks earlier than this point.
-        /// Records earlier than this address undergo eviction, before HeadAddress is moved.
-        /// </summary>
-        public long TentativeHeadAddress;
-
-        /// <summary>
         /// Flushed until address
         /// </summary>
         public long FlushedUntilAddress;
@@ -1268,29 +1262,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Action to be performed when all threads agree that 
-        /// a page range is ready to close.
-        /// </summary>
-        private void OnPagesReadyToClose(long oldHeadAddress, long newHeadAddress)
-        {
-            if (ReadCache)
-                EvictCallback(oldHeadAddress, newHeadAddress);
-
-            for (long closePageAddress = oldHeadAddress & ~PageSizeMask; closePageAddress < newHeadAddress; closePageAddress += PageSize)
-            {
-                long start = oldHeadAddress > closePageAddress ? oldHeadAddress : closePageAddress;
-                long end = newHeadAddress < (closePageAddress + PageSize) ? newHeadAddress : (closePageAddress + PageSize);
-                MemoryPageLockEvictionScan(start, end);
-            }
-
-            if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out oldHeadAddress))
-            {
-                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
-                epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
-            }
-        }
-
-        /// <summary>
         /// Action to be performed for when all threads have 
         /// agreed that a page range is closed.
         /// </summary>
@@ -1303,10 +1274,15 @@ namespace FASTER.core
                 if (IsNullDevice)
                     Utility.MonotonicUpdate(ref BeginAddress, newSafeHeadAddress, out _);
 
+                if (ReadCache)
+                    EvictCallback(oldSafeHeadAddress, newSafeHeadAddress);
+
                 for (long closePageAddress = oldSafeHeadAddress & ~PageSizeMask; closePageAddress < newSafeHeadAddress; closePageAddress += PageSize)
                 {
                     long start = oldSafeHeadAddress > closePageAddress ? oldSafeHeadAddress : closePageAddress;
                     long end = newSafeHeadAddress < closePageAddress + PageSize ? newSafeHeadAddress : closePageAddress + PageSize;
+
+                    MemoryPageLockEvictionScan(start, end);
                     MemoryPageScan(start, end);
 
                     if (newSafeHeadAddress < closePageAddress + PageSize)
@@ -1331,24 +1307,25 @@ namespace FASTER.core
             }
         }
 
-        internal void DebugPrintAddresses(long closePageAddress)
+        private void DebugPrintAddresses()
         {
-            var _flush = FlushedUntilAddress;
-            var _readonly = ReadOnlyAddress;
-            var _safereadonly = SafeReadOnlyAddress;
-            var _tail = GetTailAddress();
-            var _thead = TentativeHeadAddress;
-            var _head = HeadAddress;
+            var _begin = BeginAddress;
+            var _closedUntil = ClosedUntilAddress;
             var _safehead = SafeHeadAddress;
+            var _head = HeadAddress;
+            var _flush = FlushedUntilAddress;
+            var _safereadonly = SafeReadOnlyAddress;
+            var _readonly = ReadOnlyAddress;
+            var _tail = GetTailAddress();
 
-            Console.WriteLine("ClosePageAddress: {0}.{1}", GetPage(closePageAddress), GetOffsetInPage(closePageAddress));
-            Console.WriteLine("FlushedUntil: {0}.{1}", GetPage(_flush), GetOffsetInPage(_flush));
-            Console.WriteLine("Tail: {0}.{1}", GetPage(_tail), GetOffsetInPage(_tail));
-            Console.WriteLine("TentativeHead: {0}.{1}", GetPage(_thead), GetOffsetInPage(_thead));
-            Console.WriteLine("Head: {0}.{1}", GetPage(_head), GetOffsetInPage(_head));
+            Console.WriteLine("BeginAddress: {0}.{1}", GetPage(_begin), GetOffsetInPage(_begin));
+            Console.WriteLine("ClosedUntilAddress: {0}.{1}", GetPage(_closedUntil), GetOffsetInPage(_closedUntil));
             Console.WriteLine("SafeHead: {0}.{1}", GetPage(_safehead), GetOffsetInPage(_safehead));
-            Console.WriteLine("ReadOnly: {0}.{1}", GetPage(_readonly), GetOffsetInPage(_readonly));
+            Console.WriteLine("Head: {0}.{1}", GetPage(_head), GetOffsetInPage(_head));
+            Console.WriteLine("FlushedUntil: {0}.{1}", GetPage(_flush), GetOffsetInPage(_flush));
             Console.WriteLine("SafeReadOnly: {0}.{1}", GetPage(_safereadonly), GetOffsetInPage(_safereadonly));
+            Console.WriteLine("ReadOnly: {0}.{1}", GetPage(_readonly), GetOffsetInPage(_readonly));
+            Console.WriteLine("Tail: {0}.{1}", GetPage(_tail), GetOffsetInPage(_tail));
         }
 
         /// <summary>
@@ -1392,9 +1369,10 @@ namespace FASTER.core
                 newHeadAddress = currentFlushedUntilAddress;
             }
 
-            if (Utility.MonotonicUpdate(ref TentativeHeadAddress, newHeadAddress, out long oldTentativeHeadAddress))
+            if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
             {
-                epoch.BumpCurrentEpoch(() => OnPagesReadyToClose(oldTentativeHeadAddress, newHeadAddress));
+                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
+                epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
             }
 
             return newHeadAddress;
