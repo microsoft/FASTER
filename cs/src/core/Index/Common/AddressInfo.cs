@@ -30,7 +30,7 @@ namespace FASTER.core
 
         public static void WriteInfo(AddressInfo* info, long address, long size)
         {
-            info->word = default(IntPtr);
+            info->word = default;
             info->Address = address;
             info->Size = size;
         }
@@ -80,7 +80,6 @@ namespace FASTER.core
             }
             set
             {
-                var orig_word = word;
                 var _word = (long)word;
                 _word &= ~kAddressMask;
                 _word |= (value & kAddressMask);

@@ -92,14 +92,14 @@ namespace FASTER.core
         public int BufferSize => allocator.BufferSize;
 
         /// <summary>
-        /// Actual memory used by log (not including heap objects)
+        /// Actual memory used by log (not including heap objects) and overflow pages
         /// </summary>
         public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
 
         /// <summary>
-        /// Memory allocatable on the log (not including heap objects)
+        /// Whether we have allocated exactly the requested number of pages on the log (based on BufferSize and EmptyPageCount)
         /// </summary>
-        public long AllocatableMemorySizeBytes => ((long)(allocator.BufferSize - allocator.EmptyPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+        public bool PageAllocationStabilized() => allocator.AllocatedPageCount == allocator.BufferSize - allocator.EmptyPageCount + 1;
 
         /// <summary>
         /// Shift begin address to the provided untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to 
