@@ -65,14 +65,13 @@ namespace FASTER.core
 
         internal readonly bool DisableLocking;
         internal readonly LockTable<Key> LockTable;
-        internal long NumActiveLockingSessions => this.hlog.NumActiveLockingSessions;
 
         internal void IncrementNumLockingSessions()
         {
             _hybridLogCheckpoint.info.manualLockingActive = true;
             Interlocked.Increment(ref this.hlog.NumActiveLockingSessions);
         }
-        internal void DecrementNumLockingSessions() => --this.hlog.NumActiveLockingSessions;
+        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref this.hlog.NumActiveLockingSessions);
 
         /// <summary>
         /// Create FasterKV instance
