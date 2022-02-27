@@ -113,7 +113,11 @@ namespace FASTER.core
         /// HeadOFfset lag address
         /// </summary>
         internal long HeadOffsetLagAddress;
-        
+
+        /// <summary>
+        /// Number of <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions}"/> instances active.
+        /// </summary>
+        internal long NumActiveLockingSessions = 0;
 
         /// <summary>
         /// Log mutable fraction
@@ -1276,8 +1280,12 @@ namespace FASTER.core
                     long start = oldSafeHeadAddress > closePageAddress ? oldSafeHeadAddress : closePageAddress;
                     long end = newSafeHeadAddress < closePageAddress + PageSize ? newSafeHeadAddress : closePageAddress + PageSize;
 
-                    if (OnLockEvictionObserver != null) MemoryPageScan(start, end, OnLockEvictionObserver);
-                    if (OnEvictionObserver != null) MemoryPageScan(start, end, OnEvictionObserver);
+                    // If there are no active locking sessions, there should be no locks in the log.
+                    if (this.NumActiveLockingSessions > 0 && OnLockEvictionObserver is not null)
+                        MemoryPageScan(start, end, OnLockEvictionObserver);
+
+                    if (OnEvictionObserver is not null) 
+                        MemoryPageScan(start, end, OnEvictionObserver);
 
                     if (newSafeHeadAddress < closePageAddress + PageSize)
                     {
