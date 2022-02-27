@@ -339,12 +339,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageLockEvictionScan(long beginAddress, long endAddress) => MemoryPageScan(beginAddress, endAddress, OnLockEvictionObserver);
-
-        /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress) => MemoryPageScan(beginAddress, endAddress, OnEvictionObserver);
-
-        private void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
             using var iter = new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
             observer?.OnNext(iter);

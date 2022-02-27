@@ -687,14 +687,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="beginAddress">Begin address</param>
         /// <param name="endAddress">End address</param>
-        internal abstract void MemoryPageLockEvictionScan(long beginAddress, long endAddress);
-
-        /// <summary>
-        /// Scan page guaranteed to be in memory
-        /// </summary>
-        /// <param name="beginAddress">Begin address</param>
-        /// <param name="endAddress">End address</param>
-        internal abstract void MemoryPageScan(long beginAddress, long endAddress);
+        /// <param name="observer">Observer of scan</param>
+        internal abstract void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer);
         #endregion
 
         /// <summary>
@@ -1282,8 +1276,8 @@ namespace FASTER.core
                     long start = oldSafeHeadAddress > closePageAddress ? oldSafeHeadAddress : closePageAddress;
                     long end = newSafeHeadAddress < closePageAddress + PageSize ? newSafeHeadAddress : closePageAddress + PageSize;
 
-                    MemoryPageLockEvictionScan(start, end);
-                    MemoryPageScan(start, end);
+                    if (OnLockEvictionObserver != null) MemoryPageScan(start, end, OnLockEvictionObserver);
+                    if (OnEvictionObserver != null) MemoryPageScan(start, end, OnEvictionObserver);
 
                     if (newSafeHeadAddress < closePageAddress + PageSize)
                     {
