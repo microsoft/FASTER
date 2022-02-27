@@ -85,10 +85,13 @@ namespace MemOnlyCache
             AddTrackedSize(-size);
 
             // Adjust empty page count to drive towards desired memory utilization
-            if (TotalSizeBytes > TargetSizeBytes && store.Log.AllocatableMemorySizeBytes >= store.Log.MemorySizeBytes)
-                store.Log.EmptyPageCount++;
-            else if (TotalSizeBytes < TargetSizeBytes && store.Log.AllocatableMemorySizeBytes <= store.Log.MemorySizeBytes)
-                store.Log.EmptyPageCount--;
+            if (store.Log.PageAllocationStabilized())
+            {
+                if (TotalSizeBytes > TargetSizeBytes)
+                    store.Log.EmptyPageCount++;
+                else
+                    store.Log.EmptyPageCount--;
+            }
         }
 
         /// <summary>
