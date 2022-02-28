@@ -140,6 +140,7 @@ jobs:
 
   steps:
   - bash: |
+      export RunAzureTests=yes
       sudo npm install -g azurite
       sudo mkdir azurite
       sudo azurite --silent --location azurite --debug azurite\debug.log &
@@ -154,8 +155,6 @@ jobs:
 
   - task: DotNetCoreCLI@2
     displayName: 'dotnet test $(buildConfiguration)'
-    env:
-      RunAzureTests: yes
     inputs:
       command: test
       projects: '**/*.test.csproj'
