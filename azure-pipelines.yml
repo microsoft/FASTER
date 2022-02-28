@@ -140,12 +140,6 @@ jobs:
 
   steps:
   - bash: |
-      echo $(RunAzureTests)
-      echo $(RUNAZURETESTS)
-      echo $RunAzureTests
-      echo $RUNAZURETESTS
-
-  - bash: |
       sudo npm install -g azurite
       sudo mkdir azurite
       sudo azurite --silent --location azurite --debug azurite\debug.log &
