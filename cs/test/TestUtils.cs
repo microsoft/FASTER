@@ -125,11 +125,11 @@ namespace FASTER.test
 #endif
                         device = new LocalStorageDevice(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort);
                     break;
+#endif
                 case DeviceType.EmulatedAzure:
                     IgnoreIfNotRunningAzureTests();
                     device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose);
                     break;
-#endif
                 case DeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, preallocateFile, deleteOnClose, capacity, recoverDevice);
                     break;
