@@ -173,7 +173,7 @@ namespace FASTER.core
             return this.luContext;
         }
 
-        #region IFasterOperations
+        #region IFasterContext
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
@@ -462,7 +462,7 @@ namespace FASTER.core
             UnsafeSuspendThread();
         }
 
-        #endregion IFasterOperations
+        #endregion IFasterContext
 
         #region Pending Operations
 
@@ -485,24 +485,11 @@ namespace FASTER.core
                 yield return val.serialNum;
         }
 
-        /// <summary>
-        /// Synchronously complete outstanding pending synchronous operations.
-        /// Async operations must be completed individually.
-        /// </summary>
-        /// <param name="wait">Wait for all pending operations on session to complete</param>
-        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
-        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
             => CompletePending(false, wait, spinWaitForCommit);
 
-        /// <summary>
-        /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
-        /// Async operations must be completed individually.
-        /// </summary>
-        /// <param name="completedOutputs">Outputs completed by this operation</param>
-        /// <param name="wait">Wait for all pending operations on session to complete</param>
-        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
-        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        /// <inheritdoc/>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
             InitializeCompletedOutputs();
