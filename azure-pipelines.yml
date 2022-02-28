@@ -155,7 +155,7 @@ jobs:
   - task: DotNetCoreCLI@2
     displayName: 'dotnet test $(buildConfiguration)'
     env:
-      RunAzureTests: 'yes'
+      RunAzureTests: yes
     inputs:
       command: test
       projects: '**/*.test.csproj'
