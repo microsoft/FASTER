@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using static FASTER.test.TestUtils;
+using FASTER.test.LockableUnsafeContext;
 
 namespace FASTER.test.ReadCacheTests
 {
@@ -230,6 +231,13 @@ namespace FASTER.test.ReadCacheTests
             var (_, pa) = SkipReadCacheChain(expectedKey);
             var storedKey = fht.hlog.GetKey(pa);
             Assert.AreEqual(expectedKey, storedKey);
+        }
+
+        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
+        {
+            // If we already have an exception, clear these counts so "Run" will not report them spuriously.
+            luContext.sharedLockCount = 0;
+            luContext.exclusiveLockCount = 0;
         }
 
         [Test]
@@ -502,25 +510,39 @@ namespace FASTER.test.ReadCacheTests
                 { highChainKey, LockType.Exclusive }
             };
 
-            // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
-            foreach (var key in locks.Keys.OrderBy(k => k))
-                luContext.Lock(key, locks[key]);
+            luContext.ResumeThread();
 
-            fht.ReadCache.FlushAndEvict(wait: true);
-
-            Assert.IsTrue(fht.LockTable.IsActive);
-            Assert.AreEqual(locks.Count, fht.LockTable.dict.Count);
-
-            foreach (var key in locks.Keys)
+            try
             {
-                var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
-                Assert.IsTrue(found);
-                var lockType = locks[key];
-                Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
-                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.NumLockedShared > 0);
+                // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
+                foreach (var key in locks.Keys.OrderBy(k => k))
+                    luContext.Lock(key, locks[key]);
 
-                luContext.Unlock(key, lockType);
-                Assert.IsFalse(fht.LockTable.Get(key, out recordInfo));
+                fht.ReadCache.FlushAndEvict(wait: true);
+
+                Assert.IsTrue(fht.LockTable.IsActive);
+                Assert.AreEqual(locks.Count, fht.LockTable.dict.Count);
+
+                foreach (var key in locks.Keys)
+                {
+                    var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
+                    Assert.IsTrue(found);
+                    var lockType = locks[key];
+                    Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
+                    Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.NumLockedShared > 0);
+
+                    luContext.Unlock(key, lockType);
+                    Assert.IsFalse(fht.LockTable.Get(key, out recordInfo));
+                }
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(luContext);
+                throw;
+            }
+            finally
+            {
+                luContext.SuspendThread();
             }
 
             Assert.IsFalse(fht.LockTable.IsActive);
@@ -549,41 +571,54 @@ namespace FASTER.test.ReadCacheTests
                 { highChainKey, LockType.Exclusive }
             };
 
-            // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
-            foreach (var key in locks.Keys.OrderBy(k => k))
-                luContext.Lock(key, locks[key]);
-
-            fht.ReadCache.FlushAndEvict(wait: true);
-
-            // Verify the locks have been evicted to the lockTable
-            Assert.IsTrue(fht.LockTable.IsActive);
-            Assert.AreEqual(locks.Count, fht.LockTable.dict.Count);
-
-            foreach (var key in locks.Keys)
+            luContext.ResumeThread();
+            try
             {
-                var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
-                Assert.IsTrue(found);
-                var lockType = locks[key];
-                Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
-                Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.NumLockedShared > 0);
+                // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
+                foreach (var key in locks.Keys.OrderBy(k => k))
+                    luContext.Lock(key, locks[key]);
+
+                fht.ReadCache.FlushAndEvict(wait: true);
+
+                // Verify the locks have been evicted to the lockTable
+                Assert.IsTrue(fht.LockTable.IsActive);
+                Assert.AreEqual(locks.Count, fht.LockTable.dict.Count);
+
+                foreach (var key in locks.Keys)
+                {
+                    var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
+                    Assert.IsTrue(found);
+                    var lockType = locks[key];
+                    Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
+                    Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.NumLockedShared > 0);
+                }
+
+                fht.Log.FlushAndEvict(wait: true);
+
+                // Create the readcache entries, which will transfer the locks from the locktable to the readcache
+                foreach (var key in locks.Keys)
+                {
+                    var status = luContext.Read(key, out _);
+                    Assert.IsTrue(status.IsPending, status.ToString());
+                    luContext.CompletePending(wait: true);
+
+                    var lockType = locks[key];
+                    var (exclusive, sharedCount) = luContext.IsLocked(key);
+                    Assert.AreEqual(lockType == LockType.Exclusive, exclusive);
+                    Assert.AreEqual(lockType != LockType.Exclusive, sharedCount > 0);
+
+                    luContext.Unlock(key, lockType);
+                    Assert.IsFalse(fht.LockTable.Get(key, out _));
+                }
             }
-
-            fht.Log.FlushAndEvict(wait: true);
-
-            // Create the readcache entries, which will transfer the locks from the locktable to the readcache
-            foreach (var key in locks.Keys)
+            catch (Exception)
             {
-                var status = session.Read(key, out _);
-                Assert.IsTrue(status.IsPending, status.ToString());
-                session.CompletePending(wait: true);
-
-                var lockType = locks[key];
-                var (exclusive, sharedCount) = luContext.IsLocked(key);
-                Assert.AreEqual(lockType == LockType.Exclusive, exclusive);
-                Assert.AreEqual(lockType != LockType.Exclusive, sharedCount > 0);
-
-                luContext.Unlock(key, lockType);
-                Assert.IsFalse(fht.LockTable.Get(key, out _));
+                ClearCountsOnError(luContext);
+                throw;
+            }
+            finally
+            {
+                luContext.SuspendThread();
             }
 
             Assert.IsFalse(fht.LockTable.IsActive);
