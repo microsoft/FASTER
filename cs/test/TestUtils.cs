@@ -101,8 +101,8 @@ namespace FASTER.test
         {
 #if WINDOWS
             LSD,
-            EmulatedAzure,
 #endif
+            EmulatedAzure,
             MLSD,
             LocalMemory
         }
