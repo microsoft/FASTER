@@ -1845,6 +1845,8 @@ namespace FASTER.core
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
+                SpinWaitUntilClosed(request.logicalAddress);
+
                 if (recordInfo.IsIntermediate(out var internalStatus))
                     return internalStatus;
 
@@ -1882,6 +1884,17 @@ namespace FASTER.core
         NotFound:
             pendingContext.recordInfo = recordInfo;
             return OperationStatus.NOTFOUND;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void SpinWaitUntilClosed(long address)
+        {
+            while (address >= this.hlog.ClosedUntilAddress)
+            {
+                Debug.Assert(address < hlog.HeadAddress);
+                epoch.ProtectAndDrain();
+                Thread.Yield();
+            }
         }
 
         /// <summary>
@@ -1962,6 +1975,8 @@ namespace FASTER.core
 
             long lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
             long prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
+
+            SpinWaitUntilClosed(request.logicalAddress);
 
             while (true)
             {
