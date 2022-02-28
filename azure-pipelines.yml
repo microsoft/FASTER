@@ -27,6 +27,13 @@ jobs:
         buildConfiguration: 'Release'
 
   steps:
+  - task: NodeTool@0 
+      inputs:
+         versionSpec: 13.x
+    - script : npm install -g azurite
+      displayName: Install Azurite
+    - script : start /B azurite
+      displayName: Start Azurite
 
   - task: DotNetCoreCLI@2
     displayName: 'dotnet build $(buildConfiguration)'
