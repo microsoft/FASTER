@@ -139,8 +139,12 @@ jobs:
         buildConfiguration: 'Release'
 
   steps:
-  - bash: echo $(RunAzureTests)
-  - bash: echo $(RUNAZURETESTS)
+  - bash: |
+      echo $(RunAzureTests)
+      echo $(RUNAZURETESTS)
+      echo $RunAzureTests
+      echo $RUNAZURETESTS
+
   - bash: |
       sudo npm install -g azurite
       sudo mkdir azurite
