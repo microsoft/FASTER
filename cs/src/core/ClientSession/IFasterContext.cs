@@ -12,6 +12,25 @@ namespace FASTER.core
     public interface IFasterContext<Key, Value, Input, Output, Context>
     {
         /// <summary>
+        /// Synchronously complete outstanding pending synchronous operations.
+        /// Async operations must be completed individually.
+        /// </summary>
+        /// <param name="wait">Wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        bool CompletePending(bool wait = false, bool spinWaitForCommit = false);
+
+        /// <summary>
+        /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
+        /// Async operations must be completed individually.
+        /// </summary>
+        /// <param name="completedOutputs">Outputs completed by this operation</param>
+        /// <param name="wait">Wait for all pending operations on session to complete</param>
+        /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <returns>True if all pending operations have completed, false otherwise</returns>
+        bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
+
+        /// <summary>
         /// Read operation
         /// </summary>
         /// <param name="key">The key to look up</param>

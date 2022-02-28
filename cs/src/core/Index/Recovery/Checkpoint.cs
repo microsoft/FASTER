@@ -84,7 +84,7 @@ namespace FASTER.core
         internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, long version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
-            _hybridLogCheckpoint.info.manualLockingActive = this.NumActiveLockingSessions > 0;
+            _hybridLogCheckpoint.info.manualLockingActive = this.hlog.NumActiveLockingSessions > 0;
         }
 
         internal long Compact<T1, T2, T3, T4, CompactionFunctions>(IFunctions<Key, Value, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, object> sessionVariableLengthStructSettings) where CompactionFunctions : ICompactionFunctions<Key, Value>
