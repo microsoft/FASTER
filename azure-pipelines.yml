@@ -127,6 +127,8 @@ jobs:
   pool:
     vmImage: ubuntu-18.04
   displayName: 'C# (Linux)'
+  variables:
+    RunAzureTests: 'yes'
 
   strategy:
     maxParallel: 2
@@ -140,7 +142,6 @@ jobs:
 
   steps:
   - bash: |
-      sudo export RunAzureTests=yes
       sudo npm install -g azurite
       sudo mkdir azurite
       sudo azurite --silent --location azurite --debug azurite\debug.log &
