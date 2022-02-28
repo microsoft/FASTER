@@ -1287,19 +1287,27 @@ namespace FASTER.core
                     if (OnEvictionObserver is not null) 
                         MemoryPageScan(start, end, OnEvictionObserver);
 
-                    if (newSafeHeadAddress < closePageAddress + PageSize)
-                    {
-                        // Partial page - do not close
-                        // Future work: clear partial page here
-                        return;
-                    }
-
                     int closePage = (int)(closePageAddress >> LogPageSizeBits);
                     int closePageIndex = closePage % BufferSize;
 
-                    FreePage(closePage);
+                    // Do not free or clear partial page
+                    // Future work: clear partial page
+                    if (end == closePageAddress + PageSize)
+                    {
+                        FreePage(closePage);
+                    }
 
-                    Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, closePageAddress + PageSize, out _);
+                    // If start of closing range is not at page beginning,
+                    // spin-wait until adjacent earlier range is closed
+                    if ((start & PageSizeMask) > 0)
+                    {
+                        while (ClosedUntilAddress < start)
+                        {
+                            epoch.ProtectAndDrain();
+                            Thread.Yield();
+                        }
+                    }
+                    Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, end, out _);
                     ShiftClosedUntilAddress();
                     if (ClosedUntilAddress > FlushedUntilAddress)
                     {
