@@ -140,7 +140,7 @@ jobs:
 
   steps:
   - bash: |
-      export RunAzureTests=yes
+      sudo export RunAzureTests=yes
       sudo npm install -g azurite
       sudo mkdir azurite
       sudo azurite --silent --location azurite --debug azurite\debug.log &
