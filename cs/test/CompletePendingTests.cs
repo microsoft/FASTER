@@ -205,11 +205,11 @@ namespace FASTER.test
                 // ConcurrentReader does not verify the input struct.
                 InputStruct inputStruct = default;
                 OutputStruct outputStruct = default;
-                RecordMetadata recordMetadata = default;
+                ReadOptions readOptions = default;
 
                 // This should not be pending since we've not flushed.
                 var localKey = key;
-                var status = session.Read(ref localKey, ref inputStruct, ref outputStruct, ref recordMetadata);
+                var status = session.Read(ref localKey, ref inputStruct, ref outputStruct, ref readOptions, out RecordMetadata recordMetadata);
                 Assert.IsFalse(status.IsPending);
                 Assert.AreEqual(address, recordMetadata.Address);
             }

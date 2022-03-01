@@ -578,14 +578,14 @@ namespace FASTER.test.LockableUnsafeContext
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
             using var luContext = session.GetLockableUnsafeContext();
             int input = 0, output = 0, key = transferToExistingKey;
-            RecordMetadata recordMetadata = default;
+            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyToTail};
 
             luContext.ResumeThread();
             try
             {
                 AddLockTableEntry(luContext, key, immutable: false);
 
-                var status = luContext.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
+                var status = luContext.Read(ref key, ref input, ref output, ref readOptions, out _);
                 Assert.IsTrue(status.IsPending, status.ToString());
                 luContext.CompletePending(wait: true);
 
@@ -1072,8 +1072,8 @@ namespace FASTER.test.LockableUnsafeContext
 
                     // Just a little more testing of Read/CTT transferring from LockTable
                     int input = 0, output = 0, localKey = key;
-                    RecordMetadata recordMetadata = default;
-                    var status = luContext.Read(ref localKey, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
+                    ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyToTail};
+                    var status = luContext.Read(ref localKey, ref input, ref output, ref readOptions, out _);
                     Assert.IsTrue(status.IsPending, status.ToString());
                     luContext.CompletePending(wait: true);
 

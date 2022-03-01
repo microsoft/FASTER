@@ -274,9 +274,11 @@ namespace FASTER.test.async
                 Assert.AreEqual(key, output);
             }
 
+            ReadOptions readOptions;
             for (key = 0; key < numOps; key++)
             {
-                (status, output) = (await s1.ReadAsync(ref key, ref output, addresses[key], ReadFlags.None)).Complete();
+                readOptions = new() { StartAddress = addresses[key] };
+                (status, output) = (await s1.ReadAsync(ref key, ref output, ref readOptions)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
@@ -293,7 +295,8 @@ namespace FASTER.test.async
             // of the log. Use the same pattern as above to get the new record address.
             addresses[key] = fht1.Log.TailAddress - recordSize;
 
-            (status, output) = (await s1.ReadAsync(ref key, ref output, addresses[key], ReadFlags.None, Empty.Default, 129)).Complete();
+            readOptions = new() { StartAddress = addresses[key] };
+            (status, output) = (await s1.ReadAsync(ref key, ref output, ref readOptions, Empty.Default, 129)).Complete();
             Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }

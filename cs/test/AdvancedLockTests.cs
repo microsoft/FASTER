@@ -141,10 +141,10 @@ namespace FASTER.test.LockTests
                     var sleepFlag = (iter % 5 == 0) ? LockFunctionFlags.None : LockFunctionFlags.SleepAfterEventOperation;
                     functions.readCacheInput = new() { flags = LockFunctionFlags.SetEvent | sleepFlag, sleepRangeMs = 10 };
                     int output = 0;
-                    RecordMetadata recordMetadata = default;
+                    ReadOptions readOptions = default;
 
                     // This will copy to ReadCache, and the test is trying to cause a race with the above Upsert.
-                    var status = session.Read(ref key, ref functions.readCacheInput, ref output, ref recordMetadata);
+                    var status = session.Read(ref key, ref functions.readCacheInput, ref output, ref readOptions, out _);
 
                     // If the Upsert completed before the Read started, we may Read() the Upserted value.
                     if (status.IsCompleted)

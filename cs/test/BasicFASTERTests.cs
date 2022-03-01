@@ -559,10 +559,10 @@ namespace FASTER.test
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
-            var readAtAddress = fht.Log.BeginAddress;
+            ReadOptions readOptions = new() { StartAddress = fht.Log.BeginAddress };
 
             session.Upsert(ref key1, ref value, Empty.Default, 0);
-            var status = session.ReadAtAddress(readAtAddress, ref input, ref output, ReadFlags.None, Empty.Default, 0);
+            var status = session.ReadAtAddress(ref input, ref output, ref readOptions, Empty.Default, 0);
             AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -659,16 +659,16 @@ namespace FASTER.test
 
             // Do not put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            RecordMetadata recordMetadata = new(new RecordInfo() { PreviousAddress = readAtAddress });
-            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref recordMetadata, ReadFlags.SkipReadCache);
+            ReadOptions readOptions = new() { StartAddress = readAtAddress, ReadFlags = ReadFlags.SkipReadCache };
+            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref readOptions, out _);
             VerifyResult();
 
             Assert.AreEqual(fht.ReadCache.BeginAddress, fht.ReadCache.TailAddress);
 
             // Put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            recordMetadata.RecordInfo.PreviousAddress = readAtAddress; // Read*() sets this to the record's PreviousAddress (so caller can follow the chain), so reinitialize it.
-            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref recordMetadata);
+            readOptions.ReadFlags = ReadFlags.None;
+            status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref readOptions, out _);
             VerifyResult();
 
             Assert.Less(fht.ReadCache.BeginAddress, fht.ReadCache.TailAddress);

@@ -104,8 +104,8 @@ namespace FASTER.test.SingleWriter
             key = 64;
             expectedReason = WriteReason.CopyToTail;
             input = (int)expectedReason;
-            RecordMetadata recordMetadata = default;
-            status = session.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
+            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyToTail };
+            status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending && !status.IsCompleted);
             session.CompletePendingWithOutputs(out var outputs, wait: true);
             (status, output) = GetSinglePendingResult(outputs);
