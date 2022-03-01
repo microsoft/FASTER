@@ -109,26 +109,26 @@ namespace FASTER.test
         }
 
         // Read functions
-        public override bool SingleReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool SingleReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst, ref ReadInfo readInfo)
         {
             value.ToIntArray(ref dst);
             return true;
         }
 
-        public override bool ConcurrentReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool ConcurrentReader(ref Key key, ref Input input, ref VLValue value, ref int[] dst, ref ReadInfo readInfo)
         {
             value.ToIntArray(ref dst);
             return true;
         }
 
         // Upsert functions
-        public override bool SingleWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool SingleWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             src.CopyTo(ref dst);
             return true;
         }
 
-        public override bool ConcurrentWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
+        public override bool ConcurrentWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref UpsertInfo upsertInfo)
         {
             if (src.length != dst.length)
                 return false;
@@ -156,26 +156,26 @@ namespace FASTER.test
         }
 
         // Read functions
-        public override bool SingleReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool SingleReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst, ref ReadInfo readInfo)
         {
             value.ToIntArray(ref dst);
             return true;
         }
 
-        public override bool ConcurrentReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool ConcurrentReader(ref VLValue key, ref Input input, ref VLValue value, ref int[] dst, ref ReadInfo readInfo)
         {
             value.ToIntArray(ref dst);
             return true;
         }
 
         // Upsert functions
-        public override bool SingleWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool SingleWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             src.CopyTo(ref dst);
             return true;
         }
 
-        public override bool ConcurrentWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
+        public override bool ConcurrentWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref UpsertInfo upsertInfo)
         {
             if (src.length != dst.length)
                 return false;

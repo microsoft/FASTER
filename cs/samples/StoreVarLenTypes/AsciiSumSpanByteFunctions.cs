@@ -17,14 +17,14 @@ namespace StoreVarLenTypes
         public AsciiSumSpanByteFunctions(MemoryPool<byte> memoryPool = null) : base(memoryPool) { }
 
         /// <inheritdoc/>
-        public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             input.CopyTo(ref value);
             return true;
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             long curr = Utils.BytesToLong(value.AsSpan());
             long next = curr + Utils.BytesToLong(input.AsSpan());
@@ -34,7 +34,7 @@ namespace StoreVarLenTypes
         }
 
         /// <inheritdoc/>
-        public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             long curr = Utils.BytesToLong(oldValue.AsSpan());
             long next = curr + Utils.BytesToLong(input.AsSpan());

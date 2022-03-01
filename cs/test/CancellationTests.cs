@@ -50,7 +50,7 @@ namespace FASTER.test.Cancellation
             }
 
             /// <inheritdoc/>
-            public override bool CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.CopyUpdater;
                 Assert.AreNotEqual(CancelLocation.NeedCopyUpdate, cancelLocation);
@@ -63,7 +63,7 @@ namespace FASTER.test.Cancellation
                 return true;
             }
 
-            public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.InitialUpdater;
                 Assert.AreNotEqual(CancelLocation.NeedInitialUpdate, cancelLocation);
@@ -77,7 +77,7 @@ namespace FASTER.test.Cancellation
                 return true;
             }
 
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.InPlaceUpdater;
                 if (cancelLocation == CancelLocation.InPlaceUpdater)
@@ -90,7 +90,7 @@ namespace FASTER.test.Cancellation
             }
 
             // Upsert functions
-            public override bool SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 lastFunc = CancelLocation.SingleWriter;
                 if (cancelLocation == CancelLocation.SingleWriter)
@@ -102,7 +102,7 @@ namespace FASTER.test.Cancellation
                 return true;
             }
 
-            public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
+            public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo)
             {
                 lastFunc = CancelLocation.ConcurrentWriter;
                 if (cancelLocation == CancelLocation.ConcurrentWriter)

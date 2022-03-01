@@ -218,7 +218,7 @@ namespace FASTER.test.Expiration
             }
 
             /// <inheritdoc/>
-            public override bool CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.CopyUpdater);
                 switch (input.testOp)
@@ -307,7 +307,7 @@ namespace FASTER.test.Expiration
                 }
             }
 
-            public override bool InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.InitialUpdater);
                 value.field1 = input.value;
@@ -318,7 +318,7 @@ namespace FASTER.test.Expiration
                 return true;
             }
 
-            public override bool InPlaceUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.InPlaceUpdater);
                 switch (input.testOp)
@@ -426,7 +426,7 @@ namespace FASTER.test.Expiration
             }
 
             // Read functions
-            public override bool SingleReader(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+            public override bool SingleReader(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref ReadInfo readInfo)
             {
                 output.AddFunc(Funcs.SingleReader);
                 if (IsExpired(key, value.field1))
@@ -435,7 +435,7 @@ namespace FASTER.test.Expiration
                 return true;
             }
 
-            public override bool ConcurrentReader(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+            public override bool ConcurrentReader(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref ReadInfo readInfo)
             {
                 output.AddFunc(Funcs.ConcurrentReader);
                 if (IsExpired(key, value.field1))
@@ -445,13 +445,13 @@ namespace FASTER.test.Expiration
             }
 
             // Upsert functions
-            public override bool SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 src.CopyTo(ref dst);
                 return true;
             }
 
-            public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
+            public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref UpsertInfo upsertInfo)
             {
                 src.CopyTo(ref dst);
                 return true;

@@ -228,10 +228,10 @@ namespace FASTER.test.recovery.objects
 
     public class MyFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { value.value = input.value; return true; }
+        public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo) { value.value = input.value; return true; }
         public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyOutput output, ref RMWInfo rmwInfo) => true;
-        public override bool CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { newValue = oldValue; return true; }
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RMWInfo rmwInfo) { newValue = oldValue; return true; }
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo)
         {
             if (value.value.Length < input.value.Length)
                 return false;
@@ -240,21 +240,21 @@ namespace FASTER.test.recovery.objects
         }
 
 
-        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
         {
             dst.value = value;
             return true;
         }
 
-        public override bool SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) { dst = src; return true; }
+        public override bool SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { dst = src; return true; }
 
-        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
         {
             dst.value = value;
             return true;
         }
 
-        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
+        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo)
         {
             if (src == null)
                 return false;

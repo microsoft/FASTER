@@ -8,26 +8,26 @@ namespace StoreCustomTypes
 {
     public sealed class Functions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo)
         {
             value.value = input.value;
             return true;
         }
-        public override bool CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RMWInfo rmwInfo)
         {
             newValue = oldValue;
             return true;
         }
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { value.value += input.value; return true; }
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo) { value.value += input.value; return true; }
 
 
-        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
         {
             dst.value = value;
             return true;
         }
 
-        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
         {
             dst.value = value;
             return true;

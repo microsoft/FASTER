@@ -21,12 +21,12 @@ namespace FASTER.test.LockableUnsafeContext
     {
         internal long deletedRecordAddress;
 
-        public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+        public override void PostSingleDeleter(ref int key, ref DeleteInfo deleteInfo)
         {
             deletedRecordAddress = deleteInfo.Address;
         }
 
-        public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+        public override bool ConcurrentDeleter(ref int key, ref int value, ref DeleteInfo deleteInfo)
         {
             deletedRecordAddress = deleteInfo.Address;
             return true;

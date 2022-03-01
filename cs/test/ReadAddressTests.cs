@@ -80,14 +80,14 @@ namespace FASTER.test.readaddress
                 }
             }
 
-            public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+            public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Output output, ref ReadInfo readInfo)
             {
                 output.value = SetReadOutput(key.key, value.value);
                 output.address = readInfo.Address;
                 return true;
             }
 
-            public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+            public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Output output, ref ReadInfo readInfo)
             {
                 output.value = SetReadOutput(key.key, value.value);
                 output.address = readInfo.Address;
@@ -95,19 +95,19 @@ namespace FASTER.test.readaddress
             }
 
             // Return false to force a chain of values.
-            public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo) => false;
+            public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo) => false;
 
-            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) => false;
+            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RMWInfo rmwInfo) => false;
 
             // Record addresses
-            public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 dst = src;
                 this.lastWriteAddress = upsertInfo.Address;
                 return true;
             }
 
-            public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
             {
                 this.lastWriteAddress = rmwInfo.Address;
                 output.address = rmwInfo.Address;
@@ -115,7 +115,7 @@ namespace FASTER.test.readaddress
                 return true;
             }
 
-            public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
             {
                 this.lastWriteAddress = rmwInfo.Address;
                 output.address = rmwInfo.Address;

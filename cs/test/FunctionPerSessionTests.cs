@@ -20,7 +20,7 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override bool InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref InitialCount);
 
@@ -29,7 +29,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -38,7 +38,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref CopyCount);
 
@@ -54,7 +54,7 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override bool InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref InitialCount);
 
@@ -63,7 +63,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -73,7 +73,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override bool CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref CopyCount);
 
@@ -87,13 +87,13 @@ namespace FASTER.test
 
     public class RefCountedReader : FunctionsBase<int, RefCountedValue, Empty, RefCountedValue, Empty>
     {
-        public override bool SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref ReadInfo readInfo)
         {
             dst = value;
             return true;
         }
 
-        public override bool ConcurrentReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool ConcurrentReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref ReadInfo readInfo)
         {
             dst = value;
             return true;

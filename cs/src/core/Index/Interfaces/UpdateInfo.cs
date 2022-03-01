@@ -47,6 +47,11 @@ namespace FASTER.core
         public long Address { get; internal set; }
 
         /// <summary>
+        /// The header of the record.
+        /// </summary>
+        public RecordInfo RecordInfo { get; internal set; }
+
+        /// <summary>
         /// Whether FASTER should cancel the operation
         /// </summary>
         public bool CancelOperation { get; set; }
@@ -59,6 +64,7 @@ namespace FASTER.core
             this.SessionType = rmwInfo.SessionType;
             this.Version = rmwInfo.Version;
             this.Address = rmwInfo.Address;
+            this.RecordInfo = default;
             this.CancelOperation = false;
         }
     }
@@ -82,6 +88,11 @@ namespace FASTER.core
         /// The logical address of the record being operated on
         /// </summary>
         public long Address { get; internal set; }
+
+        /// <summary>
+        /// The header of the record.
+        /// </summary>
+        public RecordInfo RecordInfo { get; internal set; }
 
         /// <summary>
         /// Whether FASTER should cancel the operation
@@ -115,6 +126,11 @@ namespace FASTER.core
         public long Address { get; internal set; }
 
         /// <summary>
+        /// The header of the record.
+        /// </summary>
+        public RecordInfo RecordInfo { get; internal set; }
+
+        /// <summary>
         /// Whether FASTER should cancel the operation
         /// </summary>
         public bool CancelOperation { get; set; }
@@ -139,6 +155,11 @@ namespace FASTER.core
         /// The logical address of the record being operated on
         /// </summary>
         public long Address { get; internal set; }
+
+        /// <summary>
+        /// The header of the record.
+        /// </summary>
+        public RecordInfo RecordInfo { get; internal set; }
 
         /// <summary>
         /// Whether FASTER should cancel the operation

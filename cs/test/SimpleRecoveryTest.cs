@@ -345,7 +345,7 @@ namespace FASTER.test.recovery.sumstore.simple
         }
 
         // Read functions
-        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
         {
             if (expectedVersion >= 0)
                 Assert.AreEqual(expectedVersion, readInfo.Version);
@@ -353,7 +353,7 @@ namespace FASTER.test.recovery.sumstore.simple
             return true;
         }
 
-        public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
         {
             if (expectedVersion >= 0)
                 Assert.AreEqual(expectedVersion, readInfo.Version);
@@ -362,7 +362,7 @@ namespace FASTER.test.recovery.sumstore.simple
         }
 
         // RMW functions
-        public override bool InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
                 Assert.AreEqual(expectedVersion, rmwInfo.Version);
@@ -370,7 +370,7 @@ namespace FASTER.test.recovery.sumstore.simple
             return true;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
                 Assert.AreEqual(expectedVersion, rmwInfo.Version);
@@ -385,7 +385,7 @@ namespace FASTER.test.recovery.sumstore.simple
             return true;
         }
 
-        public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
                 Assert.AreEqual(expectedVersion, rmwInfo.Version);

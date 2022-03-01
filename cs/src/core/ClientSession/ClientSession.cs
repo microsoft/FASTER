@@ -815,7 +815,7 @@ namespace FASTER.core
 
             #region IFunctions - Reads
             public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
-                => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
+                => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out bool lockFailed)
@@ -828,7 +828,7 @@ namespace FASTER.core
 
             public bool ConcurrentReaderNoLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
-                if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo))
+                if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo))
                     return true;
                 if (readInfo.DeleteRecord)
                     recordInfo.Tombstone = true;
@@ -845,7 +845,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
+                    return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
                 }
                 finally
                 {
@@ -864,11 +864,11 @@ namespace FASTER.core
             #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) 
-                => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, reason);
+                => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) 
-                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, reason);
+                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out bool lockFailed)
@@ -884,7 +884,7 @@ namespace FASTER.core
             {
                 recordInfo.SetDirty();
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
-                return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo);
+                return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -915,11 +915,11 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
-                => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+                => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
-                => _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+                => _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
             #endregion InitialUpdater
 
             #region CopyUpdater
@@ -929,11 +929,11 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
-                => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref rmwInfo);
+                => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
-                => _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref rmwInfo);
+                => _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
             #endregion CopyUpdater
 
             #region InPlaceUpdater
@@ -951,7 +951,7 @@ namespace FASTER.core
             {
                 recordInfo.SetDirty();
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
-                if (_clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo))
+                if (_clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo))
                 {
                     rmwInfo.DeleteRecord = false;
                     rmwInfo.CancelOperation = false;
@@ -989,13 +989,13 @@ namespace FASTER.core
             #region IFunctions - Deletes
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo) 
-                => _clientSession.functions.SingleDeleter(ref key, ref value, ref recordInfo, ref deleteInfo);
+                => _clientSession.functions.SingleDeleter(ref key, ref value, ref deleteInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
             {
                 recordInfo.SetDirty();
-                _clientSession.functions.PostSingleDeleter(ref key, ref recordInfo, ref deleteInfo);
+                _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1012,7 +1012,7 @@ namespace FASTER.core
             {
                 recordInfo.SetDirty();
                 recordInfo.SetTombstone();
-                return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, ref deleteInfo);
+                return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
