@@ -119,6 +119,7 @@ namespace FASTER.core
         public unsafe void Lock(ref Key key, LockType lockType)
         {
             CheckAcquired();
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Lock()");
 
             LockOperation lockOp = new(LockOperationType.Lock, lockType);
 
@@ -150,6 +151,7 @@ namespace FASTER.core
         public void Unlock(ref Key key, LockType lockType)
         {
             CheckAcquired();
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Unlock()");
 
             LockOperation lockOp = new(LockOperationType.Unlock, lockType);
 
@@ -180,6 +182,7 @@ namespace FASTER.core
         public (bool exclusive, byte shared) IsLocked(ref Key key)
         {
             CheckAcquired();
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for IsLocked()");
 
             LockOperation lockOp = new(LockOperationType.IsLocked, LockType.None);
 

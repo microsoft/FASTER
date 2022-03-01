@@ -268,6 +268,8 @@ namespace FASTER.core
                             status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref container.Get(), ref output, logicalAddress, fasterSession, sessionCtx, WriteReason.CopyToTail, expired:true);
                         while (status == OperationStatus.RETRY_NOW);
                         container.Dispose();
+                        if (status == OperationStatus.NOTFOUND)
+                            status = OperationStatus.SUCCESS;
                         if (status == OperationStatus.SUCCESS)
                             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopiedRecord);
                     }
@@ -550,14 +552,14 @@ namespace FASTER.core
             {
                 // Immutable region or new record
                 status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, tag, entry,
-                                               latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, unsealPhysicalAddress);
+                                               latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress);
                 if (!OperationStatusUtils.IsAppend(status))
                 {
                     // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                     Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
-                    if (unsealPhysicalAddress != Constants.kInvalidAddress)
+                    if (unsealPhysicalAddress != Constants.kInvalidAddress && unsealPhysicalAddress >= hlog.HeadAddress)
                     {
-                        // Operation failed, so unseal the old record.
+                        // Operation failed, so unseal the old record. If it went below HeadAddress, we'll Unseal in InternalCompletePendingRead
                         hlog.GetInfo(unsealPhysicalAddress).Unseal();
                     }
                     if (status == OperationStatus.ALLOCATE_FAILED)
@@ -671,9 +673,29 @@ namespace FASTER.core
             return LatchDestination.NormalProcessing;
         }
 
+        /// <summary>
+        /// Create a new record for Upsert
+        /// </summary>
+        /// <param name="key">The record Key</param>
+        /// <param name="input">Input to the operation</param>
+        /// <param name="value">The value to insert</param>
+        /// <param name="output">The result of IFunctions.SingleWriter</param>
+        /// <param name="pendingContext">Information about the operation context</param>
+        /// <param name="fasterSession">The current session</param>
+        /// <param name="sessionCtx">The current session context</param>
+        /// <param name="bucket">The hash bucket for this key</param>
+        /// <param name="slot">The hash bucket entry slot for this key</param>
+        /// <param name="tag">The hash tag for this key</param>
+        /// <param name="entry">The hash bucket entry for this key</param>
+        /// <param name="latestLogicalAddress">The highest logical address (below readcache) for this key</param>
+        /// <param name="prevHighestReadCacheLogicalAddress">The highest readcache physical address for this key; used to test whether a readcache entry for the current key was added during the operation</param>
+        /// <param name="lowestReadCachePhysicalAddress">The lowest readcache physical address for this key; used to splice records between readcache and main log (rather than eliding the readcache chain)</param>
+        /// <param name="unsealLogicalAddress">The logical address of a record that ConcurrentWriter returned false for; we seal it so another operation cannot IPU it,
+        ///     transfer locks from it on success, and unseal it on failure</param>
+        /// <param name="unsealPhysicalAddress">The physical address of <paramref name="unsealLogicalAddress"/>; passed to avoid needing a virtual GetPhysicalAddress call</param>
         private OperationStatus CreateNewRecordUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                              FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, ushort tag, HashBucketEntry entry,
-                                                                                             long latestLogicalAddress, long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealPhysicalAddress) 
+                                                                                             long latestLogicalAddress, long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealLogicalAddress, long unsealPhysicalAddress) 
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
@@ -737,7 +759,7 @@ namespace FASTER.core
 
             if (success)
             {
-                if (unsealPhysicalAddress != Constants.kInvalidAddress)
+                if (unsealPhysicalAddress != Constants.kInvalidAddress && unsealLogicalAddress >= hlog.HeadAddress)
                     recordInfo.CopyLocksFrom(hlog.GetInfo(unsealPhysicalAddress));
                 else if (LockTable.IsActive)
                     LockTable.TransferToLogRecord(ref key, ref recordInfo);
@@ -1007,13 +1029,13 @@ namespace FASTER.core
             if (latchDestination != LatchDestination.CreatePendingContext)
             {
                 status = CreateNewRecordRMW(ref key, ref input, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
-                                            latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, unsealPhysicalAddress, expired: rmwInfo.DeleteRecord);
+                                            latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress, expired: rmwInfo.DeleteRecord);
                 if (!OperationStatusUtils.IsAppend(status))
                 {
                     // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
-                    if (unsealPhysicalAddress != Constants.kInvalidAddress)
+                    if (unsealPhysicalAddress != Constants.kInvalidAddress && unsealPhysicalAddress >= hlog.HeadAddress)
                     {
-                        // Operation failed, so unseal the old record.
+                        // Operation failed, so unseal the old record. If it went below HeadAddress, we'll Unseal in InternalCompletePendingRead
                         hlog.GetInfo(unsealPhysicalAddress).Unseal();
                     }
                     if (status == OperationStatus.ALLOCATE_FAILED)
@@ -1124,10 +1146,37 @@ namespace FASTER.core
             return LatchDestination.NormalProcessing;
         }
 
+        /// <summary>
+        /// Create a new record for RMW
+        /// </summary>
+        /// <typeparam name="Input"></typeparam>
+        /// <typeparam name="Output"></typeparam>
+        /// <typeparam name="Context"></typeparam>
+        /// <typeparam name="FasterSession"></typeparam>
+        /// <param name="key">The record Key</param>
+        /// <param name="input">Input to the operation</param>
+        /// <param name="output">The result of IFunctions.SingleWriter</param>
+        /// <param name="pendingContext">Information about the operation context</param>
+        /// <param name="fasterSession">The current session</param>
+        /// <param name="sessionCtx">The current session context</param>
+        /// <param name="bucket">The hash bucket for this key</param>
+        /// <param name="slot">The hash bucket entry slot for this key</param>
+        /// <param name="logicalAddress">If valid, the logical address of a record that returned false for IPU</param>
+        /// <param name="physicalAddress">The physical address of <paramref name="logicalAddress"/>; passed to avoid needing a virtual GetPhysicalAddress call</param>
+        /// <param name="tag">The hash tag for this key</param>
+        /// <param name="entry">The hash bucket entry for this key</param>
+        /// <param name="latestLogicalAddress">The highest logical address (below readcache) for this key</param>
+        /// <param name="prevHighestReadCacheLogicalAddress">The highest readcache physical address for this key; used to test whether a readcache entry for the current key was added during the operation</param>
+        /// <param name="lowestReadCachePhysicalAddress">The lowest readcache physical address for this key; used to splice records between readcache and main log (rather than eliding the readcache chain)</param>
+        /// <param name="unsealLogicalAddress">The logical address of a record that is being copied from; we seal it so another operation cannot IPU it,
+        ///     transfer locks from it on success, and unseal it on failure</param>
+        /// <param name="unsealPhysicalAddress">The physical address of <paramref name="unsealLogicalAddress"/>; passed to avoid needing a virtual GetPhysicalAddress call</param>
+        /// <param name="expired">Whether this is being called to insert an expired record</param>
+        /// <returns></returns>
         private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                           FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, long logicalAddress, 
                                                                                           long physicalAddress, ushort tag, HashBucketEntry entry, long latestLogicalAddress,
-                                                                                          long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealPhysicalAddress, bool expired)
+                                                                                          long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealLogicalAddress, long unsealPhysicalAddress, bool expired)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             RMWInfo rmwInfo = new()
@@ -1257,7 +1306,7 @@ namespace FASTER.core
 
             if (success)
             {
-                if (unsealPhysicalAddress != Constants.kInvalidAddress)
+                if (unsealPhysicalAddress != Constants.kInvalidAddress && unsealLogicalAddress >= hlog.HeadAddress)
                     recordInfo.CopyLocksFrom(hlog.GetInfo(unsealPhysicalAddress));
                 else if (LockTable.IsActive)
                     LockTable.TransferToLogRecord(ref key, ref recordInfo);
@@ -1538,9 +1587,9 @@ namespace FASTER.core
                 BlockAllocate(allocateSize, out long newLogicalAddress, sessionCtx, fasterSession, pendingContext.IsAsync);
                 if (newLogicalAddress == 0)
                 {
-                    if (unsealPhysicalAddress != Constants.kInvalidAddress)
+                    if (unsealPhysicalAddress != Constants.kInvalidAddress && unsealPhysicalAddress >= hlog.HeadAddress)
                     {
-                        // Operation failed, so unseal the old record.
+                        // Operation failed, so unseal the old record. If it went below HeadAddress, we'll Unseal in InternalCompletePendingRead
                         hlog.GetInfo(unsealPhysicalAddress).Unseal();
                     }
                     status = OperationStatus.ALLOCATE_FAILED;
@@ -1596,7 +1645,7 @@ namespace FASTER.core
 
                 if (success)
                 {
-                    if (unsealPhysicalAddress != Constants.kInvalidAddress)
+                    if (unsealPhysicalAddress != Constants.kInvalidAddress && logicalAddress >= hlog.HeadAddress)
                         recordInfo.CopyLocksFrom(hlog.GetInfo(unsealPhysicalAddress));
                     else if (LockTable.IsActive)
                         LockTable.TransferToLogRecord(ref key, ref recordInfo);
@@ -1615,9 +1664,9 @@ namespace FASTER.core
                     recordInfo.SetInvalid();
                     status = OperationStatus.RETRY_NOW;
 
-                    if (unsealPhysicalAddress != Constants.kInvalidAddress)
+                    if (unsealPhysicalAddress != Constants.kInvalidAddress && unsealPhysicalAddress >= hlog.HeadAddress)
                     {
-                        // Operation failed, so unseal the old record.
+                        // Operation failed, so unseal the old record. If it went below HeadAddress, we'll Unseal in InternalCompletePendingRead
                         hlog.GetInfo(unsealPhysicalAddress).Unseal();
                     }
                     goto LatchRelease;
@@ -1883,9 +1932,12 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
+            recordInfo.Unseal();  // Need to do this here because we might not create a new one, and this may have escaped to disk on a failed Upsert etc.a
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
+                SpinWaitUntilClosed(request.logicalAddress);
+
                 if (recordInfo.IsIntermediate(out var internalStatus))
                     return internalStatus;
 
@@ -1934,6 +1986,17 @@ namespace FASTER.core
             return OperationStatus.NOTFOUND;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void SpinWaitUntilClosed(long address)
+        {
+            while (address >= this.hlog.ClosedUntilAddress)
+            {
+                Debug.Assert(address < hlog.HeadAddress);
+                epoch.ProtectAndDrain();
+                Thread.Yield();
+            }
+        }
+
         /// <summary>
         /// Copies the record read from disk to tail of the HybridLog. 
         /// </summary>
@@ -1961,6 +2024,8 @@ namespace FASTER.core
                                  ref pendingContext.output, logicalAddress, fasterSession, currentCtx,
                                  (expired || pendingContext.CopyReadsToTail) ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
             while (status == OperationStatus.RETRY_NOW);
+            if (status == OperationStatus.NOTFOUND)
+                status = OperationStatus.SUCCESS;
             return status;
         }
 
@@ -2012,6 +2077,8 @@ namespace FASTER.core
 
             long lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
             long prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
+
+            SpinWaitUntilClosed(request.logicalAddress);
 
             while (true)
             {

@@ -87,7 +87,7 @@ namespace FASTER.test
             Directory.CreateDirectory(path);
         }
 
-        internal static bool IsRunningAzureTests => "yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests"));
+        internal static bool IsRunningAzureTests => "yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")) || "yes".Equals(Environment.GetEnvironmentVariable("RUNAZURETESTS"));
 
         internal static void IgnoreIfNotRunningAzureTests()
         {
@@ -102,8 +102,8 @@ namespace FASTER.test
         {
 #if WINDOWS
             LSD,
-            EmulatedAzure,
 #endif
+            EmulatedAzure,
             MLSD,
             LocalMemory
         }
@@ -126,11 +126,11 @@ namespace FASTER.test
 #endif
                         device = new LocalStorageDevice(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort);
                     break;
+#endif
                 case DeviceType.EmulatedAzure:
                     IgnoreIfNotRunningAzureTests();
                     device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose);
                     break;
-#endif
                 case DeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, preallocateFile, deleteOnClose, capacity, recoverDevice);
                     break;

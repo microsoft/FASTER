@@ -20,7 +20,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
-        public void TestDisposeReleasesFileLocksWithInprogressCommit([Values] TestUtils.DeviceType deviceType)
+        public void TestDisposeReleasesFileLocksWithCompletedCommit([Values] TestUtils.DeviceType deviceType)
         {
             string path = TestUtils.MethodTestDir + "/";
             string filename = path + "TestDisposeRelease" + deviceType.ToString() + ".log";
@@ -31,7 +31,7 @@ namespace FASTER.test
 
             Assert.IsTrue(fasterLog.TryEnqueue(new byte[100], out _));
 
-            fasterLog.Commit(spinWait: false);
+            fasterLog.Commit(spinWait: true);
             fasterLog.Dispose();
             device.Dispose();
             while (true)
