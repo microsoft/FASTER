@@ -362,11 +362,12 @@ namespace FASTER.test.recovery.sumstore.simple
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
                 Assert.AreEqual(expectedVersion, rmwInfo.Version);
             value = input.numClicks;
+            return true;
         }
 
         public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
@@ -384,11 +385,12 @@ namespace FASTER.test.recovery.sumstore.simple
             return true;
         }
 
-        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
                 Assert.AreEqual(expectedVersion, rmwInfo.Version);
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
+            return true;
         }
     }
 }

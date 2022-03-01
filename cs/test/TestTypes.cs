@@ -86,11 +86,12 @@ namespace FASTER.test
         }
 
         // RMW functions
-        public override void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
             output.value = value;
+            return true;
         }
 
         public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
@@ -103,11 +104,12 @@ namespace FASTER.test
 
         public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo) => true;
 
-        public override void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
             output.value = newValue;
+            return true;
         }
     }
 
@@ -147,10 +149,11 @@ namespace FASTER.test
         }
 
         // RMW functions
-        public override void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
+            return true;
         }
 
         public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
@@ -162,10 +165,11 @@ namespace FASTER.test
 
         public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo) => true;
 
-        public override void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
+            return true;
         }
     }
 
@@ -204,7 +208,7 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) => dst = src;
+        public override bool SingleWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) { dst = src; return true; }
 
         public override bool ConcurrentWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
         {
@@ -213,10 +217,11 @@ namespace FASTER.test
         }
 
         // RMW functions
-        public override void InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
+            return true;
         }
 
         public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
@@ -227,10 +232,11 @@ namespace FASTER.test
 
         public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo) => true;
 
-        public override void CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
+            return true;
         }
     }
 
@@ -238,17 +244,19 @@ namespace FASTER.test
     {
         public RMWSimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
 
-        public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             base.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
             output = input;
+            return true;
         }
 
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref rmwInfo);
             output = newValue;
+            return true;
         }
 
         /// <inheritdoc/>

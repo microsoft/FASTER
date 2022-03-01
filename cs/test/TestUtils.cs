@@ -21,6 +21,7 @@ namespace FASTER.test
         internal const string ReadCacheTestCategory = "ReadCache";
         internal const string LockTestCategory = "Locking";
         internal const string CheckpointRestoreCategory = "CheckpointRestore";
+        internal const string RMW = "RMW";
 
         /// <summary>
         /// Delete a directory recursively

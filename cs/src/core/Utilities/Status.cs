@@ -68,7 +68,7 @@ namespace FASTER.core
         internal Status(OperationStatus operationStatus) : this()
         {
             var basicOperationStatus = OperationStatusUtils.BasicOpCode(operationStatus);
-            Debug.Assert(basicOperationStatus == OperationStatus.SUCCESS || basicOperationStatus == OperationStatus.NOTFOUND);
+            Debug.Assert(basicOperationStatus <= OperationStatus.MAX_DIRECT_MAP_TO_STATUSCODE);
             statusCode = (StatusCode)basicOperationStatus | (StatusCode)((int)operationStatus >> OperationStatusUtils.OpStatusToStatusCodeShift);
         }
 
@@ -106,6 +106,11 @@ namespace FASTER.core
         /// Whether the operation is in an error state
         /// </summary>
         public bool IsFaulted => statusCode == StatusCode.Error;
+
+        /// <summary>
+        /// Whether the operation was canceled
+        /// </summary>
+        public bool IsCanceled => statusCode == StatusCode.Canceled;
 
         /// <summary>
         /// Whether the operation completed successfully, i.e., it is not pending and did not error out

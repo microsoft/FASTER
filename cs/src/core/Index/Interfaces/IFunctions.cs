@@ -62,7 +62,8 @@ namespace FASTER.core
         /// <param name="recordInfo">A reference to the header of the record</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <param name="reason">The operation for which this write is being done</param>
-        void SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason);
+        /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
+        bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason);
 
         /// <summary>
         /// Called after SingleWriter when a record containing an upsert of a new key has been successfully inserted at the tail of the log.
@@ -111,7 +112,8 @@ namespace FASTER.core
         /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo);
+        /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
+        bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo);
 
         /// <summary>
         /// Called after a record containing an initial update for RMW has been successfully inserted at the tail of the log.
@@ -146,7 +148,8 @@ namespace FASTER.core
         /// <param name="output">The location where <paramref name="newValue"/> is to be copied</param>
         /// <param name="recordInfo">A reference to the header of the record</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo);
+        /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
+        bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo);
 
         /// <summary>
         /// Called after a record containing an RCU (Read-Copy-Update) for RMW has been successfully inserted at the tail of the log.
@@ -197,7 +200,8 @@ namespace FASTER.core
         /// <param name="deleteInfo">Information about this update operation and its context</param>
         /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
-        void SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo);
+        /// <returns>True if the deleted record should be added, else false (e.g. cancellation)</returns>
+        bool SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo);
 
         /// <summary>
         /// Called after a record marking a Delete (with Tombstone set) has been successfully inserted at the tail of the log.

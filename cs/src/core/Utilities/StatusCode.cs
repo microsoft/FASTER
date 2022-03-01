@@ -55,16 +55,21 @@ namespace FASTER.core
         NotFound = 0x01,
 
         /// <summary>
+        /// The operation was canceled (e.g. by an IFunctions method setting info.CancelOperation). This is not combined with advanced enum values.
+        /// </summary>
+        Canceled = 0x02,
+
+        /// <summary>
         /// The Read or RMW operation went pending for I/O. This is not combined with advanced enum values; however, the application should
         /// use this to issue CompletePending operations, and then can apply knowledge of this to the advanced enum values to know whether,
         /// for example, a <see cref="CopyUpdatedRecord"/> was a copy of a record from the ReadOnly in-memory region or from Storage.
         /// </summary>
-        Pending = 0x02,
+        Pending = 0x03,
 
         /// <summary>
         /// An error occurred. This is not combined with advanced enum values.
         /// </summary>
-        Error = 0x03,
+        Error = 0x04,
 
         // Values 0x03-0x0F are reserved for future use
 

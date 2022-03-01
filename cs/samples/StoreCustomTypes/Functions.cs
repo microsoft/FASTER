@@ -8,8 +8,16 @@ namespace StoreCustomTypes
 {
     public sealed class Functions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) => value.value = input.value;
-        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) => newValue = oldValue;
+        public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        {
+            value.value = input.value;
+            return true;
+        }
+        public override bool CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        {
+            newValue = oldValue;
+            return true;
+        }
         public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { value.value += input.value; return true; }
 
 

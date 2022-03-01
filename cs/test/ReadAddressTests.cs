@@ -100,24 +100,27 @@ namespace FASTER.test.readaddress
             public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) => false;
 
             // Record addresses
-            public override void SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 dst = src;
                 this.lastWriteAddress = upsertInfo.Address;
+                return true;
             }
 
-            public override void InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
                 this.lastWriteAddress = rmwInfo.Address;
                 output.address = rmwInfo.Address;
                 output.value = value.value = input.value;
+                return true;
             }
 
-            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
                 this.lastWriteAddress = rmwInfo.Address;
                 output.address = rmwInfo.Address;
                 output.value = newValue.value = input.value;
+                return true;
             }
 
             public override void ReadCompletionCallback(ref Key key, ref Value input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)

@@ -24,8 +24,11 @@ namespace FASTER.core
     [Flags]
     internal enum OperationStatus
     {
-        SUCCESS,
-        NOTFOUND,
+        SUCCESS = StatusCode.Found,
+        NOTFOUND = StatusCode.NotFound,
+        CANCELED = StatusCode.Canceled,
+        MAX_DIRECT_MAP_TO_STATUSCODE = CANCELED,
+
         RETRY_NOW,
         RETRY_LATER,
         RECORD_ON_DISK,
@@ -57,7 +60,7 @@ namespace FASTER.core
         internal static bool TryConvertToStatusCode(OperationStatus advInternalStatus, out Status statusCode)
         {
             var internalStatus = BasicOpCode(advInternalStatus);
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            if (internalStatus <= OperationStatus.MAX_DIRECT_MAP_TO_STATUSCODE)
             {
                 statusCode = new(advInternalStatus);
                 return true;

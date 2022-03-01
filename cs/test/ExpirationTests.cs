@@ -33,7 +33,7 @@ namespace FASTER.test.Expiration
                                       SkippedCopyUpdate = NeedCopyUpdate | RMWCompletionCallback,
                                       DidCopyUpdate = NeedCopyUpdate | CopyUpdater | RMWCompletionCallback };
 
-        internal enum ExpirationResult { None, Incremented, ExpireDelete, ExpireRollover, Updated, NotUpdated, Deleted, NotDeleted };
+        internal enum ExpirationResult { None, Incremented, ExpireDelete, ExpireRollover, Updated, NotUpdated, Deleted, DeletedThenInserted, NotDeleted };
 
         public struct ExpirationInput
         {
@@ -62,9 +62,9 @@ namespace FASTER.test.Expiration
                                                 //  This simulates a timeout-based (rather than counter-based) expiration.
             ExpireDelete,                       // Increment a counter and expire the record by deleting it
                                                 //  Mutable:
-                                                //      IPU sets tombstone and returns true; we see this and TryRemoveDeletedHashEntry and return SUCCESS
+                                                //      IPU sets rwmInfo.DeleteRecord and returns false; we see this and TryRemoveDeletedHashEntry and return SUCCESS
                                                 //  OnDisk:
-                                                //      CU sets tombstone; operation proceeds as normal otherwise
+                                                //      CU sets rmwInfo.DeleteRecord and returns false; FASTER sets the Tombstone and the operation proceeds as normal otherwise
             ExpireRollover,                     // Increment a counter and expire the record by rolling it over (back to 1)
                                                 //  Mutable
                                                 //      IPU - InPlace (input len <= record len): Execute IU logic in current space; return true from IPU
@@ -101,7 +101,23 @@ namespace FASTER.test.Expiration
                                                 //      Equals: return false from NCU
                                                 //      NotEquals: return true from NCU, update in CU
                                                 //  NotExists: Return false from NIU
-            DeleteIfValueEquals,                // Delete the record for a key if the current value equals a specified value
+            DeleteIfValueEquals,                // Delete the record for a key if the current value equals a specified value (CopyUpdater only)
+                                                //  Mutable:
+                                                //      Equals: Same as ExpireDelete
+                                                //      NotEquals: no-op and return true from IPU
+                                                //  OnDisk:
+                                                //      Equals: Same as ExpireDelete
+                                                //      NotEquals: return false from NCU
+                                                //  NotExists: Return false from NIU
+            DeleteIfValueEqualsThenInsertNew,   // Delete the record for a key if the current value equals a specified value, then insert a new record (IPU only)
+                                                //  Mutable:
+                                                //      Equals: Same as ExpireDelete
+                                                //      NotEquals: no-op and return true from IPU
+                                                //  OnDisk:
+                                                //      Equals: Same as ExpireDelete
+                                                //      NotEquals: return false from NCU
+                                                //  NotExists: Return false from NIU
+            DeleteIfValueEqualsAndCancel,       // Delete the record for a key if the current value equals a specified value, and Cancel so the deleted record remains current (IPU only)
                                                 //  Mutable:
                                                 //      Equals: Same as ExpireDelete
                                                 //      NotEquals: no-op and return true from IPU
@@ -153,8 +169,11 @@ namespace FASTER.test.Expiration
                     case TestOp.SetIfValueNotEquals:
                         return false;
                     case TestOp.DeleteIfValueEquals:
+                    case TestOp.DeleteIfValueEqualsAndCancel:
                     case TestOp.DeleteIfValueNotEquals:
                         return false;
+                    case TestOp.DeleteIfValueEqualsThenInsertNew:
+                        return true; // IPU then IU
                     case TestOp.Revivify:
                         Assert.Fail($"{input.testOp} should not get here");
                         return false;
@@ -183,6 +202,10 @@ namespace FASTER.test.Expiration
                         return oldValue.field1 != input.comparisonValue;
                     case TestOp.DeleteIfValueEquals:
                         return oldValue.field1 == input.comparisonValue;
+                    case TestOp.DeleteIfValueEqualsThenInsertNew:
+                    case TestOp.DeleteIfValueEqualsAndCancel:
+                        Assert.Fail("Invalid Ops for NCU");
+                        return false;
                     case TestOp.DeleteIfValueNotEquals:
                         return oldValue.field1 != input.comparisonValue;
                     case TestOp.Revivify:
@@ -195,7 +218,7 @@ namespace FASTER.test.Expiration
             }
 
             /// <inheritdoc/>
-            public override void CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater(ref int key, ref ExpirationInput input, ref VLValue oldValue, ref VLValue newValue, ref ExpirationOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.CopyUpdater);
                 switch (input.testOp)
@@ -206,27 +229,27 @@ namespace FASTER.test.Expiration
                     case TestOp.PassiveExpire:
                         newValue.field1 = oldValue.field1 + 1;
                         output.result = ExpirationResult.Incremented;
-                        return;
+                        return true;
                     case TestOp.ExpireDelete:
                         Assert.AreEqual(GetValue(key) + 1, oldValue.field1);    // For this test we only call this operation when the value will expire
                         newValue.field1 = oldValue.field1 + 1;
-                        recordInfo.Tombstone = true;
+                        rmwInfo.DeleteRecord = true;
                         output.result = ExpirationResult.ExpireDelete;
-                        return;
+                        return true;
                     case TestOp.ExpireRollover:
                         Assert.AreEqual(GetValue(key) + 1, oldValue.field1);    // For this test we only call this operation when the value will expire
                         newValue.field1 = GetValue(key);
                         output.result = ExpirationResult.ExpireRollover;
                         output.retrievedValue = newValue.field1;
-                        return;
+                        return true;
                     case TestOp.SetIfKeyExists:
                         newValue.field1 = input.value;
                         output.result = ExpirationResult.Updated;
                         output.retrievedValue = newValue.field1;
-                        return;
+                        return true;
                     case TestOp.SetIfKeyNotExists:
                         Assert.Fail($"{input.testOp} should not get here");
-                        return;
+                        return false;
                     case TestOp.SetIfValueEquals:
                         if (oldValue.field1 == input.comparisonValue)
                         {
@@ -239,8 +262,7 @@ namespace FASTER.test.Expiration
                             output.result = ExpirationResult.NotUpdated;
                             output.retrievedValue = oldValue.field1;
                         }
-
-                        return;
+                        return true;
                     case TestOp.SetIfValueNotEquals:
                         if (oldValue.field1 != input.comparisonValue)
                         {
@@ -253,44 +275,47 @@ namespace FASTER.test.Expiration
                             output.result = ExpirationResult.NotUpdated;
                             output.retrievedValue = oldValue.field1;
                         }
-                        return;
+                        return true;
                     case TestOp.DeleteIfValueEquals:
                         if (oldValue.field1 == input.comparisonValue)
                         {
-                            recordInfo.Tombstone = true;
+                            rmwInfo.DeleteRecord = true;
                             output.result = ExpirationResult.Deleted;
+                            return false;
                         }
-                        else
-                        {
-                            Assert.Fail("Should have returned false from NeedCopyUpdate");
-                        }
-                        return;
+                        Assert.Fail("Should have returned false from NeedCopyUpdate");
+                        return false;
+                    case TestOp.DeleteIfValueEqualsThenInsertNew:
+                    case TestOp.DeleteIfValueEqualsAndCancel:
+                        Assert.Fail("Invalid ops for CopyUpdate");
+                        return false;
                     case TestOp.DeleteIfValueNotEquals:
                         if (oldValue.field1 != input.comparisonValue)
                         { 
-                            recordInfo.Tombstone = true;
+                            rmwInfo.DeleteRecord = true;
                             output.result = ExpirationResult.Deleted;
+                            return false;
                         }
-                        else
-                        {
-                            Assert.Fail("Should have returned false from NeedCopyUpdate");
-                        }
-                        return;
+                        Assert.Fail("Should have returned false from NeedCopyUpdate");
+                        return false;
                     case TestOp.Revivify:
                         Assert.Fail($"{input.testOp} should not get here");
-                        return;
+                        return false;
                     default:
                         Assert.Fail($"Unexpected testOp: {input.testOp}");
-                        return;
+                        return false;
                 }
             }
 
-            public override void InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.InitialUpdater);
                 value.field1 = input.value;
-                output.result = ExpirationResult.Updated;
+
+                // If InPlaceUpdater returned Delete, let the caller know both operations happened.
+                output.result = output.result == ExpirationResult.Deleted ? ExpirationResult.DeletedThenInserted : ExpirationResult.Updated;
                 output.retrievedValue = value.field1;
+                return true;
             }
 
             public override bool InPlaceUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
@@ -308,9 +333,10 @@ namespace FASTER.test.Expiration
                     case TestOp.ExpireDelete:
                         Assert.AreEqual(GetValue(key) + 1, value.field1);       // For this test we only call this operation when the value will expire
                         ++value.field1;
-                        recordInfo.Tombstone = true;
+                        rmwInfo.DeleteRecord = true;
+                        rmwInfo.CancelOperation = true; // IPU with tombstone, then quit (do not go to IU)
                         output.result = ExpirationResult.ExpireDelete;
-                        return true;
+                        return false;
                     case TestOp.ExpireRollover:
                         Assert.AreEqual(GetValue(key) + 1, value.field1);       // For this test we only call this operation when the value will expire
                         value.field1 = GetValue(key);
@@ -346,28 +372,39 @@ namespace FASTER.test.Expiration
                         output.retrievedValue = value.field1;
                         return true;
                     case TestOp.DeleteIfValueEquals:
+                        Assert.Fail("Invalid op for InPlaceUpdater");
+                        return false;
+                    case TestOp.DeleteIfValueEqualsThenInsertNew:
                         if (value.field1 == input.comparisonValue)
                         {
-                            recordInfo.Tombstone = true;
+                            rmwInfo.DeleteRecord = true;
                             output.result = ExpirationResult.Deleted;
+                            return false;
                         }
-                        else
+                        output.result = ExpirationResult.NotDeleted;
+                        output.retrievedValue = value.field1;
+                        return true;
+                    case TestOp.DeleteIfValueEqualsAndCancel:
+                        if (value.field1 == input.comparisonValue)
                         {
-                            output.result = ExpirationResult.NotDeleted;
-                            output.retrievedValue = value.field1;
+                            rmwInfo.DeleteRecord = true;
+                            rmwInfo.CancelOperation = true;
+                            output.result = ExpirationResult.Deleted;
+                            return false;
                         }
+                        output.result = ExpirationResult.NotDeleted;
+                        output.retrievedValue = value.field1;
                         return true;
                     case TestOp.DeleteIfValueNotEquals:
                         if (value.field1 != input.comparisonValue)
                         {
-                            recordInfo.Tombstone = true;
+                            rmwInfo.DeleteRecord = true;
+                            rmwInfo.CancelOperation = true; // IPU with Tombstone and stop (do not go to IU)
                             output.result = ExpirationResult.Deleted;
+                            return false;
                         }
-                        else
-                        {
-                            output.result = ExpirationResult.NotDeleted;
-                            output.retrievedValue = value.field1;
-                        }
+                        output.result = ExpirationResult.NotDeleted;
+                        output.retrievedValue = value.field1;
                         return true;
                     case TestOp.Revivify:
                         Assert.Fail($"{input.testOp} should not get here");
@@ -408,9 +445,10 @@ namespace FASTER.test.Expiration
             }
 
             // Upsert functions
-            public override void SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool SingleWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 src.CopyTo(ref dst);
+                return true;
             }
 
             public override bool ConcurrentWriter(ref int key, ref ExpirationInput input, ref VLValue src, ref VLValue dst, ref ExpirationOutput output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
@@ -580,7 +618,7 @@ namespace FASTER.test.Expiration
             MaybeEvict(isOnDisk);
             const TestOp testOp = TestOp.ExpireDelete;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
+            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.NotFound | StatusCode.InPlaceUpdatedRecord);
 
             // Increment/Delete it
             ExpirationInput input = new() { testOp = testOp };
@@ -753,24 +791,67 @@ namespace FASTER.test.Expiration
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteIfValueEqualsTest([Values] bool isOnDisk)
+        public void DeleteThenInsertIfValueEqualsTest([Values] bool isOnDisk)
         {
             InitialIncrement();
             MaybeEvict(isOnDisk);
-            const TestOp testOp = TestOp.DeleteIfValueEquals;
-            var key = ModifyKey;
-            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
 
+            // If isOnDisk, we'll go through CopyUpdater instead of InPlaceUpdater.
+            // However, InPlaceUpdater should not be called for a nonexistent key so VerifyKeyNotCreated vs. IPU
+            // needs a two-step setting of testOp, so set it for the onDisk (CopyUpdater) value here, then update below.
+            TestOp testOp = TestOp.DeleteIfValueEquals;
+            var key = ModifyKey;
+            Status expectedFoundRmwStatus = new(StatusCode.NotFound | StatusCode.CreatedRecord);
+
+            if (!isOnDisk)
+                testOp = TestOp.DeleteIfValueEquals;
             VerifyKeyNotCreated(testOp, isOnDisk);
+            if (!isOnDisk)
+                testOp = TestOp.DeleteIfValueEqualsThenInsertNew;
 
             // Value equals - delete it
             ExpirationInput input = new() { testOp = testOp, comparisonValue = GetValue(key) + 1 };
             ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
-            Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.Deleted, output.result);
+            Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate : Funcs.InitialUpdater, output.functionsCalled);
+            Assert.AreEqual(isOnDisk ? ExpirationResult.Deleted : ExpirationResult.DeletedThenInserted, output.result);
 
             // Verify it's not there
             GetRecord(key, new(StatusCode.NotFound), isOnDisk);
+
+            // Value doesn't equal - no-op
+            key += 1;   // We deleted ModifyKey so get the next-higher key
+            input = new() { testOp = testOp, comparisonValue = -1 };
+            output = ExecuteRMW(key, ref input, isOnDisk, GetMutableVsOnDiskStatus(isOnDisk));
+            Assert.AreEqual(isOnDisk ? Funcs.SkippedCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
+            Assert.AreEqual(isOnDisk ? ExpirationResult.None : ExpirationResult.NotDeleted, output.result);
+            Assert.AreEqual(isOnDisk ? 0 : GetValue(key), output.retrievedValue);
+
+            // Verify it's there with unchanged value; note that it has not been InitialIncrement()ed
+            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            Assert.AreEqual(GetValue(key), output.retrievedValue);
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke"), Category("RMW")]
+        public void DeleteAndCancelIfValueEqualsTest()
+        {
+            InitialIncrement();
+            const TestOp testOp = TestOp.DeleteIfValueEqualsAndCancel;
+            var key = ModifyKey;
+            bool isOnDisk = false;
+            Status expectedFoundRmwStatus = new(StatusCode.NotFound | StatusCode.InPlaceUpdatedRecord);
+
+            VerifyKeyNotCreated(testOp, isOnDisk: false);
+
+            // Value equals - delete it
+            ExpirationInput input = new() { testOp = testOp, comparisonValue = GetValue(key) + 1 };
+            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
+            Assert.AreEqual(Funcs.InPlaceUpdater, output.functionsCalled);
+            Assert.AreEqual(ExpirationResult.Deleted, output.result);
+
+            // Verify it's not there
+            GetRecord(key, new(StatusCode.NotFound), isOnDisk: false);
 
             // Value doesn't equal - no-op
             key += 1;   // We deleted ModifyKey so get the next-higher key
@@ -794,7 +875,9 @@ namespace FASTER.test.Expiration
             MaybeEvict(isOnDisk);
             const TestOp testOp = TestOp.DeleteIfValueNotEquals;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
+
+            // For this test, IPU will Cancel rather than go to the IPU path
+            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.NotFound | StatusCode.CreatedRecord) : new(StatusCode.NotFound | StatusCode.InPlaceUpdatedRecord);
 
             VerifyKeyNotCreated(testOp, isOnDisk);
 

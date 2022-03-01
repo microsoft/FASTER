@@ -28,14 +28,14 @@ namespace FASTER.test
 
             public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) { this.pswAddress = upsertInfo.Address; }
 
-            public override void InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { value = input; }
+            public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { value = input; return true; }
             /// <inheritdoc/>
             public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { this.piuAddress = rmwInfo.Address; }
 
             public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) => false; // For this test, we want this to fail and lead to InitialUpdater
 
             /// <inheritdoc/>
-            public override void CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { newValue = oldValue; }
+            public override bool CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { newValue = oldValue; return true; }
             /// <inheritdoc/>
             public override void PostCopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { this.pcuAddress = rmwInfo.Address; }
 

@@ -47,6 +47,11 @@ namespace FASTER.core
         public long Address { get; internal set; }
 
         /// <summary>
+        /// Whether FASTER should cancel the operation
+        /// </summary>
+        public bool CancelOperation { get; set; }
+
+        /// <summary>
         /// Utility ctor
         /// </summary>
         public UpsertInfo(ref RMWInfo rmwInfo)
@@ -54,6 +59,7 @@ namespace FASTER.core
             this.SessionType = rmwInfo.SessionType;
             this.Version = rmwInfo.Version;
             this.Address = rmwInfo.Address;
+            this.CancelOperation = false;
         }
     }
 
@@ -76,6 +82,16 @@ namespace FASTER.core
         /// The logical address of the record being operated on
         /// </summary>
         public long Address { get; internal set; }
+
+        /// <summary>
+        /// Whether FASTER should cancel the operation
+        /// </summary>
+        public bool CancelOperation { get; set; }
+
+        /// <summary>
+        /// Whether FASTER should perform a Delete on the record
+        /// </summary>
+        public bool DeleteRecord { get; set; }
     }
 
     /// <summary>
@@ -97,6 +113,11 @@ namespace FASTER.core
         /// The logical address of the record being operated on
         /// </summary>
         public long Address { get; internal set; }
+
+        /// <summary>
+        /// Whether FASTER should cancel the operation
+        /// </summary>
+        public bool CancelOperation { get; set; }
     }
 
     /// <summary>
@@ -118,5 +139,15 @@ namespace FASTER.core
         /// The logical address of the record being operated on
         /// </summary>
         public long Address { get; internal set; }
+
+        /// <summary>
+        /// Whether FASTER should cancel the operation
+        /// </summary>
+        public bool CancelOperation { get; set; }
+
+        /// <summary>
+        /// Whether FASTER should perform a Delete on the record
+        /// </summary>
+        public bool DeleteRecord { get; set; }
     }
 }

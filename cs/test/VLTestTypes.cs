@@ -122,9 +122,10 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool SingleWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             src.CopyTo(ref dst);
+            return true;
         }
 
         public override bool ConcurrentWriter(ref Key key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
@@ -168,9 +169,10 @@ namespace FASTER.test
         }
 
         // Upsert functions
-        public override void SingleWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool SingleWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             src.CopyTo(ref dst);
+            return true;
         }
 
         public override bool ConcurrentWriter(ref VLValue key, ref Input input, ref VLValue src, ref VLValue dst, ref int[] output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)

@@ -12,10 +12,11 @@ namespace FASTER.test.SingleWriter
     {
         internal WriteReason actualReason;
 
-        public override void SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             Assert.AreEqual((WriteReason)input, reason);
             actualReason = reason;
+            return true;
         }
 
         public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
