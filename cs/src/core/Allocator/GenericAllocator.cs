@@ -447,7 +447,7 @@ namespace FASTER.core
 
                 if (endPosition > ObjectBlockSize || i == (end / recordSize) - 1)
                 {
-                    var memoryStreamLength = (int)ms.Position;
+                    var memoryStreamLength = (int)endPosition;
 
                     var _objBuffer = bufferPool.Get(memoryStreamLength);
 
