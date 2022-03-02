@@ -6,7 +6,7 @@ variables:
 jobs:
 - job: 'csharpWindows'
   pool:
-    vmImage: windows-latest
+    vmImage: windows-2022
   displayName: 'C# (Windows)'
   timeoutInMinutes: 75 
 
@@ -27,17 +27,15 @@ jobs:
         buildConfiguration: 'Release'
 
   steps:
-  - powershell: 'Invoke-WebRequest -OutFile azure-storage-emulator.msi -Uri "https://go.microsoft.com/fwlink/?LinkId=717179&clcid=0x409"'
-    displayName: 'Download Azure Storage Emulator'
+  - task: NodeTool@0
+    inputs:
+       versionSpec: 13.x
 
-  - powershell:  'msiexec /passive /lvx installation.log /a azure-storage-emulator.msi TARGETDIR="C:\storage-emulator"'
-    displayName: 'Install Azure Storage Emulator'
+  - script : npm install -g azurite
+    displayName: Install Azurite
 
-  - script: '"C:\Program Files\Microsoft SQL Server\130\Tools\Binn\SqlLocalDB.exe" create "v13.0" 13.0 -s'
-    displayName: 'Init Test Db'
-
-  - script: '"C:\storage-emulator\root\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
-    displayName: 'Start Storage Emulator'
+  - script : start /B azurite
+    displayName: Start Azurite
 
   - task: DotNetCoreCLI@2
     displayName: 'dotnet build $(buildConfiguration)'
@@ -62,7 +60,7 @@ jobs:
 
 - job: 'cppWindows'
   pool:
-    vmImage: vs2017-win2016
+    vmImage: windows-2022
   displayName: 'C++ (Windows)'
 
   strategy:
@@ -77,10 +75,10 @@ jobs:
 
   steps:
   - task: CMake@1
-    displayName: 'CMake .. -G"Visual Studio 15 2017 Win64"'
+    displayName: 'CMake .. -G"Visual Studio 17 2022"'
     inputs:
       workingDirectory: 'cc/build'
-      cmakeArgs: '.. -G"Visual Studio 15 2017 Win64"'
+      cmakeArgs: '.. -G"Visual Studio 17 2022"'
 
   - task: MSBuild@1
     displayName: 'Build solution cc/build/FASTER.sln'
@@ -94,33 +92,40 @@ jobs:
 
 - job: 'cppLinux'
   pool:
-    vmImage: ubuntu-18.04
+    vmImage: ubuntu-20.04
   displayName: 'C++ (Linux)'
 
   steps:
   - script: |
-      sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
       sudo apt update
-      sudo apt install -y g++-7 libaio-dev uuid-dev libtbb-dev
+      sudo apt install -y g++ libaio-dev uuid-dev libtbb-dev
     displayName: 'Install depdendencies'
   - script: |
-      export CXX='g++-7'
+      git clone https://git.kernel.dk/liburing
+      cd liburing
+      git checkout liburing-0.7
+      ./configure
+      sudo make install
+    displayName: Install Liburing
+
+  - script: |
       cd cc
       mkdir -p build/Debug build/Release
       cd build/Debug
-      cmake -DCMAKE_BUILD_TYPE=Debug ../..
+      cmake -DCMAKE_BUILD_TYPE=Debug -DUSE_URING=ON ../..
       make -j
       cd ../../build/Release
-      cmake -DCMAKE_BUILD_TYPE=Release ../..
+      cmake -DCMAKE_BUILD_TYPE=Release -DUSE_URING=ON ../..
       make -j
     displayName: 'Compile'
   - script: |
       CTEST_OUTPUT_ON_FAILURE=1 make test
     workingDirectory: 'cc/build/Debug'
     displayName: 'Run Tests (Debug)'
+
 - job: 'csharpLinux'
   pool:
-    vmImage: ubuntu-18.04
+    vmImage: ubuntu-20.04
   displayName: 'C# (Linux)'
 
   strategy:
@@ -134,6 +139,12 @@ jobs:
         buildConfiguration: 'Release'
 
   steps:
+  - bash: |
+      sudo npm install -g azurite
+      sudo mkdir azurite
+      sudo azurite --silent --location azurite --debug azurite\debug.log &
+    displayName: 'Install and Run Azurite'
+
   - task: DotNetCoreCLI@2
     displayName: 'dotnet build $(buildConfiguration)'
     inputs:
@@ -157,7 +168,7 @@ jobs:
 
 # - job: 'cppBlobsWindows'
 #   pool:
-#     vmImage: vs2017-win2016
+#     vmImage: windows-2022
 #   displayName: 'C++ Blobs (Windows)'
 
 #   strategy:
@@ -172,10 +183,10 @@ jobs:
 
 #   steps:
 #   - task: CMake@1
-#     displayName: 'CMake .. -G"Visual Studio 15 2017 Win64" -DUSE_BLOBS=ON'
+#     displayName: 'CMake .. -G"Visual Studio 16 2019" -DUSE_BLOBS=ON'
 #     inputs:
 #       workingDirectory: 'cc/build'
-#       cmakeArgs: '.. -G"Visual Studio 15 2017 Win64" -DUSE_BLOBS=ON'
+#       cmakeArgs: '.. -G"Visual Studio 16 2019" -DUSE_BLOBS=ON'
 
 #   - script: 'git clone https://github.com/microsoft/vcpkg'
 #     workingDirectory: 'cc/build'
@@ -198,18 +209,6 @@ jobs:
 #     inputs:
 #       solution: 'cc/build/FASTER.sln'
 #       msbuildArguments: '/m /p:Configuration=$(buildConfiguration) /p:Platform=$(buildPlatform)'
-
-#   - powershell: 'Invoke-WebRequest -OutFile azure-storage-emulator.msi -Uri "https://go.microsoft.com/fwlink/?LinkId=717179&clcid=0x409"'
-#     displayName: 'Download Azure Storage Emulator'
-
-#   - powershell:  'msiexec /passive /lvx installation.log /a azure-storage-emulator.msi TARGETDIR="C:\storage-emulator"'
-#     displayName: 'Install Azure Storage Emulator'
-
-#   - script: '"C:\Program Files\Microsoft SQL Server\130\Tools\Binn\SqlLocalDB.exe" create "v13.0" 13.0 -s'
-#     displayName: 'Init Test Db'
-
-#   - script: '"C:\storage-emulator\root\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
-#     displayName: 'Start Storage Emulator'
 
 #   - script: |
 #       ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "azure_test"
