@@ -60,7 +60,7 @@ namespace FASTER.test.readaddress
         {
             internal long lastWriteAddress = Constants.kInvalidAddress;
             readonly bool useReadCache;
-            internal ReadFlags readFlags = ReadFlags.DisableReadCache;
+            internal ReadFlags readFlags = ReadFlags.None | ReadFlags.DisableReadCache;
 
             internal Functions()
             {
@@ -97,6 +97,7 @@ namespace FASTER.test.readaddress
             public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 dst = src;
+                output.address = upsertInfo.Address;
                 this.lastWriteAddress = upsertInfo.Address;
                 return true;
             }
@@ -124,7 +125,7 @@ namespace FASTER.test.readaddress
                     if (this.useReadCache && !this.readFlags.HasFlag(ReadFlags.DisableReadCacheReads))
                         Assert.AreEqual(Constants.kInvalidAddress, recordMetadata.Address, $"key {key}");
                     else
-                        Assert.AreEqual(output.address, recordMetadata.Address, $"key {key}");
+                        Assert.AreEqual(output.address, recordMetadata.Address, $"key {key}");  // Should agree with what SingleWriter set
                 }
             }
 
@@ -262,7 +263,7 @@ namespace FASTER.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
         [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
         [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("Read")]
         public void VersionedReadSyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
@@ -300,7 +301,7 @@ namespace FASTER.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
         [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
         [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("Read")]
         public async Task VersionedReadAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
@@ -332,7 +333,7 @@ namespace FASTER.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
         [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
         [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("Read")]
         public void ReadAtAddressSyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
@@ -387,7 +388,7 @@ namespace FASTER.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
         [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
         [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("Read")]
         public async Task ReadAtAddressAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
@@ -432,7 +433,7 @@ namespace FASTER.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
         [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
         [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("Read")]
         public async Task ReadAtAddressAsyncReadFlagsNoneTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
@@ -477,7 +478,7 @@ namespace FASTER.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
         [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
         [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("Read")]
         public async Task ReadAtAddressAsyncReadFlagsSkipCacheTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
@@ -507,7 +508,7 @@ namespace FASTER.test.readaddress
                         var saveOutput = output;
                         var saveRecordMetadata = recordMetadata;
 
-                        readOptions.ReadFlags = ReadFlags.DisableReadCacheReads | ReadFlags.DisableReadCacheUpdates;
+                        readOptions.ReadFlags = ReadFlags.None | ReadFlags.DisableReadCacheReads | ReadFlags.DisableReadCacheUpdates;
                         readAsyncResult = await session.ReadAtAddressAsync(ref input, ref readOptions, default, maxLap + 1);
                         (status, output) = readAsyncResult.Complete(out recordMetadata);
 
@@ -523,7 +524,7 @@ namespace FASTER.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
         [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
         [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("Read")]
         public void ReadNoKeySyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
         {
             var useReadCache = urc == UseReadCache.ReadCache;
@@ -566,7 +567,7 @@ namespace FASTER.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
         [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
         [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("Read")]
         public async Task ReadNoKeyAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
@@ -599,6 +600,76 @@ namespace FASTER.test.readaddress
             }
 
             await testStore.Flush();
+        }
+
+        internal struct ReadFlagsMerge
+        {
+            internal ReadFlags Fkv, Session, Read, Expected;
+        }
+
+        [Test]
+        [Category("FasterKV"), Category("Read")]
+        public void ReadFlagsMergeTest()
+        {
+            ReadFlagsMerge[] merges = new ReadFlagsMerge[]
+            {
+                new()
+                {
+                    Fkv = ReadFlags.None,
+                    Session = ReadFlags.Default,
+                    Read = ReadFlags.Default,
+                    Expected = ReadFlags.Default
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.None,
+                    Read = ReadFlags.Default,
+                    Expected = ReadFlags.Default
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.Default,
+                    Read = ReadFlags.None,
+                    Expected = ReadFlags.Default
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.Default | ReadFlags.DisableReadCache,
+                    Read = ReadFlags.Default,
+                    Expected = ReadFlags.CopyReadsToTail | ReadFlags.DisableReadCacheReads | ReadFlags.DisableReadCacheUpdates
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.Default,
+                    Read = ReadFlags.Default | ReadFlags.DisableReadCacheReads,
+                    Expected = ReadFlags.CopyReadsToTail | ReadFlags.DisableReadCacheReads
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.None | ReadFlags.DisableReadCacheUpdates,
+                    Read = ReadFlags.Default,
+                    Expected = ReadFlags.DisableReadCacheUpdates
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.Default,
+                    Read = ReadFlags.None | ReadFlags.DisableReadCache,
+                    Expected = ReadFlags.DisableReadCacheReads | ReadFlags.DisableReadCacheUpdates
+                },
+            };
+
+            for (var ii = 0; ii < merges.Length; ++ii)
+            {
+                var merge = merges[ii];
+                var flags = FasterKV<int, int>.MergeReadFlags(merge.Fkv, merge.Session, merge.Read);
+                Assert.AreEqual(merge.Expected, flags, $"iter {ii}");
+            }
         }
     }
 

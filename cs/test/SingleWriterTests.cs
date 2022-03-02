@@ -45,18 +45,21 @@ namespace FASTER.test.SingleWriter
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             functions = new SingleWriterTestFunctions();
-            ReadCacheSettings readCacheSettings = default;
+            LogSettings logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadFlags = ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly };
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCopyDestination dest)
                 {
                     if (dest == ReadCopyDestination.ReadCache)
-                        readCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
+                    {
+                        logSettings.ReadCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
+                        logSettings.ReadFlags = ReadFlags.Default;
+                    }
                     break;
                 }
             }
 
-            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings, ReadFlags = ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly });
+            fht = new FasterKV<int, int>(1L << 20, logSettings);
             session = fht.For(functions).NewSession<SingleWriterTestFunctions>();
         }
 

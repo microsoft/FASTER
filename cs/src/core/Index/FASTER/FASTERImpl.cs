@@ -2702,7 +2702,7 @@ namespace FASTER.core
                                 tombstone: false, dirty: true,
                                 latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
-                upsertInfo.Address = newPhysicalAddress;
+                upsertInfo.Address = newLogicalAddress;
                 recordInfo.Tombstone = expired;
 
                 // Reflect whether we overrode a readcache reason

@@ -21,7 +21,7 @@ namespace FASTER.core
         Default = 0x0,
 
         /// <summary>
-        /// Turn off all flags
+        /// Turn off all flags from higher levels. May be combined with other flags to specify an entirely new set of flags.
         /// </summary>
         None = 0x1,
 

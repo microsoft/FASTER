@@ -556,13 +556,13 @@ namespace FASTER.core
 
         internal static ReadFlags MergeReadFlags(ReadFlags fkv, ReadFlags session, ReadFlags read)
         {
-            ReadFlags flags = ((session & ReadFlags.None) == 0) ? fkv : ReadFlags.None;
-            flags |= session & ~ReadFlags.Default;
+            ReadFlags flags = ((session & ReadFlags.None) == 0) ? fkv : ReadFlags.Default;
+            flags |= session & ~ReadFlags.None;
 
             if ((read & ReadFlags.None) != 0)
-                flags = ReadFlags.None;
-            flags |= read & ~ReadFlags.Default;
-            return flags;
+                flags = ReadFlags.Default;
+            flags |= read;
+            return flags & ~ReadFlags.None;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
