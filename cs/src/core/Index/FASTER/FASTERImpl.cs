@@ -151,7 +151,7 @@ namespace FASTER.core
 
                 if (UseReadCache)
                 {
-                    if (pendingContext.SkipReadCache || pendingContext.NoKey)
+                    if (pendingContext.DisableReadCacheReads || pendingContext.NoKey)
                     {
                         SkipReadCache(ref logicalAddress, out _);
                     }
@@ -227,11 +227,10 @@ namespace FASTER.core
                 if (recordInfo.IsIntermediate(out status, useStartAddress))
                     return status;
 
-                bool lockFailed = false;
                 if (recordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                if (fasterSession.ConcurrentReader(ref key, ref input, ref recordValue, ref output, ref recordInfo, ref readInfo, out lockFailed))
+                if (fasterSession.ConcurrentReader(ref key, ref input, ref recordValue, ref output, ref recordInfo, ref readInfo, out bool lockFailed))
                     return OperationStatus.SUCCESS;
                 if (readInfo.CancelOperation)
                     return OperationStatus.CANCELED;
@@ -261,11 +260,11 @@ namespace FASTER.core
                 if (fasterSession.SingleReader(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref recordInfo, ref readInfo)
                     || readInfo.DeleteRecord)
                 {
-                    if ((CopyReadsToTail == CopyReadsToTail.FromReadOnly && !pendingContext.SkipCopyReadsToTail) || readInfo.DeleteRecord)
+                    if (pendingContext.CopyReadsToTailFromReadOnly || readInfo.DeleteRecord)
                     {
                         var container = hlog.GetValueContainer(ref hlog.GetValue(physicalAddress));
                         do
-                            status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref container.Get(), ref output, logicalAddress, fasterSession, sessionCtx, WriteReason.CopyToTail, expired:true);
+                            status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref container.Get(), ref output, logicalAddress, fasterSession, sessionCtx, WriteReason.CopyToTail, expired:readInfo.DeleteRecord);
                         while (status == OperationStatus.RETRY_NOW);
                         container.Dispose();
                         if (status == OperationStatus.NOTFOUND)
@@ -1971,9 +1970,8 @@ namespace FASTER.core
 
                 // If there is a LockTable entry for this record, we must force the CopyToTail, or the lock will be ignored.
                 if (LockTable.ContainsKey(ref key)
-                    || (CopyReadsToTail != CopyReadsToTail.None && !pendingContext.SkipCopyReadsToTail)
                     || pendingContext.CopyReadsToTail
-                    || (UseReadCache && !pendingContext.SkipReadCache)
+                    || (UseReadCache && !pendingContext.DisableReadCacheUpdates)
                     || readInfo.DeleteRecord)
                     return InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, fasterSession, currentCtx, expired:readInfo.DeleteRecord);
 
@@ -2646,7 +2644,7 @@ namespace FASTER.core
             {
                 // Note1: In Compact, expectedLogicalAddress may not exactly match the source of this copy operation, but instead only an upper bound.
                 // Note2: In the case of ReadAtAddress, we will bail here by design; we assume anything in the readcache is the latest version.
-                //        Any loop to retrieve prior versions should set ReadFlags.SkipReadCache; see ReadAddressTests.
+                //        Any loop to retrieve prior versions should set ReadFlags.DisableReadCache*; see ReadAddressTests.
                 if (logicalAddress < hlog.HeadAddress)
                     return OperationStatus.RECORD_ON_DISK;
                 else

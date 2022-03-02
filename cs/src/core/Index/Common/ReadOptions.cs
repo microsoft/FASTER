@@ -16,7 +16,14 @@ namespace FASTER.core
         public long StartAddress;
 
         /// <summary>
-        /// Flags for controlling operations within the read, such as ReadCache interaction. When doing versioned reads, this should be set to <see cref="ReadFlags.SkipCopyReads"/>
+        /// The minimum address to search at (records are searched toward the head--that is, in decreasing address order);
+        /// if this is Constants.kInvalidAddress, the search continues until no further records are found, as in other forms of Read.
+        /// </summary>
+        public long StopAddress;
+
+        /// <summary>
+        /// Flags for controlling operations within the read, such as ReadCache interaction. When doing versioned reads, this should turn off <see cref="ReadFlags.CopyReadsToTail"/>
+        /// and turn on <see cref="ReadFlags.DisableReadCacheUpdates"/>
         /// </summary>
         public ReadFlags ReadFlags;
     }

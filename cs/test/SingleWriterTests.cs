@@ -56,7 +56,7 @@ namespace FASTER.test.SingleWriter
                 }
             }
 
-            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings, CopyReadsToTail = CopyReadsToTail.FromStorage });
+            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings, ReadFlags = ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly });
             session = fht.For(functions).NewSession<SingleWriterTestFunctions>();
         }
 
@@ -104,7 +104,7 @@ namespace FASTER.test.SingleWriter
             key = 64;
             expectedReason = WriteReason.CopyToTail;
             input = (int)expectedReason;
-            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyToTail };
+            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail };
             status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending && !status.IsCompleted);
             session.CompletePendingWithOutputs(out var outputs, wait: true);

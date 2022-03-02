@@ -166,7 +166,8 @@ namespace FASTER.core
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, Constants.kInvalidAddress, userContext, serialNo, cancellationToken);
+            ReadOptions readOptions = default;
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
         }
 
         /// <inheritdoc/>
@@ -174,7 +175,8 @@ namespace FASTER.core
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
+            ReadOptions readOptions = default;
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, context, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -183,7 +185,8 @@ namespace FASTER.core
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             Input input = default;
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, Constants.kInvalidAddress, userContext, serialNo, token);
+            ReadOptions readOptions = default;
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -192,7 +195,8 @@ namespace FASTER.core
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             Input input = default;
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, Constants.kInvalidAddress, context, serialNo, token);
+            ReadOptions readOptions = default;
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, context, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -201,8 +205,7 @@ namespace FASTER.core
                                                                                                  Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            var operationFlags = FasterKV<Key, Value>.PendingContext<Input, Output, Context>.GetOperationFlags(readOptions.ReadFlags);
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, readOptions.StartAddress, userContext, serialNo, cancellationToken, operationFlags);
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
         }
 
         /// <inheritdoc/>
@@ -212,8 +215,7 @@ namespace FASTER.core
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             Key key = default;
-            var operationFlags = FasterKV<Key, Value>.PendingContext<Input, Output, Context>.GetOperationFlags(readOptions.ReadFlags, noKey: true);
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, readOptions.StartAddress, userContext, serialNo, cancellationToken, operationFlags);
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken, noKey: true);
         }
 
         /// <inheritdoc/>

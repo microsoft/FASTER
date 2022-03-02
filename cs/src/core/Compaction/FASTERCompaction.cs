@@ -51,11 +51,7 @@ namespace FASTER.core
                     if (!recordInfo.Tombstone && !cf.IsDeleted(ref key, ref value))
                     {
                         OperationStatus copyStatus;
-                        ReadOptions readOptions = new()
-                        {
-                            StartAddress = iter1.NextAddress,
-                            ReadFlags = ReadFlags.MinAddress
-                        };
+                        ReadOptions readOptions = new() { StopAddress = iter1.NextAddress, };
                         do
                         {
                             long checkedAddress = hlog.SafeReadOnlyAddress;

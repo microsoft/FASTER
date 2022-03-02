@@ -659,7 +659,7 @@ namespace FASTER.test
 
             // Do not put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            ReadOptions readOptions = new() { StartAddress = readAtAddress, ReadFlags = ReadFlags.SkipReadCache };
+            ReadOptions readOptions = new() { StartAddress = readAtAddress, ReadFlags = ReadFlags.DisableReadCacheReads | ReadFlags.DisableReadCacheUpdates };
             status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref readOptions, out _);
             VerifyResult();
 

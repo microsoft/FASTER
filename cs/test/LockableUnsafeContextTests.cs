@@ -578,7 +578,7 @@ namespace FASTER.test.LockableUnsafeContext
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
             using var luContext = session.GetLockableUnsafeContext();
             int input = 0, output = 0, key = transferToExistingKey;
-            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyToTail};
+            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail};
 
             luContext.ResumeThread();
             try
@@ -1072,7 +1072,7 @@ namespace FASTER.test.LockableUnsafeContext
 
                     // Just a little more testing of Read/CTT transferring from LockTable
                     int input = 0, output = 0, localKey = key;
-                    ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyToTail};
+                    ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail};
                     var status = luContext.Read(ref localKey, ref input, ref output, ref readOptions, out _);
                     Assert.IsTrue(status.IsPending, status.ToString());
                     luContext.CompletePending(wait: true);

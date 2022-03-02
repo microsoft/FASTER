@@ -380,7 +380,7 @@ namespace FASTER.test.ReadCacheTests
 
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
             int input = 0, output = 0, key = lowChainKey - mod; // key must be in evicted region for this test
-            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyToTail };
+            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail };
 
             var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending, status.ToString());
