@@ -499,7 +499,7 @@ namespace FASTER.core
                 lockFailed = false;
                 if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo))
                     return true;
-                if (readInfo.DeleteRecord)
+                if (readInfo.Action == ReadAction.Expire)
                     recordInfo.Tombstone = true;
                 return false;
             }
@@ -525,6 +525,7 @@ namespace FASTER.core
             {
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 lockFailed = false;
+                recordInfo.SetDirty();
                 return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
             }
 #endregion IFunctions - Upserts
@@ -560,19 +561,10 @@ namespace FASTER.core
 
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed, out OperationStatus status)
             {
-                // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 lockFailed = false;
-                if (_clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo))
-                {
-                    rmwInfo.DeleteRecord = false;
-                    rmwInfo.CancelOperation = false;
-                    return true;
-                }
-                if (rmwInfo.DeleteRecord)
-                    recordInfo.Tombstone = true;
-                return false;
+                return _clientSession.InPlaceUpdater(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
             }
 
             public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
@@ -590,13 +582,17 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo) 
-                => _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
+            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+            {
+                recordInfo.SetDirty();
+                _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed)
             {
                 lockFailed = false;
+                recordInfo.SetDirty();
                 recordInfo.Tombstone = true;
                 return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo);
             }

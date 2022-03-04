@@ -77,7 +77,7 @@ namespace FASTER.core
         BasicMask = 0x0F,
         #endregion
 
-        // These are the advanced codes for additional info such as "did we CopyToTail?" or detailed info like "how exactly did this operation achieve its Found status?"
+        // These are the advanced codes for additional info such as "did we CopyToTail?" or detailed info such as "how exactly did this operation achieve its Found status?"
         #region Advanced status codes
         /// <summary>
         /// Indicates that a new record for a previously non-existent key was appended to the log.
@@ -119,7 +119,18 @@ namespace FASTER.core
         /// </remarks>
         CopiedRecordToReadCache = 0x50,
 
-        // Values 0x30-0xF0 are reserved for future use
+        // unused 0x60,
+        // unused 0x70,
+
+        /// <summary>
+        /// Indicates that an existing record key was auto-expired. This is a flag that is combined with lower Advanced values.
+        /// </summary>
+        /// <remarks>
+        /// See basic codes for details of usage.
+        /// </remarks>
+        Expired = 0x80,
+
+        // !! Do not enter more values here unless we expand the size of StatusCode !!
 
         // Mask to extract the advanced values
         AdvancedMask = 0xF0

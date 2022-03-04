@@ -799,6 +799,41 @@ namespace FASTER.core
 
         #region IFasterSession
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool InPlaceUpdater(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
+        {
+            recordInfo.SetDirty();
+
+            // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
+            if (this.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo))
+            {
+                rmwInfo.Action = RMWAction.Default;
+                status = OperationStatus.SUCCESS;
+                if (this.ctx.phase == Phase.REST)
+                    this.fht.hlog.MarkPage(rmwInfo.Address, this.ctx.version);
+                else
+                    this.fht.hlog.MarkPageAtomic(rmwInfo.Address, this.ctx.version);
+                return true;
+            }
+            if (rmwInfo.Action == RMWAction.CancelOperation)
+            {
+                status = OperationStatus.CANCELED;
+                return false;
+            }
+            if (rmwInfo.Action == RMWAction.ExpireAndResume)
+            {
+                // This inserts the tombstone if appropriate
+                return this.fht.ReinitializeExpiredRecord(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo,
+                                                   rmwInfo.Address, this.ctx, this.FasterSession, isIpu: true, out status);
+            }
+            if (rmwInfo.Action == RMWAction.ExpireAndStop)
+                recordInfo.Tombstone = true;
+
+            status = OperationStatus.SUCCESS;
+            return false;
+        }
+
+
         // This is a struct to allow JIT to inline calls (and bypass default interface call mechanism)
         internal readonly struct InternalFasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -834,7 +869,7 @@ namespace FASTER.core
             {
                 if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo))
                     return true;
-                if (readInfo.DeleteRecord)
+                if (readInfo.Action == ReadAction.Expire)
                     recordInfo.Tombstone = true;
                 return false;
             }
@@ -942,41 +977,35 @@ namespace FASTER.core
 
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed, out OperationStatus status)
             {
                 lockFailed = false;
                 return this.DisableLocking
-                                   ? InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo)
-                                   : InPlaceUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out lockFailed);
+                                   ? InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status)
+                                   : InPlaceUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out lockFailed, out status);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
-            {
-                recordInfo.SetDirty();
-                // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
-                if (_clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo))
-                {
-                    rmwInfo.DeleteRecord = false;
-                    rmwInfo.CancelOperation = false;
-                    return true;
-                }
-                if (rmwInfo.DeleteRecord)
-                    recordInfo.Tombstone = true;
-                return false;
-            }
+            private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status) 
+                => _clientSession.InPlaceUpdater(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
 
-            private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed)
+            private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed, out OperationStatus status)
             {
                 if (!recordInfo.LockExclusive())
                 {
                     lockFailed = true;
+                    status = OperationStatus.SUCCESS;
                     return false;
                 }
                 try
                 {
                     lockFailed = false;
-                    return !recordInfo.Tombstone && InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo);
+                    if (recordInfo.Tombstone)
+                    {
+                        status = OperationStatus.SUCCESS;
+                        return false;
+                    }
+                    return InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
                 }
                 finally
                 {

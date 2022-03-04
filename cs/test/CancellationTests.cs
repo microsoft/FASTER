@@ -32,7 +32,7 @@ namespace FASTER.test.Cancellation
                 lastFunc = CancelLocation.NeedInitialUpdate;
                 if (cancelLocation == CancelLocation.NeedInitialUpdate)
                 {
-                    rmwInfo.CancelOperation = true;
+                    rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
                 return true;
@@ -43,7 +43,7 @@ namespace FASTER.test.Cancellation
                 lastFunc = CancelLocation.NeedCopyUpdate;
                 if (cancelLocation == CancelLocation.NeedCopyUpdate)
                 {
-                    rmwInfo.CancelOperation = true;
+                    rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
                 return true;
@@ -56,7 +56,7 @@ namespace FASTER.test.Cancellation
                 Assert.AreNotEqual(CancelLocation.NeedCopyUpdate, cancelLocation);
                 if (cancelLocation == CancelLocation.CopyUpdater)
                 {
-                    rmwInfo.CancelOperation = true;
+                    rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
                 newValue = oldValue;
@@ -70,7 +70,7 @@ namespace FASTER.test.Cancellation
                 Assert.AreNotEqual(CancelLocation.InPlaceUpdater, cancelLocation);
                 if (cancelLocation == CancelLocation.InitialUpdater)
                 {
-                    rmwInfo.CancelOperation = true;
+                    rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
                 value = input;
@@ -82,7 +82,7 @@ namespace FASTER.test.Cancellation
                 lastFunc = CancelLocation.InPlaceUpdater;
                 if (cancelLocation == CancelLocation.InPlaceUpdater)
                 {
-                    rmwInfo.CancelOperation = true;
+                    rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
                 value = input;
@@ -95,7 +95,7 @@ namespace FASTER.test.Cancellation
                 lastFunc = CancelLocation.SingleWriter;
                 if (cancelLocation == CancelLocation.SingleWriter)
                 {
-                    upsertInfo.CancelOperation = true;
+                    upsertInfo.Action = UpsertAction.CancelOperation;
                     return false;
                 }
                 dst = src;
@@ -107,7 +107,7 @@ namespace FASTER.test.Cancellation
                 lastFunc = CancelLocation.ConcurrentWriter;
                 if (cancelLocation == CancelLocation.ConcurrentWriter)
                 {
-                    upsertInfo.CancelOperation = true;
+                    upsertInfo.Action = UpsertAction.CancelOperation;
                     return false;
                 }
                 dst = src;

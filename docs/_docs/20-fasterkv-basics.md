@@ -116,66 +116,72 @@ IFunctions calls receive data through reference parameters to Keys and their ass
   - **DeleteRecord**: Always False coming in from FASTER; may be set True by the app if, for example, expiration has been detected. In this case, FASTER will set the Tombstone. It will assume deletion logic has already been done; that is, it will not call SingleDeleter or ConcurrentDeleter.
   - **CancelOperation**: Always False coming in from FASTER; may be set True by the app if it detects a condition in the callback that makes the operation no longer desired.
 
+Note that the return value decision of Found vs. NotFound refers to whether the record was found. For Read, this is a thorough search. For RMW, it refers to the Read portion of the RMW (whether the record was found). For Upsert and Delete it refers to whether we found the record in the in-memory portion of the log (these do not go to disk; they "blindly" add a new record in that case.
+
 **Read** (`ReadInfo`):
 - `SingleReader`:
-  - ***Expiration***: The app sets readInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by forcing a CopyToTail of the current record with the Tombstone set, and Read will return (!status.Found && status.CreatedRecord).
-  - ***Cancellation***: The app sets readInfo.CancelOperation True and returns false. Read() returns (status.Canceled).
-  - ***Other false return***: Read() returns (status.NotFound).
+  - ***Expiration***: The app sets readInfo.Action to ReadAction.DeleteRecord and returns false. FASTER will perform a logical delete of the record by forcing a CopyToTail of the current record with the Tombstone set, and Read will return (status.Found | status.Record.Created | status.Record.Expired).
+  - ***Cancellation***: The app sets readInfo.Action to ReadAction.CancelOperation and returns false. Read() returns (status.Canceled).
+  - ***Default false return***: Read() returns (status.NotFound).
 - `ConcurrentReader`
-  - ***Expiration***: The app sets readInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by in-place update to set the tombstone, and Read will return (status.NotFound | status.Record.InPlaceUpdated).
-  - ***Cancellation***: The app sets readInfo.CancelOperation True and returns false. Read() returns (status.Canceled).
+  - ***Expiration***: The app sets readInfo.Action to ReadAction.DeleteRecord and returns false. FASTER will perform a logical delete of the record by in-place update to set the tombstone, and Read will return (status.Found | status.Record.InPlaceUpdated | status.Record.Expired).
+  - ***Cancellation***: The app sets readInfo.Action to ReadAction.CancelOperation and returns false. Read() returns (status.Canceled).
   - ***Other false return***: Read() returns (status.NotFound).
 
 **RMW** (`RMWInfo`)
   - `InPlaceUpdater`
-    - ***Expiration***: The app sets rmwInfo.DeleteRecord true and returns false. FASTER will handle this as if the record was not found, and will enter the `NeedInitialUpdater` path, unless ***Cancellation*** was also done; in that case, FASTER will set recordInfo.Tombstone to true and will return (status.NotFound | status.InPlaceUpdated).
+    - ***Expiration***: The app sets rmwInfo.Action to one of the following and returns false:
+      - **ReadAction.ExpireAndResume**: FASTER will first try to reinitialize the record in place, and if successful, RMW will return (status.Found | status.Record.InPlaceUpdated | status.Record.Expired). If the in-place update fails, RMW will set the tombstone true via an in-place update, and then will enter the `NeedInitialUpdater` path, returning the same as if the record had been deleted on entry to RMW, (status.NotFound | status.Record.Created).
+      - **ReadAction.ExpireAndStop** FASTER will set recordInfo.Tombstone to true and will return (status.Found | status.Record.InPlaceUpdated | status.Record.Expired).
       - The app may do its own internal "expire and reset" logic within the `InPlaceUpdater` call and return true, which to FASTER is indistinguishable from any other successful `InPlaceUpdater` call.
-    - ***Cancellation***: The app sets rmwInfo.CancelOperation True and returns false. If Expiration was also done, RMW() returns (status.NotFound | status.InPlaceUpdated); otherwise, RMW() returns (status.Canceled).
-    - ***Other false return***: Goes to `InitialUpdater` path.
+    - ***Cancellation***: The app sets rmwInfo.Action to RMWAction.CancelOperation and returns false. RMW() returns (status.Canceled).
+    - ***Default false return***: Goes to `InitialUpdater` path.
   - *InitialUpdater*
     - `NeedInitialUpdate`
       - ***Expiration***: Irrelevant because there is no existing record.
-      - ***Cancellation***: The app sets rmwInfo.CancelOperation True and returns false. RMW() returns (status.Canceled).
-      - ***Other false return***: Returns (status.NotFound).
+      - ***Cancellation***: The app sets rmwInfo.Action to RMWAction.CancelOperation and returns false. RMW() returns (status.Canceled).
+      - ***Default false return***: Returns (status.NotFound).
     - `InitialUpdater`
       - ***Expiration***: Irrelevant because there is no existing record.
-      - ***Cancellation***: The app sets rmwInfo.CancelOperation True and returns false.  If Expiration was also done, RMW() returns (status.NotFound | status.CreatedRecord); otherwise, RMW() returns (status.Canceled).
-      - ***Other false return***: Returns (status.NotFound) (but no status.Recored.Created).
+      - ***Cancellation***: The app sets rmwInfo.Action to RMWAction.CancelOperation and returns false.  RMW() returns (status.Canceled).
+      - ***Other false return***: Returns (status.NotFound) (but no status.Record.Created).
     - `PostInitialUpdater`
       - This is void because the record has already been CAS'd into the hash table, so it must perform operations that do not fail.
   - *CopyUpdater*
     - `NeedCopyUpdate`
-      - ***Expiration***: The app sets rmwInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by setting the record's Tombstone and continuing with the CAS, and RMW will return (status.NotFound && status.Record.CreatedRecord).
+      - ***Expiration***: This is ignored from NeedCopyUpdate, because we do not have the new record yet to place a Tombstone into, and is treated as a default false return, returning (status.Found).
       - ***Cancellation***: The app sets rmwInfo.CancelOperation True and returns false. RMW() returns (status.Canceled).
-      - ***Other false return***: Returns (status.Found).
+      - ***Default false return***: Returns (status.Found).
     - `CopyUpdater`
-      - ***Expiration***: The app sets rmwInfo.DeleteRecord true and returns false. FASTER will perform a logical delete of the record by setting the record's Tombstone and continuing with the CAS, and RMW will return (status.NotFound && status.Record.CreatedRecord). This may be superseded by ***Cancellation***.
-      - ***Cancellation***: The app sets rmwInfo.CancelOperation True and returns false. RMW() returns (status.Canceled). This supersedes ***Expiration***.
-      - ***Other false return***: Returns (status.Found) (but no status.Recored.Created).
+      - ***Expiration***: The app sets rmwInfo.Action to one of the following and returns false. FASTER will perform a logical delete of the record by setting the record's Tombstone and continuing with the CAS, and RMW will return (status.NotFound && status.Record.CreatedRecord).
+        - **ReadAction.ExpireAndResume**: FASTER will first try to reinitialize the new CU record, and if successful, RMW will return (status.Found | status.Record.CopyUpdated | status.Record.Expired). If the reinitialization fails, FASTER will perform a logical delete of the record by setting the record's Tombstone and continuing with the CAS. FASTER will then return RETRY_NOW, which will (probably) see the Tombstoned record and enter the `NeedInitialUpdater` path, returning the same as if the record had been deleted on entry to RMW, (status.NotFound | status.Record.Created).
+        - **ReadAction.ExpireAndStop** FASTER will set recordInfo.Tombstone to true in the new CU record and will continue with the CAS of that record, returning (status.Found | status.Record.InPlaceUpdated | status.Record.Expired).
+      - ***Cancellation***: The app sets rmwInfo.Action to RMWAction.CancelOperation and returns false. RMW() returns (status.Canceled).
+      - ***Default false return***: Returns (status.Found) (but no status.Recored.Created).
     - `PostCopyUpdater`
       - This is void because the record has already been CAS'd into the hash table, so it must perform operations that do not fail.
 
 **Upsert** (`UpsertInfo`)
   - `ConcurrentWriter`
     - ***Expiration***: Irrelevant because it is a blind upsert.
-    - ***Cancellation***: The app sets upsertInfo.CancelOperation True and returns false. Upsert() returns (status.Canceled).
-    - ***Other false return***: Moves to `SingleWriter` path.
+    - ***Cancellation***: The app sets upsertInfo.Action to UpsertAction.CancelOperation and returns false. Upsert() returns (status.Canceled).
+    - ***Default false return***: Moves to `SingleWriter` path.
   - `SingleWriter`
     - ***Expiration***: Irrelevant because there is no existing record.
-    - ***Cancellation***: The app sets upsertInfo.CancelOperation True and returns false.  If Expiration was also done, RMW() returns (status.NotFound | status.CreatedRecord); otherwise, RMW() returns (status.Canceled).
+    - ***Cancellation***: The app sets upsertInfo.Action to UpsertAction.CancelOperation and returns false. Upsert() returns (status.Canceled).
     - ***Other false return***: Returns (status.NotFound) (but no status.Recored.Created).
   - `PostSingleWriter`
     - This is void because the record has already been CAS'd into the hash table, so it must perform operations that do not fail.
 
 **Delete** (`DeleteInfo`)
   - `ConcurrentDeleter`
-      - ***Expiration***: Irrelevant because it is a Delete operation.
-      - ***Cancellation***: The app sets deleteInfo.CancelOperation True and returns false. Delete() returns (status.Canceled).
+    - ***Expiration***: Irrelevant because it is a Delete operation.
+    - ***Cancellation***: The app sets deleteInfo.Action to DeleteAction.CancelOperation and returns false. Delete() returns (status.Canceled).
   - `SingleDeleter`
-      - ***Expiration***: Irrelevant because it is a Delete operation.
-      - ***Cancellation***: The app sets deleteInfo.CancelOperation True and returns false. Delete() returns (status.Canceled).
+    - ***Expiration***: Irrelevant because it is a Delete operation.
+    - ***Cancellation***: The app sets deleteInfo.Action to DeleteAction.CancelOperation and returns false. Delete() returns (status.Canceled).
   - `PostSingleDeleter`
-      - This is void because the record has already been CAS'd into the hash table, so it must perform operations that do not fail.
+    - This is void because the record has already been CAS'd into the hash table, so it must perform operations that do not fail.
 
 ### Sessions
 

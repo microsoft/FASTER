@@ -43,7 +43,10 @@ namespace FASTER.core
         INPLACE_UPDATED_RECORD = (int)StatusCode.InPlaceUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
         COPY_UPDATED_RECORD = (int)StatusCode.CopyUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
         COPIED_RECORD = (int)StatusCode.CopiedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPIED_RECORD_TO_READ_CACHE = (int)StatusCode.CopiedRecordToReadCache << OperationStatusUtils.OpStatusToStatusCodeShift
+        COPIED_RECORD_TO_READ_CACHE = (int)StatusCode.CopiedRecordToReadCache << OperationStatusUtils.OpStatusToStatusCodeShift,
+        // unused,
+        // unused,
+        EXPIRED = (int)StatusCode.Expired << OperationStatusUtils.OpStatusToStatusCodeShift
     }
 
     internal static class OperationStatusUtils
@@ -111,6 +114,9 @@ namespace FASTER.core
             internal const ushort kNoKey = 0x0100;
             internal const ushort kIsAsync = 0x0200;
             internal const ushort kHasPrevHighestKeyHashAddress = 0x0400;
+
+            // Flags for various operations passed at multiple levels, e.g. through RETRY_NOW.
+            internal const ushort kHasExpiration = 0x8000;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal IHeapContainer<Key> DetachKey()
@@ -196,6 +202,13 @@ namespace FASTER.core
             {
                 get => (operationFlags & kHasPrevHighestKeyHashAddress) != 0;
                 set => operationFlags = value ? (ushort)(operationFlags | kHasPrevHighestKeyHashAddress) : (ushort)(operationFlags & ~kHasPrevHighestKeyHashAddress);
+            }
+
+            // Carries the Expired flag across RETRY_NOW
+            internal bool HasExpiration
+            {
+                get => (operationFlags & kHasExpiration) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kHasExpiration) : (ushort)(operationFlags & ~kHasExpiration);
             }
 
             public void Dispose()
