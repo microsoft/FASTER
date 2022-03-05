@@ -422,7 +422,7 @@ namespace FASTER.core
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key,
                                         logicalAddress,
-                                        hlog.ReadOnlyAddress,
+                                        hlog.NumActiveLockingSessions > 0 ? hlog.HeadAddress : hlog.ReadOnlyAddress, // LUC requires scanning down to HeadAddress
                                         out logicalAddress,
                                         out physicalAddress);
                 }
@@ -1483,7 +1483,7 @@ namespace FASTER.core
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key,
                                         logicalAddress,
-                                        hlog.ReadOnlyAddress,
+                                        hlog.NumActiveLockingSessions > 0 ? hlog.HeadAddress : hlog.ReadOnlyAddress, // LUC requires scanning down to HeadAddress
                                         out logicalAddress,
                                         out physicalAddress);
                 }
