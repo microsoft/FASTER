@@ -34,61 +34,80 @@ for Microsoft.FASTER.Core. Here is a [direct link](https://www.nuget.org/package
 ### FASTER Operations
 
 FASTER supports three basic operations:
-1. Read: Read data from the key-value store
-2. Upsert: Blind upsert of values into the store (does not check for prior values)
-3. Read-Modify-Write: Update values in store atomically, used to implement operations such as Sum and Count.
+1. **Read**: Read data from the key-value store
+2. **Upsert**: Blind upsert of values into the store (does not check for prior values)
+3. **Read-Modify-Write**: Update values in store atomically, used to implement operations such as Sum and Count.
 
 ### Constructor
 
-Before instantiating the FASTER store, you need to create storage devices that FASTER will use. If you are using value
-(blittable) types such as `long`, `int`, and structs with value-type members, you only need one log device:
-
+You instantiate the FasterKV store with provided settings for various parameters. The store requires a key
+type and a value type. For example, an instance of FasterKV over `long` keys and `string` values, with data
+stored in "c:/temp", and all other parameters as default, is created as follows
 
 ```cs
-var log = Devices.CreateLogDevice(@"C:\Temp\hlog.log");
+using var settings = new FasterKVSettings<long, string>("c:/temp");
+using var store = new FasterKV<long, string>(settings);
+```
+
+You can also run FasterKV purely in memory, using a special `null` path:
+
+```cs
+using var settings = new FasterKVSettings<long, string>(null);
+using var store = new FasterKV<long, string>(settings);
+```
+
+
+#### Explicit device specification
+
+You can also separately create your storage devices and provide them via `FasterKVSettings`. If you are using value
+(blittable) types such as `long`, `int`, and structs with value-type members, or special variable-length value 
+types such as our `SpanByte` type, you only need one log device:
+
+```cs
+using var log = Devices.CreateLogDevice(@"c:/temp/hlog.log");
 ```
 
 If your key or values are serializable C# objects such as classes and strings, you 
 need to create a separate object log device as well:
 
 ```cs
-var objlog = Devices.CreateLogDevice(@"C:\Temp\hlog.obj.log");
+using var objlog = Devices.CreateLogDevice(@"c:/temp/hlog.obj.log");
 ```
 
 For pure in-memory operation, you can just use a special `new NullDevice()` instead.
 
-The store constructor requires a key type and a value type. For example, an instance 
-of FASTER over `long` keys and `string` values is created as follows:
-
 ```cs
-var store = new FasterKV<long, string>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = objlog });
+using var settings = new FasterKVSettings<long, long> { LogDevice = log, ObjectLogDevice = objlog };
+using var store = new FasterKV<long, string>(settings);
 ```
 
 
-#### Constructor Parameters
+#### FasterKVSettings
 
-1. Hash Table Size: This the number of buckets allocated to FASTER, where each bucket is 64 bytes (size of a cache line).
-2. Log Settings: These are settings related to the size of the log and devices used by the log.
-3. Checkpoint Settings: These are settings related to checkpoints, such as checkpoint type and folder. Covered in the
-section on [checkpointing and recovery](/FASTER/docs/fasterkv-recovery).
-4. Serialization Settings: Used to provide custom serializers for key and value types. Serializers implement 
+`FasterKVSettings` allows you to customize various parameters related to the store. Some of them are described below.
+
+1. `IndexSize`: Size of main hash index, in bytes (rounds down to a power of 2). Minimum size is 64 bytes.
+2. `MemorySize`: Denotes the size of the in-memory part of the hybrid log (rounds down to a power of 2). 
+Note that if the log points to class key or value objects, this size only includes the 8-byte reference to 
+the object. The older part of the log is spilled to storage.
+3. Other log settings: These are several settings related to the log, such as `PageSize` for the size of pages.
+4. `ReadCacheEnabled`: Whether a separate read cache is provisioned and enabled for the store.
+5. Checkpoint settings: These are settings related to checkpoints, such as `CheckpointDir` for the checkpoint folder,
+and `TryRecoverLatest` to determine whether we try to recover to the latest checkpoint at startup. These are covered 
+in the section on [checkpointing and recovery](/FASTER/docs/fasterkv-recovery).
+6. Serializers: A user can provide custom serializers for class key and value types. Serializers implement 
 `IObjectSerializer<Key>` for keys and `IObjectSerializer<Value>` for values. *These are only needed for 
 non-blittable types such as C# class objects.*
-5. Key Equality comparer: Used for providing a better comparer for keys, implements `IFasterEqualityComparer<Key>`.
+7. `EqualityComparer`: Used for providing a customized comparer for keys, implements `IFasterEqualityComparer<Key>`.
 
-The total in-memory footprint of FASTER is controlled by the following parameters:
-1. Hash table size: This parameter (the first contructor argument) times 64 is the size of the in-memory hash table in bytes.
-2. Log size: The `LogSettings.MemorySizeBits` parameter denotes the size of the in-memory part of the hybrid log, in bits. In other
-words, the size of the log is 2<sup>B</sup> bytes, for a parameter setting of B. Note that if the log points to class key or value
-objects, this size only includes the 8-byte reference to the object. The older part of the log is spilled to storage.
-
-Read more about managing memory in FASTER in the [tuning](/FASTER/docs/fasterkv-tuning) guide.
+The total in-memory footprint of FASTER is controlled by `IndexSize` and `MemorySize`. Read more about managing memory
+in FASTER in the [tuning](/FASTER/docs/fasterkv-tuning) guide.
 
 ### Callback Functions
 
 #### IFunctions
 
-For session operations, the user provides an instance of a type that implements `IFunctions<Key, Value, Input, Output, Context>`, or one of its corresponding abstract base classes (see [FunctionsBase.cs](https://github.com/microsoft/FASTER/blob/master/cs/src/core/Index/Interfaces/FunctionsBase.cs)):
+For session operations, the user provides an instance of a type that implements `IFunctions<Key, Value, Input, Output, Context>`, or one of its corresponding abstract base classes (see [FunctionsBase.cs](https://github.com/microsoft/FASTER/blob/main/cs/src/core/Index/Interfaces/FunctionsBase.cs)):
 - `FunctionsBase<Key, Value, Input, Output, Context>`
 - `SimpleFunctions<Key, Value, Context>`, a subclass of `FunctionsBase<Key, Value, Input, Output, Context>` that uses Value for the Input and Output types.
 - `SimpleFunctions<Key, Value>`, a subclass of `SimpleFunctions<Key, Value, Context>` that uses the `Empty` struct for Context.
@@ -289,18 +308,18 @@ We use the default out-of-the-box provided `SimpleFunctions<Key,Value>` in the a
 
 ## More Examples
 
-Several sample projects are located in the [cs/samples](https://github.com/Microsoft/FASTER/tree/master/cs/samples) folder
+Several sample projects are located in the [cs/samples](https://github.com/Microsoft/FASTER/tree/main/cs/samples) folder
 of GitHub.
 
-Advanced samples and prototypes are available in [cs/playground](https://github.com/Microsoft/FASTER/tree/master/cs/playground).
+Advanced samples and prototypes are available in [cs/playground](https://github.com/Microsoft/FASTER/tree/main/cs/playground).
 
-Benchmarking code is present at [cs/benchmark](https://github.com/Microsoft/FASTER/tree/master/cs/benchmark)
+Benchmarking code is present at [cs/benchmark](https://github.com/Microsoft/FASTER/tree/main/cs/benchmark)
 
 Unit tests are a useful resource to see how FASTER is used as well. They are in 
-[/cs/test](https://github.com/Microsoft/FASTER/tree/master/cs/test).
+[/cs/test](https://github.com/Microsoft/FASTER/tree/main/cs/test).
 
 All these call be accessed through Visual Studio via the main FASTER.sln solution file at
-[/cs](https://github.com/Microsoft/FASTER/tree/master/cs).
+[/cs](https://github.com/Microsoft/FASTER/tree/main/cs).
 
 ## Key Iteration
 
@@ -350,7 +369,7 @@ FasterKV exposes a Log interface (`store.Log`) to perform different kinds of ope
 
 There are several ways to handle variable length keys and values in FasterKV:
 
-* Use `Memory<byte>` or more generally, `Memory<T> where T : unmanaged` as your value and input type, and `ReadOnlyMemory<T> where T : unmanaged` or `Memory<T> where T : unmanaged` as the key type. This will work out of the box and store the keys and values on the main FasterKV log (no object log required). This provides very high performance with a single backing hybrid log. Your `IFunctions` implementation can use or extend the default supplied base class called [MemoryFunctions](https://github.com/microsoft/FASTER/blob/master/cs/src/core/VarLen/MemoryFunctions.cs).
+* Use `Memory<byte>` or more generally, `Memory<T> where T : unmanaged` as your value and input type, and `ReadOnlyMemory<T> where T : unmanaged` or `Memory<T> where T : unmanaged` as the key type. This will work out of the box and store the keys and values on the main FasterKV log (no object log required). This provides very high performance with a single backing hybrid log. Your `IFunctions` implementation can use or extend the default supplied base class called [MemoryFunctions](https://github.com/microsoft/FASTER/blob/main/cs/src/core/VarLen/MemoryFunctions.cs).
 
 * Use standard C# class types (e.g., `byte[]`, `string`, and `class` objects) to store keys and values. This is easiest and also allows you to perform in-place updates of objects that are still in the mutable region of the log, like a traditional C# object cache. However, there may be performance implications due to the creation of fine-grained C# objects and the fact that we need to store objects in a separate object log.
 
@@ -358,7 +377,7 @@ There are several ways to handle variable length keys and values in FasterKV:
 
 * Our support for `Memory<T> where T : unmanaged` and `SpanByte` both use an underlying functionality that we call _variable-length structs_, that you can use directly if `SpanByte` does not fit your needs, e.g., if you want to use only two bytes for the length header or want to store ints instead of bytes. You do this by specifying `VariableLengthStructSettings` during FasterKV construction, and `SessionVariableLengthStructSettings` during session creation.
 
-Check out the sample [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples/StoreVarLenTypes) for how to use `Memory<T> where T : unmanaged` and `SpanByte` with a single backing hybrid log. For C# class objects, check out [StoreCustomTypes](https://github.com/microsoft/FASTER/tree/master/cs/samples/StoreCustomTypes).
+Check out the sample [here](https://github.com/Microsoft/FASTER/tree/main/cs/samples/StoreVarLenTypes) for how to use `Memory<T> where T : unmanaged` and `SpanByte` with a single backing hybrid log. For C# class objects, check out [StoreCustomTypes](https://github.com/microsoft/FASTER/tree/main/cs/samples/StoreCustomTypes).
 
 ## Log Compaction
 
