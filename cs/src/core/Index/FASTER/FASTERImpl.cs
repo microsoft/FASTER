@@ -816,7 +816,7 @@ namespace FASTER.core
                     hlog.MarkPage(logicalAddress, sessionCtx.version);
                 else
                     hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
-                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
                 return true;
             }
 
@@ -950,10 +950,9 @@ namespace FASTER.core
                         // and marked the record.
                         pendingContext.recordInfo = recordInfo;
                         pendingContext.logicalAddress = logicalAddress;
-                        return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, 
-                            rmwInfo.Action == RMWAction.ExpireAndStop ? StatusCode.InPlaceUpdatedRecord | StatusCode.Expired : StatusCode.InPlaceUpdatedRecord);
+                        return status;
                     }
-                    if (status != OperationStatus.SUCCESS)
+                    if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
                         return status;
 
                     // InPlaceUpdater failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
@@ -993,11 +992,9 @@ namespace FASTER.core
                             // and marked the record.
                             pendingContext.recordInfo = recordInfo;
                             pendingContext.logicalAddress = logicalAddress;
-                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS,
-                                rmwInfo.Action == RMWAction.ExpireAndStop ? StatusCode.InPlaceUpdatedRecord | StatusCode.Expired : StatusCode.InPlaceUpdatedRecord);
                             goto LatchRelease; // Release shared latch (if acquired)
                         }
-                        if (status != OperationStatus.SUCCESS)
+                        if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
                             goto LatchRelease; // Release shared latch (if acquired)
 
                         // InPlaceUpdater failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
@@ -1253,15 +1250,18 @@ namespace FASTER.core
             // Populate the new record
             OperationStatus status;
             bool needIUForexpiredCU = false;
+            OperationStatus expiredOpStatus = forExpiration ? OperationStatus.EXPIRED : OperationStatus.SUCCESS;
             if (logicalAddress < hlog.BeginAddress)
             {
                 if (fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output, ref recordInfo, ref rmwInfo))
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
+                    status = forExpiration
+                        ? OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired)
+                        : OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
                 else
                 {
                     if (rmwInfo.Action == RMWAction.CancelOperation)
                         return OperationStatus.CANCELED;
-                    return OperationStatus.SUCCESS;
+                    return OperationStatus.SUCCESS | expiredOpStatus;
                 }
             }
             else if (logicalAddress >= hlog.HeadAddress)
@@ -1269,12 +1269,14 @@ namespace FASTER.core
                 if (hlog.GetInfo(physicalAddress).Tombstone)
                 {
                     if (fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output, ref recordInfo, ref rmwInfo))
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
+                        status = forExpiration
+                            ? OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired)
+                            : OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
                     else
                     {
                         if (rmwInfo.Action == RMWAction.CancelOperation)
                             return OperationStatus.CANCELED;
-                        return OperationStatus.SUCCESS;
+                        return OperationStatus.SUCCESS | expiredOpStatus;
                     }
                 }
                 else
@@ -1282,7 +1284,9 @@ namespace FASTER.core
                     ref Value newRecordValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
                     if (fasterSession.CopyUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref newRecordValue,
                                                   ref output, ref recordInfo, ref rmwInfo))
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
+                        status = forExpiration
+                            ? OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired)
+                            : OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
                     else
                     {
                         if (rmwInfo.Action == RMWAction.CancelOperation)
@@ -1294,18 +1298,22 @@ namespace FASTER.core
                         {
                             recordInfo.Tombstone = true;
                             // Drop through to CAS it in
-                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
+                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired | StatusCode.Expired);
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                         {
                             // 'false' means an update in place was not done, so return status. Otherwise, drop through to CAS the updated record
                             if (!ReinitializeExpiredRecord(ref key, ref input, ref newRecordValue, ref output, ref recordInfo, ref rmwInfo, 
                                                     logicalAddress, sessionCtx, fasterSession, isIpu: false, out status))
-                                return status;
-                            needIUForexpiredCU = true;
+                            {
+                                if (status == OperationStatus.CANCELED)
+                                    return status;
+                                needIUForexpiredCU = true;
+                            }
+                            // Drop through to CAS
                         }
                         else
-                            return OperationStatus.SUCCESS;
+                            return OperationStatus.SUCCESS | expiredOpStatus;
                     }
                 }
             }
@@ -2246,8 +2254,12 @@ namespace FASTER.core
                             // 'false' means an update in place was not done, so return status. Otherwise, drop through to CAS the updated record
                             if (!ReinitializeExpiredRecord(ref key, ref input, ref newRecordValue, ref pendingContext.output, ref recordInfo, ref rmwInfo,
                                                     logicalAddress, sessionCtx, fasterSession, isIpu: false, out status))
-                                return status;
-                            needIUForexpiredCU = true;
+                            {
+                                if (status == OperationStatus.CANCELED)
+                                    return status;
+                                needIUForexpiredCU = true;
+                            }
+                            // Drop through to CAS
                         }
                         else
                             return OperationStatus.SUCCESS;

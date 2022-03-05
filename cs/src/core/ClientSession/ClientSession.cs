@@ -808,11 +808,11 @@ namespace FASTER.core
             if (this.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo))
             {
                 rmwInfo.Action = RMWAction.Default;
-                status = OperationStatus.SUCCESS;
                 if (this.ctx.phase == Phase.REST)
                     this.fht.hlog.MarkPage(rmwInfo.Address, this.ctx.version);
                 else
                     this.fht.hlog.MarkPageAtomic(rmwInfo.Address, this.ctx.version);
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                 return true;
             }
             if (rmwInfo.Action == RMWAction.CancelOperation)
@@ -827,7 +827,11 @@ namespace FASTER.core
                                                    rmwInfo.Address, this.ctx, this.FasterSession, isIpu: true, out status);
             }
             if (rmwInfo.Action == RMWAction.ExpireAndStop)
+            {
                 recordInfo.Tombstone = true;
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
+                return false;
+            }
 
             status = OperationStatus.SUCCESS;
             return false;

@@ -34,7 +34,20 @@ namespace FASTER.test.Expiration
                                       DidCopyUpdate = NeedCopyUpdate | CopyUpdater | RMWCompletionCallback,
                                       DidInitialUpdate = NeedInitialUpdate | InitialUpdater};
 
-        internal enum ExpirationResult { None, Incremented, ExpireDelete, ExpireRollover, Updated, NotUpdated, Deleted, DeletedThenInserted, DeletedThenInsertedTwice, NotDeleted };
+        internal enum ExpirationResult
+        { 
+            None,                       // Default value
+            Incremented,                // Initial increment was done
+            ExpireDelete,               // Record was expired so deleted
+            ExpireRollover,             // Record was expired and reinitialized within the IFunctions call
+            Updated,                    // Record was updated normally
+            NotUpdated,                 // Record was not updated
+            Deleted,                    // Record was expired with AndStop (no reinitialization done)
+            DeletedThenUpdated,         // Record was expired then InitialUpdate'd within the original record space
+            DeletedThenUpdateRejected,  // Record was expired then InitialUpdate within the original record space was rejected
+            DeletedThenInserted,        // Record was expired and not InitialUpdate'd within the original record space, so RMW inserted a record with the reinitialized value
+            NotDeleted
+        };
 
         public struct ExpirationInput
         {
@@ -162,10 +175,18 @@ namespace FASTER.test.Expiration
                         return false;
                     case TestOp.DeleteIfValueEqualsThenInsert:
                     case TestOp.DeleteIfValueNotEqualsThenInsert:
+                        // This means we are on the "handle expiration" sequence after IPU/CU
+                        if (output.result == ExpirationResult.Deleted)
+                        {
+                            // Reject the update-in-original-record
+                            output.result = ExpirationResult.DeletedThenUpdateRejected;
+                            return false;
+                        }
+                        return output.result == ExpirationResult.DeletedThenUpdateRejected;
                     case TestOp.DeleteIfValueEqualsThenUpdate:
                     case TestOp.DeleteIfValueNotEqualsThenUpdate:
                         // This means we are on the "handle expiration" sequence after IPU/CU
-                        return output.result != ExpirationResult.Deleted && output.result != ExpirationResult.DeletedThenInserted;
+                        return output.result == ExpirationResult.Deleted;
                     case TestOp.DeleteIfValueEqualsAndStop:
                     case TestOp.DeleteIfValueNotEqualsAndStop:
                         // AndStop should have returned from RMW instead during the test, but this is legitimately called from VerifyKeyNotCreated
@@ -313,15 +334,16 @@ namespace FASTER.test.Expiration
                 // If InPlaceUpdater returned Delete, let the caller know both operations happened. Similarly, we may be 
                 output.result = output.result switch
                 {
-                    ExpirationResult.Deleted => ExpirationResult.DeletedThenInserted,
-                    ExpirationResult.DeletedThenInserted => ExpirationResult.DeletedThenInsertedTwice,
+                    ExpirationResult.Deleted => ExpirationResult.DeletedThenUpdated,
+                    ExpirationResult.DeletedThenUpdated => ExpirationResult.DeletedThenInserted,
+                    ExpirationResult.DeletedThenUpdateRejected => ExpirationResult.DeletedThenInserted,
                     _ => ExpirationResult.Updated
                 };
                 output.retrievedValue = value.field1;
 
                 // If this is the first InitialUpdater after a Delete and the testOp is *ThenInsert, we have to fail the first InitialUpdater
                 // (which is the InitialUpdater call on the deleted record's space) and will pass the second InitialUpdater (which is into a new record).
-                if (output.result == ExpirationResult.DeletedThenInserted 
+                if (output.result == ExpirationResult.DeletedThenUpdated 
                     && (input.testOp == TestOp.DeleteIfValueEqualsThenInsert || input.testOp == TestOp.DeleteIfValueNotEqualsThenInsert))
                     return false;
                 return true;
@@ -808,7 +830,7 @@ namespace FASTER.test.Expiration
             ExpirationInput input = new() { testOp = testOp, value = reinitValue, comparisonValue = isEqual ? GetValue(key) + 1 : -1 };
             ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
             Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate | Funcs.DidInitialUpdate : Funcs.InPlaceUpdater | Funcs.DidInitialUpdate, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.DeletedThenInserted, output.result);
+            Assert.AreEqual(ExpirationResult.DeletedThenUpdated, output.result);
 
             // Verify we did the reInitialization (this test should always have restored it with its initial values)
             output = GetRecord(key, new(StatusCode.Found), isOnDisk);
@@ -845,7 +867,7 @@ namespace FASTER.test.Expiration
             ExpirationInput input = new() { testOp = testOp, value = reinitValue, comparisonValue = isEqual ? GetValue(key) + 1 : -1 };
             ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
             Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate | Funcs.DidInitialUpdate : Funcs.InPlaceUpdater | Funcs.DidInitialUpdate, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.DeletedThenInsertedTwice, output.result);
+            Assert.AreEqual(ExpirationResult.DeletedThenInserted, output.result);
 
             // Verify we did the reInitialization (this test should always have restored it with its initial values)
             output = GetRecord(key, new(StatusCode.Found), isOnDisk);
@@ -863,10 +885,6 @@ namespace FASTER.test.Expiration
             output = GetRecord(key, new(StatusCode.Found), isOnDisk);
             Assert.AreEqual(GetValue(key), output.retrievedValue);
         }
-
-
-
-
 
         [Test]
         [Category("FasterKV")]
