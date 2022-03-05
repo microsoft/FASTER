@@ -64,14 +64,14 @@ You can also separately create your storage devices and provide them via `Faster
 types such as our `SpanByte` type, you only need one log device:
 
 ```cs
-using var log = Devices.CreateLogDevice(@"c:/temp/hlog.log");
+using var log = Devices.CreateLogDevice("c:/temp/hlog.log");
 ```
 
 If your key or values are serializable C# objects such as classes and strings, you 
 need to create a separate object log device as well:
 
 ```cs
-using var objlog = Devices.CreateLogDevice(@"c:/temp/hlog.obj.log");
+using var objlog = Devices.CreateLogDevice("c:/temp/hlog.obj.log");
 ```
 
 For pure in-memory operation, you can just use a special `new NullDevice()` instead.
@@ -133,13 +133,13 @@ ReadCompletionCallback receives the `RecordInfo` of the record that was read.
 Once FASTER is instantiated, one issues operations to FASTER by creating logical sessions. A session represents a "mono-threaded" sequence of operations issued to FASTER. There is no concurrency within a session, but different sessions may execute concurrently. Sessions do not need to be affinitized to threads, but if they are, FASTER can leverage the same (covered later). You create a session as follows:
 
 ```cs
-var session = store.NewSession(new Functions());
+using var session = store.NewSession(new Functions());
 ```
 
 An equivalent, but more optimized API requires you to specify the Functions type a second time (it allows us to avoid accessing the session via an interface call):
 
 ```cs
-var session = store.For(new Functions()).NewSession<Functions>();
+using var session = store.For(new Functions()).NewSession<Functions>();
 ```
 
 You can then perform a sequence of read, upsert, and RMW operations on the session. FASTER supports both synchronous and async versions of all operations. While all methods exist in an async form, only read and RMW are generally expected to go async; upserts and deletes will only go async when it is necessary to wait on flush operations when appending records to the log. The basic forms of these operations are described below; additional overloads are available.
@@ -206,7 +206,8 @@ while (r.Status.IsPending)
 ```
 
 ### Pending Operations
-The sync form of `Read`, `Upsert`, `RMW`, and `Delete` may go pending due to IO operations. When a `Status.PENDING` is returned, you can call `CompletePending()` to wait for the results to arrive. It is generally most performant to issue many of these operations and call `CompletePending()` periodically or upon completion of a batch. An optional `wait` parameter allows you to wait until all pending operations issued on the session until that point are completed before this call returns. A second optional parameter, `spinWaitForCommit` allows you to further wait until all operations until that point are committed by a parallel checkpointing thread.
+
+The sync form of `Read`, `Upsert`, `RMW`, and `Delete` may go pending due to IO operations. When a `Status.IsPending` is returned, you can call `CompletePending()` to wait for the results to arrive. It is generally most performant to issue many of these operations and call `CompletePending()` periodically or upon completion of a batch. An optional `wait` parameter allows you to wait until all pending operations issued on the session until that point are completed before this call returns. A second optional parameter, `spinWaitForCommit` allows you to further wait until all operations until that point are committed by a parallel checkpointing thread.
 
 Pending Read or RMW operations call the appropriate completion callback on the functions object: `ReadCompletionCallback` or `RMWCompletionCallback`, respectively, will be called.
 
@@ -236,29 +237,30 @@ completedOutputs.Dispose();
 
 ### Disposing
 
-At the end, the session is disposed:
+If you have not used `using` statements for auto-dispose, you can now manually dispose the created objects. 
+First, the session is disposed:
 
 ```cs
 session.Dispose();
 ```
 
-When all sessions are done operating on FASTER, you finally dispose the FasterKV instance:
+When all sessions are done operating on FASTER, you finally dispose the FasterKV instance and the settings:
 
 ```cs
 store.Dispose();
+settings.Dispose();
 ```
 
 ## Larger-Than-Memory Data Support
 
 FasterKV consists of an in-memory hash table that points to records in a hybrid log that spans storage and main memory. When you 
 instantiate a new FasterKV instance, no log is created on disk. Records stay in main memory part of the hybrid log, whose size is
-configured via `LogSettings` when calling the constructor. Specifically, the memory portion of the log takes up a size of
-2<sup>MemorySizeBits</sup> bytes of space. As long as all records fit in this space, nothing will be spilled to storage. Note that
-for C# class types, the log only holds references (pointers) to heap data 
-(discussed [here](/FASTER/docs/fasterkv-tuning#managing-log-size-with-c-objects)).
+configured via `FasterKVSettings.MemorySize` when calling the constructor. Specifically, the memory portion of the log takes up a size of
+`MemorySize` bytes of space. As long as all records fit in this space, nothing will be spilled to storage. Note that for C# class types, the 
+log only holds references (pointers) to heap data (discussed [here](/FASTER/docs/fasterkv-tuning#managing-log-size-with-c-objects)).
 
 Once the mutable portion of main memory is full, pages become immutable and start getting flushed to storage and you will see the
-log size grow on disk. Reads of flushed records will be served by going to disk, returning a status of `Status.PENDING`, as discussed
+log size grow on disk. Reads of flushed records will be served by going to disk, returning a status of `Status.IsPending`, as discussed
 above.
 
 If you need recoverability, you need to take a checkpoint of FASTER. This will cause all data in the memory portion of the log to
@@ -290,20 +292,21 @@ I/O operations. There is no checkpointing in this example as well.
 ```cs
 public static void Test()
 {
-  using var log = Devices.CreateLogDevice("C:\\Temp\\hlog.log");
-  using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
-  using var s = store.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
-  long key = 1, value = 1, input = 10, output = 0;
-  s.Upsert(ref key, ref value);
-  s.Read(ref key, ref output);
-  Debug.Assert(output == value);
-  s.RMW(ref key, ref input);
-  s.RMW(ref key, ref input, ref output);
-  Debug.Assert(output == value + 20);
+   using var settings = new FasterKVSettings<long, long>("c:/temp");
+   using var store = new FasterKV<long, long>(settings);
+   using var session = store.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
+   
+   long key = 1, value = 1, input = 10, output = 0;
+   session.Upsert(ref key, ref value);
+   session.Read(ref key, ref output);
+   Debug.Assert(output == value);
+   session.RMW(ref key, ref input);
+   session.RMW(ref key, ref input, ref output);
+   Debug.Assert(output == value + 20);
 }
 ```
 
-We use the default out-of-the-box provided `SimpleFunctions<Key,Value>` in the above example. In these functions,
+We use the default out-of-the-box provided `SimpleFunctions<Key, Value>` in the above example. In these functions,
 `Input` and `Output` are simply set to `Value`, while `Context` is an empty struct `Empty`.
 
 ## More Examples
