@@ -13,36 +13,45 @@ namespace FASTER.core
     public enum ReadFlags
     {
         /// <summary>
-        /// Default read operation
+        /// Use whatever was specified at the previous level, or None if at FasterKV level.
         /// </summary>
-        None = 0,
+        /// <remarks>
+        /// May be combined with other flags to add options.
+        /// </remarks>
+        Default = 0x0,
 
         /// <summary>
-        /// Skip the ReadCache when reading, including not inserting to ReadCache when pending reads are complete.
-        /// May be used with ReadAtAddress, to avoid copying earlier versions.
+        /// Turn off all flags from higher levels. May be combined with other flags to specify an entirely new set of flags.
         /// </summary>
-        SkipReadCache = 0x00000001,
+        None = 0x1,
 
         /// <summary>
-        /// The minimum address at which to resolve the Key; return <see cref="Status.Found"/> false if the key is not found at this address or higher
+        /// Do not update read cache with new data
         /// </summary>
-        MinAddress = 0x00000002,
+        DisableReadCacheUpdates = 0x2,
 
         /// <summary>
-        /// Force a copy to tail if we read from immutable or on-disk. If this and ReadCache are both specified, ReadCache wins.
-        /// This avoids log pollution for read-mostly workloads. Used mostly in conjunction with 
-        /// <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions}"/> locking.
+        /// Skip read cache on reads
         /// </summary>
-        CopyToTail = 0x00000004,
+        DisableReadCacheReads = 0x4,
 
         /// <summary>
-        /// Skip copying to tail even if the FasterKV constructore specifed it. May be used with ReadAtAddress, to avoid copying earlier versions.
+        /// Skip read cache on reads and updates
         /// </summary>
-        SkipCopyToTail = 0x00000008,
+        DisableReadCache = 0x6,
 
         /// <summary>
-        /// Utility to combine these flags. May be used with ReadAtAddress, to avoid copying earlier versions.
+        /// Copy reads to tail of main log from both read-only region and from <see cref="IDevice"/>.
         /// </summary>
-        SkipCopyReads = SkipReadCache | SkipCopyToTail,
+        /// <remarks>
+        /// This generally should not be used for reads by address, and especially not for versioned reads,
+        /// because those would promote obsolete values to the tail of the log.
+        /// </remarks>
+        CopyReadsToTail = 0x8,
+
+        /// <summary>
+        /// Copy reads from <see cref="IDevice" /> only (do not copy from read-only region), to read cache or tail.
+        /// </summary>
+        CopyFromDeviceOnly = 0x10,
     }
 }

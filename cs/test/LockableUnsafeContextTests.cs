@@ -21,12 +21,12 @@ namespace FASTER.test.LockableUnsafeContext
     {
         internal long deletedRecordAddress;
 
-        public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+        public override void PostSingleDeleter(ref int key, ref DeleteInfo deleteInfo)
         {
             deletedRecordAddress = deleteInfo.Address;
         }
 
-        public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+        public override bool ConcurrentDeleter(ref int key, ref int value, ref DeleteInfo deleteInfo)
         {
             deletedRecordAddress = deleteInfo.Address;
             return true;
@@ -49,8 +49,6 @@ namespace FASTER.test.LockableUnsafeContext
     }
 
     public enum ResultLockTarget { MutableLock, LockTable }
-
-    public enum FlushMode { NoFlush, ReadOnly, OnDisk }
 
     public enum UpdateOp { Upsert, RMW, Delete }
 
@@ -578,14 +576,14 @@ namespace FASTER.test.LockableUnsafeContext
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
             using var luContext = session.GetLockableUnsafeContext();
             int input = 0, output = 0, key = transferToExistingKey;
-            RecordMetadata recordMetadata = default;
+            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail};
 
             luContext.ResumeThread();
             try
             {
                 AddLockTableEntry(luContext, key, immutable: false);
 
-                var status = luContext.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
+                var status = luContext.Read(ref key, ref input, ref output, ref readOptions, out _);
                 Assert.IsTrue(status.IsPending, status.ToString());
                 luContext.CompletePending(wait: true);
 
@@ -1072,8 +1070,8 @@ namespace FASTER.test.LockableUnsafeContext
 
                     // Just a little more testing of Read/CTT transferring from LockTable
                     int input = 0, output = 0, localKey = key;
-                    RecordMetadata recordMetadata = default;
-                    var status = luContext.Read(ref localKey, ref input, ref output, ref recordMetadata, ReadFlags.CopyToTail);
+                    ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail};
+                    var status = luContext.Read(ref localKey, ref input, ref output, ref readOptions, out _);
                     Assert.IsTrue(status.IsPending, status.ToString());
                     luContext.CompletePending(wait: true);
 

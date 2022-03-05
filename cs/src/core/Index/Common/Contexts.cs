@@ -24,8 +24,11 @@ namespace FASTER.core
     [Flags]
     internal enum OperationStatus
     {
-        SUCCESS,
-        NOTFOUND,
+        SUCCESS = StatusCode.Found,
+        NOTFOUND = StatusCode.NotFound,
+        CANCELED = StatusCode.Canceled,
+        MAX_DIRECT_MAP_TO_STATUSCODE = CANCELED,
+
         RETRY_NOW,
         RETRY_LATER,
         RECORD_ON_DISK,
@@ -40,7 +43,10 @@ namespace FASTER.core
         INPLACE_UPDATED_RECORD = (int)StatusCode.InPlaceUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
         COPY_UPDATED_RECORD = (int)StatusCode.CopyUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
         COPIED_RECORD = (int)StatusCode.CopiedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPIED_RECORD_TO_READ_CACHE = (int)StatusCode.CopiedRecordToReadCache << OperationStatusUtils.OpStatusToStatusCodeShift
+        COPIED_RECORD_TO_READ_CACHE = (int)StatusCode.CopiedRecordToReadCache << OperationStatusUtils.OpStatusToStatusCodeShift,
+        // unused,
+        // unused,
+        EXPIRED = (int)StatusCode.Expired << OperationStatusUtils.OpStatusToStatusCodeShift
     }
 
     internal static class OperationStatusUtils
@@ -57,7 +63,7 @@ namespace FASTER.core
         internal static bool TryConvertToStatusCode(OperationStatus advInternalStatus, out Status statusCode)
         {
             var internalStatus = BasicOpCode(advInternalStatus);
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            if (internalStatus <= OperationStatus.MAX_DIRECT_MAP_TO_STATUSCODE)
             {
                 statusCode = new(advInternalStatus);
                 return true;
@@ -99,15 +105,18 @@ namespace FASTER.core
             internal LockOperation lockOperation;
 
             // BEGIN Must be kept in sync with corresponding ReadFlags enum values
-            internal const ushort kSkipReadCache = 0x0001;
-            internal const ushort kMinAddress = 0x0002;
+            internal const ushort kDisableReadCacheUpdates = 0x0001;
+            internal const ushort kDisableReadCacheReads = 0x0002;
             internal const ushort kCopyReadsToTail = 0x0004;
-            internal const ushort kSkipCopyReadsToTail = 0x0008;
+            internal const ushort kCopyFromDeviceOnly = 0x0008;
             // END  Must be kept in sync with corresponding ReadFlags enum values
 
             internal const ushort kNoKey = 0x0100;
             internal const ushort kIsAsync = 0x0200;
             internal const ushort kHasPrevHighestKeyHashAddress = 0x0400;
+
+            // Flags for various operations passed at multiple levels, e.g. through RETRY_NOW.
+            internal const ushort kHasExpiration = 0x8000;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal IHeapContainer<Key> DetachKey()
@@ -128,26 +137,25 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey = false)
             {
-                Debug.Assert((ushort)ReadFlags.SkipReadCache == kSkipReadCache);
-                Debug.Assert((ushort)ReadFlags.MinAddress == kMinAddress);
-                ushort flags = (ushort)(readFlags & (ReadFlags.SkipReadCache | ReadFlags.MinAddress | ReadFlags.CopyToTail | ReadFlags.SkipCopyToTail));
-                if (noKey) flags |= kNoKey;
-
-                // This is always set true for the Read overloads (Reads by address) that call this method.
-                flags |= kSkipCopyReadsToTail;
+                Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
+                Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
+                Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
+                Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
+                ushort flags = (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
+                if (noKey)
+                    flags |= kNoKey;
                 return flags;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags, long address, bool noKey = false) 
-                => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), address);
+            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions, bool noKey = false) 
+                => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), readOptions.StopAddress);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ushort flags, long address)
+            internal void SetOperationFlags(ushort flags, long stopAddress)
             {
                 this.operationFlags = flags;
-                if (this.HasMinAddress)
-                    this.minAddress = address;
+                this.minAddress = stopAddress;
             }
 
             internal bool NoKey
@@ -156,16 +164,16 @@ namespace FASTER.core
                 set => operationFlags = value ? (ushort)(operationFlags | kNoKey) : (ushort)(operationFlags & ~kNoKey);
             }
 
-            internal bool SkipReadCache
+            internal bool DisableReadCacheUpdates
             {
-                get => (operationFlags & kSkipReadCache) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kSkipReadCache) : (ushort)(operationFlags & ~kSkipReadCache);
+                get => (operationFlags & kDisableReadCacheUpdates) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kDisableReadCacheUpdates) : (ushort)(operationFlags & ~kDisableReadCacheUpdates);
             }
 
-            internal bool HasMinAddress
+            internal bool DisableReadCacheReads
             {
-                get => (operationFlags & kMinAddress) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kMinAddress) : (ushort)(operationFlags & ~kMinAddress);
+                get => (operationFlags & kDisableReadCacheReads) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kDisableReadCacheReads) : (ushort)(operationFlags & ~kDisableReadCacheReads);
             }
 
             internal bool CopyReadsToTail
@@ -174,11 +182,15 @@ namespace FASTER.core
                 set => operationFlags = value ? (ushort)(operationFlags | kCopyReadsToTail) : (ushort)(operationFlags & ~kCopyReadsToTail);
             }
 
-            internal bool SkipCopyReadsToTail
+            internal bool CopyReadsToTailFromReadOnly => (operationFlags & (kCopyReadsToTail | kCopyFromDeviceOnly)) == kCopyReadsToTail;
+
+            internal bool CopyFromDeviceOnly
             {
-                get => (operationFlags & kSkipCopyReadsToTail) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kSkipCopyReadsToTail) : (ushort)(operationFlags & ~kSkipCopyReadsToTail);
+                get => (operationFlags & kCopyFromDeviceOnly) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kCopyFromDeviceOnly) : (ushort)(operationFlags & ~kCopyFromDeviceOnly);
             }
+
+            internal bool HasMinAddress => this.minAddress != Constants.kInvalidAddress;
 
             internal bool IsAsync
             {
@@ -190,6 +202,13 @@ namespace FASTER.core
             {
                 get => (operationFlags & kHasPrevHighestKeyHashAddress) != 0;
                 set => operationFlags = value ? (ushort)(operationFlags | kHasPrevHighestKeyHashAddress) : (ushort)(operationFlags & ~kHasPrevHighestKeyHashAddress);
+            }
+
+            // Carries the Expired flag across RETRY_NOW
+            internal bool HasExpiration
+            {
+                get => (operationFlags & kHasExpiration) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kHasExpiration) : (ushort)(operationFlags & ~kHasExpiration);
             }
 
             public void Dispose()
@@ -204,6 +223,9 @@ namespace FASTER.core
         {
             internal int sessionID;
             internal string sessionName;
+
+            // Control Read operations. These flags override flags specified at the FasterKV level, but may be overridden on the individual Read() operations
+            internal ReadFlags ReadFlags;
 
             internal long version;
             internal long serialNum;

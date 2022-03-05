@@ -16,6 +16,10 @@ namespace FASTER.client
         /// </summary>
         NotFound,
         /// <summary>
+        /// The operation was canceled (e.g. by an IFunctions method setting info.CancelOperation).
+        /// </summary>
+        Canceled,
+        /// <summary>
         /// Operation went pending (async)
         /// </summary>
         Pending,

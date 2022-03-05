@@ -150,10 +150,11 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<ReadAsyncResult<Input, Output, Context>> ReadAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx,
-            ref Key key, ref Input input, long startAddress, Context context, long serialNo, CancellationToken token, ushort operationFlags = 0)
+            ref Key key, ref Input input, ref ReadOptions readOptions, Context context, long serialNo, CancellationToken token, bool noKey = false)
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(operationFlags, startAddress);
+            var operationFlags = PendingContext<Input, Output, Context>.GetOperationFlags(MergeReadFlags(currentCtx.ReadFlags, readOptions.ReadFlags), noKey);
+            pcontext.SetOperationFlags(operationFlags, readOptions.StopAddress);
             var diskRequest = default(AsyncIOContext<Key, Value>);
             Output output = default;
 
@@ -162,7 +163,7 @@ namespace FASTER.core
             {
                 OperationStatus internalStatus;
                 do
-                    internalStatus = InternalRead(ref key, ref input, ref output, startAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
+                    internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
                 while (internalStatus == OperationStatus.RETRY_NOW);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);
 

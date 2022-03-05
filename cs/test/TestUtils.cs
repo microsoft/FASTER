@@ -21,6 +21,7 @@ namespace FASTER.test
         internal const string ReadCacheTestCategory = "ReadCache";
         internal const string LockTestCategory = "Locking";
         internal const string CheckpointRestoreCategory = "CheckpointRestore";
+        internal const string RMW = "RMW";
 
         /// <summary>
         /// Delete a directory recursively
@@ -177,6 +178,10 @@ namespace FASTER.test
         internal enum SyncMode { Sync, Async };
 
         public enum ReadCopyDestination { Tail, ReadCache }
+
+        public enum FlushMode { NoFlush, ReadOnly, OnDisk }
+
+        public enum KeyEquality { Equal, NotEqual }
 
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);

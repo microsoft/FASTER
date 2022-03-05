@@ -54,7 +54,7 @@ namespace FASTER.remote.test
             }
             finally
             {
-                output.Item1.Dispose();
+                output.Item1?.Dispose();
             }
         }
 
@@ -80,7 +80,7 @@ namespace FASTER.remote.test
             finally
             {
                 evt.Set();
-                output.Item1.Dispose();
+                output.Item1?.Dispose();
             }
         }
 

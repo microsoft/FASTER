@@ -650,10 +650,10 @@ namespace FASTER.test.UnsafeContext
 
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
-                var readAtAddress = fht.Log.BeginAddress;
+                ReadOptions readOptions = new() { StartAddress = fht.Log.BeginAddress };
 
                 uContext.Upsert(ref key1, ref value, Empty.Default, 0);
-                var status = uContext.ReadAtAddress(readAtAddress, ref input, ref output, ReadFlags.None, Empty.Default, 0);
+                var status = uContext.ReadAtAddress(ref input, ref output, ref readOptions, Empty.Default, 0);
                 AssertCompleted(new(StatusCode.Found), status);
 
                 Assert.AreEqual(value.vfield1, output.value.vfield1);

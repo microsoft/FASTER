@@ -51,13 +51,12 @@ namespace FASTER.core
                     if (!recordInfo.Tombstone && !cf.IsDeleted(ref key, ref value))
                     {
                         OperationStatus copyStatus;
-                        RecordMetadata recordMetadata = default;
-                        recordMetadata.RecordInfo.PreviousAddress = iter1.NextAddress;
+                        ReadOptions readOptions = new() { StopAddress = iter1.NextAddress, };
                         do
                         {
                             long checkedAddress = hlog.SafeReadOnlyAddress;
                             
-                            var status = fhtSession.Read(ref key, ref input, ref output, ref recordMetadata, ReadFlags.MinAddress);
+                            var status = fhtSession.Read(ref key, ref input, ref output, ref readOptions, out var recordMetadata);
 
                             // For now, we perform each record compaction separately. In order to do this in parallel to maximize IOPS,
                             // we need a new Conditional Upsert API (CopyToTailIfNotExists)

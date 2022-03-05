@@ -26,21 +26,21 @@ namespace FASTER.test
 
             internal PostFunctions() : base() { }
 
-            public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) { this.pswAddress = upsertInfo.Address; }
+            public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason) { this.pswAddress = upsertInfo.Address; }
 
-            public override void InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { value = input; }
+            public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo) { value = input; return true; }
             /// <inheritdoc/>
-            public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { this.piuAddress = rmwInfo.Address; }
+            public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo) { this.piuAddress = rmwInfo.Address; }
 
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) => false; // For this test, we want this to fail and lead to InitialUpdater
+            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo) => false; // For this test, we want this to fail and lead to InitialUpdater
 
             /// <inheritdoc/>
-            public override void CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { newValue = oldValue; }
+            public override bool CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RMWInfo rmwInfo) { newValue = oldValue; return true; }
             /// <inheritdoc/>
-            public override void PostCopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) { this.pcuAddress = rmwInfo.Address; }
+            public override void PostCopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RMWInfo rmwInfo) { this.pcuAddress = rmwInfo.Address; }
 
-            public override void PostSingleDeleter(ref int key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo) { this.psdAddress = deleteInfo.Address; }
-            public override bool ConcurrentDeleter(ref int key, ref int value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo) => false;
+            public override void PostSingleDeleter(ref int key, ref DeleteInfo deleteInfo) { this.psdAddress = deleteInfo.Address; }
+            public override bool ConcurrentDeleter(ref int key, ref int value, ref DeleteInfo deleteInfo) => false;
         }
 
         private FasterKV<int, int> fht;

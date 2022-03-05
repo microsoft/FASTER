@@ -25,7 +25,7 @@ namespace FASTER.core
         internal readonly IFasterEqualityComparer<Key> comparer;
 
         internal readonly bool UseReadCache;
-        private readonly CopyReadsToTail CopyReadsToTail;
+        private readonly ReadFlags ReadFlags;
         internal readonly int sectorSize;
         private readonly bool WriteDefaultOnDelete;
 
@@ -139,13 +139,8 @@ namespace FASTER.core
             if (checkpointSettings.CheckpointManager is null)
                 disposeCheckpointManager = true;
 
-            CopyReadsToTail = logSettings.CopyReadsToTail;
-
-            if (logSettings.ReadCacheSettings is not null)
-            {
-                CopyReadsToTail = CopyReadsToTail.None;
-                UseReadCache = true;
-            }
+            this.ReadFlags = logSettings.ReadFlags;
+            UseReadCache = logSettings.ReadCacheSettings is not null;
 
             UpdateVarLen(ref variableLengthStructSettings);
 
@@ -556,12 +551,28 @@ namespace FASTER.core
             }
         }
 
+        internal ReadFlags MergeReadFlags(ReadFlags session, ReadFlags read)
+            => MergeReadFlags(this.ReadFlags, session, read);
+
+        internal static ReadFlags MergeReadFlags(ReadFlags fkv, ReadFlags session, ReadFlags read)
+        {
+            ReadFlags flags = ((session & ReadFlags.None) == 0) ? fkv : ReadFlags.Default;
+            flags |= session & ~ReadFlags.None;
+
+            if ((read & ReadFlags.None) != 0)
+                flags = ReadFlags.Default;
+            flags |= read;
+            return flags & ~ReadFlags.None;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
                 FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
+            ReadOptions readOptions = default;
+            pcontext.SetOperationFlags(MergeReadFlags(sessionCtx.ReadFlags, readOptions.ReadFlags), ref readOptions);
             OperationStatus internalStatus;
             do 
                 internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
@@ -576,15 +587,15 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref RecordMetadata recordMetadata, ReadFlags readFlags, Context context,
+        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context,
                 FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(readFlags, recordMetadata.RecordInfo.PreviousAddress);
+            pcontext.SetOperationFlags(MergeReadFlags(sessionCtx.ReadFlags, readOptions.ReadFlags), ref readOptions);
             OperationStatus internalStatus;
             do
-                internalStatus = InternalRead(ref key, ref input, ref output, recordMetadata.RecordInfo.PreviousAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+                internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             while (internalStatus == OperationStatus.RETRY_NOW);
 
             if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
@@ -601,16 +612,16 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<Input, Output, Context, FasterSession>(long address, ref Input input, ref Output output, ReadFlags readFlags, Context context, FasterSession fasterSession, long serialNo,
+        internal Status ContextReadAtAddress<Input, Output, Context, FasterSession>(ref Input input, ref Output output, ref ReadOptions readOptions, Context context, FasterSession fasterSession, long serialNo,
             FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(readFlags, address, noKey: true);
+            pcontext.SetOperationFlags(MergeReadFlags(sessionCtx.ReadFlags, readOptions.ReadFlags), ref readOptions, noKey: true);
             Key key = default;
             OperationStatus internalStatus;
             do
-                internalStatus = InternalRead(ref key, ref input, ref output, address, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
+                internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             while (internalStatus == OperationStatus.RETRY_NOW);
 
             if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))

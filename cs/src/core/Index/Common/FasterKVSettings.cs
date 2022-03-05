@@ -57,9 +57,9 @@ namespace FASTER.core
         public double MutableFraction = 0.9;
 
         /// <summary>
-        /// Copy reads to tail of log
+        /// Control Read operations. These flags may be overridden by flags specified on session.NewSession or on the individual Read() operations
         /// </summary>
-        public CopyReadsToTail CopyReadsToTail = CopyReadsToTail.None;
+        public ReadFlags ReadFlags;
 
         /// <summary>
         /// Whether to preallocate the entire log (pages) in memory
@@ -206,7 +206,7 @@ namespace FASTER.core
         {
             return new LogSettings
             {
-                CopyReadsToTail = CopyReadsToTail,
+                ReadFlags = ReadFlags,
                 LogDevice = LogDevice,
                 ObjectLogDevice = ObjectLogDevice,
                 MemorySizeBits = Utility.NumBitsPreviousPowerOf2(MemorySize),

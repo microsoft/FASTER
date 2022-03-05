@@ -40,7 +40,7 @@ namespace FASTER.test.LockTests
 
             internal Input readCacheInput;
 
-            public override void SingleWriter(ref int key, ref Input input, ref int src, ref int dst, ref int output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool SingleWriter(ref int key, ref Input input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 // In the wait case we are waiting for a signal that something else has completed, e.g. a pending Read, by the thread with SetEvent.
                 if ((input.flags & LockFunctionFlags.WaitForEvent) != 0)
@@ -56,10 +56,10 @@ namespace FASTER.test.LockTests
                         Thread.Sleep(rng.Next(input.sleepRangeMs));
                 }
                 dst = src;
-                return;
+                return true;
             }
 
-            public override bool SingleReader(ref int key, ref Input input, ref int value, ref int dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+            public override bool SingleReader(ref int key, ref Input input, ref int value, ref int dst, ref ReadInfo readInfo)
             {
                 // We should only be here if we are doing the initial read, before Upsert has taken place.
                 Assert.AreEqual(key + valueAdd, value, $"Key = {key}");
@@ -67,7 +67,7 @@ namespace FASTER.test.LockTests
                 return true;
             }
 
-            public override bool ConcurrentReader(ref int key, ref Input input, ref int value, ref int dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+            public override bool ConcurrentReader(ref int key, ref Input input, ref int value, ref int dst, ref ReadInfo readInfo)
             {
                 // We should only be here if the Upsert completed before the Read started; in this case we Read() the Upserted value.
                 Assert.AreEqual(key + valueAdd * 2, value, $"Key = {key}");
@@ -141,10 +141,10 @@ namespace FASTER.test.LockTests
                     var sleepFlag = (iter % 5 == 0) ? LockFunctionFlags.None : LockFunctionFlags.SleepAfterEventOperation;
                     functions.readCacheInput = new() { flags = LockFunctionFlags.SetEvent | sleepFlag, sleepRangeMs = 10 };
                     int output = 0;
-                    RecordMetadata recordMetadata = default;
+                    ReadOptions readOptions = default;
 
                     // This will copy to ReadCache, and the test is trying to cause a race with the above Upsert.
-                    var status = session.Read(ref key, ref functions.readCacheInput, ref output, ref recordMetadata);
+                    var status = session.Read(ref key, ref functions.readCacheInput, ref output, ref readOptions, out _);
 
                     // If the Upsert completed before the Read started, we may Read() the Upserted value.
                     if (status.IsCompleted)

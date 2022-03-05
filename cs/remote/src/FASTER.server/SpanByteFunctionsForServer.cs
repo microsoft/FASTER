@@ -26,10 +26,10 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, ref ReadInfo readInfo) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
+        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
 
         /// <inheritdoc />
-        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, ref ReadInfo readInfo) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
+        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
 
         /// <summary>
         /// Copy to given SpanByteAndMemory (header length and payload copied to actual span/memory)

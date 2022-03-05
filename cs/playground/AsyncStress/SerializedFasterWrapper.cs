@@ -244,13 +244,13 @@ namespace AsyncStress
 
     public class SpanByteFunctions : SpanByteFunctions<SpanByte, SpanByteAndMemory, Empty>
     {
-        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
         {
             value.CopyTo(ref dst, MemoryPool<byte>.Shared);
             return true;
         }
 
-        public unsafe override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+        public unsafe override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
         {
             value.CopyTo(ref dst, MemoryPool<byte>.Shared);
             return true;
