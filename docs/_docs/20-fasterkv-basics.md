@@ -2,7 +2,7 @@
 title: "FasterKV Basics"
 permalink: /docs/fasterkv-basics/
 excerpt: "FasterKV Basics"
-last_modified_at: 2020-12-08
+last_modified_at: 2022-03-04
 toc: true
 ---
 
