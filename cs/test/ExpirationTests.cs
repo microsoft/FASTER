@@ -28,11 +28,12 @@ namespace FASTER.test.Expiration
 
         static int GetValue(int key) => key + NumRecs * 10;
 
-        [Flags] internal enum Funcs { NeedInitialUpdate = 0x0001, NeedCopyUpdate = 0x0002, InPlaceUpdater = 0x0004, InitialUpdater = 0x0008, CopyUpdater = 0x0010, 
+        [Flags] internal enum Funcs { Invalid = 0, NeedInitialUpdate = 0x0001, NeedCopyUpdate = 0x0002, InPlaceUpdater = 0x0004, InitialUpdater = 0x0008, CopyUpdater = 0x0010, 
                                       SingleReader = 0x0020, ConcurrentReader = 0x0040,
                                       RMWCompletionCallback = 0x0100, ReadCompletionCallback = 0x0200,
                                       SkippedCopyUpdate = NeedCopyUpdate | RMWCompletionCallback,
-                                      DidCopyUpdate = NeedCopyUpdate | CopyUpdater | RMWCompletionCallback,
+                                      DidCopyUpdate = NeedCopyUpdate | CopyUpdater,
+                                      DidCopyUpdateCC = DidCopyUpdate | RMWCompletionCallback,
                                       DidInitialUpdate = NeedInitialUpdate | InitialUpdater};
 
         internal enum ExpirationResult
@@ -533,7 +534,7 @@ namespace FASTER.test.Expiration
             }
         }
 
-        private ExpirationOutput GetRecord(int key, Status expectedStatus, bool isOnDisk)
+        private ExpirationOutput GetRecord(int key, Status expectedStatus, FlushMode flushMode)
         {
             ExpirationInput input = default;
             ExpirationOutput output = new();
@@ -541,7 +542,7 @@ namespace FASTER.test.Expiration
             var status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
             if (status.IsPending)
             {
-                Assert.IsTrue(isOnDisk);
+                Assert.AreNotEqual(FlushMode.NoFlush, flushMode);
                 session.CompletePendingWithOutputs(out var completedOutputs, wait:true);
                 (status, output) = GetSinglePendingResult(completedOutputs);
             }
@@ -550,13 +551,13 @@ namespace FASTER.test.Expiration
             return output;
         }
 
-        private ExpirationOutput ExecuteRMW(int key, ref ExpirationInput input, bool isOnDisk, Status expectedStatus = default)
+        private ExpirationOutput ExecuteRMW(int key, ref ExpirationInput input, FlushMode flushMode, Status expectedStatus = default)
         {
             ExpirationOutput output = new ();
             var status = session.RMW(ref key, ref input, ref output);
             if (status.IsPending)
             {
-                Assert.IsTrue(isOnDisk);
+                Assert.AreNotEqual(FlushMode.NoFlush, flushMode);
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 (status, output) = GetSinglePendingResult(completedOutputs);
             }
@@ -565,165 +566,204 @@ namespace FASTER.test.Expiration
             return output;
         }
 
-        private static Status GetMutableVsOnDiskStatus(bool isOnDisk)
+        private static Status GetMutableVsOnDiskStatus(FlushMode flushMode)
         {
             // The behavior is different for OnDisk vs. mutable:
-            //  - OnDisk results in a call to NeedCopyUpdate which returns false, so RMW returns Found
             //  - Mutable results in a call to IPU which returns true, so RMW returns InPlaceUpdatedRecord.
-            return new(isOnDisk ? StatusCode.Found : StatusCode.InPlaceUpdatedRecord);
+            //  - Otherwise it results in a call to NeedCopyUpdate which returns false, so RMW returns Found
+            return new(flushMode == FlushMode.NoFlush ? StatusCode.InPlaceUpdatedRecord : StatusCode.Found);
         }
 
         void InitialIncrement()
         {
             Populate(new Random(RandSeed));
-            InitialRead(isOnDisk: false, afterIncrement: false);
-            IncrementValue(TestOp.Increment, isOnDisk: false);
+            InitialRead(FlushMode.NoFlush, afterIncrement: false);
+            IncrementValue(TestOp.Increment, FlushMode.NoFlush);
         }
 
-        private void InitialRead(bool isOnDisk, bool afterIncrement)
+        private void InitialRead(FlushMode flushMode, bool afterIncrement)
         {
-            var output = GetRecord(ModifyKey, new(StatusCode.Found), isOnDisk);
+            var output = GetRecord(ModifyKey, new(StatusCode.Found), flushMode);
             Assert.AreEqual(GetValue(ModifyKey) + (afterIncrement ? 1 : 0), output.retrievedValue);
-            Assert.AreEqual(isOnDisk ? (Funcs.SingleReader | Funcs.ReadCompletionCallback) : Funcs.ConcurrentReader, output.functionsCalled);
+            Funcs expectedFuncs = flushMode switch
+            {
+                FlushMode.NoFlush => Funcs.ConcurrentReader,
+                FlushMode.ReadOnly => Funcs.SingleReader,
+                FlushMode.OnDisk => Funcs.SingleReader | Funcs.ReadCompletionCallback,
+                _ => Funcs.Invalid
+            };
+            Assert.AreNotEqual(expectedFuncs, Funcs.Invalid, $"Unexpected flushmode {flushMode}");
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
         }
 
-        private void IncrementValue(TestOp testOp, bool isOnDisk)
+        private void IncrementValue(TestOp testOp, FlushMode flushMode)
         {
             var key = ModifyKey;
             ExpirationInput input = new() { testOp = testOp };
-            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
-            Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
+            Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord) : new(StatusCode.CopyUpdatedRecord);
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, expectedFoundRmwStatus);
+            var expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.DidCopyUpdate,
+                                            onDisk: Funcs.DidCopyUpdateCC);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.Incremented, output.result);
         }
 
-        private void MaybeEvict(bool isOnDisk)
+        private void MaybeEvict(FlushMode flushMode)
         {
-            if (isOnDisk)
-            {
+            if (flushMode == FlushMode.NoFlush)
+                return;
+            if (flushMode == FlushMode.ReadOnly)
+                fht.Log.ShiftReadOnlyAddress(fht.Log.TailAddress, wait: true);
+            else
                 fht.Log.FlushAndEvict(wait: true);
-                InitialRead(isOnDisk, afterIncrement: true);
-            }
+            InitialRead(flushMode, afterIncrement: true);
         }
 
-        private void VerifyKeyNotCreated(TestOp testOp, bool isOnDisk)
+        private void VerifyKeyNotCreated(TestOp testOp, FlushMode flushMode)
         {
             var key = NoKey;
-#if false
+#if false // TODO - Add to ExpirationFunctions the knowledge of whether we're calling from here or the main test part
             // Key doesn't exist - no-op
             ExpirationInput input = new() { testOp = testOp, value = NoValue, comparisonValue = GetValue(key) + 1 };
 
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, new(StatusCode.NotFound));
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, new(StatusCode.NotFound));
             Assert.AreEqual(Funcs.NeedInitialUpdate, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.None, output.result);
             Assert.AreEqual(0, output.retrievedValue);
 #endif
 
             // Verify it's not there
-            GetRecord(key, new(StatusCode.NotFound), isOnDisk);
+            GetRecord(key, new(StatusCode.NotFound), flushMode);
+        }
+
+        private static Funcs GetExpectedFuncs(FlushMode flushMode, Funcs noFlush, Funcs readOnly, Funcs onDisk)
+        {
+            var expectedFuncs = flushMode switch
+            {
+                FlushMode.NoFlush => noFlush,
+                FlushMode.ReadOnly => readOnly,
+                FlushMode.OnDisk => onDisk,
+                _ => Funcs.Invalid
+            };
+            Assert.AreNotEqual(expectedFuncs, Funcs.Invalid, $"Unexpected flushmode {flushMode}");
+            return expectedFuncs;
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void PassiveExpireTest([Values]bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void PassiveExpireTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
-            MaybeEvict(isOnDisk);
-            IncrementValue(TestOp.PassiveExpire, isOnDisk);
+            MaybeEvict(flushMode);
+            IncrementValue(TestOp.PassiveExpire, flushMode);
             session.ctx.phase = phase;
-            GetRecord(ModifyKey, new(StatusCode.NotFound), isOnDisk);
+            GetRecord(ModifyKey, new(StatusCode.NotFound), flushMode);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ExpireDeleteTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void ExpireDeleteTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
-            MaybeEvict(isOnDisk);
+            MaybeEvict(flushMode);
             const TestOp testOp = TestOp.ExpireDelete;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
+            Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired) : new(StatusCode.CopyUpdatedRecord);
 
             session.ctx.phase = phase;
 
             // Increment/Delete it
             ExpirationInput input = new() { testOp = testOp };
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
-            Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, expectedFoundRmwStatus);
+            var expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.DidCopyUpdate,
+                                            onDisk: Funcs.DidCopyUpdateCC);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.ExpireDelete, output.result);
 
             // Verify it's not there
-            GetRecord(key, new(StatusCode.NotFound), isOnDisk);
+            GetRecord(key, new(StatusCode.NotFound), flushMode);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ExpireRolloverTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void ExpireRolloverTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
-            MaybeEvict(isOnDisk);
+            MaybeEvict(flushMode);
             const TestOp testOp = TestOp.ExpireRollover;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
+            Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord) : new(StatusCode.CopyUpdatedRecord);
 
             session.ctx.phase = phase;
 
             // Increment/Rollover to initial state
             ExpirationInput input = new() { testOp = testOp };
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
-            Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, expectedFoundRmwStatus);
+            var expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.DidCopyUpdate,
+                                            onDisk: Funcs.DidCopyUpdateCC);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.ExpireRollover, output.result);
             Assert.AreEqual(GetValue(key), output.retrievedValue);
 
             // Verify it's there with initial state
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk:false /* update was appended */);
+            output = GetRecord(key, new(StatusCode.Found), FlushMode.NoFlush /* update was appended */);
             Assert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfKeyExistsTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfKeyExistsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
-            MaybeEvict(isOnDisk);
+            MaybeEvict(flushMode);
             const TestOp testOp = TestOp.SetIfKeyExists;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
+            Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord) : new(StatusCode.CopyUpdatedRecord);
 
             session.ctx.phase = phase;
 
             // Key exists - update it
             ExpirationInput input = new() { testOp = testOp, value = GetValue(key) + SetIncrement };
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
-            Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, expectedFoundRmwStatus);
+            var expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.DidCopyUpdate,
+                                            onDisk: Funcs.DidCopyUpdateCC);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.Updated, output.result);
             Assert.AreEqual(input.value, output.retrievedValue);
 
             // Verify it's there with updated value
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk: false /* update was appended */);
+            output = GetRecord(key, new(StatusCode.Found), FlushMode.NoFlush /* update was appended */);
             Assert.AreEqual(input.value, output.retrievedValue);
 
             // Key doesn't exist - no-op
             key += SetIncrement;
             input = new() { testOp = testOp, value = GetValue(key) };
-            output = ExecuteRMW(key, ref input, isOnDisk, new(StatusCode.NotFound));
+            output = ExecuteRMW(key, ref input, flushMode, new(StatusCode.NotFound));
             Assert.AreEqual(Funcs.NeedInitialUpdate, output.functionsCalled);
 
             // Verify it's not there
-            GetRecord(key, new(StatusCode.NotFound), isOnDisk);
+            GetRecord(key, new(StatusCode.NotFound), flushMode);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfKeyNotExistsTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfKeyNotExistsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
-            MaybeEvict(isOnDisk);
+            MaybeEvict(flushMode);
             const TestOp testOp = TestOp.SetIfKeyNotExists;
             var key = ModifyKey;
 
@@ -731,174 +771,209 @@ namespace FASTER.test.Expiration
 
             // Key exists - no-op
             ExpirationInput input = new() { testOp = testOp, value = GetValue(key) + SetIncrement };
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, GetMutableVsOnDiskStatus(isOnDisk));
-            Assert.AreEqual(isOnDisk ? Funcs.SkippedCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, GetMutableVsOnDiskStatus(flushMode));
+            var expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.NeedCopyUpdate,
+                                            onDisk: Funcs.SkippedCopyUpdate);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
 
             // Verify it's there with unchanged value
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), flushMode);
             Assert.AreEqual(GetValue(key) + 1, output.retrievedValue);
 
             // Key doesn't exist - create it
             key += SetIncrement;
             input = new() { testOp = testOp, value = GetValue(key) };
-            output = ExecuteRMW(key, ref input, isOnDisk, new(StatusCode.NotFound | StatusCode.CreatedRecord));
+            output = ExecuteRMW(key, ref input, flushMode, new(StatusCode.NotFound | StatusCode.CreatedRecord));
             Assert.AreEqual(Funcs.DidInitialUpdate, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.Updated, output.result);
             Assert.AreEqual(input.value, output.retrievedValue);
 
             // Verify it's there with specified value
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk: false /* was just added */);
+            output = GetRecord(key, new(StatusCode.Found), FlushMode.NoFlush /* was just added */);
             Assert.AreEqual(input.value, output.retrievedValue);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfValueEqualsTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfValueEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
-            MaybeEvict(isOnDisk);
+            MaybeEvict(flushMode);
             const TestOp testOp = TestOp.SetIfValueEquals;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
+            Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord) : new(StatusCode.CopyUpdatedRecord);
 
-            VerifyKeyNotCreated(testOp, isOnDisk);
+            VerifyKeyNotCreated(testOp, flushMode);
             session.ctx.phase = phase;
 
             // Value equals - update it
             ExpirationInput input = new() { testOp = testOp, value = GetValue(key) + SetIncrement, comparisonValue = GetValue(key) + 1 };
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
-            Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, expectedFoundRmwStatus);
+            var expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.DidCopyUpdate,
+                                            onDisk: Funcs.DidCopyUpdateCC);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.Updated, output.result);
             Assert.AreEqual(input.value, output.retrievedValue);
 
             // Verify it's there with updated value
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), flushMode);
             Assert.AreEqual(input.value, output.retrievedValue);
 
             // Value doesn't equal - no-op
             key += 1;   // We modified ModifyKey so get the next-higher key
             input = new() { testOp = testOp, value = -2, comparisonValue = -1 };
-            output = ExecuteRMW(key, ref input, isOnDisk, GetMutableVsOnDiskStatus(isOnDisk));
-            Assert.AreEqual(isOnDisk ? Funcs.SkippedCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
-            Assert.AreEqual(isOnDisk ? ExpirationResult.None : ExpirationResult.NotUpdated, output.result);
-            Assert.AreEqual(isOnDisk ? 0 : GetValue(key), output.retrievedValue);
+            output = ExecuteRMW(key, ref input, flushMode, GetMutableVsOnDiskStatus(flushMode));
+            expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.NeedCopyUpdate,
+                                            onDisk: Funcs.SkippedCopyUpdate);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotUpdated : ExpirationResult.None, output.result);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
 
             // Verify it's there with unchanged value; note that it has not been InitialIncrement()ed
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), flushMode);
             Assert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfValueNotEqualsTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfValueNotEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
-            MaybeEvict(isOnDisk);
+            MaybeEvict(flushMode);
             const TestOp testOp = TestOp.SetIfValueNotEquals;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
+            Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord) : new(StatusCode.CopyUpdatedRecord);
 
-            VerifyKeyNotCreated(testOp, isOnDisk);
+            VerifyKeyNotCreated(testOp, flushMode);
             session.ctx.phase = phase;
 
             // Value equals
             ExpirationInput input = new() { testOp = testOp, value = -2, comparisonValue = GetValue(key) + 1 };
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, GetMutableVsOnDiskStatus(isOnDisk));
-            Assert.AreEqual(isOnDisk ? Funcs.SkippedCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
-            Assert.AreEqual(isOnDisk ? ExpirationResult.None : ExpirationResult.NotUpdated, output.result);
-            Assert.AreEqual(isOnDisk ? 0 : GetValue(key) + 1, output.retrievedValue);
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, GetMutableVsOnDiskStatus(flushMode));
+            var expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.NeedCopyUpdate,
+                                            onDisk: Funcs.SkippedCopyUpdate);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotUpdated : ExpirationResult.None, output.result);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) + 1 : 0, output.retrievedValue);
 
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), flushMode);
             Assert.AreEqual(GetValue(key) + 1, output.retrievedValue);
 
             // Value doesn't equal
             input = new() { testOp = testOp, value = GetValue(key) + SetIncrement, comparisonValue = -1 };
-            output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
-            Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
+            output = ExecuteRMW(key, ref input, flushMode, expectedFoundRmwStatus);
+            expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.DidCopyUpdate,
+                                            onDisk: Funcs.DidCopyUpdateCC);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.Updated, output.result);
             Assert.AreEqual(GetValue(key) + SetIncrement, output.retrievedValue);
 
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), flushMode);
             Assert.AreEqual(GetValue(key) + SetIncrement, output.retrievedValue);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteThenUpdateTest([Values] bool isOnDisk, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void DeleteThenUpdateTest([Values] FlushMode flushMode, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
-            MaybeEvict(isOnDisk);
+            MaybeEvict(flushMode);
             bool isEqual = keyEquality == KeyEquality.Equal;
             TestOp testOp = isEqual ? TestOp.DeleteIfValueEqualsThenUpdate : TestOp.DeleteIfValueNotEqualsThenUpdate;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.Expired | StatusCode.CreatedRecord) : new(StatusCode.Expired | StatusCode.InPlaceUpdatedRecord);
+            Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.Expired | StatusCode.InPlaceUpdatedRecord) : new(StatusCode.Expired | StatusCode.CreatedRecord);
 
-            VerifyKeyNotCreated(testOp, isOnDisk);
+            VerifyKeyNotCreated(testOp, flushMode);
             session.ctx.phase = phase;
 
             // Target value - if isEqual, the actual value of the key, else a bogus value. Delete the record, then re-initialize it from input
             var reinitValue = GetValue(key) + 1000;
             ExpirationInput input = new() { testOp = testOp, value = reinitValue, comparisonValue = isEqual ? GetValue(key) + 1 : -1 };
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
-            Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate | Funcs.DidInitialUpdate : Funcs.InPlaceUpdater | Funcs.DidInitialUpdate, output.functionsCalled);
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, expectedFoundRmwStatus);
+            var expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater | Funcs.DidInitialUpdate,
+                                            readOnly: Funcs.DidCopyUpdate | Funcs.DidInitialUpdate,
+                                            onDisk: Funcs.DidCopyUpdateCC | Funcs.DidInitialUpdate);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.DeletedThenUpdated, output.result);
 
             // Verify we did the reInitialization (this test should always have restored it with its initial values)
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), flushMode);
             Assert.AreEqual(reinitValue, output.retrievedValue);
 
             // No-op value - if isEqual, a bogus value, else the actual value of the key. Does nothing to the record.
             key += 1;   // We deleted ModifyKey so get the next-higher key
             input = new() { testOp = testOp, comparisonValue = isEqual ? -1 : GetValue(key) };
-            output = ExecuteRMW(key, ref input, isOnDisk, GetMutableVsOnDiskStatus(isOnDisk));
-            Assert.AreEqual(isOnDisk ? Funcs.SkippedCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
-            Assert.AreEqual(isOnDisk ? ExpirationResult.None : ExpirationResult.NotDeleted, output.result);
-            Assert.AreEqual(isOnDisk ? 0 : GetValue(key), output.retrievedValue);
+            output = ExecuteRMW(key, ref input, flushMode, GetMutableVsOnDiskStatus(flushMode));
+            expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.NeedCopyUpdate,
+                                            onDisk: Funcs.SkippedCopyUpdate);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
 
             // Verify it's there with unchanged value; note that it has not been InitialIncrement()ed
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), flushMode);
             Assert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteThenInsertTest([Values] bool isOnDisk, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void DeleteThenInsertTest([Values] FlushMode flushMode, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
-            MaybeEvict(isOnDisk);
+            MaybeEvict(flushMode);
             bool isEqual = keyEquality == KeyEquality.Equal;
             TestOp testOp = isEqual ? TestOp.DeleteIfValueEqualsThenInsert : TestOp.DeleteIfValueNotEqualsThenInsert;
             var key = ModifyKey;
             Status expectedFoundRmwStatus = new(StatusCode.Expired | StatusCode.CreatedRecord);
 
-            VerifyKeyNotCreated(testOp, isOnDisk);
+            VerifyKeyNotCreated(testOp, flushMode);
             session.ctx.phase = phase;
 
             // Target value - if isEqual, the actual value of the key, else a bogus value. Delete the record, then re-initialize it from input
             var reinitValue = GetValue(key) + 1000;
             ExpirationInput input = new() { testOp = testOp, value = reinitValue, comparisonValue = isEqual ? GetValue(key) + 1 : -1 };
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
-            Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate | Funcs.DidInitialUpdate : Funcs.InPlaceUpdater | Funcs.DidInitialUpdate, output.functionsCalled);
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, expectedFoundRmwStatus);
+            var expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.DidInitialUpdate | Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.DidInitialUpdate | Funcs.DidCopyUpdate,
+                                            onDisk: Funcs.DidInitialUpdate | Funcs.DidCopyUpdateCC);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.DeletedThenInserted, output.result);
 
             // Verify we did the reInitialization (this test should always have restored it with its initial values)
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), flushMode);
             Assert.AreEqual(reinitValue, output.retrievedValue);
-
             // No-op value - if isEqual, a bogus value, else the actual value of the key. Does nothing to the record.
             key += 1;   // We deleted ModifyKey so get the next-higher key
             input = new() { testOp = testOp, comparisonValue = isEqual ? -1 : GetValue(key) };
-            output = ExecuteRMW(key, ref input, isOnDisk, GetMutableVsOnDiskStatus(isOnDisk));
-            Assert.AreEqual(isOnDisk ? Funcs.SkippedCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
-            Assert.AreEqual(isOnDisk ? ExpirationResult.None : ExpirationResult.NotDeleted, output.result);
-            Assert.AreEqual(isOnDisk ? 0 : GetValue(key), output.retrievedValue);
+            output = ExecuteRMW(key, ref input, flushMode, GetMutableVsOnDiskStatus(flushMode));
+            expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.NeedCopyUpdate,
+                                            onDisk: Funcs.SkippedCopyUpdate);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
 
             // Verify it's there with unchanged value; note that it has not been InitialIncrement()ed
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), flushMode);
             Assert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
@@ -910,69 +985,77 @@ namespace FASTER.test.Expiration
             InitialIncrement();
             const TestOp testOp = TestOp.DeleteIfValueEqualsAndStop;
             var key = ModifyKey;
-            bool isOnDisk = false;
+            FlushMode flushMode = FlushMode.NoFlush;
             Status expectedFoundRmwStatus = new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
 
-            VerifyKeyNotCreated(testOp, isOnDisk: false);
+            VerifyKeyNotCreated(testOp, flushMode);
             session.ctx.phase = phase;
 
             // Value equals - delete it
             ExpirationInput input = new() { testOp = testOp, comparisonValue = GetValue(key) + 1 };
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, expectedFoundRmwStatus);
             Assert.AreEqual(Funcs.InPlaceUpdater, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.Deleted, output.result);
 
             // Verify it's not there
-            GetRecord(key, new(StatusCode.NotFound), isOnDisk: false);
+            GetRecord(key, new(StatusCode.NotFound), flushMode);
 
             // Value doesn't equal - no-op
             key += 1;   // We deleted ModifyKey so get the next-higher key
             input = new() { testOp = testOp, comparisonValue = -1 };
-            output = ExecuteRMW(key, ref input, isOnDisk, GetMutableVsOnDiskStatus(isOnDisk));
-            Assert.AreEqual(isOnDisk ? Funcs.SkippedCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
-            Assert.AreEqual(isOnDisk ? ExpirationResult.None : ExpirationResult.NotDeleted, output.result);
-            Assert.AreEqual(isOnDisk ? 0 : GetValue(key), output.retrievedValue);
+            output = ExecuteRMW(key, ref input, flushMode, GetMutableVsOnDiskStatus(flushMode));
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? Funcs.InPlaceUpdater : Funcs.SkippedCopyUpdate, output.functionsCalled);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
 
             // Verify it's there with unchanged value; note that it has not been InitialIncrement()ed
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), flushMode);
             Assert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteIfValueNotEqualsTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void DeleteIfValueNotEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
-            MaybeEvict(isOnDisk);
+            MaybeEvict(flushMode);
             const TestOp testOp = TestOp.DeleteIfValueNotEqualsAndStop;
             var key = ModifyKey;
 
             // For this test, IPU will Cancel rather than go to the IPU path
-            Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CreatedRecord | StatusCode.Expired) : new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
+            Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired) : new(StatusCode.CreatedRecord | StatusCode.Expired);
 
-            VerifyKeyNotCreated(testOp, isOnDisk);
+            VerifyKeyNotCreated(testOp, flushMode);
             session.ctx.phase = phase;
 
             // Value equals - no-op
             ExpirationInput input = new() { testOp = testOp, comparisonValue = GetValue(key) + 1 };
-            ExpirationOutput output = ExecuteRMW(key, ref input, isOnDisk, GetMutableVsOnDiskStatus(isOnDisk));
-            Assert.AreEqual(isOnDisk ? Funcs.SkippedCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
-            Assert.AreEqual(isOnDisk ? ExpirationResult.None : ExpirationResult.NotDeleted, output.result);
-            Assert.AreEqual(isOnDisk ? 0 : GetValue(key) + 1, output.retrievedValue);
+            ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, GetMutableVsOnDiskStatus(flushMode));
+            var expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.NeedCopyUpdate,
+                                            onDisk: Funcs.SkippedCopyUpdate);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
+            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) + 1 : 0, output.retrievedValue);
 
             // Verify it's there with unchanged value
-            output = GetRecord(key, new(StatusCode.Found), isOnDisk);
+            output = GetRecord(key, new(StatusCode.Found), flushMode);
             Assert.AreEqual(GetValue(key) + 1, output.retrievedValue);
 
             // Value doesn't equal - delete it
             input = new() { testOp = testOp, comparisonValue = -1 };
-            output = ExecuteRMW(key, ref input, isOnDisk, expectedFoundRmwStatus);
-            Assert.AreEqual(isOnDisk ? Funcs.DidCopyUpdate : Funcs.InPlaceUpdater, output.functionsCalled);
+            output = ExecuteRMW(key, ref input, flushMode, expectedFoundRmwStatus);
+            expectedFuncs = GetExpectedFuncs(flushMode,
+                                            noFlush: Funcs.InPlaceUpdater,
+                                            readOnly: Funcs.DidCopyUpdate,
+                                            onDisk: Funcs.DidCopyUpdateCC);
+            Assert.AreEqual(expectedFuncs, output.functionsCalled);
             Assert.AreEqual(ExpirationResult.Deleted, output.result);
 
             // Verify it's not there
-            GetRecord(key, new(StatusCode.NotFound), isOnDisk);
+            GetRecord(key, new(StatusCode.NotFound), flushMode);
         }
     }
 }
