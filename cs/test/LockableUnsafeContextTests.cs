@@ -50,8 +50,6 @@ namespace FASTER.test.LockableUnsafeContext
 
     public enum ResultLockTarget { MutableLock, LockTable }
 
-    public enum FlushMode { NoFlush, ReadOnly, OnDisk }
-
     public enum UpdateOp { Upsert, RMW, Delete }
 
     [TestFixture]

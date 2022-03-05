@@ -5,6 +5,7 @@ using System;
 using System.Runtime.CompilerServices;
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test.Expiration
 {
@@ -489,10 +490,10 @@ namespace FASTER.test.Expiration
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            path = MethodTestDir + "/";
+            DeleteDirectory(MethodTestDir, wait: true);
 
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(MethodTestDir + "/hlog.log", deleteOnClose: true);
             fht = new FasterKV<int, VLValue>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
@@ -512,7 +513,7 @@ namespace FASTER.test.Expiration
             fht = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(path);
+            DeleteDirectory(path);
         }
 
         private unsafe void Populate(Random rng)
@@ -542,7 +543,7 @@ namespace FASTER.test.Expiration
             {
                 Assert.IsTrue(isOnDisk);
                 session.CompletePendingWithOutputs(out var completedOutputs, wait:true);
-                (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
+                (status, output) = GetSinglePendingResult(completedOutputs);
             }
 
             Assert.AreEqual(expectedStatus, status);
@@ -557,14 +558,14 @@ namespace FASTER.test.Expiration
             {
                 Assert.IsTrue(isOnDisk);
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
+                (status, output) = GetSinglePendingResult(completedOutputs);
             }
 
             Assert.AreEqual(expectedStatus, status);
             return output;
         }
 
-        private Status GetMutableVsOnDiskStatus(bool isOnDisk)
+        private static Status GetMutableVsOnDiskStatus(bool isOnDisk)
         {
             // The behavior is different for OnDisk vs. mutable:
             //  - OnDisk results in a call to NeedCopyUpdate which returns false, so RMW returns Found
@@ -625,24 +626,27 @@ namespace FASTER.test.Expiration
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void PassiveExpireTest([Values]bool isOnDisk)
+        public void PassiveExpireTest([Values]bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(isOnDisk);
             IncrementValue(TestOp.PassiveExpire, isOnDisk);
+            session.ctx.phase = phase;
             GetRecord(ModifyKey, new(StatusCode.NotFound), isOnDisk);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ExpireDeleteTest([Values] bool isOnDisk)
+        public void ExpireDeleteTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(isOnDisk);
             const TestOp testOp = TestOp.ExpireDelete;
             var key = ModifyKey;
             Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
+
+            session.ctx.phase = phase;
 
             // Increment/Delete it
             ExpirationInput input = new() { testOp = testOp };
@@ -657,13 +661,15 @@ namespace FASTER.test.Expiration
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ExpireRolloverTest([Values] bool isOnDisk)
+        public void ExpireRolloverTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(isOnDisk);
             const TestOp testOp = TestOp.ExpireRollover;
             var key = ModifyKey;
             Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
+
+            session.ctx.phase = phase;
 
             // Increment/Rollover to initial state
             ExpirationInput input = new() { testOp = testOp };
@@ -680,13 +686,15 @@ namespace FASTER.test.Expiration
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfKeyExistsTest([Values] bool isOnDisk)
+        public void SetIfKeyExistsTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(isOnDisk);
             const TestOp testOp = TestOp.SetIfKeyExists;
             var key = ModifyKey;
             Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
+
+            session.ctx.phase = phase;
 
             // Key exists - update it
             ExpirationInput input = new() { testOp = testOp, value = GetValue(key) + SetIncrement };
@@ -712,12 +720,14 @@ namespace FASTER.test.Expiration
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfKeyNotExistsTest([Values] bool isOnDisk)
+        public void SetIfKeyNotExistsTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(isOnDisk);
             const TestOp testOp = TestOp.SetIfKeyNotExists;
             var key = ModifyKey;
+
+            session.ctx.phase = phase;
 
             // Key exists - no-op
             ExpirationInput input = new() { testOp = testOp, value = GetValue(key) + SetIncrement };
@@ -744,7 +754,7 @@ namespace FASTER.test.Expiration
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfValueEqualsTest([Values] bool isOnDisk)
+        public void SetIfValueEqualsTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(isOnDisk);
@@ -753,6 +763,7 @@ namespace FASTER.test.Expiration
             Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
 
             VerifyKeyNotCreated(testOp, isOnDisk);
+            session.ctx.phase = phase;
 
             // Value equals - update it
             ExpirationInput input = new() { testOp = testOp, value = GetValue(key) + SetIncrement, comparisonValue = GetValue(key) + 1 };
@@ -781,7 +792,7 @@ namespace FASTER.test.Expiration
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfValueNotEqualsTest([Values] bool isOnDisk)
+        public void SetIfValueNotEqualsTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(isOnDisk);
@@ -790,6 +801,7 @@ namespace FASTER.test.Expiration
             Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CopyUpdatedRecord) : new(StatusCode.InPlaceUpdatedRecord);
 
             VerifyKeyNotCreated(testOp, isOnDisk);
+            session.ctx.phase = phase;
 
             // Value equals
             ExpirationInput input = new() { testOp = testOp, value = -2, comparisonValue = GetValue(key) + 1 };
@@ -815,15 +827,17 @@ namespace FASTER.test.Expiration
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteThenUpdateTest([Values] bool isOnDisk, [Values] bool isEqual)
+        public void DeleteThenUpdateTest([Values] bool isOnDisk, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(isOnDisk);
+            bool isEqual = keyEquality == KeyEquality.Equal;
             TestOp testOp = isEqual ? TestOp.DeleteIfValueEqualsThenUpdate : TestOp.DeleteIfValueNotEqualsThenUpdate;
             var key = ModifyKey;
             Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.Expired | StatusCode.CreatedRecord) : new(StatusCode.Expired | StatusCode.InPlaceUpdatedRecord);
 
             VerifyKeyNotCreated(testOp, isOnDisk);
+            session.ctx.phase = phase;
 
             // Target value - if isEqual, the actual value of the key, else a bogus value. Delete the record, then re-initialize it from input
             var reinitValue = GetValue(key) + 1000;
@@ -852,15 +866,17 @@ namespace FASTER.test.Expiration
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteThenInsertTest([Values] bool isOnDisk, [Values] bool isEqual)
+        public void DeleteThenInsertTest([Values] bool isOnDisk, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(isOnDisk);
+            bool isEqual = keyEquality == KeyEquality.Equal;
             TestOp testOp = isEqual ? TestOp.DeleteIfValueEqualsThenInsert : TestOp.DeleteIfValueNotEqualsThenInsert;
             var key = ModifyKey;
             Status expectedFoundRmwStatus = new(StatusCode.Expired | StatusCode.CreatedRecord);
 
             VerifyKeyNotCreated(testOp, isOnDisk);
+            session.ctx.phase = phase;
 
             // Target value - if isEqual, the actual value of the key, else a bogus value. Delete the record, then re-initialize it from input
             var reinitValue = GetValue(key) + 1000;
@@ -889,7 +905,7 @@ namespace FASTER.test.Expiration
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteAndCancelIfValueEqualsTest()
+        public void DeleteAndCancelIfValueEqualsTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
             const TestOp testOp = TestOp.DeleteIfValueEqualsAndStop;
@@ -898,6 +914,7 @@ namespace FASTER.test.Expiration
             Status expectedFoundRmwStatus = new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
 
             VerifyKeyNotCreated(testOp, isOnDisk: false);
+            session.ctx.phase = phase;
 
             // Value equals - delete it
             ExpirationInput input = new() { testOp = testOp, comparisonValue = GetValue(key) + 1 };
@@ -924,7 +941,7 @@ namespace FASTER.test.Expiration
         [Test]
         [Category("FasterKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteIfValueNotEqualsTest([Values] bool isOnDisk)
+        public void DeleteIfValueNotEqualsTest([Values] bool isOnDisk, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(isOnDisk);
@@ -935,6 +952,7 @@ namespace FASTER.test.Expiration
             Status expectedFoundRmwStatus = isOnDisk ? new(StatusCode.CreatedRecord | StatusCode.Expired) : new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
 
             VerifyKeyNotCreated(testOp, isOnDisk);
+            session.ctx.phase = phase;
 
             // Value equals - no-op
             ExpirationInput input = new() { testOp = testOp, comparisonValue = GetValue(key) + 1 };

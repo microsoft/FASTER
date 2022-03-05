@@ -179,6 +179,10 @@ namespace FASTER.test
 
         public enum ReadCopyDestination { Tail, ReadCache }
 
+        public enum FlushMode { NoFlush, ReadOnly, OnDisk }
+
+        public enum KeyEquality { Equal, NotEqual }
+
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
 
