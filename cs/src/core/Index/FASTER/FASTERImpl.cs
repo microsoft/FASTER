@@ -240,7 +240,7 @@ namespace FASTER.core
                     hlog.MarkPage(logicalAddress, sessionCtx.version);
                     pendingContext.recordInfo = recordInfo;
                     pendingContext.logicalAddress = logicalAddress;
-                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
+                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
                 }
                 return lockFailed ? OperationStatus.RETRY_NOW : OperationStatus.NOTFOUND;
             }
@@ -268,10 +268,23 @@ namespace FASTER.core
                                                             expired: readInfo.Action == ReadAction.Expire);
                         while (status == OperationStatus.RETRY_NOW);
                         container.Dispose();
-                        if (status == OperationStatus.NOTFOUND)
-                            status = OperationStatus.SUCCESS;
+
                         if (status == OperationStatus.SUCCESS)
-                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopiedRecord);
+                        {
+                            // Successfully copied (tombstone or read record) to tail
+                            if (readInfo.Action == ReadAction.Expire)
+                                return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CopiedRecord | StatusCode.Expired);
+                            else
+                                return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopiedRecord);
+                        }
+                        else
+                        {
+                            // No copy to tail
+                            if (readInfo.Action == ReadAction.Expire)
+                                return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
+                            else
+                                return OperationStatus.SUCCESS;
+                        }
                     }
                     return OperationStatus.SUCCESS;
                 }
@@ -806,16 +819,28 @@ namespace FASTER.core
                 {
                     // Expiration with no insertion.
                     recordInfo.Tombstone = true;
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
+                    return true;
                 }
                 return false;
             }
-            if (fasterSession.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo))
+            (var currentSize, _) = hlog.GetRecordSize(ref key, ref value);
+            (var requiredSize, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+
+            // If we do not have sufficient space, that can only be
+            // because we are trying to reuse IPU space
+            Debug.Assert(requiredSize >= currentSize || isIpu);
+            if (currentSize >= requiredSize && fasterSession.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo))
             {
                 if (sessionCtx.phase == Phase.REST)
                     hlog.MarkPage(logicalAddress, sessionCtx.version);
                 else
                     hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
+
+                // If IPU path, we need to complete PostInitialUpdater as well
+                if (isIpu)
+                    fasterSession.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
                 return true;
             }
@@ -826,10 +851,9 @@ namespace FASTER.core
                 return false;
             }
 
-            // InitialUpdater failed, so set the tombstone. InternalRMW will do the following based on who called this:
-            //  IPU: leave the tombstone in the original record and move to the NIU->IU path
-            //  CU: set the tombstone in the new record for CU, then continue the CAS, and then return RETRY_NOW so the insert will be tried on that retry.
-            recordInfo.Tombstone = true;
+            // InitialUpdater failed. InternalRMW will do the following based on who called this:
+            //  IPU: move to the NIU->allocate->IU path
+            //  CU: caller invalidates allocation, retries operation as NIU->allocate->IU
             status = OperationStatus.SUCCESS;
             return false;
         }
@@ -1226,9 +1250,10 @@ namespace FASTER.core
             }
 
             // Allocate and initialize the new record
-            var (actualSize, allocatedSize) = (logicalAddress < hlog.BeginAddress) ?
-                            hlog.GetInitialRecordSize(ref key, ref input, fasterSession) :
-                            hlog.GetRecordSize(physicalAddress, ref input, fasterSession);
+            var (actualSize, allocatedSize) = doingCU ?
+                hlog.GetRecordSize(physicalAddress, ref input, fasterSession) :
+                hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+
             BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession, pendingContext.IsAsync);
             if (newLogicalAddress == 0)
                 return OperationStatus.ALLOCATE_FAILED;
@@ -1249,7 +1274,6 @@ namespace FASTER.core
 
             // Populate the new record
             OperationStatus status;
-            bool needIUForexpiredCU = false;
             OperationStatus expiredOpStatus = forExpiration ? OperationStatus.EXPIRED : OperationStatus.SUCCESS;
             if (logicalAddress < hlog.BeginAddress)
             {
@@ -1302,13 +1326,17 @@ namespace FASTER.core
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                         {
-                            // 'false' means an update in place was not done, so return status. Otherwise, drop through to CAS the updated record
+                            // 'false' means an update in place was not done, so return status if canceled.
+                            // Otherwise, invalidate CU and retry operation
                             if (!ReinitializeExpiredRecord(ref key, ref input, ref newRecordValue, ref output, ref recordInfo, ref rmwInfo, 
                                                     logicalAddress, sessionCtx, fasterSession, isIpu: false, out status))
                             {
                                 if (status == OperationStatus.CANCELED)
                                     return status;
-                                needIUForexpiredCU = true;
+
+                                hlog.GetInfo(newPhysicalAddress).SetInvalid();
+                                pendingContext.HasExpiration = true;
+                                return OperationStatus.RETRY_NOW;
                             }
                             // Drop through to CAS
                         }
@@ -1384,11 +1412,6 @@ namespace FASTER.core
                 }
                 recordInfo.SetTentativeAtomic(false);
 
-                if (needIUForexpiredCU)
-                {
-                    pendingContext.HasExpiration = true;
-                    return OperationStatus.RETRY_NOW;
-                }
                 return status;
             }
             else
@@ -2076,9 +2099,23 @@ namespace FASTER.core
                                  ref pendingContext.output, logicalAddress, fasterSession, currentCtx,
                                  (expired || pendingContext.CopyReadsToTail) ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
             while (status == OperationStatus.RETRY_NOW);
-            if (status == OperationStatus.NOTFOUND)
-                status = OperationStatus.SUCCESS;
-            return status;
+
+            if (status == OperationStatus.SUCCESS)
+            {
+                // Successfully copied (tombstone or read record) to tail
+                if (expired)
+                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CopiedRecord | StatusCode.Expired);
+                else
+                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopiedRecord);
+            }
+            else
+            {
+                // No copy to tail
+                if (expired)
+                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
+                else
+                    return OperationStatus.SUCCESS;
+            }
         }
 
         /// <summary>

@@ -888,7 +888,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
+                    return ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
                 }
                 finally
                 {

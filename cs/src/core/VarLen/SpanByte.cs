@@ -360,6 +360,7 @@ namespace FASTER.core
         /// <param name="dst"></param>
         public void CopyTo(ref SpanByte dst)
         {
+            dst.UnmarkExtraMetadata();
             dst.ExtraMetadata = ExtraMetadata;
             AsReadOnlySpan().CopyTo(dst.AsSpan());            
         }
