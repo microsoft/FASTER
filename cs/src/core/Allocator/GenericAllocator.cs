@@ -441,13 +441,14 @@ namespace FASTER.core
 
                 if (endPosition > ObjectBlockSize || i == (end / recordSize) - 1)
                 {
-                    var memoryStreamLength = (int)endPosition;
+                    var memoryStreamActualLength = ms.Position;
+                    var memoryStreamTotalLength = (int)endPosition;
 
-                    var _objBuffer = bufferPool.Get(memoryStreamLength);
+                    var _objBuffer = bufferPool.Get(memoryStreamTotalLength);
 
                     asyncResult.done = new AutoResetEvent(false);
 
-                    var _alignedLength = (memoryStreamLength + (sectorSize - 1)) & ~(sectorSize - 1);
+                    var _alignedLength = (memoryStreamTotalLength + (sectorSize - 1)) & ~(sectorSize - 1);
 
                     var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
 
@@ -459,7 +460,7 @@ namespace FASTER.core
                     ms.Close();
 
                     fixed (void* src_ = ms.GetBuffer())
-                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamLength, memoryStreamLength);
+                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamTotalLength, memoryStreamActualLength);
 
                     foreach (var address in addr)
                         ((AddressInfo*)address)->Address += _objAddr;
