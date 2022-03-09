@@ -624,15 +624,15 @@ namespace FASTER.core
             }
 
             // We will now be able to process all records until (but not including) untilPtr
-            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, out long startptr, out long size);
+            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, out long startptr, out long alignedLength);
 
             // Object log fragment should be aligned by construction
             Debug.Assert(startptr % sectorSize == 0);
+            Debug.Assert(alignedLength % sectorSize == 0);
 
-            if (size > int.MaxValue)
-                throw new FasterException("Unable to read object page, total size greater than 2GB: " + size);
+            if (alignedLength > int.MaxValue)
+                throw new FasterException("Unable to read object page, total size greater than 2GB: " + alignedLength);
 
-            var alignedLength = (size + (sectorSize - 1)) & ~((long)sectorSize - 1);
             var objBuffer = bufferPool.Get((int)alignedLength);
             result.freeBuffer2 = objBuffer;
 
@@ -788,7 +788,7 @@ namespace FASTER.core
                     if (KeyHasObjects())
                     {
                         var key_addr = GetKeyAddressInfo((long)raw + ptr);
-                        if (start_addr == -1) start_addr = key_addr->Address;
+                        if (start_addr == -1) start_addr = key_addr->Address & ~((long)sectorSize - 1);
                         if (stream.Position != streamStartPos + key_addr->Address - start_addr)
                         {
                             stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
@@ -806,7 +806,7 @@ namespace FASTER.core
                         if (ValueHasObjects())
                         {
                             var value_addr = GetValueAddressInfo((long)raw + ptr);
-                            if (start_addr == -1) start_addr = value_addr->Address;
+                            if (start_addr == -1) start_addr = value_addr->Address & ~((long)sectorSize - 1);
                             if (stream.Position != streamStartPos + value_addr->Address - start_addr)
                             {
                                 stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
@@ -891,6 +891,12 @@ namespace FASTER.core
                 minObjAddress = 0;
                 maxObjAddress = 0;
             }
+
+            // Align start pointer for retrieval
+            minObjAddress &= ~((long)sectorSize - 1);
+
+            // Align max address as well
+            maxObjAddress = (maxObjAddress + (sectorSize - 1)) & ~((long)sectorSize - 1);
 
             startptr = minObjAddress;
             size = maxObjAddress - minObjAddress;
