@@ -182,7 +182,7 @@ namespace FASTER.test.Expiration
                         {
                             // Reject the update-in-original-record
                             output.result = ExpirationResult.DeletedThenUpdateRejected;
-                            return false;
+                            // return false;
                         }
                         return output.result == ExpirationResult.DeletedThenUpdateRejected;
                     case TestOp.DeleteIfValueEqualsThenUpdate:
@@ -331,6 +331,7 @@ namespace FASTER.test.Expiration
             public override bool InitialUpdater(ref int key, ref ExpirationInput input, ref VLValue value, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.InitialUpdater);
+                value.length = 2;
                 value.field1 = input.value;
 
                 // If InPlaceUpdater returned Delete, let the caller know both operations happened. Similarly, we may be 
@@ -894,7 +895,7 @@ namespace FASTER.test.Expiration
             bool isEqual = keyEquality == KeyEquality.Equal;
             TestOp testOp = isEqual ? TestOp.DeleteIfValueEqualsThenUpdate : TestOp.DeleteIfValueNotEqualsThenUpdate;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.Expired | StatusCode.InPlaceUpdatedRecord) : new(StatusCode.Expired | StatusCode.CreatedRecord);
+            Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.Expired | StatusCode.InPlaceUpdatedRecord) : new(StatusCode.NotFound | StatusCode.Expired | StatusCode.CreatedRecord);
 
             VerifyKeyNotCreated(testOp, flushMode);
             session.ctx.phase = phase;
@@ -941,7 +942,9 @@ namespace FASTER.test.Expiration
             bool isEqual = keyEquality == KeyEquality.Equal;
             TestOp testOp = isEqual ? TestOp.DeleteIfValueEqualsThenInsert : TestOp.DeleteIfValueNotEqualsThenInsert;
             var key = ModifyKey;
-            Status expectedFoundRmwStatus = new(StatusCode.Expired | StatusCode.CreatedRecord);
+            Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ?
+                new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired ) :
+                new(StatusCode.NotFound | StatusCode.Expired | StatusCode.CreatedRecord);
 
             VerifyKeyNotCreated(testOp, flushMode);
             session.ctx.phase = phase;
