@@ -2272,7 +2272,7 @@ namespace FASTER.core
                 else
                 {
                     ref Value newRecordValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-                    if (fasterSession.CopyUpdater(ref key, ref pendingContext.input.Get(), ref hlog.GetValue(physicalAddress), ref newRecordValue,
+                    if (fasterSession.CopyUpdater(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref newRecordValue,
                                                   ref pendingContext.output, ref recordInfo, ref rmwInfo))
                         status = forExpiration
                             ? OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired)
