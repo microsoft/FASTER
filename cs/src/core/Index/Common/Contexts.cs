@@ -204,13 +204,6 @@ namespace FASTER.core
                 set => operationFlags = value ? (ushort)(operationFlags | kHasPrevHighestKeyHashAddress) : (ushort)(operationFlags & ~kHasPrevHighestKeyHashAddress);
             }
 
-            // Carries the Expired flag across RETRY_NOW
-            internal bool HasExpiration
-            {
-                get => (operationFlags & kHasExpiration) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kHasExpiration) : (ushort)(operationFlags & ~kHasExpiration);
-            }
-
             public void Dispose()
             {
                 key?.Dispose();

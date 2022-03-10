@@ -2204,7 +2204,6 @@ namespace FASTER.core
             do
                 internalStatus = InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, opCtx, pendingContext.serialNum);
             while (internalStatus == OperationStatus.RETRY_NOW);
-            pendingContext.HasExpiration = false;
             return internalStatus;
         }
 
