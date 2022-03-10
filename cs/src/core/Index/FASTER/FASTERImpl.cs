@@ -240,7 +240,7 @@ namespace FASTER.core
                     hlog.MarkPage(logicalAddress, sessionCtx.version);
                     pendingContext.recordInfo = recordInfo;
                     pendingContext.logicalAddress = logicalAddress;
-                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
+                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
                 }
                 return lockFailed ? OperationStatus.RETRY_NOW : OperationStatus.NOTFOUND;
             }
@@ -268,10 +268,16 @@ namespace FASTER.core
                                                             expired: readInfo.Action == ReadAction.Expire);
                         while (status == OperationStatus.RETRY_NOW);
                         container.Dispose();
-                        if (status == OperationStatus.NOTFOUND)
-                            status = OperationStatus.SUCCESS;
-                        if (status == OperationStatus.SUCCESS)
-                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopiedRecord);
+
+                        // No copy to tail
+                        if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
+                        {
+                            if (readInfo.Action == ReadAction.Expire)
+                                return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
+                            else
+                                return OperationStatus.SUCCESS;
+                        }
+                        return status;
                     }
                     return OperationStatus.SUCCESS;
                 }
@@ -801,35 +807,54 @@ namespace FASTER.core
             if (!fasterSession.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
             {
                 if (rmwInfo.Action == RMWAction.CancelOperation)
+                {
                     status = OperationStatus.CANCELED;
+                    return false;
+                }
                 else
                 {
                     // Expiration with no insertion.
                     recordInfo.Tombstone = true;
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
+                    return true;
                 }
-                return false;
             }
-            if (fasterSession.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo))
+
+            // Try to reinitialize in place
+            (var currentSize, _) = hlog.GetRecordSize(ref key, ref value);
+            (var requiredSize, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+
+            if (currentSize >= requiredSize)
             {
-                if (sessionCtx.phase == Phase.REST)
-                    hlog.MarkPage(logicalAddress, sessionCtx.version);
+                if (fasterSession.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo))
+                {
+                    // If IPU path, we need to complete PostInitialUpdater as well
+                    if (isIpu)
+                        fasterSession.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
+                    return true;
+                }
                 else
-                    hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
-                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
-                return true;
+                {
+                    if (rmwInfo.Action == RMWAction.CancelOperation)
+                    {
+                        status = OperationStatus.CANCELED;
+                        return false;
+                    }
+                    else
+                    {
+                        // Expiration with no insertion.
+                        recordInfo.Tombstone = true;
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
+                        return true;
+                    }
+                }
             }
 
-            if (rmwInfo.Action == RMWAction.CancelOperation)
-            {
-                status = OperationStatus.CANCELED;
-                return false;
-            }
-
-            // InitialUpdater failed, so set the tombstone. InternalRMW will do the following based on who called this:
-            //  IPU: leave the tombstone in the original record and move to the NIU->IU path
-            //  CU: set the tombstone in the new record for CU, then continue the CAS, and then return RETRY_NOW so the insert will be tried on that retry.
-            recordInfo.Tombstone = true;
+            // Reinitialization in place was not possible. InternalRMW will do the following based on who called this:
+            //  IPU: move to the NIU->allocate->IU path
+            //  CU: caller invalidates allocation, retries operation as NIU->allocate->IU
             status = OperationStatus.SUCCESS;
             return false;
         }
@@ -1053,9 +1078,20 @@ namespace FASTER.core
 
             if (latchDestination != LatchDestination.CreatePendingContext)
             {
-                status = CreateNewRecordRMW(ref key, ref input, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
-                                            latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress,
-                                            forExpiration: rmwInfo.Action == RMWAction.ExpireAndResume || pendingContext.HasExpiration);
+                bool doingCU = logicalAddress >= hlog.HeadAddress && !hlog.GetInfo(physicalAddress).Tombstone;
+                if (doingCU)
+                {
+                    status = CreateNewRecordRMW(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
+                                                latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress,
+                                                doingCU, false);
+                }
+                else
+                {
+                    Value _temp = default;
+                    status = CreateNewRecordRMW(ref key, ref input, ref _temp, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
+                                                latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress,
+                                                doingCU, false);
+                }
                 if (!OperationStatusUtils.IsAppend(status))
                 {
                     // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
@@ -1181,6 +1217,7 @@ namespace FASTER.core
         /// <typeparam name="FasterSession"></typeparam>
         /// <param name="key">The record Key</param>
         /// <param name="input">Input to the operation</param>
+        /// <param name="value">Old value</param>
         /// <param name="output">The result of IFunctions.SingleWriter</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="fasterSession">The current session</param>
@@ -1197,14 +1234,19 @@ namespace FASTER.core
         /// <param name="unsealLogicalAddress">The logical address of a record that is being copied from; we seal it so another operation cannot IPU it,
         ///     transfer locks from it on success, and unseal it on failure</param>
         /// <param name="unsealPhysicalAddress">The physical address of <paramref name="unsealLogicalAddress"/>; passed to avoid needing a virtual GetPhysicalAddress call</param>
-        /// <param name="forExpiration">Whether this is being called due to an expired record encountered by IPU or CU that couldn't be restarted in the initial record for those (so we are inserting a new record)</param>
+        /// <param name="doingCU">Whether we expect to be doing a CopyUpdate</param>
+        /// <param name="fromPending">Whether we are being called from pending path</param>
         /// <returns></returns>
-        private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
+        private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                           FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, long logicalAddress, 
                                                                                           long physicalAddress, ushort tag, HashBucketEntry entry, long latestLogicalAddress,
-                                                                                          long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealLogicalAddress, long unsealPhysicalAddress, bool forExpiration)
+                                                                                          long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealLogicalAddress, long unsealPhysicalAddress, bool doingCU, bool fromPending)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
+            bool forExpiration = false;
+
+        RetryNow:
+
             RMWInfo rmwInfo = new()
             {
                 SessionType = fasterSession.SessionType,
@@ -1212,32 +1254,48 @@ namespace FASTER.core
                 Address = logicalAddress
             };
 
-            // Determine if we should allocate a new record
-            bool doingCU = logicalAddress >= hlog.HeadAddress && !hlog.GetInfo(physicalAddress).Tombstone && !forExpiration;
+            // Perform Need*
             if (doingCU)
             {
-                if (!fasterSession.NeedCopyUpdate(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref rmwInfo))
-                    return rmwInfo.Action == RMWAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.SUCCESS;
+                if (!fasterSession.NeedCopyUpdate(ref key, ref input, ref value, ref output, ref rmwInfo))
+                {
+                    if (rmwInfo.Action == RMWAction.CancelOperation)
+                        return OperationStatus.CANCELED;
+                    else if (rmwInfo.Action == RMWAction.ExpireAndResume)
+                    {
+                        doingCU = false;
+                        forExpiration = true;
+                    }
+                    else
+                        return OperationStatus.SUCCESS;
+                }
             }
-            else
+
+            if (!doingCU)
             {
                 if (!fasterSession.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
                     return rmwInfo.Action == RMWAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
             }
 
             // Allocate and initialize the new record
-            var (actualSize, allocatedSize) = (logicalAddress < hlog.BeginAddress) ?
-                            hlog.GetInitialRecordSize(ref key, ref input, fasterSession) :
-                            hlog.GetRecordSize(physicalAddress, ref input, fasterSession);
-            BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession, pendingContext.IsAsync);
+            var (actualSize, allocatedSize) = doingCU ?
+                hlog.GetRecordSize(physicalAddress, ref input, fasterSession) :
+                hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+
+            // TODO (for:TH): why does pending code path have to send false for isAsync
+            BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession, fromPending ? false : pendingContext.IsAsync);
             if (newLogicalAddress == 0)
                 return OperationStatus.ALLOCATE_FAILED;
 
-            // BlockAllocate may refresh epoch so recheck
-            if (doingCU && logicalAddress < hlog.HeadAddress)
-                return OperationStatus.RETRY_NOW;
-
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+
+            // BlockAllocate may refresh epoch so recheck
+            if (!fromPending && doingCU && logicalAddress < hlog.HeadAddress)
+            {
+                hlog.GetInfo(newPhysicalAddress).SetInvalid();
+                return OperationStatus.RETRY_NOW;
+            }
+
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo, 
                             inNewVersion: sessionCtx.InNewVersion,
@@ -1249,79 +1307,61 @@ namespace FASTER.core
 
             // Populate the new record
             OperationStatus status;
-            bool needIUForexpiredCU = false;
-            OperationStatus expiredOpStatus = forExpiration ? OperationStatus.EXPIRED : OperationStatus.SUCCESS;
-            if (logicalAddress < hlog.BeginAddress)
+            if (!doingCU)
             {
                 if (fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output, ref recordInfo, ref rmwInfo))
                     status = forExpiration
-                        ? OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired)
+                        ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord | StatusCode.Expired)
                         : OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
                 else
                 {
                     if (rmwInfo.Action == RMWAction.CancelOperation)
                         return OperationStatus.CANCELED;
-                    return OperationStatus.SUCCESS | expiredOpStatus;
-                }
-            }
-            else if (logicalAddress >= hlog.HeadAddress)
-            {
-                if (hlog.GetInfo(physicalAddress).Tombstone)
-                {
-                    if (fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output, ref recordInfo, ref rmwInfo))
-                        status = forExpiration
-                            ? OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired)
-                            : OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
-                    else
-                    {
-                        if (rmwInfo.Action == RMWAction.CancelOperation)
-                            return OperationStatus.CANCELED;
-                        return OperationStatus.SUCCESS | expiredOpStatus;
-                    }
-                }
-                else
-                {
-                    ref Value newRecordValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-                    if (fasterSession.CopyUpdater(ref key, ref input, ref hlog.GetValue(physicalAddress), ref newRecordValue,
-                                                  ref output, ref recordInfo, ref rmwInfo))
-                        status = forExpiration
-                            ? OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired)
-                            : OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
-                    else
-                    {
-                        if (rmwInfo.Action == RMWAction.CancelOperation)
-                        {
-                            recordInfo.SetInvalid();
-                            return OperationStatus.CANCELED;
-                        }
-                        if (rmwInfo.Action == RMWAction.ExpireAndStop)
-                        {
-                            recordInfo.Tombstone = true;
-                            // Drop through to CAS it in
-                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired | StatusCode.Expired);
-                        }
-                        else if (rmwInfo.Action == RMWAction.ExpireAndResume)
-                        {
-                            // 'false' means an update in place was not done, so return status. Otherwise, drop through to CAS the updated record
-                            if (!ReinitializeExpiredRecord(ref key, ref input, ref newRecordValue, ref output, ref recordInfo, ref rmwInfo, 
-                                                    logicalAddress, sessionCtx, fasterSession, isIpu: false, out status))
-                            {
-                                if (status == OperationStatus.CANCELED)
-                                    return status;
-                                needIUForexpiredCU = true;
-                            }
-                            // Drop through to CAS
-                        }
-                        else
-                            return OperationStatus.SUCCESS | expiredOpStatus;
-                    }
+                    return OperationStatus.NOTFOUND | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.NOTFOUND);
                 }
             }
             else
             {
-                // ah, old record slipped onto disk
-                hlog.GetInfo(newPhysicalAddress).SetInvalid();
-                return OperationStatus.RETRY_NOW;
+                ref Value newRecordValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+                if (fasterSession.CopyUpdater(ref key, ref input, ref value, ref newRecordValue,
+                                              ref output, ref recordInfo, ref rmwInfo))
+                    status = forExpiration
+                        ? OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired)
+                        : OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
+                else
+                {
+                    if (rmwInfo.Action == RMWAction.CancelOperation)
+                    {
+                        recordInfo.SetInvalid();
+                        return OperationStatus.CANCELED;
+                    }
+                    if (rmwInfo.Action == RMWAction.ExpireAndStop)
+                    {
+                        recordInfo.Tombstone = true;
+                        // Drop through to CAS it in
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired | StatusCode.Expired);
+                    }
+                    else if (rmwInfo.Action == RMWAction.ExpireAndResume)
+                    {
+                        doingCU = false;
+                        forExpiration = true;
+                        // 'false' means an update in place was not done. If so:
+                        //     if canceled, return status
+                        //     else, invalidate CU and retry
+                        if (!ReinitializeExpiredRecord(ref key, ref input, ref newRecordValue, ref output, ref recordInfo, ref rmwInfo,
+                                                newLogicalAddress, sessionCtx, fasterSession, isIpu: false, out status))
+                        {
+                            if (status == OperationStatus.CANCELED)
+                                return status;
+
+                            hlog.GetInfo(newPhysicalAddress).SetInvalid();
+                            goto RetryNow;
+                        }
+                        // Drop through to CAS
+                    }
+                    else
+                        return OperationStatus.SUCCESS | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.SUCCESS);
+                }
             }
 
             bool success = true;
@@ -1363,7 +1403,7 @@ namespace FASTER.core
                     LockTable.TransferToLogRecord(ref key, ref recordInfo);
 
                 // If IU, status will be NOTFOUND; return that.
-                if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
+                if (!doingCU)
                 {
                     Debug.Assert(OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status));
                     fasterSession.PostInitialUpdater(ref key,
@@ -1376,7 +1416,7 @@ namespace FASTER.core
                 {
                     // Else it was a CopyUpdater so call PCU
                     fasterSession.PostCopyUpdater(ref key,
-                                ref input, ref hlog.GetValue(physicalAddress),
+                                ref input, ref value,
                                 ref hlog.GetValue(newPhysicalAddress),
                                 ref output, ref recordInfo, ref rmwInfo);
                     pendingContext.recordInfo = recordInfo;
@@ -1384,20 +1424,15 @@ namespace FASTER.core
                 }
                 recordInfo.SetTentativeAtomic(false);
 
-                if (needIUForexpiredCU)
-                {
-                    pendingContext.HasExpiration = true;
-                    return OperationStatus.RETRY_NOW;
-                }
                 return status;
             }
             else
             {
                 // CAS failed
                 hlog.GetInfo(newPhysicalAddress).SetInvalid();
+                status = OperationStatus.RETRY_NOW;
+                return status;
             }
-            status = OperationStatus.RETRY_NOW;
-            return status;
         }
 
 #endregion
@@ -2076,8 +2111,15 @@ namespace FASTER.core
                                  ref pendingContext.output, logicalAddress, fasterSession, currentCtx,
                                  (expired || pendingContext.CopyReadsToTail) ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
             while (status == OperationStatus.RETRY_NOW);
-            if (status == OperationStatus.NOTFOUND)
-                status = OperationStatus.SUCCESS;
+
+            // No copy to tail
+            if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
+            {
+                if (expired)
+                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
+                else
+                    return OperationStatus.SUCCESS;
+            }
             return status;
         }
 
@@ -2166,185 +2208,21 @@ namespace FASTER.core
 #endregion
 
                 var previousFirstRecordAddress = pendingContext.entry.Address;
-                if (logicalAddress > previousFirstRecordAddress)
-                {
-                    break;
-                }
+                if (logicalAddress > previousFirstRecordAddress) break;
 
-                #region Create record in mutable region
+                status =
+                    CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
+                        ref pendingContext, fasterSession, sessionCtx, bucket, slot, request.logicalAddress, (long)request.record.GetValidPointer(), tag, entry, latestLogicalAddress,
+                        prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, Constants.kInvalidAddress, Constants.kInvalidAddress,
+                        (request.logicalAddress >= hlog.BeginAddress) && !hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone, true);
 
-                RMWInfo rmwInfo = new()
-                {
-                    SessionType = fasterSession.SessionType,
-                    Version = sessionCtx.version,
-                    Address = request.logicalAddress
-                };
-
-                // Determine if we should allocate a new record
-                RecordInfo oldRecordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
-                if ((request.logicalAddress >= hlog.BeginAddress) && !oldRecordInfo.Tombstone)
-                {
-                    if (!fasterSession.NeedCopyUpdate(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output, ref rmwInfo))
-                        return OperationStatus.SUCCESS;
-                }
-                else
-                {
-                    if (!fasterSession.NeedInitialUpdate(ref key, ref pendingContext.input.Get(), ref pendingContext.output, ref rmwInfo))
-                        return OperationStatus.NOTFOUND;
-                }
-
-                // Allocate and initialize the new record
-                int actualSize, allocatedSize;
-                if ((request.logicalAddress < hlog.BeginAddress) || oldRecordInfo.Tombstone)
-                {
-                    (actualSize, allocatedSize) = hlog.GetInitialRecordSize(ref key, ref pendingContext.input.Get(), fasterSession);
-                }
-                else
-                {
-                    physicalAddress = (long)request.record.GetValidPointer();
-                    (actualSize, allocatedSize) = hlog.GetRecordSize(physicalAddress, ref pendingContext.input.Get(), fasterSession);
-                }
-                BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession);
-                if (newLogicalAddress == 0)
-                    return OperationStatus.ALLOCATE_FAILED;
-
-                var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
-                RecordInfo.WriteInfo(ref recordInfo,
-                               inNewVersion: opCtx.InNewVersion,
-                               tombstone: false, dirty: true,
-                               latestLogicalAddress);
-                recordInfo.Tentative = true;
-                hlog.Serialize(ref key, newPhysicalAddress);
-                rmwInfo.Address = newLogicalAddress;
-
-                // Populate the new record
-                bool needIUForexpiredCU = false;
-                if ((request.logicalAddress < hlog.BeginAddress) || oldRecordInfo.Tombstone)
-                {
-                    if (fasterSession.InitialUpdater(ref key,
-                                             ref pendingContext.input.Get(), ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
-                                             ref pendingContext.output, ref recordInfo, ref rmwInfo))
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
-                    else
-                        return rmwInfo.Action == RMWAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.SUCCESS;
-                }
-                else
-                {
-                    ref Value newRecordValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-                    ref Input input = ref pendingContext.input.Get();
-                    if (fasterSession.CopyUpdater(ref key, ref input, ref hlog.GetContextRecordValue(ref request), ref newRecordValue,
-                                                  ref pendingContext.output, ref recordInfo, ref rmwInfo))
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
-                    else
-                    {
-                        if (rmwInfo.Action == RMWAction.CancelOperation)
-                        {
-                            recordInfo.SetInvalid();
-                            return OperationStatus.CANCELED;
-                        }
-                        if (rmwInfo.Action == RMWAction.ExpireAndStop)
-                        {
-                            recordInfo.Tombstone = true;
-                            // Drop through to CAS it in
-                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
-                        }
-                        else if (rmwInfo.Action == RMWAction.ExpireAndResume)
-                        {
-                            // 'false' means an update in place was not done, so return status. Otherwise, drop through to CAS the updated record
-                            if (!ReinitializeExpiredRecord(ref key, ref input, ref newRecordValue, ref pendingContext.output, ref recordInfo, ref rmwInfo,
-                                                    logicalAddress, sessionCtx, fasterSession, isIpu: false, out status))
-                            {
-                                if (status == OperationStatus.CANCELED)
-                                    return status;
-                                needIUForexpiredCU = true;
-                            }
-                            // Drop through to CAS
-                        }
-                        else
-                            return OperationStatus.SUCCESS;
-                    }
-                }
-
-                bool success = true;
-                if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
-                {
-                    // Insert as the first record in the hash chain.
-                    var updatedEntry = default(HashBucketEntry);
-                    updatedEntry.Tag = tag;
-                    updatedEntry.Address = newLogicalAddress & Constants.kAddressMask;
-                    updatedEntry.Pending = entry.Pending;
-                    updatedEntry.Tentative = false;
-
-                    var foundEntry = default(HashBucketEntry);
-                    foundEntry.word = Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word);
-                    success = foundEntry.word == entry.word;
-                }
-                else
-                {
-                    // Splice into the gap of the last readcache/first main log entries.
-                    ref RecordInfo rcri = ref readcache.GetInfo(lowestReadCachePhysicalAddress);
-                    if (rcri.PreviousAddress != latestLogicalAddress)
-                        return OperationStatus.RETRY_NOW;
-
-                    // Splice a non-tentative record into the readcache/mainlog gap.
-                    success = rcri.TryUpdateAddress(newLogicalAddress);
-                    if (success)
-                    {
-                        // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
-                        entry.word = bucket->bucket_entries[slot];
-                        InvalidateUpdatedRecordInReadCache(entry.Address, ref key, prevHighestReadCacheLogicalAddress);
-                    }
-                }
-
-                if (success)
-                {
-                    if (LockTable.IsActive)
-                        LockTable.TransferToLogRecord(ref key, ref recordInfo);
-
-                    // If IU, status will be NOTFOUND; return that.
-                    if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
-                    {
-                        Debug.Assert(OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status));
-                        fasterSession.PostInitialUpdater(ref key,
-                                          ref pendingContext.input.Get(),
-                                          ref hlog.GetValue(newPhysicalAddress),
-                                          ref pendingContext.output, ref recordInfo, ref rmwInfo);
-                        pendingContext.recordInfo = recordInfo;
-                        pendingContext.logicalAddress = newLogicalAddress;
-                    }
-                    else
-                    {
-                        // Else it was a CopyUpdater so call PCU
-                        fasterSession.PostCopyUpdater(ref key,
-                                              ref pendingContext.input.Get(),
-                                              ref hlog.GetContextRecordValue(ref request),
-                                              ref hlog.GetValue(newPhysicalAddress),
-                                              ref pendingContext.output, ref recordInfo, ref rmwInfo);
-                        pendingContext.recordInfo = recordInfo;
-                        pendingContext.logicalAddress = newLogicalAddress;
-                    }
-
-                    recordInfo.SetTentativeAtomic(false);
-
-                    if (!needIUForexpiredCU)
-                        return status;
-                    // Fall through to the InternalRMW loop for a new record after CU couldn't do it in the initial record.
-                    pendingContext.HasExpiration = true;
-                }
-                else
-                {
-                    // CAS failed. Retry in loop.
-                    hlog.GetInfo(newPhysicalAddress).SetInvalid();
-                }
-#endregion
+                if (status != OperationStatus.RETRY_NOW) return status;
             }
 
             OperationStatus internalStatus;
             do
                 internalStatus = InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, opCtx, pendingContext.serialNum);
             while (internalStatus == OperationStatus.RETRY_NOW);
-            pendingContext.HasExpiration = false;
             return internalStatus;
         }
 

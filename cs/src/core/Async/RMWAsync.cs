@@ -179,7 +179,6 @@ namespace FASTER.core
                 flushEvent = hlog.FlushEvent;
                 internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
             } while (internalStatus == OperationStatus.RETRY_NOW || internalStatus == OperationStatus.RETRY_LATER);
-            pcontext.HasExpiration = false;
 
             if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                 return status;
