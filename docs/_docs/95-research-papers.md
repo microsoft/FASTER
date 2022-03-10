@@ -2,7 +2,7 @@
 title: "Research Papers"
 permalink: /docs/td-research-papers/
 excerpt: "Technical Details - Research Papers"
-last_modified_at: 2020-11-08
+last_modified_at: 2022-03-10
 toc: false
 classes: wide
 ---
