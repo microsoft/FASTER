@@ -1070,9 +1070,20 @@ namespace FASTER.core
 
             if (latchDestination != LatchDestination.CreatePendingContext)
             {
-                status = CreateNewRecordRMW(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
-                                            latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress,
-                                            logicalAddress >= hlog.HeadAddress && !hlog.GetInfo(physicalAddress).Tombstone, false);
+                bool doingCU = logicalAddress >= hlog.HeadAddress && !hlog.GetInfo(physicalAddress).Tombstone;
+                if (doingCU)
+                {
+                    status = CreateNewRecordRMW(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
+                                                latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress,
+                                                doingCU, false);
+                }
+                else
+                {
+                    Value _temp = default;
+                    status = CreateNewRecordRMW(ref key, ref input, ref _temp, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
+                                                latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress,
+                                                doingCU, false);
+                }
                 if (!OperationStatusUtils.IsAppend(status))
                 {
                     // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
@@ -1397,7 +1408,7 @@ namespace FASTER.core
                 {
                     // Else it was a CopyUpdater so call PCU
                     fasterSession.PostCopyUpdater(ref key,
-                                ref input, ref hlog.GetValue(physicalAddress),
+                                ref input, ref value,
                                 ref hlog.GetValue(newPhysicalAddress),
                                 ref output, ref recordInfo, ref rmwInfo);
                     pendingContext.recordInfo = recordInfo;
