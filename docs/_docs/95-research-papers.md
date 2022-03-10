@@ -28,6 +28,11 @@ classes: wide
 
 * Tianyu Li, Badrish Chandramouli, Jose M. Faleiro, Samuel Madden, Donald Kossmann. Asynchronous Prefix Recoverability for Fast Distributed Stores. <i>SIGMOD 2021, Virtual Event, China, June 2021 (to appear)</i>
 
+## Caching
+
+* Q. Zhang, P. Bernstein, D. Berger, B. Chandramouli, V. Liu, B. T. Loo. CompuCache: Remote Computable Caching using Spot VMs. <i>CIDR, 2022</i>.  [<a href="https://badrish.net/papers/compucache-cidr2022.pdf">pdf</a>]
+* Q. Zhang, P. Bernstein, D. Berger, B. Chandramouli. Redy: Remote Dynamic Memory Cache. <i>PVLDB, 15(4), 2022</i>.  [<a href="https://badrish.net/papers/redy-vldb2022.pdf">pdf</a>]
+
 ## Secondary Indexing
 
 * Badrish Chandramouli, Dong Xie, Yinan Li, Donald Kossmann. FishStore: Fast Ingestion and Indexing of Raw Data. <i>VLDB 2019, Los Angeles, California, USA, August 2019 (demo paper)</i>
