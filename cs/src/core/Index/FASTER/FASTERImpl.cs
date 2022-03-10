@@ -807,7 +807,10 @@ namespace FASTER.core
             if (!fasterSession.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
             {
                 if (rmwInfo.Action == RMWAction.CancelOperation)
+                {
                     status = OperationStatus.CANCELED;
+                    return false;
+                }
                 else
                 {
                     // Expiration with no insertion.
@@ -815,36 +818,41 @@ namespace FASTER.core
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                     return true;
                 }
-                return false;
             }
+
+            // Try to reinitialize in place
             (var currentSize, _) = hlog.GetRecordSize(ref key, ref value);
             (var requiredSize, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
 
-            // If we do not have sufficient space, that can only be
-            // because we are trying to reuse IPU space
-            Debug.Assert(requiredSize >= currentSize || isIpu);
-            if (currentSize >= requiredSize && fasterSession.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo))
+            if (currentSize >= requiredSize)
             {
-                if (sessionCtx.phase == Phase.REST)
-                    hlog.MarkPage(logicalAddress, sessionCtx.version);
+                if (fasterSession.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo))
+                {
+                    // If IPU path, we need to complete PostInitialUpdater as well
+                    if (isIpu)
+                        fasterSession.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
+                    return true;
+                }
                 else
-                    hlog.MarkPageAtomic(logicalAddress, sessionCtx.version);
-
-                // If IPU path, we need to complete PostInitialUpdater as well
-                if (isIpu)
-                    fasterSession.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
-
-                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
-                return true;
+                {
+                    if (rmwInfo.Action == RMWAction.CancelOperation)
+                    {
+                        status = OperationStatus.CANCELED;
+                        return false;
+                    }
+                    else
+                    {
+                        // Expiration with no insertion.
+                        recordInfo.Tombstone = true;
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
+                        return true;
+                    }
+                }
             }
 
-            if (rmwInfo.Action == RMWAction.CancelOperation)
-            {
-                status = OperationStatus.CANCELED;
-                return false;
-            }
-
-            // InitialUpdater failed. InternalRMW will do the following based on who called this:
+            // Reinitialization in place was not possible. InternalRMW will do the following based on who called this:
             //  IPU: move to the NIU->allocate->IU path
             //  CU: caller invalidates allocation, retries operation as NIU->allocate->IU
             status = OperationStatus.SUCCESS;
