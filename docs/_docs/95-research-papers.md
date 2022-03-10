@@ -26,7 +26,7 @@ classes: wide
 
 ## Distributed Recovery
 
-* Tianyu Li, Badrish Chandramouli, Jose M. Faleiro, Samuel Madden, Donald Kossmann. Asynchronous Prefix Recoverability for Fast Distributed Stores. <i>SIGMOD 2021, Virtual Event, China, June 2021 (to appear)</i>
+* Tianyu Li, Badrish Chandramouli, Jose M. Faleiro, Samuel Madden, Donald Kossmann. Asynchronous Prefix Recoverability for Fast Distributed Stores. <i>SIGMOD 2021, Virtual Event, China, June 2021</i>. [<a href="https://badrish.net/papers/dpr-sigmod2021.pdf">pdf</a>]
 
 ## Caching
 
