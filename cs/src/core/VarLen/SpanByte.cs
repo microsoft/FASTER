@@ -370,7 +370,7 @@ namespace FASTER.core
         /// FASTER hybrid log, pointed to by the given SpanByte.
         /// Zeroes out the extra space to retain log scan correctness.
         /// </summary>
-        /// <param name="newLength"></param>
+        /// <param name="newLength">New length of payload (including metadata)</param>
         /// <returns></returns>
         public bool ShrinkSerializedLength(int newLength)
         {
@@ -379,7 +379,7 @@ namespace FASTER.core
             // Zero-fill extra space - needed so log scan does not see spurious data
             if (newLength < Length)
             {
-                AsSpan().Slice(newLength).Clear();
+                AsSpanWithMetadata().Slice(newLength).Clear();
                 Length = newLength;
             }
             return true;
