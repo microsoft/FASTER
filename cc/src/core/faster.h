@@ -1775,6 +1775,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
   Address head_address = hlog.head_address.load();
+  Address begin_address = hlog.begin_address.load();
 
   // Make sure that atomic_entry is OK to update.
   if(address >= head_address && address != pending_context->entry.address()) {
@@ -1784,7 +1785,8 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
       address = TraceBackForKeyMatchCtxt(*pending_context, record->header.previous_address(), min_offset);
     }
   }
-  assert(address >= pending_context->entry.address()); // part of the same hash chain
+  // part of the same hash chain or entry deleted
+  assert(address < begin_address || address >= pending_context->entry.address());
 
   if(address > pending_context->entry.address()) {
     // This handles two mutually exclusive cases. In both cases InternalRmw will be called immediately:
@@ -1799,12 +1801,12 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
     pending_context->continue_async(address, expected_entry);
     return OperationStatus::RETRY_NOW;
   }
-  assert(address < hlog.begin_address.load() || address == pending_context->entry.address());
+  assert(address < begin_address || address == pending_context->entry.address());
 
   // We have to do copy-on-write/RCU and write the updated value to the tail of the log.
   Address new_address;
   record_t* new_record;
-  if(io_context.address < hlog.begin_address.load()) {
+  if(io_context.address < begin_address) {
     // The on-disk trace back failed to find a key match.
     if (!create_if_not_exists) {
       return OperationStatus::NOT_FOUND;
