@@ -404,12 +404,21 @@ class HotColdRmwContext : public AsyncHotColdRmwContext<typename MC::key_t, type
 
  protected:
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
-    if (this->read_context != nullptr) {
+    //typedef HotColdRmwReadContext<typename MC::key_t, typename MC::value_t> hc_rmw_read_context_t;
+    //assert(this->read_context == nullptr);
+
+    return IAsyncContext::DeepCopy_Internal(
+        *this, HotColdContext<key_t>::caller_context, context_copy);
+
+    /*
+    if (this->read_context != nullptr && !this->read_context->from_deep_copy()) {
       // need to deep copy HC-RMW-READ context, if didn't went async
+      auto read_context = static_cast<hc_rmw_read_context_t*>(this->read_context);
+      read_context->hc_rmw_context = context_copy;
       RETURN_NOT_OK(this->read_context->DeepCopy(this->read_context));
     }
-    return IAsyncContext::DeepCopy_Internal(*this, HotColdContext<key_t>::caller_context,
-                                            context_copy);
+    return Status::Ok;
+    */
   }
  private:
   inline const rmw_context_t& rmw_context() const {
@@ -468,25 +477,48 @@ class HotColdRmwReadContext : public IAsyncContext {
   HotColdRmwReadContext(IAsyncContext* hc_rmw_context_)
     : hc_rmw_context{ hc_rmw_context_ }
     , record{ nullptr }
+    , deep_copied_{ false }
     {}
 
   /// The deep-copy constructor.
   HotColdRmwReadContext(HotColdRmwReadContext& other)
     : hc_rmw_context{ other.hc_rmw_context }
     , record{ other.record }
+    , deep_copied_{ false }
     {}
 
   ~HotColdRmwReadContext() {
-    if (record != nullptr) {
+    if (record != nullptr && (!deep_copied_ || this->from_deep_copy())) {
       delete record;
     }
   }
 
  protected:
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
-    // need to deep copy HC-RMW context, if didn't go async
-    RETURN_NOT_OK(this->hc_rmw_context->DeepCopy(this->hc_rmw_context));
-    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    typedef AsyncHotColdRmwContext<key_t, value_t> async_hc_rmw_context_t;
+
+    assert(this->hc_rmw_context->from_deep_copy());
+    //RETURN_NOT_OK(
+    assert(Status::Ok ==
+      IAsyncContext::DeepCopy_Internal(*this, context_copy));
+    deep_copied_ = true;
+
+    // Update reference of this, to rmw context
+    auto hc_rmw_context = static_cast<async_hc_rmw_context_t*>(this->hc_rmw_context);
+    hc_rmw_context->read_context = context_copy;
+
+    return Status::Ok;
+    //RETURN_NOT_OK(
+    //  IAsyncContext::DeepCopy_Internal(*this, context_copy));
+
+    /*
+    if (!this->hc_rmw_context->from_deep_copy()) {
+      // need to deep copy HC-RMW context, if didn't go async
+      hc_rmw_context->read_context = context_copy;
+      RETURN_NOT_OK(this->hc_rmw_context->DeepCopy(this->hc_rmw_context));
+    }
+    return Status::Ok;
+    */
   }
 
  private:
@@ -530,6 +562,9 @@ class HotColdRmwReadContext : public IAsyncContext {
 
   IAsyncContext* hc_rmw_context;
   uint8_t* record;
+
+ private:
+  bool deep_copied_;
 };
 
 
