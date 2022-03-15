@@ -397,7 +397,6 @@ namespace FASTER.core
         /// <returns>Reserved entry</returns>
         private static int ReserveEntry(int startIndex, int threadId)
         {
-            int current_iteration = 0;
             for (; ; )
             {
                 // Reserve an entry in the table.
@@ -418,11 +417,6 @@ namespace FASTER.core
                     }
                 }
                 Thread.Yield();
-                ++current_iteration;
-                if (current_iteration > (kTableSize * 10))
-                {
-                    throw new FasterException("Unable to reserve an epoch entry, try increasing the epoch table size (kTableSize)");
-                }
             }
         }
 
