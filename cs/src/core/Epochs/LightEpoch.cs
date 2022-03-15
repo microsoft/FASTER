@@ -416,9 +416,9 @@ namespace FASTER.core
                             return (int)index_to_test;
                         }
                     }
-                    ++current_iteration;
                 }
-
+                Thread.Yield();
+                ++current_iteration;
                 if (current_iteration > (kTableSize * 10))
                 {
                     throw new FasterException("Unable to reserve an epoch entry, try increasing the epoch table size (kTableSize)");
