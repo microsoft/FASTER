@@ -93,7 +93,8 @@ namespace FASTER.benchmark
 
         private void LoadDataThreadProc()
         {
-            Native32.AffinitizeThreadShardedNuma(0, 2);
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                Native32.AffinitizeThreadShardedNuma(0, 2);
 
             switch (this.BenchmarkType)
             {
