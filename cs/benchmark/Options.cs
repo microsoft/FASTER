@@ -20,7 +20,7 @@ namespace FASTER.benchmark
         public int ThreadCount { get; set; }
 
         [Option('n', "numa", Required = false, Default = 0,
-             HelpText = "NUMA options:" +
+             HelpText = "NUMA options (Windows only):" +
                         "\n    0 = No sharding across NUMA sockets" +
                         "\n    1 = Sharding across NUMA sockets")]
         public int NumaStyle { get; set; }

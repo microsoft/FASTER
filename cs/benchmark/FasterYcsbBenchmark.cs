@@ -7,6 +7,7 @@
 using FASTER.core;
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace FASTER.benchmark
@@ -36,12 +37,14 @@ namespace FASTER.benchmark
 
         internal FASTER_YcsbBenchmark(Key[] i_keys_, Key[] t_keys_, TestLoader testLoader)
         {
-            // Affinize main thread to last core on first socket if not used by experiment
-            var (numGrps, numProcs) = Native32.GetNumGroupsProcsPerGroup();
-            if ((testLoader.Options.NumaStyle == 0 && testLoader.Options.ThreadCount <= (numProcs - 1)) ||
-                (testLoader.Options.NumaStyle == 1 && testLoader.Options.ThreadCount <= numGrps * (numProcs - 1)))
-                Native32.AffinitizeThreadRoundRobin(numProcs - 1);
-
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                // Affinize main thread to last core on first socket if not used by experiment
+                var (numGrps, numProcs) = Native32.GetNumGroupsProcsPerGroup();
+                if ((testLoader.Options.NumaStyle == 0 && testLoader.Options.ThreadCount <= (numProcs - 1)) ||
+                    (testLoader.Options.NumaStyle == 1 && testLoader.Options.ThreadCount <= numGrps * (numProcs - 1)))
+                    Native32.AffinitizeThreadRoundRobin(numProcs - 1);
+            }
             this.testLoader = testLoader;
             init_keys_ = i_keys_;
             txn_keys_ = t_keys_;
@@ -92,11 +95,13 @@ namespace FASTER.benchmark
         {
             RandomGenerator rng = new((uint)(1 + thread_idx));
 
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
-            else
-                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
-
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (numaStyle == 0)
+                    Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+                else
+                    Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+            }
             waiter.Wait();
 
             var sw = Stopwatch.StartNew();
@@ -215,11 +220,13 @@ namespace FASTER.benchmark
         {
             RandomGenerator rng = new((uint)(1 + thread_idx));
 
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
-            else
-                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
-
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (numaStyle == 0)
+                    Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+                else
+                    Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+            }
             waiter.Wait();
 
             var sw = Stopwatch.StartNew();
@@ -450,11 +457,13 @@ namespace FASTER.benchmark
 
         private void SetupYcsbUnsafeContext(int thread_idx)
         {
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
-            else
-                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
-
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (numaStyle == 0)
+                    Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+                else
+                    Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+            }
             waiter.Wait();
 
             var session = store.For(functions).NewSession<Functions>();
@@ -517,11 +526,13 @@ namespace FASTER.benchmark
 
         private void SetupYcsbSafeContext(int thread_idx)
         {
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
-            else
-                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
-
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (numaStyle == 0)
+                    Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+                else
+                    Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+            }
             waiter.Wait();
 
             var session = store.For(functions).NewSession<Functions>();

@@ -81,11 +81,13 @@ namespace FASTER.benchmark
         {
             RandomGenerator rng = new ((uint)(1 + thread_idx));
 
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
-            else
-                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
-
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (numaStyle == 0)
+                    Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+                else
+                    Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+            }
             var sw = Stopwatch.StartNew();
 
             Value value = default;
@@ -266,11 +268,13 @@ namespace FASTER.benchmark
 
         private void SetupYcsb(int thread_idx)
         {
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
-            else
-                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
-
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (numaStyle == 0)
+                    Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+                else
+                    Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+            }
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
             var tstop1 = tstart;
@@ -322,11 +326,13 @@ namespace FASTER.benchmark
         void DoContinuousMeasurements()
         {
 
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)threadCount + 1);
-            else
-                Native32.AffinitizeThreadShardedTwoNuma((uint)threadCount + 1);
-
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (numaStyle == 0)
+                    Native32.AffinitizeThreadRoundRobin((uint)threadCount + 1);
+                else
+                    Native32.AffinitizeThreadShardedTwoNuma((uint)threadCount + 1);
+            }
             double totalThroughput, totalLatency, maximumLatency;
             double totalProgress;
             int ver = 0;
