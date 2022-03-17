@@ -3353,7 +3353,7 @@ inline Status FasterKv<K, V, D>::ConditionalInsert(CIC& context, AsyncCallback c
   // Set initial start address to last entry of hash chain
   HashBucketEntry start_search_entry;
   KeyHash hash = pending_context.get_key_hash();
-  assert( FindOrCreateEntry(hash, start_search_entry) != nullptr );
+  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, start_search_entry);
   pending_context.start_search_entry = start_search_entry;
 
   OperationStatus internal_status = InternalConditionalInsert(pending_context);
@@ -3386,7 +3386,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_c
   Address min_search_offset = pending_context.min_search_offset;
 
   if(thread_ctx().phase != Phase::REST) {
-    const_cast<faster_t*>(this)->HeavyEnter();
+    HeavyEnter();
   }
   if(dest_store != this && dest_store->thread_ctx().phase != Phase::REST) {
     dest_store->HeavyEnter();
@@ -3399,7 +3399,6 @@ inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_c
   KeyHash hash = pending_context.get_key_hash();
   HashBucketEntry expected_entry;
   AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
-  assert(atomic_entry != nullptr);
   Address address = expected_entry.address();
 
   if (address == Address::kInvalidAddress) {
@@ -3468,7 +3467,8 @@ create_record:
     Address new_address = BlockAllocate(record_size, this);
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
     // Copy record
-    assert(pending_context.Insert(record, record_size));
+    bool success = pending_context.Insert(record, record_size);
+    assert(success);
     // Replace record header content
     new(record) record_t{
       RecordInfo{
@@ -3488,11 +3488,13 @@ create_record:
   else {
     // Case: hot-cold compaction
     // Upsert/Deletes on cold log should not go pending since upserts only go pending when during checkpointing
+    OperationStatus op_status;
     if (!pending_context.is_tombstone()) {
-      assert(dest_store->InternalUpsert(pending_context) == OperationStatus::SUCCESS);
+      op_status = dest_store->InternalUpsert(pending_context);
     } else {
-      assert(dest_store->InternalDelete(pending_context, true) == OperationStatus::SUCCESS);
+      op_status = dest_store->InternalDelete(pending_context, true);
     }
+    assert(op_status == OperationStatus::SUCCESS);
     return OperationStatus::SUCCESS;
   }
 }

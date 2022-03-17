@@ -38,7 +38,7 @@ class HotColdRmwConditionalInsertContext: public HotColdConditionalInsertContext
     // NOTE: this will also trigger a deep copy for HC RmwContext (if necessary)
     IAsyncContext* read_context_copy;
     rmw_read_context_t* read_context = static_cast<rmw_read_context_t*>(rmw_context_->read_context);
-    assert(read_context->DeepCopy(read_context_copy) == Status::Ok);
+    RETURN_NOT_OK(read_context->DeepCopy(read_context_copy));
     this->rmw_context_ = static_cast<rmw_context_t*>(read_context->hc_rmw_context);
     // Deep copy this context
     return IAsyncContext::DeepCopy_Internal(*this, context_copy);
@@ -122,7 +122,9 @@ public:
   , cold_log_compaction_log_perc_{ cold_log_compaction_log_perc }
   {
     // Calculate disk size for hot & cold logs
-    assert(0.0 < hot_log_perc && hot_log_perc < 1.0);
+    if (hot_log_perc < 0 || hot_log_perc > 1) {
+      throw std::invalid_argument {"Invalid hot log perc; should be between 0 and 1"};
+    }
     hot_log_disk_size_ = static_cast<uint64_t>(total_disk_size * hot_log_perc);
     cold_log_disk_size_ = total_disk_size - hot_log_disk_size_;
 
@@ -245,8 +247,10 @@ public:
 template<class K, class V, class D>
 inline Guid FasterKvHC<K, V, D>::StartSession() {
   Guid guid = Guid::Create();
-  assert(hot_store.StartSession(guid) == guid);
-  assert(cold_store.StartSession(guid) == guid);
+  Guid ret_guid = hot_store.StartSession(guid);
+  assert(ret_guid == guid);
+  ret_guid = cold_store.StartSession(guid);
+  assert(ret_guid == guid);
   return guid;
 }
 

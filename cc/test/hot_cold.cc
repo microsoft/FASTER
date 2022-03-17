@@ -238,13 +238,17 @@ void CreateLogDirs (std::string root, std::string& hot_log_dir, std::string& col
   hot_log_dir = root + "hot_log";
   cold_log_dir = root + "cold_log";
 
-  assert(std::experimental::filesystem::create_directories(hot_log_dir));
-  assert(std::experimental::filesystem::create_directories(cold_log_dir));
+  if(!std::experimental::filesystem::create_directories(hot_log_dir) ||
+     !std::experimental::filesystem::create_directories(cold_log_dir) ){
+      throw std::runtime_error {"Could not create test directories"};
+    }
 }
+
 void RemoveDirs (const std::string& root, const std::string& hot_log_dir, const std::string& cold_log_dir) {
-  assert(std::experimental::filesystem::remove_all(hot_log_dir));
-  assert(std::experimental::filesystem::remove_all(cold_log_dir));
-  assert(std::experimental::filesystem::remove_all(root));
+  // These throw exception on OS errors
+  std::experimental::filesystem::remove_all(hot_log_dir);
+  std::experimental::filesystem::remove_all(cold_log_dir);
+  std::experimental::filesystem::remove_all(root);
 }
 
 
