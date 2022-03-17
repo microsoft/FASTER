@@ -2,7 +2,7 @@
 title: "Research Papers"
 permalink: /docs/td-research-papers/
 excerpt: "Technical Details - Research Papers"
-last_modified_at: 2020-11-08
+last_modified_at: 2022-03-10
 toc: false
 classes: wide
 ---
@@ -26,7 +26,12 @@ classes: wide
 
 ## Distributed Recovery
 
-* Tianyu Li, Badrish Chandramouli, Jose M. Faleiro, Samuel Madden, Donald Kossmann. Asynchronous Prefix Recoverability for Fast Distributed Stores. <i>SIGMOD 2021, Virtual Event, China, June 2021 (to appear)</i>
+* Tianyu Li, Badrish Chandramouli, Jose M. Faleiro, Samuel Madden, Donald Kossmann. Asynchronous Prefix Recoverability for Fast Distributed Stores. <i>SIGMOD 2021, Virtual Event, China, June 2021</i>. [<a href="https://badrish.net/papers/dpr-sigmod2021.pdf">pdf</a>]
+
+## Caching
+
+* Q. Zhang, P. Bernstein, D. Berger, B. Chandramouli, V. Liu, B. T. Loo. CompuCache: Remote Computable Caching using Spot VMs. <i>CIDR, 2022</i>.  [<a href="https://badrish.net/papers/compucache-cidr2022.pdf">pdf</a>]
+* Q. Zhang, P. Bernstein, D. Berger, B. Chandramouli. Redy: Remote Dynamic Memory Cache. <i>PVLDB, 15(4), 2022</i>.  [<a href="https://badrish.net/papers/redy-vldb2022.pdf">pdf</a>]
 
 ## Secondary Indexing
 

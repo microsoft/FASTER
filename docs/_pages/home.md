@@ -10,7 +10,7 @@ header:
       url: "/docs/quick-start-guide/"
 excerpt: >
   A fast concurrent persistent key-value store and log, in C# and C++.<br />
-  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v1.9.6">Latest release v1.9.6</a></small>
+  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v1.9.14">Latest release v1.9.14</a></small>
 features:
   - image_path: /assets/images/faster-feature-1.png
     alt: "feature1"
@@ -68,17 +68,17 @@ NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded se
 * Async API support has been improved, with async versions of `Upsert` and `Delete` added. Spin-wait has been significantly reduced in the codebase.
 
 * We support variable-length keys and values in FasterKV C# via `Memory<byte>` and more generally `Memory<T> where T : unmanaged` as key/value/input types. We also added
-a new type called `SpanByte` to represent variable-length keys and values. See the sample [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples/StoreVarLenTypes) for details on these capabilities. This is in addition to the existing object-log support for class types.
+a new type called `SpanByte` to represent variable-length keys and values. See the sample [here](https://github.com/Microsoft/FASTER/tree/main/cs/samples/StoreVarLenTypes) for details on these capabilities. This is in addition to the existing object-log support for class types.
 
 * We support C# async in FASTER KV (and FASTER Log). See the guides for [FasterKV](docs/fasterkv-basics/) and [FasterLog](docs/fasterlog-basics/) 
-for more information. Also, check out the samples [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
+for more information. Also, check out the samples [here](https://github.com/Microsoft/FASTER/tree/main/cs/samples).
 
 
 # Getting Started
 
 * Quick-Start Guide and Docs: [here](docs/quick-start-guide/)
 * Source Code: [https://github.com/microsoft/FASTER](https://github.com/microsoft/FASTER)
-* C# Samples: [https://github.com/microsoft/FASTER/tree/master/cs/samples](https://github.com/microsoft/FASTER/tree/master/cs/samples)
+* C# Samples: [https://github.com/microsoft/FASTER/tree/main/cs/samples](https://github.com/microsoft/FASTER/tree/main/cs/samples)
 * C# NuGet binary feed:
   * [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
   * [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)

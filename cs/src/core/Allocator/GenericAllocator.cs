@@ -413,6 +413,7 @@ namespace FASTER.core
 
             for (int i=start/recordSize; i<end/recordSize; i++)
             {
+                long endPosition = 0;
                 if (!src[i].info.Invalid)
                 {
                     if (KeyHasObjects())
@@ -423,6 +424,7 @@ namespace FASTER.core
                         key_address->Address = pos;
                         key_address->Size = (int)(ms.Position - pos);
                         addr.Add((long)key_address);
+                        endPosition = pos + key_address->Size;
                     }
 
                     if (ValueHasObjects() && !src[i].info.Tombstone)
@@ -433,18 +435,20 @@ namespace FASTER.core
                         value_address->Address = pos;
                         value_address->Size = (int)(ms.Position - pos);
                         addr.Add((long)value_address);
+                        endPosition = pos + value_address->Size;
                     }
                 }
 
-                if (ms.Position > ObjectBlockSize || i == (end / recordSize) - 1)
+                if (endPosition > ObjectBlockSize || i == (end / recordSize) - 1)
                 {
-                    var memoryStreamLength = (int)ms.Position;
+                    var memoryStreamActualLength = ms.Position;
+                    var memoryStreamTotalLength = (int)endPosition;
 
-                    var _objBuffer = bufferPool.Get(memoryStreamLength);
+                    var _objBuffer = bufferPool.Get(memoryStreamTotalLength);
 
                     asyncResult.done = new AutoResetEvent(false);
 
-                    var _alignedLength = (memoryStreamLength + (sectorSize - 1)) & ~(sectorSize - 1);
+                    var _alignedLength = (memoryStreamTotalLength + (sectorSize - 1)) & ~(sectorSize - 1);
 
                     var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
 
@@ -456,7 +460,7 @@ namespace FASTER.core
                     ms.Close();
 
                     fixed (void* src_ = ms.GetBuffer())
-                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamLength, memoryStreamLength);
+                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamTotalLength, memoryStreamActualLength);
 
                     foreach (var address in addr)
                         ((AddressInfo*)address)->Address += _objAddr;
@@ -614,15 +618,15 @@ namespace FASTER.core
             }
 
             // We will now be able to process all records until (but not including) untilPtr
-            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, out long startptr, out long size);
+            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, out long startptr, out long alignedLength);
 
             // Object log fragment should be aligned by construction
             Debug.Assert(startptr % sectorSize == 0);
+            Debug.Assert(alignedLength % sectorSize == 0);
 
-            if (size > int.MaxValue)
-                throw new FasterException("Unable to read object page, total size greater than 2GB: " + size);
+            if (alignedLength > int.MaxValue)
+                throw new FasterException("Unable to read object page, total size greater than 2GB: " + alignedLength);
 
-            var alignedLength = (size + (sectorSize - 1)) & ~((long)sectorSize - 1);
             var objBuffer = bufferPool.Get((int)alignedLength);
             result.freeBuffer2 = objBuffer;
 
@@ -778,7 +782,7 @@ namespace FASTER.core
                     if (KeyHasObjects())
                     {
                         var key_addr = GetKeyAddressInfo((long)raw + ptr);
-                        if (start_addr == -1) start_addr = key_addr->Address;
+                        if (start_addr == -1) start_addr = key_addr->Address & ~((long)sectorSize - 1);
                         if (stream.Position != streamStartPos + key_addr->Address - start_addr)
                         {
                             stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
@@ -796,7 +800,7 @@ namespace FASTER.core
                         if (ValueHasObjects())
                         {
                             var value_addr = GetValueAddressInfo((long)raw + ptr);
-                            if (start_addr == -1) start_addr = value_addr->Address;
+                            if (start_addr == -1) start_addr = value_addr->Address & ~((long)sectorSize - 1);
                             if (stream.Position != streamStartPos + value_addr->Address - start_addr)
                             {
                                 stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
@@ -835,8 +839,9 @@ namespace FASTER.core
         {
             long minObjAddress = long.MaxValue;
             long maxObjAddress = long.MinValue;
+            bool done = false;
 
-            while (ptr < untilptr)
+            while (!done && (ptr < untilptr))
             {
                 ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
 
@@ -847,15 +852,13 @@ namespace FASTER.core
                         var key_addr = GetKeyAddressInfo((long)raw + ptr);
                         var addr = key_addr->Address;
 
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
-                        {
-                            break;
-                        }
-
                         if (addr < minObjAddress) minObjAddress = addr;
                         addr += key_addr->Size;
                         if (addr > maxObjAddress) maxObjAddress = addr;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                            done = true;
                     }
 
 
@@ -864,15 +867,13 @@ namespace FASTER.core
                         var value_addr = GetValueAddressInfo((long)raw + ptr);
                         var addr = value_addr->Address;
 
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
-                        {
-                            break;
-                        }
-
                         if (addr < minObjAddress) minObjAddress = addr;
                         addr += value_addr->Size;
                         if (addr > maxObjAddress) maxObjAddress = addr;
+
+                        // If object pointer is greater than kObjectSize from starting object pointer
+                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
+                            done = true;
                     }
                 }
                 ptr += GetRecordSize(ptr).Item2;
@@ -884,6 +885,12 @@ namespace FASTER.core
                 minObjAddress = 0;
                 maxObjAddress = 0;
             }
+
+            // Align start pointer for retrieval
+            minObjAddress &= ~((long)sectorSize - 1);
+
+            // Align max address as well
+            maxObjAddress = (maxObjAddress + (sectorSize - 1)) & ~((long)sectorSize - 1);
 
             startptr = minObjAddress;
             size = maxObjAddress - minObjAddress;
@@ -1027,10 +1034,11 @@ namespace FASTER.core
         internal override void MemoryPageScan(long beginAddress, long endAddress)
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
+            long pageStartAddress = beginAddress & ~PageSizeMask;
             int start = (int)(beginAddress & PageSizeMask) / recordSize;
             int count = (int)(endAddress - beginAddress) / recordSize;
             int end = start + count;
-            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end);
+            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end, pageStartAddress, recordSize);
             Debug.Assert(epoch.ThisInstanceProtected());
             try
             {
