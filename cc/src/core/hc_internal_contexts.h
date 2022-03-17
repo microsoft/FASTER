@@ -231,13 +231,20 @@ class HotColdReadContext : public AsyncHotColdReadContext <typename RC::key_t, t
   }
 };
 
-/// Context that holds user context for RMW request
+// Forward class declarations
+template <class K, class V>
+class HotColdRmwReadContext;
+template <class K, class V>
+class HotColdRmwConditionalInsertContext;
 
+/// Context that holds user context for RMW request
 template <class K, class V>
 class AsyncHotColdRmwContext : public HotColdContext<K> {
  public:
   typedef K key_t;
   typedef V value_t;
+  typedef HotColdRmwReadContext<K, V> hc_rmw_read_context_t;
+  typedef HotColdRmwConditionalInsertContext<K, V> hc_rmw_ci_context_t;
 
  protected:
   AsyncHotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, HashBucketEntry& expected_entry_,
@@ -246,6 +253,7 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
     , stage{ stage_ }
     , expected_entry{ expected_entry_ }
     , read_context{ nullptr }
+    , ci_context{ nullptr }
   {}
   /// The deep copy constructor.
   AsyncHotColdRmwContext(AsyncHotColdRmwContext& other, IAsyncContext* caller_context)
@@ -253,6 +261,7 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
     , stage{ other.stage }
     , expected_entry{ other.expected_entry }
     , read_context{ other.read_context }
+    , ci_context{ other.ci_context }
   {}
  public:
   //virtual const key_t& key() const = 0;
@@ -272,9 +281,30 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
   /// Get value size for RCU
   virtual uint32_t value_size(const value_t& value) const = 0;
 
+  void prepare_for_retry() {
+    stage = RmwOperationStage::WAIT_FOR_RETRY;
+    expected_entry = HashBucketEntry::kInvalidEntry;
+    this->free_aux_contexts();
+  }
+
+  void free_aux_contexts() {
+    if (read_context != nullptr && read_context->from_deep_copy()) {
+      // free context
+      context_unique_ptr_t<hc_rmw_read_context_t> context =
+          make_context_unique_ptr(static_cast<hc_rmw_read_context_t*>(read_context));
+    }
+    if (ci_context != nullptr && ci_context->from_deep_copy()) {
+      // free context
+      context_unique_ptr_t<hc_rmw_ci_context_t> context =
+          make_context_unique_ptr(static_cast<hc_rmw_ci_context_t*>(ci_context));
+    }
+    read_context = ci_context = nullptr;
+  }
+
   RmwOperationStage stage;
   HashBucketEntry expected_entry;
-  IAsyncContext* read_context; // HotColdRmwRead context
+  IAsyncContext* read_context;  // HotColdRmwRead context
+  IAsyncContext* ci_context;    // HotColdRmwConditionalInsert context
 };
 
 template <class MC>
@@ -297,6 +327,7 @@ class HotColdRmwContext : public AsyncHotColdRmwContext<typename MC::key_t, type
 
  protected:
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+    // Deep copy this, and the user RMW context
     return IAsyncContext::DeepCopy_Internal(
         *this, HotColdContext<key_t>::caller_context, context_copy);
   }
@@ -343,6 +374,7 @@ class HotColdRmwContext : public AsyncHotColdRmwContext<typename MC::key_t, type
   }
 };
 
+/// Internal context that holds the HC RMW context when doing Read
 template<class K, class V>
 class HotColdRmwReadContext : public IAsyncContext {
  public:
@@ -452,6 +484,97 @@ class HotColdConditionalInsertContext : public IAsyncContext {
 };
 template <class CIC>
 constexpr bool is_hc_ci_context = std::is_base_of<HotColdConditionalInsertContext, CIC>::value;
+
+/// Internal context that holds the HC RMW context when doing ConditionalInsert
+template <class K, class V>
+class HotColdRmwConditionalInsertContext: public HotColdConditionalInsertContext {
+ public:
+  // Typedefs on the key and value required internally by FASTER.
+  typedef K key_t;
+  typedef V value_t;
+  typedef AsyncHotColdRmwContext<key_t, value_t> rmw_context_t;
+  typedef HotColdRmwReadContext<key_t, value_t> rmw_read_context_t;
+  typedef Record<key_t, value_t> record_t;
+
+  HotColdRmwConditionalInsertContext(rmw_context_t* rmw_context, bool rmw_rcu)
+    : rmw_context{ rmw_context }
+    , rmw_rcu_{ rmw_rcu }
+  {}
+  /// Copy constructor deleted; copy to tail request doesn't go async
+  HotColdRmwConditionalInsertContext(const HotColdRmwConditionalInsertContext& from)
+    : rmw_context{ from.rmw_context }
+    , rmw_rcu_{ from.rmw_rcu_ }
+  {}
+
+ protected:
+  /// The explicit interface requires a DeepCopy_Internal() implementation.
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+    fprintf(stderr, "QQQQ\n");
+    // Deep copy RmwRead context
+    // NOTE: this may also trigger a deep copy for HC RmwContext (if necessary)
+    IAsyncContext* read_context_copy;
+    rmw_read_context_t* read_context = static_cast<rmw_read_context_t*>(rmw_context->read_context);
+    RETURN_NOT_OK(read_context->DeepCopy(read_context_copy));
+    rmw_context = static_cast<rmw_context_t*>(read_context->hc_rmw_context);
+
+    // Deep copy this context
+    RETURN_NOT_OK(IAsyncContext::DeepCopy_Internal(*this, context_copy));
+    rmw_context->ci_context = context_copy;
+
+    return Status::Ok;
+  }
+
+ public:
+  inline uint32_t key_size() const {
+    return rmw_context->key_size();
+  }
+  inline KeyHash get_key_hash() const {
+    return rmw_context->get_key_hash();
+  }
+  inline bool is_key_equal(const key_t& other) const {
+    return rmw_context->is_key_equal(other);
+  }
+  inline void write_deep_key_at(key_t* dst) const {
+    rmw_context->write_deep_key_at(dst);
+  }
+
+  inline uint32_t value_size() const {
+    return rmw_context->value_size();
+  }
+  inline bool is_tombstone() const {
+    return false; // rmw never copies tombstone records
+  }
+
+  inline bool Insert(void* dest, uint32_t alloc_size) const {
+    record_t* record = reinterpret_cast<record_t*>(dest);
+    // write key
+    key_t* key_dest = const_cast<key_t*>(&record->key());
+    rmw_context->write_deep_key_at(key_dest);
+    // write value
+    if (rmw_rcu_) {
+      // insert updated value
+      rmw_read_context_t* read_context = static_cast<rmw_read_context_t*>(rmw_context->read_context);
+      rmw_context->RmwCopy(*read_context->value(), record->value());
+    } else {
+      // Insert initial value
+      rmw_context->RmwInitial(record->value());
+    }
+    return true;
+  }
+  inline void Put(void* rec) {
+    assert(false); // this should never be called
+  }
+  inline bool PutAtomic(void* rec) {
+    assert(false); // this should never be called
+    return false;
+  }
+
+ public:
+  rmw_context_t* rmw_context;
+
+ private:
+  bool rmw_rcu_;
+};
 
 }
 } // namespace FASTER::core
