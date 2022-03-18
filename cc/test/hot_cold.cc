@@ -1012,6 +1012,11 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
       free(key);
     }
   }
+
+  if (auto_compaction) {
+    store.CompletePending(true);
+  }
+
   // Update one fourth of the entries
   for(uint32_t idx = 1; idx <= num_records; ++idx) {
     if (idx % 4 == 0) {
