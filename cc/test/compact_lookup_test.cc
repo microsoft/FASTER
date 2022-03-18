@@ -36,12 +36,16 @@ typedef FASTER::environment::QueueIoHandler handler_t;
 
 // Parameterized test definition
 // bool value indicates whether or not to perform shift begin address after compaction
-class CompactLookupParameterizedTestFixture : public ::testing::TestWithParam<bool> {
+class CompactLookupParameterizedTestFixture : public ::testing::TestWithParam<std::pair<bool, int>> {
 };
 INSTANTIATE_TEST_CASE_P(
   CompactLookupTests,
   CompactLookupParameterizedTestFixture,
-  ::testing::Values(false, true)
+  ::testing::Values(
+    // Truncate after compaction -- single thread
+    std::pair<bool, int>(true, 1),
+    // Truncate after compaction -- 8 threads
+    std::pair<bool, int>(true, 8))
 );
 
 /// Upsert context required to insert data for unit testing.
@@ -222,6 +226,9 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemAllLive) {
   faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
   int numRecords = 200000;
 
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
+
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -236,9 +243,8 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemAllLive) {
 
   // perform compaction (with or without shift begin address)
     uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address, 1));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -266,6 +272,9 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemHalfLive) {
   faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
   int numRecords = 200000;
 
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
+
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -291,9 +300,8 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemHalfLive) {
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -319,8 +327,10 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemRmw) {
   faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
   int numRecords = 100000;
 
-  store.StartSession();
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
 
+  store.StartSession();
   // Rmw initial (all records fit in-memory)
   for(size_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -362,9 +372,8 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemRmw) {
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
   store.CompletePending(true);
@@ -404,7 +413,7 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemRmw) {
   // perform compaction (with or without shift begin address)
   until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
   store.CompletePending(true);
@@ -433,6 +442,9 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemAllLiveNewEntries) {
   faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
   int numRecords = 200000;
 
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
+
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -457,9 +469,8 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemAllLiveNewEntries) {
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -492,6 +503,9 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemConcurrentOps) {
   // 1 GB log size -- 64 MB mutable region (min possible)
   faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
   static constexpr int numRecords = 200000;
+
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
 
   store.StartSession();
   // Populate initial keys
@@ -548,9 +562,8 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemConcurrentOps) {
   store.StartSession();
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = false; //GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
   store.StopSession();
@@ -752,8 +765,10 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthKey) {
   faster_t store { 1024, (1 << 30), "", 0.0625 }; // 64 MB of mutable region
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
-  store.StartSession();
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
 
+  store.StartSession();
   // Insert.
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -850,9 +865,8 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthKey) {
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -1053,6 +1067,9 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthValue) {
   faster_t store { 1024, (1 << 30), "", 0.0625 }; // 64 MB of mutable region
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
+
   store.StartSession();
 
   // Insert.
@@ -1106,9 +1123,8 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthValue) {
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -1146,6 +1162,9 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLive) {
   faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
   int numRecords = 50000;
 
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
+
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1160,9 +1179,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLive) {
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -1177,6 +1195,7 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLive) {
     };
     ReadContext<Key, LargeValue> context{ Key(idx) };
     Status result = store.Read(context, callback, 1);
+    fprintf(stderr, "%d\n", result);
     EXPECT_TRUE(result == Status::Ok || result == Status::Pending);
     if (result == Status::Ok) {
       ASSERT_EQ(idx, context.output.value);
@@ -1205,6 +1224,9 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskHalfLive) {
   faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
   int numRecords = 50000;
 
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
+
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1229,9 +1251,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskHalfLive) {
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -1279,10 +1300,12 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskRmw) {
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
-
   uint32_t num_records = 20000; // ~160 MB of data
-  store.StartSession();
 
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
+
+  store.StartSession();
   // Rmw initial (all records fit in-memory)
   for(size_t idx = 1; idx <= num_records; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1325,9 +1348,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskRmw) {
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
   store.CompletePending(true);
@@ -1371,7 +1393,7 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskRmw) {
   // perform compaction (with or without shift begin address)
   until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
   store.CompletePending(true);
@@ -1406,6 +1428,9 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLiveDeleteAndReInsert) {
   // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
   int numRecords = 50000;
+
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
 
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -1442,9 +1467,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLiveDeleteAndReInsert) {
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -1492,6 +1516,9 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskConcurrentOps) {
   // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
   static constexpr int numRecords = 50000;
+
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
 
   store.StartSession();
   // Populate initial keys
@@ -1547,9 +1574,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskConcurrentOps) {
 
   // perform compaction concurrently
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
   store.StopSession();
@@ -1652,6 +1678,7 @@ TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
         auto callback = [](IAsyncContext* ctxt, Status result) {
           CallbackContext<ReadContext<Key, LargeValue>> context(ctxt);
           ASSERT_TRUE(context->key().key > 0);
+          fprintf(stderr, "%d\n", result);
           ASSERT_EQ(result, Status::Ok);
         };
         ReadContext<Key, LargeValue> context{ Key(idx) };
@@ -1860,8 +1887,10 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthKey) {
   faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
-  store.StartSession();
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
 
+  store.StartSession();
   // Insert.
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1972,9 +2001,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthKey) {
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -2206,8 +2234,10 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthValue) {
   faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
-  store.StartSession();
+  bool shift_begin_address = GetParam().first;
+  int n_threads = GetParam().second;
 
+  store.StartSession();
   // Insert.
   for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -2267,9 +2297,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthValue) {
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
-  bool shift_begin_address = GetParam();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address));
+    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
