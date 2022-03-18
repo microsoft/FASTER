@@ -33,12 +33,16 @@ namespace FASTER.core
         /// Thread protection status entries.
         /// </summary>
         Entry[] tableRaw;
-        GCHandle tableHandle;
         Entry* tableAligned;
+#if !NET5_0_OR_GREATER
+        GCHandle tableHandle;
+#endif
 
         static readonly Entry[] threadIndex;
-        static GCHandle threadIndexHandle;
         static readonly Entry* threadIndexAligned;
+#if !NET5_0_OR_GREATER
+        static GCHandle threadIndexHandle;
+#endif
 
         /// <summary>
         /// List of action, epoch pairs containing actions to performed 
@@ -87,11 +91,17 @@ namespace FASTER.core
         /// </summary>
         static LightEpoch()
         {
+            long p;
+
             // Over-allocate to do cache-line alignment
+#if NET5_0_OR_GREATER
+            threadIndex = GC.AllocateArray<Entry>(kTableSize + 2, true);
+            p = (long)Unsafe.AsPointer(ref threadIndex[0]);
+#else
             threadIndex = new Entry[kTableSize + 2];
             threadIndexHandle = GCHandle.Alloc(threadIndex, GCHandleType.Pinned);
-            long p = (long)threadIndexHandle.AddrOfPinnedObject();
-
+            p = (long)threadIndexHandle.AddrOfPinnedObject();
+#endif
             // Force the pointer to align to 64-byte boundaries
             long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
             threadIndexAligned = (Entry*)p2;
@@ -102,11 +112,16 @@ namespace FASTER.core
         /// </summary>
         public LightEpoch()
         {
+            long p;
+#if NET5_0_OR_GREATER
+            tableRaw = GC.AllocateArray<Entry>(kTableSize + 2, true);
+            p = (long)Unsafe.AsPointer(ref tableRaw[0]);
+#else
             // Over-allocate to do cache-line alignment
             tableRaw = new Entry[kTableSize + 2];
             tableHandle = GCHandle.Alloc(tableRaw, GCHandleType.Pinned);
-            long p = (long)tableHandle.AddrOfPinnedObject();
-
+            p = (long)tableHandle.AddrOfPinnedObject();
+#endif
             // Force the pointer to align to 64-byte boundaries
             long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
             tableAligned = (Entry*)p2;
@@ -124,7 +139,9 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+#if !NET5_0_OR_GREATER
             tableHandle.Free();
+#endif
             tableAligned = null;
             tableRaw = null;
             CurrentEpoch = 1;
@@ -468,7 +485,7 @@ namespace FASTER.core
             if (threadId == 0) // run once per thread for performance
             {
                 threadId = Environment.CurrentManagedThreadId;
-                threadIdHash = 1 + (Utility.Murmur3(threadId) % kTableSize);
+                threadIdHash = 1 + (int)(((uint)Utility.Murmur3(threadId)) % kTableSize);
             }
             return ReserveEntry(threadIdHash, threadId);
         }
