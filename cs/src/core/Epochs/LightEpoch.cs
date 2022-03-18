@@ -17,48 +17,48 @@ namespace FASTER.core
         /// <summary>
         /// Default invalid index entry.
         /// </summary>
-        private const int kInvalidIndex = 0;
+        const int kInvalidIndex = 0;
 
         /// <summary>
         /// Default number of entries in the entries table
         /// </summary>
-        public const int kTableSize = 128;
+        static readonly int kTableSize = Environment.ProcessorCount * 16;
 
         /// <summary>
         /// Default drainlist size
         /// </summary>
-        private const int kDrainListSize = 16;
+        const int kDrainListSize = 16;
 
         /// <summary>
         /// Thread protection status entries.
         /// </summary>
-        private Entry[] tableRaw;
-        private GCHandle tableHandle;
-        private Entry* tableAligned;
+        Entry[] tableRaw;
+        GCHandle tableHandle;
+        Entry* tableAligned;
 
-        private static readonly Entry[] threadIndex;
-        private static GCHandle threadIndexHandle;
-        private static readonly Entry* threadIndexAligned;
+        static readonly Entry[] threadIndex;
+        static GCHandle threadIndexHandle;
+        static readonly Entry* threadIndexAligned;
 
         /// <summary>
         /// List of action, epoch pairs containing actions to performed 
         /// when an epoch becomes safe to reclaim. Marked volatile to
         /// ensure latest value is seen by the last suspended thread.
         /// </summary>
-        private volatile int drainCount = 0;
-        private readonly EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
+        volatile int drainCount = 0;
+        readonly EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
 
         /// <summary>
         /// A thread's entry in the epoch table.
         /// </summary>
         [ThreadStatic]
-        private static int threadEntryIndex;
+        static int threadEntryIndex;
 
         /// <summary>
         /// Number of instances using this entry
         /// </summary>
         [ThreadStatic]
-        private static int threadEntryIndexCount;
+        static int threadEntryIndexCount;
 
         [ThreadStatic]
         static int threadId;
@@ -75,6 +75,11 @@ namespace FASTER.core
         /// Cached value of latest epoch that is safe to reclaim
         /// </summary>
         public int SafeToReclaimEpoch;
+
+        /// <summary>
+        /// Local view of current epoch, for an epoch-protected thread
+        /// </summary>
+        public int LocalCurrentEpoch => (*(tableAligned + threadEntryIndex)).localCurrentEpoch;
 
         /// <summary>
         /// Static constructor to setup shared cache-aligned space
@@ -176,97 +181,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Take care of pending drains after epoch suspend
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SuspendDrain()
-        {
-            while (drainCount > 0)
-            {
-                // Barrier ensures we see the latest epoch table entries. Ensures
-                // that the last suspended thread drains all pending actions.
-                Thread.MemoryBarrier();
-                for (int index = 1; index <= kTableSize; ++index)
-                {
-                    int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
-                    if (0 != entry_epoch)
-                    {
-                        return;
-                    }
-                }
-                Resume();
-                Release();
-            }
-        }
-
-        /// <summary>
-        /// Check and invoke trigger actions that are ready
-        /// </summary>
-        /// <param name="nextEpoch">Next epoch</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void Drain(int nextEpoch)
-        {
-            ComputeNewSafeToReclaimEpoch(nextEpoch);
-
-            for (int i = 0; i < kDrainListSize; i++)
-            {
-                var trigger_epoch = drainList[i].epoch;
-
-                if (trigger_epoch <= SafeToReclaimEpoch)
-                {
-                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, trigger_epoch) == trigger_epoch)
-                    {
-                        var trigger_action = drainList[i].action;
-                        drainList[i].action = null;
-                        drainList[i].epoch = int.MaxValue;
-                        Interlocked.Decrement(ref drainCount);
-                        trigger_action();
-                        if (drainCount == 0) break;
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// Thread acquires its epoch entry
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void Acquire()
-        {
-            if (threadEntryIndex == kInvalidIndex)
-                threadEntryIndex = ReserveEntryForThread();
-
-            Debug.Assert((*(tableAligned + threadEntryIndex)).localCurrentEpoch == 0,
-                "Trying to acquire protected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
-
-            threadEntryIndexCount++;
-        }
-
-        internal int LocalCurrentEpoch => (*(tableAligned + threadEntryIndex)).localCurrentEpoch;
-
-        /// <summary>
-        /// Thread releases its epoch entry
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void Release()
-        {
-            int entry = threadEntryIndex;
-
-            Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
-                "Trying to release unprotected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
-
-            (*(tableAligned + entry)).localCurrentEpoch = 0;
-            (*(tableAligned + entry)).threadId = 0;
-
-            threadEntryIndexCount--;
-            if (threadEntryIndexCount == 0)
-            {
-                (threadIndexAligned + threadEntryIndex)->threadId = 0;
-                threadEntryIndex = kInvalidIndex;
-            }
-        }
-
-        /// <summary>
         /// Thread suspends its epoch entry
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -294,20 +208,6 @@ namespace FASTER.core
         {
             Acquire();
             resumeEpoch = ProtectAndDrain();
-        }
-
-        /// <summary>
-        /// Increment global current epoch
-        /// </summary>
-        /// <returns></returns>
-        private int BumpCurrentEpoch()
-        {
-            int nextEpoch = Interlocked.Add(ref CurrentEpoch, 1);
-
-            if (drainCount > 0)
-                Drain(nextEpoch);
-
-            return nextEpoch;
         }
 
         /// <summary>
@@ -362,112 +262,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Looks at all threads and return the latest safe epoch
-        /// </summary>
-        /// <param name="currentEpoch">Current epoch</param>
-        /// <returns>Safe epoch</returns>
-        private int ComputeNewSafeToReclaimEpoch(int currentEpoch)
-        {
-            int oldestOngoingCall = currentEpoch;
-
-            for (int index = 1; index <= kTableSize; ++index)
-            {
-                int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
-                if (0 != entry_epoch)
-                {
-                    if (entry_epoch < oldestOngoingCall)
-                    {
-                        oldestOngoingCall = entry_epoch;
-                    }
-                }
-            }
-
-            // The latest safe epoch is the one just before 
-            // the earliest unsafe epoch.
-            SafeToReclaimEpoch = oldestOngoingCall - 1;
-            return SafeToReclaimEpoch;
-        }
-
-        /// <summary>
-        /// Reserve entry for thread. This method relies on the fact that no
-        /// thread will ever have ID 0.
-        /// </summary>
-        /// <param name="startIndex">Start index</param>
-        /// <param name="threadId">Thread id</param>
-        /// <returns>Reserved entry</returns>
-        private static int ReserveEntry(int startIndex, int threadId)
-        {
-            for (; ; )
-            {
-                // Reserve an entry in the table.
-                for (int i = 0; i < kTableSize; ++i)
-                {
-                    int index_to_test = 1 + ((startIndex + i) & (kTableSize - 1));
-                    if (0 == (threadIndexAligned + index_to_test)->threadId)
-                    {
-                        bool success =
-                            (0 == Interlocked.CompareExchange(
-                            ref (threadIndexAligned+index_to_test)->threadId,
-                            threadId, 0));
-
-                        if (success)
-                        {
-                            return (int)index_to_test;
-                        }
-                    }
-                }
-                Thread.Yield();
-            }
-        }
-
-        /// <summary>
-        /// Allocate a new entry in epoch table. This is called 
-        /// once for a thread.
-        /// </summary>
-        /// <returns>Reserved entry</returns>
-        private static int ReserveEntryForThread()
-        {
-            if (threadId == 0) // run once per thread for performance
-            {
-                // For portability (run on non-windows platform)
-                threadId = Environment.OSVersion.Platform == PlatformID.Win32NT ? (int)Native32.GetCurrentThreadId() : Thread.CurrentThread.ManagedThreadId;
-                threadIdHash = Utility.Murmur3(threadId);
-            }
-            return ReserveEntry(threadIdHash, threadId);
-        }
-
-        /// <summary>
-        /// Epoch table entry (cache line size).
-        /// </summary>
-        [StructLayout(LayoutKind.Explicit, Size = Constants.kCacheLineBytes)]
-        private struct Entry
-        {
-            /// <summary>
-            /// Thread-local value of epoch
-            /// </summary>
-            [FieldOffset(0)]
-            public int localCurrentEpoch;
-
-            /// <summary>
-            /// ID of thread associated with this entry.
-            /// </summary>
-            [FieldOffset(4)]
-            public int threadId;
-
-            [FieldOffset(8)]
-            public int reentrant;
-
-            [FieldOffset(12)]
-            public fixed int markers[13];
-        };
-
-        private struct EpochActionPair
-        {
-            public long epoch;
-            public Action action;
-        }
-
-        /// <summary>
         /// Mechanism for threads to mark some activity as completed until
         /// some version by this thread
         /// </summary>
@@ -504,6 +298,210 @@ namespace FASTER.core
                 }
             }
             return true;
+        }
+
+        /// <summary>
+        /// Increment global current epoch
+        /// </summary>
+        /// <returns></returns>
+        int BumpCurrentEpoch()
+        {
+            int nextEpoch = Interlocked.Add(ref CurrentEpoch, 1);
+
+            if (drainCount > 0)
+                Drain(nextEpoch);
+
+            return nextEpoch;
+        }
+
+        /// <summary>
+        /// Looks at all threads and return the latest safe epoch
+        /// </summary>
+        /// <param name="currentEpoch">Current epoch</param>
+        /// <returns>Safe epoch</returns>
+        int ComputeNewSafeToReclaimEpoch(int currentEpoch)
+        {
+            int oldestOngoingCall = currentEpoch;
+
+            for (int index = 1; index <= kTableSize; ++index)
+            {
+                int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                if (0 != entry_epoch)
+                {
+                    if (entry_epoch < oldestOngoingCall)
+                    {
+                        oldestOngoingCall = entry_epoch;
+                    }
+                }
+            }
+
+            // The latest safe epoch is the one just before 
+            // the earliest unsafe epoch.
+            SafeToReclaimEpoch = oldestOngoingCall - 1;
+            return SafeToReclaimEpoch;
+        }
+
+        /// <summary>
+        /// Take care of pending drains after epoch suspend
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void SuspendDrain()
+        {
+            while (drainCount > 0)
+            {
+                // Barrier ensures we see the latest epoch table entries. Ensures
+                // that the last suspended thread drains all pending actions.
+                Thread.MemoryBarrier();
+                for (int index = 1; index <= kTableSize; ++index)
+                {
+                    int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                    if (0 != entry_epoch)
+                    {
+                        return;
+                    }
+                }
+                Resume();
+                Release();
+            }
+        }
+
+        /// <summary>
+        /// Check and invoke trigger actions that are ready
+        /// </summary>
+        /// <param name="nextEpoch">Next epoch</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void Drain(int nextEpoch)
+        {
+            ComputeNewSafeToReclaimEpoch(nextEpoch);
+
+            for (int i = 0; i < kDrainListSize; i++)
+            {
+                var trigger_epoch = drainList[i].epoch;
+
+                if (trigger_epoch <= SafeToReclaimEpoch)
+                {
+                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, trigger_epoch) == trigger_epoch)
+                    {
+                        var trigger_action = drainList[i].action;
+                        drainList[i].action = null;
+                        drainList[i].epoch = int.MaxValue;
+                        Interlocked.Decrement(ref drainCount);
+                        trigger_action();
+                        if (drainCount == 0) break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Thread acquires its epoch entry
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void Acquire()
+        {
+            if (threadEntryIndex == kInvalidIndex)
+                threadEntryIndex = ReserveEntryForThread();
+
+            Debug.Assert((*(tableAligned + threadEntryIndex)).localCurrentEpoch == 0,
+                "Trying to acquire protected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
+
+            threadEntryIndexCount++;
+        }
+
+        /// <summary>
+        /// Thread releases its epoch entry
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void Release()
+        {
+            int entry = threadEntryIndex;
+
+            Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
+                "Trying to release unprotected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
+
+            (*(tableAligned + entry)).localCurrentEpoch = 0;
+            (*(tableAligned + entry)).threadId = 0;
+
+            threadEntryIndexCount--;
+            if (threadEntryIndexCount == 0)
+            {
+                (threadIndexAligned + threadEntryIndex)->threadId = 0;
+                threadEntryIndex = kInvalidIndex;
+            }
+        }
+
+        /// <summary>
+        /// Reserve entry for thread. This method relies on the fact that no
+        /// thread will ever have ID 0.
+        /// </summary>
+        /// <param name="startIndex">Start index</param>
+        /// <param name="threadId">Thread id</param>
+        /// <returns>Reserved entry</returns>
+        static int ReserveEntry(int startIndex, int threadId)
+        {
+            while (true)
+            {
+                int index_to_test = startIndex;
+                do
+                {
+                    if (0 == (threadIndexAligned + index_to_test)->threadId)
+                    {
+                        if (0 == Interlocked.CompareExchange(
+                            ref (threadIndexAligned + index_to_test)->threadId,
+                            threadId, 0))
+                            return index_to_test;
+                    }
+                    index_to_test++;
+                    if (index_to_test > kTableSize) index_to_test -= kTableSize;
+                } while (index_to_test != startIndex);
+                Thread.Yield();
+            }
+        }
+
+        /// <summary>
+        /// Allocate a new entry in epoch table. This is called 
+        /// once for a thread.
+        /// </summary>
+        /// <returns>Reserved entry</returns>
+        static int ReserveEntryForThread()
+        {
+            if (threadId == 0) // run once per thread for performance
+            {
+                threadId = Environment.CurrentManagedThreadId;
+                threadIdHash = 1 + (Utility.Murmur3(threadId) % kTableSize);
+            }
+            return ReserveEntry(threadIdHash, threadId);
+        }
+
+        /// <summary>
+        /// Epoch table entry (cache line size).
+        /// </summary>
+        [StructLayout(LayoutKind.Explicit, Size = Constants.kCacheLineBytes)]
+        struct Entry
+        {
+            /// <summary>
+            /// Thread-local value of epoch
+            /// </summary>
+            [FieldOffset(0)]
+            public int localCurrentEpoch;
+
+            /// <summary>
+            /// ID of thread associated with this entry.
+            /// </summary>
+            [FieldOffset(4)]
+            public int threadId;
+
+            [FieldOffset(8)]
+            public int reentrant;
+
+            [FieldOffset(12)]
+            public fixed int markers[13];
+        };
+
+        struct EpochActionPair
+        {
+            public long epoch;
+            public Action action;
         }
     }
 }
