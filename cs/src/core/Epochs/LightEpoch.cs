@@ -22,7 +22,7 @@ namespace FASTER.core
         /// <summary>
         /// Default number of entries in the entries table
         /// </summary>
-        static readonly int kTableSize = Environment.ProcessorCount * 16;
+        static readonly ushort kTableSize = Math.Max((ushort)128, (ushort)(Environment.ProcessorCount * 2));
 
         /// <summary>
         /// Default drainlist size
@@ -68,7 +68,9 @@ namespace FASTER.core
         static int threadId;
 
         [ThreadStatic]
-        static int threadIdHash;
+        static ushort startOffset1;
+        [ThreadStatic]
+        static ushort startOffset2;
 
         /// <summary>
         /// Global current epoch value
@@ -113,6 +115,7 @@ namespace FASTER.core
         public LightEpoch()
         {
             long p;
+
 #if NET5_0_OR_GREATER
             tableRaw = GC.AllocateArray<Entry>(kTableSize + 2, true);
             p = (long)Unsafe.AsPointer(ref tableRaw[0]);
@@ -451,27 +454,32 @@ namespace FASTER.core
         /// Reserve entry for thread. This method relies on the fact that no
         /// thread will ever have ID 0.
         /// </summary>
-        /// <param name="startIndex">Start index</param>
-        /// <param name="threadId">Thread id</param>
         /// <returns>Reserved entry</returns>
-        static int ReserveEntry(int startIndex, int threadId)
+        static int ReserveEntry()
         {
             while (true)
             {
-                int index_to_test = startIndex;
-                do
+                // Try to acquire entry
+                if (0 == (threadIndexAligned + startOffset1)->threadId)
                 {
-                    if (0 == (threadIndexAligned + index_to_test)->threadId)
-                    {
-                        if (0 == Interlocked.CompareExchange(
-                            ref (threadIndexAligned + index_to_test)->threadId,
-                            threadId, 0))
-                            return index_to_test;
-                    }
-                    index_to_test++;
-                    if (index_to_test > kTableSize) index_to_test -= kTableSize;
-                } while (index_to_test != startIndex);
-                Thread.Yield();
+                    if (0 == Interlocked.CompareExchange(
+                        ref (threadIndexAligned + startOffset1)->threadId,
+                        threadId, 0))
+                        return startOffset1;
+                }
+
+                if (startOffset2 > 0)
+                {
+                    // Try alternate entry
+                    startOffset1 = startOffset2;
+                    startOffset2 = 0;
+                }
+                else startOffset1++; // Probe next sequential entry
+                if (startOffset1 > kTableSize)
+                {
+                    startOffset1 -= kTableSize;
+                    Thread.Yield();
+                }
             }
         }
 
@@ -485,9 +493,11 @@ namespace FASTER.core
             if (threadId == 0) // run once per thread for performance
             {
                 threadId = Environment.CurrentManagedThreadId;
-                threadIdHash = 1 + (int)(((uint)Utility.Murmur3(threadId)) % kTableSize);
+                uint code = (uint)Utility.Murmur3(threadId);
+                startOffset1 = (ushort)(1 + (code % kTableSize));
+                startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }
-            return ReserveEntry(threadIdHash, threadId);
+            return ReserveEntry();
         }
 
         /// <summary>
