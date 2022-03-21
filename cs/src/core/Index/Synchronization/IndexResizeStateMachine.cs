@@ -30,7 +30,7 @@ namespace FASTER.core
                     faster.numPendingChunksToBeSplit = numChunks;
                     faster.splitStatus = new long[numChunks];
                     faster.overflowBucketsAllocatorResize = faster.overflowBucketsAllocator;
-                    faster.overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(false);
+                    faster.overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
                     faster.Initialize(1 - faster.resizeInfo.version, faster.state[faster.resizeInfo.version].size * 2, faster.sectorSize);
 
                     faster.resizeInfo.version = 1 - faster.resizeInfo.version;

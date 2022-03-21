@@ -69,9 +69,11 @@ namespace FASTER.core
         private const int LevelSizeBits = 12;
         private const int LevelSize = 1 << LevelSizeBits;
 
-        private T[][] values = new T[LevelSize][];
-        private GCHandle[] handles = new GCHandle[LevelSize];
-        private IntPtr[] pointers = new IntPtr[LevelSize];
+        private readonly T[][] values = new T[LevelSize][];
+#if !NET5_0_OR_GREATER
+        private readonly GCHandle[] handles = new GCHandle[LevelSize];
+#endif
+        private readonly IntPtr[] pointers = new IntPtr[LevelSize];
 
         private readonly int RecordSize;
 
@@ -80,7 +82,7 @@ namespace FASTER.core
         private volatile int count;
 
         private readonly bool IsPinned;
-        private readonly bool ReturnPhysicalAddress;
+        private const bool ReturnPhysicalAddress = false;
 
         private int checkpointCallbackCount;
         private SemaphoreSlim checkpointSemaphore;
@@ -90,49 +92,34 @@ namespace FASTER.core
         /// <summary>
         /// Create new instance
         /// </summary>
-        /// <param name="returnPhysicalAddress"></param>
-        public MallocFixedPageSize(bool returnPhysicalAddress = false)
+        public unsafe MallocFixedPageSize()
         {
             freeList = new ConcurrentQueue<long>();
+            if (ForceUnpinnedAllocation)
+                IsPinned = false;
+            else
+                IsPinned = Utility.IsBlittable<T>();
 
+#if NET5_0_OR_GREATER
+            values[0] = GC.AllocateArray<T>(PageSize, IsPinned);
+            if (IsPinned)
+            {
+                pointers[0] = (IntPtr)Unsafe.AsPointer(ref values[0][0]);
+                RecordSize = Marshal.SizeOf(values[0][0]);
+            }
+#else
             values[0] = new T[PageSize];
+            if (IsPinned)
+            {
+                handles[0] = GCHandle.Alloc(values[0], GCHandleType.Pinned);
+                pointers[0] = handles[0].AddrOfPinnedObject();
+                RecordSize = Marshal.SizeOf(values[0][0]);
+            }
+#endif
 
 #if !(CALLOC)
             Array.Clear(values[0], 0, PageSize);
 #endif
-            ReturnPhysicalAddress = returnPhysicalAddress;
-
-            if (ForceUnpinnedAllocation)
-            {
-                IsPinned = false;
-                ReturnPhysicalAddress = false;
-            }
-            else
-            {
-                IsPinned = true;
-                if (default(T) == null)
-                {
-                    IsPinned = false;
-                    ReturnPhysicalAddress = false;
-                }
-                else
-                {
-                    // The surefire way to check if a type is blittable
-                    // it to try GCHandle.Alloc with a handle type of Pinned.
-                    // If it throws an exception, we know the type is not blittable.
-                    try
-                    {
-                        handles[0] = GCHandle.Alloc(values[0], GCHandleType.Pinned);
-                        pointers[0] = handles[0].AddrOfPinnedObject();
-                        RecordSize = Marshal.SizeOf(values[0][0]);
-                    }
-                    catch (Exception)
-                    {
-                        IsPinned = false;
-                        ReturnPhysicalAddress = false;
-                    }
-                }
-            }
 
             writeCacheLevel = -1;
             Interlocked.MemoryBarrier();
@@ -168,7 +155,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref T Get(long index)
         {
-            if (this.ReturnPhysicalAddress)
+            if (ReturnPhysicalAddress)
                 throw new FasterException("Physical pointer returned by allocator: de-reference pointer to get records instead of calling Get");
 
             return ref values
@@ -185,7 +172,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Set(long index, ref T value)
         {
-            if (this.ReturnPhysicalAddress)
+            if (ReturnPhysicalAddress)
                 throw new FasterException("Physical pointer returned by allocator: de-reference pointer to set records instead of calling Set (otherwise, set ForceUnpinnedAllocation to true)");
 
             values
@@ -218,7 +205,7 @@ namespace FASTER.core
         /// Allocate and BulkAllocate
         /// </summary>
         /// <returns></returns>
-        public long BulkAllocate()
+        public unsafe long BulkAllocate()
         {
             // Determine insertion index.
             // ReSharper disable once CSharpWarnings::CS0420
@@ -235,16 +222,21 @@ namespace FASTER.core
                 // If index 0, then allocate space for next level.
                 if (index == 0)
                 {
+#if NET5_0_OR_GREATER
+                    var tmp = GC.AllocateArray<T>(PageSize, IsPinned);
+                    pointers[1] = (IntPtr)Unsafe.AsPointer(ref tmp[0]);
+#else
                     var tmp = new T[PageSize];
-#if !(CALLOC)
-                    Array.Clear(tmp, 0, PageSize);
-#endif
-
                     if (IsPinned)
                     {
                         handles[1] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
                         pointers[1] = handles[1].AddrOfPinnedObject();
                     }
+#endif
+
+#if !(CALLOC)
+                    Array.Clear(tmp, 0, PageSize);
+#endif
                     values[1] = tmp;
                     Interlocked.MemoryBarrier();
                 }
@@ -297,17 +289,22 @@ namespace FASTER.core
 
                 // Allocate for next page
                 int newBaseAddr = baseAddr + 1;
+
+#if NET5_0_OR_GREATER
+                var tmp = GC.AllocateArray<T>(PageSize, IsPinned);
+                if (IsPinned) pointers[newBaseAddr] = (IntPtr)Unsafe.AsPointer(ref tmp[0]);
+#else
                 var tmp = new T[PageSize];
-
-#if !(CALLOC)
-                    Array.Clear(tmp, 0, PageSize);
-#endif
-
                 if (IsPinned)
                 {
                     handles[newBaseAddr] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
                     pointers[newBaseAddr] = handles[newBaseAddr].AddrOfPinnedObject();
                 }
+#endif
+
+#if !(CALLOC)
+                Array.Clear(tmp, 0, PageSize);
+#endif
                 values[newBaseAddr] = tmp;
 
                 Interlocked.MemoryBarrier();
@@ -324,7 +321,7 @@ namespace FASTER.core
         /// Allocate
         /// </summary>
         /// <returns></returns>
-        public long Allocate()
+        public unsafe long Allocate()
         {
             if (freeList.TryDequeue(out long result))
                 return result;
@@ -344,17 +341,21 @@ namespace FASTER.core
                 // If index 0, then allocate space for next level.
                 if (index == 0)
                 {
+#if NET5_0_OR_GREATER
+                    var tmp = GC.AllocateArray<T>(PageSize, IsPinned);
+                    if (IsPinned) pointers[1] = (IntPtr)Unsafe.AsPointer(ref tmp[0]);
+#else
                     var tmp = new T[PageSize];
-
-#if !(CALLOC)
-                    Array.Clear(tmp, 0, PageSize);
-#endif
-
                     if (IsPinned)
                     {
                         handles[1] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
                         pointers[1] = handles[1].AddrOfPinnedObject();
                     }
+#endif
+
+#if !(CALLOC)
+                    Array.Clear(tmp, 0, PageSize);
+#endif
                     values[1] = tmp;
                     Interlocked.MemoryBarrier();
                 }
@@ -407,17 +408,22 @@ namespace FASTER.core
 
                 // Allocate for next page
                 int newBaseAddr = baseAddr + 1;
+
+#if NET5_0_OR_GREATER
+                var tmp = GC.AllocateArray<T>(PageSize, IsPinned);
+                if (IsPinned) pointers[newBaseAddr] = (IntPtr)Unsafe.AsPointer(ref tmp[0]);
+#else
                 var tmp = new T[PageSize];
-
-#if !(CALLOC)
-                    Array.Clear(tmp, 0, PageSize);
-#endif
-
                 if (IsPinned)
                 {
                     handles[newBaseAddr] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
                     pointers[newBaseAddr] = handles[newBaseAddr].AddrOfPinnedObject();
                 }
+#endif
+
+#if !(CALLOC)
+                Array.Clear(tmp, 0, PageSize);
+#endif
                 values[newBaseAddr] = tmp;
 
                 Interlocked.MemoryBarrier();
@@ -435,20 +441,17 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+#if !NET5_0_OR_GREATER
             for (int i = 0; i < values.Length; i++)
             {
-                if (IsPinned && (handles[i].IsAllocated)) handles[i].Free();
-                values[i] = null;
+                if (IsPinned && handles[i].IsAllocated) handles[i].Free();
             }
-            handles = null;
-            pointers = null;
-            values = null;
+#endif
             count = 0;
-            freeList = null;
         }
 
 
-        #region Checkpoint
+#region Checkpoint
 
         /// <summary>
         /// Is checkpoint complete
@@ -570,9 +573,9 @@ namespace FASTER.core
         {
             return PageSize;
         }
-        #endregion
+#endregion
 
-        #region Recover
+#region Recover
         /// <summary>
         /// Recover
         /// </summary>
@@ -660,6 +663,6 @@ namespace FASTER.core
             }
             this.recoveryCountdown.Decrement();
         }
-        #endregion
+#endregion
     }
 }

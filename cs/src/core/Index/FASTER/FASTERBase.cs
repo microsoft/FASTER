@@ -237,8 +237,10 @@ namespace FASTER.core
         public long size_mask;
         public int size_bits;
         public HashBucket[] tableRaw;
-        public GCHandle tableHandle;
         public HashBucket* tableAligned;
+#if !NET5_0_OR_GREATER
+        public GCHandle tableHandle;
+#endif
     }
 
     public unsafe partial class FasterBase
@@ -269,26 +271,23 @@ namespace FASTER.core
         public FasterBase()
         {
             epoch = new LightEpoch();
-            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(false);
+            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
         }
 
-        internal Status Free()
+        internal void Free()
         {
             Free(0);
             Free(1);
             epoch.Dispose();
             overflowBucketsAllocator.Dispose();
-            return new(StatusCode.Found);
         }
 
-        private Status Free(int version)
+        private void Free(int version)
         {
+#if !NET5_0_OR_GREATER
             if (state[version].tableHandle.IsAllocated)
                 state[version].tableHandle.Free();
-
-            state[version].tableRaw = null;
-            state[version].tableAligned = null;
-            return new(StatusCode.Found);
+#endif
         }
 
         /// <summary>
@@ -331,10 +330,16 @@ namespace FASTER.core
             state[version].size_mask = size - 1;
             state[version].size_bits = Utility.GetLogBase2((int)size);
 
+#if NET5_0_OR_GREATER
+            state[version].tableRaw = GC.AllocateArray<HashBucket>((int)(aligned_size_bytes / Constants.kCacheLineBytes), true);
+            long sectorAlignedPointer = ((long)Unsafe.AsPointer(ref state[version].tableRaw[0]) + (sector_size - 1)) & ~(sector_size - 1);
+            state[version].tableAligned = (HashBucket*)sectorAlignedPointer;
+#else
             state[version].tableRaw = new HashBucket[aligned_size_bytes / Constants.kCacheLineBytes];
             state[version].tableHandle = GCHandle.Alloc(state[version].tableRaw, GCHandleType.Pinned);
             long sectorAlignedPointer = ((long)state[version].tableHandle.AddrOfPinnedObject() + (sector_size - 1)) & ~(sector_size - 1);
             state[version].tableAligned = (HashBucket*)sectorAlignedPointer;
+#endif
         }
 
         /// <summary>
