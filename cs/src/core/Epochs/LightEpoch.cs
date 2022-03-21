@@ -145,8 +145,6 @@ namespace FASTER.core
 #if !NET5_0_OR_GREATER
             tableHandle.Free();
 #endif
-            tableAligned = null;
-            tableRaw = null;
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
         }

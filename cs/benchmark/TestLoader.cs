@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -158,9 +159,6 @@ namespace FASTER.benchmark
             {
                 Console.WriteLine($"loading subset of keys and txns from {txn_filename} into memory...");
                 using FileStream stream = File.Open(txn_filename, FileMode.Open, FileAccess.Read, FileShare.Read);
-                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
-                GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
-                byte* chunk_ptr = (byte*)chunk_handle.AddrOfPinnedObject();
 
                 var initValueSet = new HashSet<long>(init_keys.Length);
 
@@ -169,44 +167,47 @@ namespace FASTER.benchmark
 
                 long offset = 0;
 
-                while (true)
+                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
+                fixed (byte* chunk_ptr = chunk)
                 {
-                    stream.Position = offset;
-                    int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
-                    for (int idx = 0; idx < size && txn_count < txn_keys.Length; idx += 8)
+                    while (true)
                     {
-                        var value = *(long*)(chunk_ptr + idx);
-                        if (!initValueSet.Contains(value))
+                        stream.Position = offset;
+                        int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
+                        for (int idx = 0; idx < size && txn_count < txn_keys.Length; idx += 8)
                         {
-                            if (init_count >= init_keys.Length)
+                            var value = *(long*)(chunk_ptr + idx);
+                            if (!initValueSet.Contains(value))
                             {
-                                if (distribution == YcsbConstants.ZipfDist)
-                                    continue;
+                                if (init_count >= init_keys.Length)
+                                {
+                                    if (distribution == YcsbConstants.ZipfDist)
+                                        continue;
 
-                                // Uniform distribution at current small-data counts is about a 1% hit rate, which is too slow here, so just modulo.
-                                value %= init_keys.Length;
+                                    // Uniform distribution at current small-data counts is about a 1% hit rate, which is too slow here, so just modulo.
+                                    value %= init_keys.Length;
+                                }
+                                else
+                                {
+                                    initValueSet.Add(value);
+                                    keySetter.Set(init_keys, init_count, value);
+                                    ++init_count;
+                                }
                             }
-                            else
-                            {
-                                initValueSet.Add(value);
-                                keySetter.Set(init_keys, init_count, value);
-                                ++init_count;
-                            }
+                            keySetter.Set(txn_keys, txn_count, value);
+                            ++txn_count;
                         }
-                        keySetter.Set(txn_keys, txn_count, value);
-                        ++txn_count;
-                    }
-                    if (size == YcsbConstants.kFileChunkSize)
-                        offset += YcsbConstants.kFileChunkSize;
-                    else
-                        break;
+                        if (size == YcsbConstants.kFileChunkSize)
+                            offset += YcsbConstants.kFileChunkSize;
+                        else
+                            break;
 
-                    if (txn_count == txn_keys.Length)
-                        break;
+                        if (txn_count == txn_keys.Length)
+                            break;
+                    }
                 }
 
                 sw.Stop();
-                chunk_handle.Free();
 
                 if (init_count != init_keys.Length)
                     throw new InvalidDataException($"Init file subset load fail! Expected {init_keys.Length} keys; found {init_count}");
@@ -222,33 +223,31 @@ namespace FASTER.benchmark
 
             using (FileStream stream = File.Open(init_filename, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
-                GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
-                byte* chunk_ptr = (byte*)chunk_handle.AddrOfPinnedObject();
-
                 long offset = 0;
 
-                while (true)
+                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
+                fixed (byte* chunk_ptr = chunk)
                 {
-                    stream.Position = offset;
-                    int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
-                    for (int idx = 0; idx < size; idx += 8)
+                    while (true)
                     {
-                        keySetter.Set(init_keys, count, *(long*)(chunk_ptr + idx));
-                        ++count;
+                        stream.Position = offset;
+                        int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
+                        for (int idx = 0; idx < size; idx += 8)
+                        {
+                            keySetter.Set(init_keys, count, *(long*)(chunk_ptr + idx));
+                            ++count;
+                            if (count == init_keys.Length)
+                                break;
+                        }
+                        if (size == YcsbConstants.kFileChunkSize)
+                            offset += YcsbConstants.kFileChunkSize;
+                        else
+                            break;
+
                         if (count == init_keys.Length)
                             break;
                     }
-                    if (size == YcsbConstants.kFileChunkSize)
-                        offset += YcsbConstants.kFileChunkSize;
-                    else
-                        break;
-
-                    if (count == init_keys.Length)
-                        break;
                 }
-
-                chunk_handle.Free();
 
                 if (count != init_keys.Length)
                     throw new InvalidDataException($"Init file load fail! Expected {init_keys.Length} keys; found {count}");
@@ -262,34 +261,32 @@ namespace FASTER.benchmark
 
             using (FileStream stream = File.Open(txn_filename, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
-                GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
-                byte* chunk_ptr = (byte*)chunk_handle.AddrOfPinnedObject();
-
                 count = 0;
                 long offset = 0;
 
-                while (true)
+                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
+                fixed (byte* chunk_ptr = chunk)
                 {
-                    stream.Position = offset;
-                    int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
-                    for (int idx = 0; idx < size; idx += 8)
+                    while (true)
                     {
-                        keySetter.Set(txn_keys, count, *(long*)(chunk_ptr + idx));
-                        ++count;
+                        stream.Position = offset;
+                        int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
+                        for (int idx = 0; idx < size; idx += 8)
+                        {
+                            keySetter.Set(txn_keys, count, *(long*)(chunk_ptr + idx));
+                            ++count;
+                            if (count == txn_keys.Length)
+                                break;
+                        }
+                        if (size == YcsbConstants.kFileChunkSize)
+                            offset += YcsbConstants.kFileChunkSize;
+                        else
+                            break;
+
                         if (count == txn_keys.Length)
                             break;
                     }
-                    if (size == YcsbConstants.kFileChunkSize)
-                        offset += YcsbConstants.kFileChunkSize;
-                    else
-                        break;
-
-                    if (count == txn_keys.Length)
-                        break;
                 }
-
-                chunk_handle.Free();
 
                 if (count != txn_keys.Length)
                     throw new InvalidDataException($"Txn file load fail! Expected {txn_keys.Length} keys; found {count}");
