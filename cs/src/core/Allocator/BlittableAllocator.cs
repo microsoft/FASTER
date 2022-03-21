@@ -121,7 +121,8 @@ namespace FASTER.core
             {
                 for (int i = 0; i < handles.Length; i++)
                 {
-                    if (handles[i].IsAllocated) handles[i].Free();
+                    if (handles[i].IsAllocated)
+                        handles[i].Free();
                 }
                 ptrHandle.Free();
             }

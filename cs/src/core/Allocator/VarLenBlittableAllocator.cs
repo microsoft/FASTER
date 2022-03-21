@@ -223,15 +223,15 @@ namespace FASTER.core
             base.Dispose();
 
 #if !NET5_0_OR_GREATER
-            if (handles != null)
+            if (BufferSize > 0)
             {
                 for (int i = 0; i < handles.Length; i++)
                 {
                     if (handles[i].IsAllocated)
                         handles[i].Free();
                 }
+                ptrHandle.Free();
             }
-            ptrHandle.Free();
 #endif
             overflowPagePool.Dispose();
         }
