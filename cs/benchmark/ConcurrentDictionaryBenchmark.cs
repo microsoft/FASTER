@@ -65,7 +65,7 @@ namespace FASTER.benchmark
             writeStats = new bool[threadCount];
             freq = Stopwatch.Frequency;
 #endif
-            input_ = new Input[8];
+            input_ = GC.AllocateArray<Input>(8, true);
             for (int i = 0; i < 8; i++)
                 input_[i].value = i;
 
@@ -177,8 +177,7 @@ namespace FASTER.benchmark
         {
             RandomGenerator rng = new ();
 
-            GCHandle handle = GCHandle.Alloc(input_, GCHandleType.Pinned);
-            input_ptr = (Input*)handle.AddrOfPinnedObject();
+            input_ptr = (Input*)Unsafe.AsPointer(ref input_[0]);
 
 #if DASHBOARD
             var dash = new Thread(() => DoContinuousMeasurements());
@@ -255,7 +254,6 @@ namespace FASTER.benchmark
             dash.Abort();
 #endif
 
-            handle.Free();
             input_ptr = null;
 
             double seconds = swatch.ElapsedMilliseconds / 1000.0;

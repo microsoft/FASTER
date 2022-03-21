@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -158,9 +159,8 @@ namespace FASTER.benchmark
             {
                 Console.WriteLine($"loading subset of keys and txns from {txn_filename} into memory...");
                 using FileStream stream = File.Open(txn_filename, FileMode.Open, FileAccess.Read, FileShare.Read);
-                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
-                GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
-                byte* chunk_ptr = (byte*)chunk_handle.AddrOfPinnedObject();
+                byte[] chunk = GC.AllocateArray<byte>(YcsbConstants.kFileChunkSize, true);
+                byte* chunk_ptr = (byte*)Unsafe.AsPointer(ref chunk[0]);
 
                 var initValueSet = new HashSet<long>(init_keys.Length);
 
@@ -206,7 +206,6 @@ namespace FASTER.benchmark
                 }
 
                 sw.Stop();
-                chunk_handle.Free();
 
                 if (init_count != init_keys.Length)
                     throw new InvalidDataException($"Init file subset load fail! Expected {init_keys.Length} keys; found {init_count}");
@@ -222,9 +221,8 @@ namespace FASTER.benchmark
 
             using (FileStream stream = File.Open(init_filename, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
-                GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
-                byte* chunk_ptr = (byte*)chunk_handle.AddrOfPinnedObject();
+                byte[] chunk = GC.AllocateArray<byte>(YcsbConstants.kFileChunkSize, true);
+                byte* chunk_ptr = (byte*)Unsafe.AsPointer(ref chunk[0]);
 
                 long offset = 0;
 
@@ -248,8 +246,6 @@ namespace FASTER.benchmark
                         break;
                 }
 
-                chunk_handle.Free();
-
                 if (count != init_keys.Length)
                     throw new InvalidDataException($"Init file load fail! Expected {init_keys.Length} keys; found {count}");
             }
@@ -262,9 +258,8 @@ namespace FASTER.benchmark
 
             using (FileStream stream = File.Open(txn_filename, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
-                GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
-                byte* chunk_ptr = (byte*)chunk_handle.AddrOfPinnedObject();
+                byte[] chunk = GC.AllocateArray<byte>(YcsbConstants.kFileChunkSize, true);
+                byte* chunk_ptr = (byte*)Unsafe.AsPointer(ref chunk[0]);
 
                 count = 0;
                 long offset = 0;
@@ -288,8 +283,6 @@ namespace FASTER.benchmark
                     if (count == txn_keys.Length)
                         break;
                 }
-
-                chunk_handle.Free();
 
                 if (count != txn_keys.Length)
                     throw new InvalidDataException($"Txn file load fail! Expected {txn_keys.Length} keys; found {count}");
