@@ -125,7 +125,11 @@ namespace FASTER.server
             }
         }
 
-        internal unsafe void DisposeSession(IServerSession _session)
+        /// <summary>
+        /// Dispose given IServerSession
+        /// </summary>
+        /// <param name="_session"></param>
+        protected void DisposeSession(IServerSession _session)
         {
             if (_session != null)
             {
