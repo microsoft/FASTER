@@ -74,8 +74,7 @@ namespace FASTER.server
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
-        public void DisposeKey(ref Key key) { functions.DisposeKey(ref key); }
-
-        public void DisposeValue(ref Value value) { functions.DisposeValue(ref value); }
+        public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => functions.DisposeSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
     }
 }

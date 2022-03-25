@@ -134,8 +134,6 @@ namespace FasterFixedLenServer
 
         public bool ConcurrentDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) => true;
 
-        public void DisposeKey(ref Key key) { }
-
-        public void DisposeValue(ref Value value) { }
+        public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
     }
 }
