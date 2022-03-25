@@ -66,8 +66,6 @@ namespace FASTER.core
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
-        public void DisposeKey(ref Key key) { }
-
-        public void DisposeValue(ref Value value) { }
+        public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
     }
 }

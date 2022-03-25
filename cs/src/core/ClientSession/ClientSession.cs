@@ -1072,11 +1072,10 @@ namespace FASTER.core
             }
             #endregion IFunctions - Deletes
 
-            #region Key and Value management
-            public void DisposeKey(ref Key key) { _clientSession.functions.DisposeKey(ref key); }
-
-            public void DisposeValue(ref Value value) { _clientSession.functions.DisposeValue(ref value); }
-            #endregion Key and Value management
+            #region IFunctions - Dispose
+            public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+                => _clientSession.functions.DisposeSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
+            #endregion IFunctions - Dispose
 
             #region IFunctions - Checkpointing
             public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)

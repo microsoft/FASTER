@@ -213,19 +213,19 @@ namespace FASTER.core
         bool ConcurrentDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo);
         #endregion Deletes
 
-        #region Key and Value management
+        #region Dispose
         /// <summary>
-        /// Dispose the key; for example, in evicted log records. FASTER assumes deep-copy semantics such as cloning or refcounting. 
+        /// Called after SingleWriter, if the CAS installation of record into the store fails. Can be used to perform object disposal related actions.
         /// </summary>
-        /// <param name="key"></param>
-        void DisposeKey(ref Key key);
-
-        /// <summary>
-        /// Dispose the value; for example, in evicted log records. FASTER assumes deep-copy semantics such as cloning or refcounting. 
-        /// </summary>
-        /// <param name="value"></param>
-        void DisposeValue(ref Value value);
-        #endregion Key and Value management
+        /// <param name="key">The key for this record</param>
+        /// <param name="input">The user input that was used to compute <paramref name="dst"/></param>
+        /// <param name="src">The previous value to be copied/updated</param>
+        /// <param name="dst">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
+        /// <param name="output">The location where the result of the update may be placed</param>
+        /// <param name="upsertInfo">Information about this update operation and its context</param>
+        /// <param name="reason">The operation for which this write is being done</param>
+        void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason);
+        #endregion Dispose
 
         #region Checkpointing
         /// <summary>

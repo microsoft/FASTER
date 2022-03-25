@@ -49,8 +49,8 @@ namespace FASTER.core
         public virtual void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo) { }
         public virtual bool ConcurrentDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) => true;
 
-        public virtual void DisposeKey(ref Key key) { }
-        public virtual void DisposeValue(ref Value value) { }
+        /// <inheritdoc/>
+        public virtual void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
         /// <inheritdoc/>
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }

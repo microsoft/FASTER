@@ -782,8 +782,7 @@ namespace FASTER.core
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
 
             recordInfo.SetInvalid();
-            fasterSession.DisposeKey(ref insertedKey);
-            fasterSession.DisposeValue(ref insertedValue);
+            fasterSession.DisposeSingleWriter(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref recordInfo, ref upsertInfo, WriteReason.Upsert);
             if (WriteDefaultOnDelete)
             {
                 insertedKey = default;
@@ -2747,6 +2746,11 @@ namespace FASTER.core
             if (!success)
             {
                 log.GetInfo(newPhysicalAddress).SetInvalid();
+
+                // CAS failed - let user dispose similar to a deleted record
+                fasterSession.DisposeSingleWriter(ref hlog.GetKey(newPhysicalAddress), ref input, ref value, 
+                    ref hlog.GetValue(newPhysicalAddress), ref output, 
+                    ref log.GetInfo(newPhysicalAddress), ref upsertInfo, reason);
                 return OperationStatus.RETRY_NOW;
             }
             else
