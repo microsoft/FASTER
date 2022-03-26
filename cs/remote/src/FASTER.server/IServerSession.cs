@@ -23,6 +23,11 @@ namespace FASTER.server
         /// </summary>
         /// <param name="bytesRead"></param>
         void AddBytesRead(int bytesRead);
-    }
 
+        /// <summary>
+        /// Hook for caller to indicate how many unprocessed bytes remain in total
+        /// </summary>
+        /// <param name="bytesRead"></param>
+        void SetBytesRead(int bytesRead);
+    }
 }
