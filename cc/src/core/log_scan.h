@@ -6,6 +6,7 @@
 #include <atomic>
 
 #include "alloc.h"
+#include "auto_ptr.h"
 #include "record.h"
 #include "persistent_memory_malloc.h"
 
@@ -255,9 +256,13 @@ class LogPageIterator {
   }
 
   inline void IssueReadAsyncRequest(LogPage<F>& page, Address& page_addr, Address& start_addr) {
-    uint32_t bytes_to_read = (page_addr + hlog_t::kPageSize <= until)
-                                ? hlog_t::kPageSize
-                                : static_cast<uint32_t>((until - page_addr).control());
+    uint32_t bytes_to_read = hlog_t::kPageSize;
+    if (page_addr + hlog_t::kPageSize > until) {
+      bytes_to_read = static_cast<uint32_t>((until - page_addr).control());
+      // Keep consistent with the device alignment
+      bytes_to_read += hlog->sector_size - (bytes_to_read % hlog->sector_size);
+    }
+    assert(bytes_to_read % hlog->sector_size == 0);
 
     if (start_addr >= hlog->head_address.load()) {
       // Copy page contents from memory
