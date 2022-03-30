@@ -113,7 +113,8 @@ class FasterKv {
     , hlog{ filename.empty() /*hasNoBackingStorage*/, log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
     , system_state_{ Action::None, Phase::REST, 1 }
     , num_pending_ios{ 0 }
-    , num_compaction_truncs{ 0 } {
+    , num_compaction_truncs{ 0 }
+    , num_active_sessions{ 0 } {
     if(!Utility::IsPowerOfTwo(table_size)) {
       throw std::invalid_argument{ " Size is not a power of 2" };
     }
@@ -168,7 +169,8 @@ class FasterKv {
   bool Compact(uint64_t untilAddress);
   bool CompactWithLookup(uint64_t until_address, bool shift_begin_address,
                           int n_threads = kNumCompactionThreads,
-                          faster_t* dest_store = nullptr);
+                          faster_t* dest_store = nullptr,
+                          bool checkpoint = false);
 
   /// Truncating the head of the log.
   bool ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
@@ -357,6 +359,9 @@ class FasterKv {
   /// Global count of number of truncations after compaction
   std::atomic<uint64_t> num_compaction_truncs;
 
+  /// Number of active sessions
+  std::atomic<size_t> num_active_sessions;
+
   /// Space for two contexts per thread, stored inline.
   ThreadContext thread_contexts_[Thread::kMaxNumThreads];
 };
@@ -373,6 +378,7 @@ inline Guid FasterKv<K, V, D>::StartSession(Guid guid) {
   }
   thread_ctx().Initialize(state.phase, state.version, guid, 0);
   Refresh();
+  ++num_active_sessions;
   return thread_ctx().guid;
 }
 
@@ -389,6 +395,7 @@ inline uint64_t FasterKv<K, V, D>::ContinueSession(const Guid& session_id) {
   }
   thread_ctx().Initialize(state.phase, state.version, session_id, iter->second);
   Refresh();
+  ++num_active_sessions;
   return iter->second;
 }
 
@@ -424,6 +431,7 @@ inline void FasterKv<K, V, D>::StopSession() {
   assert(thread_ctx().phase == Phase::REST);
 
   epoch_.Unprotect();
+  --num_active_sessions;
 }
 
 template <class K, class V, class D>
@@ -3129,7 +3137,7 @@ inline std::ostream& operator << (std::ostream& out, const FixedPageAddress addr
 /// scanning the entire log from head to tail.
 template<class K, class V, class D>
 bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_begin_address,
-                                            int n_threads, faster_t* dest_store) {
+                                            int n_threads, faster_t* dest_store, bool checkpoint) {
   // TODO: maybe switch to an initial phase for GC to avoid concurrent actions (e.g. checkpoint, grow index, etc.)
 
   if (hlog.begin_address.load() >= until_address) {
@@ -3171,46 +3179,139 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
         --remaining;
       }
     }
-    CompletePending(false);
+    Refresh();
     if (dest_store != this) {
-      dest_store->CompletePending(false);
+      dest_store->Refresh();
     }
     std::this_thread::yield();
   }
 
-  if (shift_begin_address) {
-    // Truncate log & update hash index
-    static std::atomic<bool> truncated (false);
-    static std::atomic<bool> completed (false);
+  if (checkpoint) {
+    // index checkpoint
+    static std::atomic<Status> index_persisted_status;
+    // hlog checkpoint
+    static std::atomic_flag hlog_threads_persisted[Thread::kMaxNumThreads];
+    static std::atomic<Status> hlog_persisted_status;
+    static std::atomic<size_t> hlog_num_threads_persisted;
+    Guid token; // TODO: expose it to user
+    //
+    static std::atomic<bool> ready_for_truncation;
 
-    GcState::truncate_callback_t truncate_callback = [](uint64_t offset) {
-      truncated = true;
-    };
-    GcState::complete_callback_t complete_callback = []() {
-      completed = true;
-    };
-    // TODO: delay if checkpointing
-    bool result = ShiftBeginAddress(Address(until_address), truncate_callback,
-                                    complete_callback, true);
-    if (!result) return false;
+    // Initialize static vars
+    index_persisted_status = hlog_persisted_status = Status::Corruption;
+    hlog_num_threads_persisted.store(0);
+    for (size_t idx = 0; idx < Thread::kMaxNumThreads; idx++) {
+      hlog_threads_persisted[idx].clear();
+    }
+    ready_for_truncation.store(0);
 
-    // block until truncation & hash index update finishes
-    while(!truncated || !completed) {
+    IndexPersistenceCallback index_persist_callback = [](Status status) {
+      assert(index_persisted_status.load() == Status::Corruption);
+      index_persisted_status.store(status);
+      assert(status == Status::Ok); // TODO: Replace with warning
+    };
+
+    HybridLogPersistenceCallback hlog_persist_callback =
+        [](Status status, uint64_t persistent_serial_number) {
+      bool expected = hlog_threads_persisted[Thread::id()].test_and_set();
+      assert(expected == false);
+      ++hlog_num_threads_persisted;
+
+      // Update global checkpoint status, if error or first thread to finish
+      bool success;
+      do {
+        success = true;
+        Status global_status = hlog_persisted_status.load();
+        if (global_status == Status::Corruption || status != Status::Ok) {
+          success = hlog_persisted_status.compare_exchange_strong(global_status, status);
+        }
+      } while (!success);
+    };
+
+    // Init checkpointing
+    dest_store->Refresh();
+    bool success;
+    do {
+      success = dest_store->Checkpoint(index_persist_callback, hlog_persist_callback, token);
+      if (!success) {
+        Refresh();
+        if (dest_store != this) {
+          dest_store->Refresh();
+        }
+        std::this_thread::yield();
+      }
+    } while (!success);
+
+    // wait until checkpoint has finished
+    // NOTE: sessions cannot be started/stopped during checkpointing
+    size_t num_threads_active = num_active_sessions.load();
+    while (hlog_num_threads_persisted < num_threads_active) {
       CompletePending(false);
       if (dest_store != this) {
         dest_store->CompletePending(false);
       }
       std::this_thread::yield();
     }
-    bool done;
+    assert(index_persisted_status != Status::Corruption &&
+          hlog_persisted_status != Status::Corruption);
+    if (index_persisted_status != Status::Ok ||
+        hlog_persisted_status != Status::Ok) {
+      return false;
+    }
+
+    if (dest_store == this && shift_begin_address) {
+      // Wait until all threads move to REST phase
+      // This ensures that initiating a log truncation operation will be successful
+      auto callback = [](IAsyncContext* ctxt) {
+        bool success, expected = false;
+        success = ready_for_truncation.compare_exchange_strong(expected, true);
+        assert(success && expected == false);
+      };
+      epoch_.BumpCurrentEpoch(callback, nullptr);
+
+      do {
+        Refresh();
+        std::this_thread::yield();
+      } while(!ready_for_truncation);
+    }
+  }
+
+  if (shift_begin_address) {
+    // Truncate log & update hash index
+    static std::atomic<bool> log_truncated;
+    static std::atomic<bool> gc_completed;
+    // reset static vars
+    log_truncated = gc_completed = false;
+
+    GcState::truncate_callback_t truncate_callback = [](uint64_t offset) {
+      log_truncated = true;
+    };
+    GcState::complete_callback_t complete_callback = []() {
+      gc_completed = true;
+    };
+
+    // try shift begin address
+    bool success;
     do {
-      done = CompletePending(false);
+      success = ShiftBeginAddress(Address(until_address), truncate_callback,
+                                  complete_callback, true);
+      if (!success) {
+        Refresh();
+        if (dest_store != this) {
+          dest_store->Refresh();
+        }
+        std::this_thread::yield();
+      }
+    } while(!success);
+
+    // block until truncation & hash index update finishes
+    while(!log_truncated || !gc_completed) {
+      CompletePending(false);
       if (dest_store != this) {
         dest_store->CompletePending(false);
       }
       std::this_thread::yield();
-    } while (!done);
-    Refresh();
+    }
   }
   return true;
 }
@@ -3270,7 +3371,6 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
         // requests for this page have been completed
         goto complete_pending;
       }
-      Refresh();
 
       // Try to get next page
       if(!ct_ctx->iter->GetNextPage(pages)) {
@@ -3301,10 +3401,19 @@ inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_c
     }
 
 complete_pending:
-    if ((num_iter % io_check_freq == 0) || record == nullptr) {
+    if (!pending_records.empty()) {
+      // Try to complete pending requests
       CompletePending(false);
-      if (dest_store_differs) dest_store->CompletePending(false);
-      if (record == nullptr) std::this_thread::yield();
+      if (record == nullptr) {
+        std::this_thread::yield();
+      }
+    }
+    if (num_iter % io_check_freq == 0) {
+      // Periodically refresh epoch
+      Refresh();
+      if (dest_store_differs) {
+        dest_store->Refresh();
+      }
     }
 
     ++num_iter;
@@ -3313,23 +3422,21 @@ complete_pending:
       break;
     }
   }
+  assert(pending_records.empty());
 
-  // Wait for all compaction requests to complete
-  bool done = false;
-  while (true) {
-    // Complete requests on both logs (if different)
-    done = CompletePending(false);
-    if (dest_store_differs) {
-      done = dest_store->CompletePending(false) && done;
-    }
-    if (done) break;
-    std::this_thread::yield();
+  if (thread_idx >= 0) {
+    // This thread was spawned only for compaction and should have finished all activity
+    assert(dest_store->thread_ctx().retry_requests.empty());
+    assert(dest_store->thread_ctx().pending_ios.empty());
+    assert(dest_store->thread_ctx().io_responses.empty());
   }
 
   // Stop session for each spawned thread
   if (thread_idx >= 0) {
     StopSession();
-    if (dest_store_differs) dest_store->StopSession();
+    if (dest_store_differs) {
+      dest_store->StopSession();
+    }
     // Mark thread as finished
     ct_ctx->done[thread_idx].store(true);
   }
@@ -3385,7 +3492,9 @@ inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_c
   faster_t* dest_store = static_cast<faster_t*>(pending_context.dest_store);
   Address min_search_offset = pending_context.min_search_offset;
 
+  //fprintf(stderr, "[%d] PHASE = %d\n", Thread::id(), static_cast<uint8_t>(thread_ctx().phase));
   if(thread_ctx().phase != Phase::REST) {
+    //fprintf(stderr, "[%d] ENTR\n", Thread::id());
     HeavyEnter();
   }
   if(dest_store != this && dest_store->thread_ctx().phase != Phase::REST) {
