@@ -9,6 +9,7 @@
 
 #include "device/null_disk.h"
 
+#include "helper.h"
 #include "test_types.h"
 
 using namespace FASTER::core;
@@ -34,19 +35,35 @@ typedef FASTER::environment::ThreadPoolIoHandler handler_t;
 typedef FASTER::environment::QueueIoHandler handler_t;
 #endif
 
-// Parameterized test definition
+// Parameterized test definition for in-memory tests
 // bool value indicates whether or not to perform shift begin address after compaction
-class CompactLookupParameterizedTestFixture : public ::testing::TestWithParam<std::pair<bool, int>> {
+class CompactLookupParameterizedInMemTestFixture : public ::testing::TestWithParam<std::pair<bool, int>> {
 };
 INSTANTIATE_TEST_CASE_P(
-  CompactLookupTests,
-  CompactLookupParameterizedTestFixture,
+  CompactLookupInMemTests,
+  CompactLookupParameterizedInMemTestFixture,
   ::testing::Values(
     // Truncate after compaction -- single thread
     std::pair<bool, int>(true, 1),
     // Truncate after compaction -- 8 threads
     std::pair<bool, int>(true, 8))
 );
+
+// Parameterized test definition for on-disk tests
+class CompactLookupParameterizedOnDiskTestFixture : public ::testing::TestWithParam<std::tuple<bool, bool, int>> {
+};
+INSTANTIATE_TEST_CASE_P(
+  CompactLookupOnDiskTests,
+  CompactLookupParameterizedOnDiskTestFixture,
+  ::testing::Values(
+    // Truncate after compaction, single thread
+    std::make_tuple(true, false, 1),
+    // Truncate after compaction, 8 threads
+    std::make_tuple(true, false, 8),
+    // Truncate after compaction, 8 threads w/ checkpoint
+    std::make_tuple(true, true, 8))
+);
+
 
 /// Upsert context required to insert data for unit testing.
 template <class K, class V>
@@ -219,11 +236,11 @@ class DeleteContext : public IAsyncContext {
 /// Inserts a bunch of records into a FASTER instance and invokes the
 /// compaction algorithm. Since all records are still live, checks if
 /// they remain so after the algorithm completes/returns.
-TEST_P(CompactLookupParameterizedTestFixture, InMemAllLive) {
+TEST_P(CompactLookupParameterizedInMemTestFixture, InMemAllLive) {
   // In memory hybrid log
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
-  faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
+  faster_t store { 2048, (1 << 20) * 1024, "", 0.0625 };
   int numRecords = 200000;
 
   bool shift_begin_address = GetParam().first;
@@ -265,11 +282,11 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemAllLive) {
 /// Inserts a bunch of records into a FASTER instance, deletes half of them
 /// and invokes the compaction algorithm. Checks that the ones that should
 /// be alive are alive and the ones that should be dead stay dead.
-TEST_P(CompactLookupParameterizedTestFixture, InMemHalfLive) {
+TEST_P(CompactLookupParameterizedInMemTestFixture, InMemHalfLive) {
   // In memory hybrid log
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
-  faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
+  faster_t store { 2048, (1 << 20) * 1024, "", 0.0625 };
   int numRecords = 200000;
 
   bool shift_begin_address = GetParam().first;
@@ -321,10 +338,10 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemHalfLive) {
   store.StopSession();
 }
 
-TEST_P(CompactLookupParameterizedTestFixture, InMemRmw) {
+TEST_P(CompactLookupParameterizedInMemTestFixture, InMemRmw) {
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
-  faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
+  faster_t store { 2048, (1 << 20) * 1024, "", 0.0625 };
   int numRecords = 100000;
 
   bool shift_begin_address = GetParam().first;
@@ -435,11 +452,11 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemRmw) {
 /// Inserts a bunch of records into a FASTER instance, updates half of them
 /// with new values and invokes the compaction algorithm. Checks that the
 /// updated ones have the new value, and the others the old one.
-TEST_P(CompactLookupParameterizedTestFixture, InMemAllLiveNewEntries) {
+TEST_P(CompactLookupParameterizedInMemTestFixture, InMemAllLiveNewEntries) {
   // In memory hybrid log
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
-  faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
+  faster_t store { 2048, (1 << 20) * 1024, "", 0.0625 };
   int numRecords = 200000;
 
   bool shift_begin_address = GetParam().first;
@@ -496,12 +513,12 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemAllLiveNewEntries) {
 /// compaction algorithm. Concurrent to the compaction, upserts and deletes
 /// are performed in 1/3 of the keys, respectively. After compaction, it
 /// checks that updated keys have the new value, while deleted keys do not exist.
-TEST_P(CompactLookupParameterizedTestFixture, InMemConcurrentOps) {
+TEST_P(CompactLookupParameterizedInMemTestFixture, InMemConcurrentOps) {
   // In memory hybrid log
   typedef FASTER::device::NullDisk disk_t;
   typedef FasterKv<Key, MediumValue, disk_t> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
-  faster_t store { 1024, (1 << 20) * 1024, "", 0.0625 };
+  faster_t store { 2048, (1 << 20) * 1024, "", 0.0625 };
   static constexpr int numRecords = 200000;
 
   bool shift_begin_address = GetParam().first;
@@ -596,7 +613,7 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemConcurrentOps) {
   store.StopSession();
 }
 
-TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthKey) {
+TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthKey) {
   using Key = VariableSizeKey;
   using ShallowKey = VariableSizeShallowKey;
   using Value = MediumValue;
@@ -762,7 +779,7 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthKey) {
 
 
   typedef FasterKv<Key, Value, FASTER::device::NullDisk> faster_t;
-  faster_t store { 1024, (1 << 30), "", 0.0625 }; // 64 MB of mutable region
+  faster_t store { 2048, (1 << 30), "", 0.0625 }; // 64 MB of mutable region
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
   bool shift_begin_address = GetParam().first;
@@ -901,7 +918,7 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthKey) {
   store.StopSession();
 }
 
-TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthValue) {
+TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthValue) {
   using Key = FixedSizeKey<uint32_t>;
 
   class UpsertContextVLV;
@@ -1064,7 +1081,7 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthValue) {
   using ReadContext = ReadContextVLV;
 
   typedef FasterKv<Key, Value, FASTER::device::NullDisk> faster_t;
-  faster_t store { 1024, (1 << 30), "", 0.0625 }; // 64 MB of mutable region
+  faster_t store { 2048, (1 << 30), "", 0.0625 }; // 64 MB of mutable region
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
   bool shift_begin_address = GetParam().first;
@@ -1153,17 +1170,18 @@ TEST_P(CompactLookupParameterizedTestFixture, InMemVariableLengthValue) {
 /// Inserts a bunch of records into a FASTER instance and invokes the
 /// compaction algorithm. Since all records are still live, checks if
 /// they remain so after the algorithm completes/returns.
-TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLive) {
+TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLive) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   int numRecords = 50000;
 
-  bool shift_begin_address = GetParam().first;
-  int n_threads = GetParam().second;
+  bool shift_begin_address = std::get<0>(GetParam());
+  bool checkpoint = std::get<1>(GetParam());
+  int n_threads = std::get<2>(GetParam());
 
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -1180,7 +1198,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLive) {
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
+    store.CompactWithLookup(
+        until_address, shift_begin_address, n_threads, nullptr, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -1195,7 +1214,6 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLive) {
     };
     ReadContext<Key, LargeValue> context{ Key(idx) };
     Status result = store.Read(context, callback, 1);
-    fprintf(stderr, "%d\n", result);
     EXPECT_TRUE(result == Status::Ok || result == Status::Pending);
     if (result == Status::Ok) {
       ASSERT_EQ(idx, context.output.value);
@@ -1215,17 +1233,18 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLive) {
 /// Inserts a bunch of records into a FASTER instance, deletes half of them
 /// and invokes the compaction algorithm. Checks that the ones that should
 /// be alive are alive and the ones that should be dead stay dead.
-TEST_P(CompactLookupParameterizedTestFixture, OnDiskHalfLive) {
+TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskHalfLive) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   int numRecords = 50000;
 
-  bool shift_begin_address = GetParam().first;
-  int n_threads = GetParam().second;
+  bool shift_begin_address = std::get<0>(GetParam());
+  bool checkpoint = std::get<1>(GetParam());
+  int n_threads = std::get<2>(GetParam());
 
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -1252,7 +1271,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskHalfLive) {
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
+    store.CompactWithLookup(
+      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -1290,7 +1310,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskHalfLive) {
   std::experimental::filesystem::remove_all("tmp_store");
 }
 
-TEST_P(CompactLookupParameterizedTestFixture, OnDiskRmw) {
+TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskRmw) {
+  constexpr size_t refresh_interval = 256;
   using Key = FixedSizeKey<uint64_t>;
   using Value = LargeValue;
 
@@ -1299,11 +1320,12 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskRmw) {
 
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   uint32_t num_records = 20000; // ~160 MB of data
 
-  bool shift_begin_address = GetParam().first;
-  int n_threads = GetParam().second;
+  bool shift_begin_address = std::get<0>(GetParam());
+  bool checkpoint = std::get<1>(GetParam());
+  int n_threads = std::get<2>(GetParam());
 
   store.StartSession();
   // Rmw initial (all records fit in-memory)
@@ -1344,12 +1366,17 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskRmw) {
     RmwContext<Key, Value> context{ Key(key), Value(1) };
     Status result = store.Rmw(context, callback, 1);
     ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+
+    if (idx % refresh_interval == 0) {
+      store.CompletePending(false);
+    }
   }
 
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
+    store.CompactWithLookup(
+      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
   store.CompletePending(true);
@@ -1366,6 +1393,10 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskRmw) {
     ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
     if (result == Status::Ok) {
       ASSERT_EQ(context.output.value, 9);
+    }
+
+    if (idx % refresh_interval == 0) {
+      store.CompletePending(false);
     }
   }
 
@@ -1388,6 +1419,10 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskRmw) {
     RmwContext<Key, Value> context{ Key(key), Value(-1) };
     Status result = store.Rmw(context, callback, 1);
     ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+
+    if (idx % refresh_interval == 0) {
+      store.CompletePending(false);
+    }
   }
 
   // perform compaction (with or without shift begin address)
@@ -1411,6 +1446,10 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskRmw) {
     if (result == Status::Ok) {
       ASSERT_EQ(context.output.value, 1);
     }
+
+    if (idx % refresh_interval == 0) {
+      store.CompletePending(false);
+    }
   }
 
   store.StopSession();
@@ -1420,17 +1459,18 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskRmw) {
 /// Inserts a bunch of records into a FASTER instance, deletes half of them,
 /// re-inserts them with new values, and invokes the compaction algorithm.
 /// Checks that the updated ones have the new value, and the rest remain unchanged.
-TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLiveDeleteAndReInsert) {
+TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInsert) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   int numRecords = 50000;
 
-  bool shift_begin_address = GetParam().first;
-  int n_threads = GetParam().second;
+  bool shift_begin_address = std::get<0>(GetParam());
+  bool checkpoint = std::get<1>(GetParam());
+  int n_threads = std::get<2>(GetParam());
 
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -1468,7 +1508,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLiveDeleteAndReInsert) {
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
+    store.CompactWithLookup(
+      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -1508,17 +1549,18 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskAllLiveDeleteAndReInsert) {
 /// compaction algorithm. Concurrent to the compaction, upserts and deletes
 /// are performed in 1/3 of the keys, respectively. After compaction, it
 /// checks that updated keys have the new value, while deleted keys do not exist.
-TEST_P(CompactLookupParameterizedTestFixture, OnDiskConcurrentOps) {
+TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   static constexpr int numRecords = 50000;
 
-  bool shift_begin_address = GetParam().first;
-  int n_threads = GetParam().second;
+  bool shift_begin_address = std::get<0>(GetParam());
+  bool checkpoint = std::get<1>(GetParam());
+  int n_threads = std::get<2>(GetParam());
 
   store.StartSession();
   // Populate initial keys
@@ -1575,7 +1617,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskConcurrentOps) {
   // perform compaction concurrently
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
+    store.CompactWithLookup(
+      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
   store.StopSession();
@@ -1631,7 +1674,7 @@ TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
 
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   static constexpr int numRecords = 50000;
   static constexpr int num_read_threads = 32;
 
@@ -1678,7 +1721,6 @@ TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
         auto callback = [](IAsyncContext* ctxt, Status result) {
           CallbackContext<ReadContext<Key, LargeValue>> context(ctxt);
           ASSERT_TRUE(context->key().key > 0);
-          fprintf(stderr, "%d\n", result);
           ASSERT_EQ(result, Status::Ok);
         };
         ReadContext<Key, LargeValue> context{ Key(idx) };
@@ -1715,7 +1757,7 @@ TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
   std::experimental::filesystem::remove_all("tmp_store");
 }
 
-TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthKey) {
+TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
   using Key = VariableSizeKey;
   using ShallowKey = VariableSizeShallowKey;
   using Value = MediumValue;
@@ -1884,11 +1926,12 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthKey) {
 
   std::experimental::filesystem::create_directories("tmp_store");
 
-  faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
-  bool shift_begin_address = GetParam().first;
-  int n_threads = GetParam().second;
+  bool shift_begin_address = std::get<0>(GetParam());
+  bool checkpoint = std::get<1>(GetParam());
+  int n_threads = std::get<2>(GetParam());
 
   store.StartSession();
   // Insert.
@@ -2002,7 +2045,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthKey) {
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
+    store.CompactWithLookup(
+      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -2064,7 +2108,7 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthKey) {
   std::experimental::filesystem::remove_all("tmp_store");
 }
 
-TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthValue) {
+TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
   using Key = FixedSizeKey<uint32_t>;
 
   class UpsertContextVLV;
@@ -2231,11 +2275,12 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthValue) {
 
   std::experimental::filesystem::create_directories("tmp_store");
 
-  faster_t store { 1024, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
-  bool shift_begin_address = GetParam().first;
-  int n_threads = GetParam().second;
+  bool shift_begin_address = std::get<0>(GetParam());
+  bool checkpoint = std::get<1>(GetParam());
+  int n_threads = std::get<2>(GetParam());
 
   store.StartSession();
   // Insert.
@@ -2298,7 +2343,8 @@ TEST_P(CompactLookupParameterizedTestFixture, OnDiskVariableLengthValue) {
   // perform compaction (with or without shift begin address)
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
-    store.CompactWithLookup(until_address, shift_begin_address, n_threads));
+    store.CompactWithLookup(
+      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
