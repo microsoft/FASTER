@@ -372,7 +372,7 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
-                                if (status.Pending)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingContext.Add(p, result);
@@ -392,7 +392,7 @@ namespace FASTER.client
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
-                                if (status.Pending)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingTcs.Add(p, tcs);
@@ -407,7 +407,7 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
-                                if (status.Pending)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingContext.Add(p, result);
@@ -426,7 +426,7 @@ namespace FASTER.client
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
-                                if (status.Pending)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingTcs.Add(p, tcs);
@@ -456,7 +456,7 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var p = hrw.ReadPendingSeqNo(ref src);
-                                if (status.Pending)
+                                if (status.IsPending)
                                 {
                                     var result = readrmwQueue.Dequeue();
                                     readRmwPendingContext.Add(p, result);
@@ -478,7 +478,7 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var p = hrw.ReadPendingSeqNo(ref src);
-                                if (status.Pending)
+                                if (status.IsPending)
                                 {
                                     var result = readrmwQueue.Dequeue();
                                     readRmwPendingContext.Add(p, result);
@@ -509,7 +509,7 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var p = hrw.ReadPendingSeqNo(ref src);
-                                if (status.Pending)
+                                if (status.IsPending)
                                 {
                                     var result = pubsubQueue.Dequeue();
                                     pubsubPendingContext.Add(p, result);
@@ -530,7 +530,7 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var p = hrw.ReadPendingSeqNo(ref src);
-                                if (status.Pending)
+                                if (status.IsPending)
                                 {
                                     var result = pubsubQueue.Dequeue();
                                     pubsubPendingContext.Add(p, result);
