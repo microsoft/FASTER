@@ -324,6 +324,7 @@ class PersistentMemoryMalloc {
     safe_read_only_address.store(tail_address);
     head_address.store(tail_address);
     safe_head_address.store(tail_address);
+    flushed_until_address.store(tail_address);
   }
 
   ~PersistentMemoryMalloc() {
