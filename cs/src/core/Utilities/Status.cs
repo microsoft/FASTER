@@ -113,6 +113,11 @@ namespace FASTER.core
         public bool IsCanceled => statusCode == StatusCode.Canceled;
 
         /// <summary>
+        /// Whether the operation found an expired record
+        /// </summary>
+        public bool Expired => (statusCode & StatusCode.Expired) == StatusCode.Expired;
+
+        /// <summary>
         /// Whether the operation completed successfully, i.e., it is not pending and did not error out
         /// </summary>
         public bool IsCompletedSuccessfully

@@ -1282,7 +1282,9 @@ namespace FASTER.core
                 hlog.GetRecordSize(physicalAddress, ref input, fasterSession) :
                 hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
 
-            // TODO (for:TH): why does pending code path have to send false for isAsync
+            // The pending code path has to send false for isAsync here because pending needs the non-async behavior of spinning in BlockAllocate
+            // until the allocation is successful (async handling returns immediately and lets the async handlers (see *Async.cs) loop until the
+            // allocation is successful).
             BlockAllocate(allocatedSize, out long newLogicalAddress, sessionCtx, fasterSession, fromPending ? false : pendingContext.IsAsync);
             if (newLogicalAddress == 0)
                 return OperationStatus.ALLOCATE_FAILED;
