@@ -129,7 +129,7 @@ namespace FASTER.server
         /// Dispose given IServerSession
         /// </summary>
         /// <param name="_session"></param>
-        protected void DisposeSession(IServerSession _session)
+        public void DisposeSession(IServerSession _session)
         {
             if (_session != null)
             {

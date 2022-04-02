@@ -208,7 +208,7 @@ namespace FASTER.server
         private static unsafe void ProcessRequest(SocketAsyncEventArgs e)
         {
             var connArgs = (ConnectionArgs)e.UserToken;
-            connArgs.session.AddBytesRead(e.BytesTransferred);
+            connArgs.bytesRead += e.BytesTransferred;
 
             if (connArgs.recvBufferPtr == null)
             {
@@ -216,9 +216,19 @@ namespace FASTER.server
                 connArgs.recvBufferPtr = (byte*)connArgs.recvHandle.AddrOfPinnedObject();
             }
 
-            var _newHead = connArgs.session.TryConsumeMessages(connArgs.recvBufferPtr, e.Buffer.Length);
+            var readHead = connArgs.session.TryConsumeMessages(connArgs.recvBufferPtr, connArgs.bytesRead);
 
-            if (_newHead == e.Buffer.Length)
+            // The bytes left in the current buffer not consumed by previous operations
+            var bytesLeft = connArgs.bytesRead - readHead;
+            if (bytesLeft != connArgs.bytesRead)
+            {
+                // Shift them to the head of the array so we can reset the buffer to a consistent state                
+                if (bytesLeft > 0)
+                    Buffer.MemoryCopy(connArgs.recvBufferPtr + readHead, connArgs.recvBufferPtr, bytesLeft, bytesLeft);
+                connArgs.bytesRead = bytesLeft;
+            }
+
+            if (connArgs.bytesRead == e.Buffer.Length)
             {
                 connArgs.recvHandle.Free();
                 connArgs.recvBufferPtr = null;
@@ -226,10 +236,10 @@ namespace FASTER.server
                 // Need to grow input buffer
                 var newBuffer = new byte[e.Buffer.Length * 2];
                 Array.Copy(e.Buffer, newBuffer, e.Buffer.Length);
-                e.SetBuffer(newBuffer, _newHead, newBuffer.Length - _newHead);
+                e.SetBuffer(newBuffer, connArgs.bytesRead, newBuffer.Length - connArgs.bytesRead);
             }
             else
-                e.SetBuffer(_newHead, e.Buffer.Length - _newHead);
+                e.SetBuffer(connArgs.bytesRead, e.Buffer.Length - connArgs.bytesRead);
         }
     }
 }

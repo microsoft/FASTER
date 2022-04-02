@@ -12,5 +12,6 @@ namespace FASTER.server
         public IServerSession session;        
         public GCHandle recvHandle;
         public byte* recvBufferPtr = null;
+        public int bytesRead;
     }
 }
