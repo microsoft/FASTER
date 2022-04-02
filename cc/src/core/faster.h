@@ -37,6 +37,7 @@
 #include "utility.h"
 #include "log_scan.h"
 #include "compact.h"
+#include "index.h"
 
 using namespace std::chrono_literals;
 
@@ -112,6 +113,8 @@ class FasterKv {
     , disk{ filename, epoch_, config }
     , hlog{ filename.empty() /*hasNoBackingStorage*/, log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
     , system_state_{ Action::None, Phase::REST, 1 }
+    , grow_state_{ &hlog }
+    , hash_index_{ disk.log().alignment(), epoch_, gc_state_, grow_state_ }
     , num_pending_ios{ 0 }
     , num_compaction_truncs{ 0 }
     , num_active_sessions{ 0 } {
@@ -122,9 +125,11 @@ class FasterKv {
       throw std::invalid_argument{ " Cannot allocate such a large hash table " };
     }
 
-    resize_info_.version = 0;
+    hash_index_.Initialize(table_size);
+
+    /*resize_info_.version = 0;
     state_[0].Initialize(table_size, disk.log().alignment());
-    overflow_buckets_allocator_[0].Initialize(disk.log().alignment(), epoch_);
+    overflow_buckets_allocator_[0].Initialize(disk.log().alignment(), epoch_);*/
   }
 
   // No copy constructor.
@@ -177,15 +182,16 @@ class FasterKv {
                          GcState::complete_callback_t complete_callback, bool after_compaction = false);
 
   /// Make the hash table larger.
-  bool GrowIndex(GrowState::callback_t caller_callback);
+  bool GrowIndex(GrowCompleteCallback caller_callback);
 
   /// Statistics
   inline uint64_t Size() const {
     return hlog.GetTailAddress().control() - hlog.begin_address.control();
   }
   inline void DumpDistribution() {
-    state_[resize_info_.version].DumpDistribution(
-      overflow_buckets_allocator_[resize_info_.version]);
+    hash_index_.DumpDistribution();
+    //state_[resize_info_.version].DumpDistribution(
+    //  overflow_buckets_allocator_[resize_info_.version]);
   }
 
  private:
@@ -218,13 +224,13 @@ class FasterKv {
   template<class F>
   inline void InternalCompact(CompactionThreadsContext<F>* ct_ctx, faster_t* dest_store, int thread_idx);
 
-  // Find the hash bucket entry, if any, corresponding to the specified hash.
-  // The caller can use the "expected_entry" to CAS its desired address into the entry.
-  inline const AtomicHashBucketEntry* FindEntry(KeyHash hash, HashBucketEntry& expected_entry) const;
-  // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
-  // create a new entry. The caller can use the "expected_entry" to CAS its desired address into
-  // the entry.
-  inline AtomicHashBucketEntry* FindOrCreateEntry(KeyHash hash, HashBucketEntry& expected_entry);
+//  // Find the hash bucket entry, if any, corresponding to the specified hash.
+//  // The caller can use the "expected_entry" to CAS its desired address into the entry.
+//  inline const AtomicHashBucketEntry* FindEntry(KeyHash hash, HashBucketEntry& expected_entry) const;
+//  // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
+//  // create a new entry. The caller can use the "expected_entry" to CAS its desired address into
+//  // the entry.
+//  inline AtomicHashBucketEntry* FindOrCreateEntry(KeyHash hash, HashBucketEntry& expected_entry);
   template<class C>
   inline Address TraceBackForKeyMatchCtxt(const C& ctxt, Address from_address,
                                       Address min_offset) const;
@@ -233,13 +239,13 @@ class FasterKv {
   Address TraceBackForOtherChainStart(uint64_t old_size,  uint64_t new_size, Address from_address,
                                       Address min_address, uint8_t side);
 
-  // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
-  // return an unused bucket entry.
-  inline AtomicHashBucketEntry* FindTentativeEntry(KeyHash hash, HashBucket* bucket,
-      uint8_t version, HashBucketEntry& expected_entry);
-  // Looks for an entry that has the same
-  inline bool HasConflictingEntry(KeyHash hash, const HashBucket* bucket, uint8_t version,
-                                  const AtomicHashBucketEntry* atomic_entry) const;
+//  // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
+//  // return an unused bucket entry.
+//  inline AtomicHashBucketEntry* FindTentativeEntry(KeyHash hash, HashBucket* bucket,
+//      uint8_t version, HashBucketEntry& expected_entry);
+//  // Looks for an entry that has the same
+//  inline bool HasConflictingEntry(KeyHash hash, const HashBucket* bucket, uint8_t version,
+//                                  const AtomicHashBucketEntry* atomic_entry) const;
 
   inline Address BlockAllocate(uint32_t record_size, faster_t* other_store = nullptr);
 
@@ -295,7 +301,6 @@ class FasterKv {
 
   /// Grow Index methods
   inline void HeavyEnter();
-  bool CleanHashTableBuckets();
   void SplitHashTableBuckets();
   void AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version,
                     HashBucketEntry entry);
@@ -326,7 +331,6 @@ class FasterKv {
 
  private:
   static constexpr bool kCopyReadsToTail = false;
-  static constexpr uint64_t kGcHashTableChunkSize = 16384;
   static constexpr uint64_t kGrowHashTableChunkSize = 16384;
 
   bool fold_over_snapshot = true;
@@ -340,6 +344,8 @@ class FasterKv {
   // An array of size two, that contains the old and new versions of the hash-table
   InternalHashTable<disk_t> state_[2];
 
+  HashIndex<disk_t> hash_index_;
+
   CheckpointLocks checkpoint_locks_;
 
   ResizeInfo resize_info_;
@@ -349,9 +355,10 @@ class FasterKv {
   /// Checkpoint/recovery state.
   CheckpointState<file_t> checkpoint_;
   /// Garbage collection state.
-  GcState gc_;
+  typename HashIndex<disk_t>::gc_state_t gc_state_;
   /// Grow (hash table) state.
-  GrowState grow_;
+  typename HashIndex<disk_t>::grow_state_t grow_state_;
+
 
   /// Global count of pending I/Os, used for throttling.
   std::atomic<uint64_t> num_pending_ios;
@@ -432,174 +439,6 @@ inline void FasterKv<K, V, D>::StopSession() {
 
   epoch_.Unprotect();
   --num_active_sessions;
-}
-
-template <class K, class V, class D>
-inline const AtomicHashBucketEntry* FasterKv<K, V, D>::FindEntry(KeyHash hash,
-    HashBucketEntry& expected_entry) const {
-  expected_entry = HashBucketEntry::kInvalidEntry;
-  // Truncate the hash to get a bucket page_index < state[version].size.
-  uint32_t version = resize_info_.version;
-  const HashBucket* bucket = &state_[version].bucket(hash);
-  assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-
-  while(true) {
-    // Search through the bucket looking for our key. Last entry is reserved
-    // for the overflow pointer.
-    for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-      HashBucketEntry entry = bucket->entries[entry_idx].load();
-      if(entry.unused()) {
-        continue;
-      }
-      if(hash.tag() == entry.tag()) {
-        // Found a matching tag. (So, the input hash matches the entry on 14 tag bits +
-        // log_2(table size) address bits.)
-        if(!entry.tentative()) {
-          // If (final key, return immediately)
-          expected_entry = entry;
-          return &bucket->entries[entry_idx];
-        }
-      }
-    }
-
-    // Go to next bucket in the chain
-    HashBucketOverflowEntry entry = bucket->overflow_entry.load();
-    if(entry.unused()) {
-      // No more buckets in the chain.
-      return nullptr;
-    }
-    bucket = &overflow_buckets_allocator_[version].Get(entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-  }
-  assert(false);
-  return nullptr; // NOT REACHED
-}
-
-template <class K, class V, class D>
-inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindTentativeEntry(KeyHash hash,
-    HashBucket* bucket,
-    uint8_t version, HashBucketEntry& expected_entry) {
-  expected_entry = HashBucketEntry::kInvalidEntry;
-  AtomicHashBucketEntry* atomic_entry = nullptr;
-  // Try to find a slot that contains the right tag or that's free.
-  while(true) {
-    // Search through the bucket looking for our key. Last entry is reserved
-    // for the overflow pointer.
-    for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-      HashBucketEntry entry = bucket->entries[entry_idx].load();
-      if(entry.unused()) {
-        if(!atomic_entry) {
-          // Found a free slot; keep track of it, and continue looking for a match.
-          atomic_entry = &bucket->entries[entry_idx];
-        }
-        continue;
-      }
-      if(hash.tag() == entry.tag() && !entry.tentative()) {
-        // Found a match. (So, the input hash matches the entry on 14 tag bits +
-        // log_2(table size) address bits.) Return it to caller.
-        expected_entry = entry;
-        return &bucket->entries[entry_idx];
-      }
-    }
-    // Go to next bucket in the chain
-    HashBucketOverflowEntry overflow_entry = bucket->overflow_entry.load();
-    if(overflow_entry.unused()) {
-      // No more buckets in the chain.
-      if(atomic_entry) {
-        // We found a free slot earlier (possibly inside an earlier bucket).
-        assert(expected_entry == HashBucketEntry::kInvalidEntry);
-        return atomic_entry;
-      }
-      // We didn't find any free slots, so allocate new bucket.
-      FixedPageAddress new_bucket_addr = overflow_buckets_allocator_[version].Allocate();
-      bool success;
-      do {
-        HashBucketOverflowEntry new_bucket_entry{ new_bucket_addr };
-        success = bucket->overflow_entry.compare_exchange_strong(overflow_entry,
-                  new_bucket_entry);
-      } while(!success && overflow_entry.unused());
-      if(!success) {
-        // Install failed, undo allocation; use the winner's entry
-        overflow_buckets_allocator_[version].FreeAtEpoch(new_bucket_addr, 0);
-      } else {
-        // Install succeeded; we have a new bucket on the chain. Return its first slot.
-        bucket = &overflow_buckets_allocator_[version].Get(new_bucket_addr);
-        assert(expected_entry == HashBucketEntry::kInvalidEntry);
-        return &bucket->entries[0];
-      }
-    }
-    // Go to the next bucket.
-    bucket = &overflow_buckets_allocator_[version].Get(overflow_entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-  }
-  assert(false);
-  return nullptr; // NOT REACHED
-}
-
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::HasConflictingEntry(KeyHash hash, const HashBucket* bucket, uint8_t version,
-    const AtomicHashBucketEntry* atomic_entry) const {
-  uint16_t tag = atomic_entry->load().tag();
-  while(true) {
-    for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-      HashBucketEntry entry = bucket->entries[entry_idx].load();
-      if(entry != HashBucketEntry::kInvalidEntry &&
-          entry.tag() == tag &&
-          atomic_entry != &bucket->entries[entry_idx]) {
-        // Found a conflict.
-        return true;
-      }
-    }
-    // Go to next bucket in the chain
-    HashBucketOverflowEntry entry = bucket->overflow_entry.load();
-    if(entry.unused()) {
-      // Reached the end of the bucket chain; no conflicts found.
-      return false;
-    }
-    // Go to the next bucket.
-    bucket = &overflow_buckets_allocator_[version].Get(entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-  }
-}
-
-template <class K, class V, class D>
-inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindOrCreateEntry(KeyHash hash,
-    HashBucketEntry& expected_entry) {
-  // Truncate the hash to get a bucket page_index < state[version].size.
-  const uint32_t version = resize_info_.version;
-  assert(version <= 1);
-
-  while(true) {
-    HashBucket* bucket = &state_[version].bucket(hash);
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-
-    AtomicHashBucketEntry* atomic_entry = FindTentativeEntry(hash, bucket, version,
-                                          expected_entry);
-    if(expected_entry != HashBucketEntry::kInvalidEntry) {
-      // Found an existing hash bucket entry; nothing further to check.
-      return atomic_entry;
-    }
-    // We have a free slot.
-    assert(atomic_entry);
-    assert(expected_entry == HashBucketEntry::kInvalidEntry);
-    // Try to install tentative tag in free slot.
-    HashBucketEntry entry{ Address::kInvalidAddress, hash.tag(), true };
-    if(atomic_entry->compare_exchange_strong(expected_entry, entry)) {
-      // See if some other thread is also trying to install this tag.
-      if(HasConflictingEntry(hash, bucket, version, atomic_entry)) {
-        // Back off and try again.
-        atomic_entry->store(HashBucketEntry::kInvalidEntry);
-      } else {
-        // No other thread was trying to install this tag, so we can clear our entry's "tentative"
-        // bit.
-        expected_entry = HashBucketEntry{ Address::kInvalidAddress, hash.tag(), false };
-        atomic_entry->store(expected_entry);
-        return atomic_entry;
-      }
-    }
-  }
-  assert(false);
-  return nullptr; // NOT REACHED
 }
 
 template <class K, class V, class D>
@@ -849,7 +688,10 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
 
   KeyHash hash = pending_context.get_key_hash();
   HashBucketEntry entry;
-  const AtomicHashBucketEntry* atomic_entry = FindEntry(hash, entry);
+  //const AtomicHashBucketEntry* atomic_entry = hash_index_.FindEntry(hash, entry);
+  AtomicHashBucketEntry* atomic_entry;
+  Status status = hash_index_.FindEntry(hash, entry, atomic_entry);
+  assert(status == Status::Ok || status == Status::NotFound);
   if(!atomic_entry) {
     // no record found
     return OperationStatus::NOT_FOUND;
@@ -933,7 +775,9 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
 
   KeyHash hash = pending_context.get_key_hash();
   HashBucketEntry expected_entry;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
+  AtomicHashBucketEntry* atomic_entry;
+  Status status = hash_index_.FindOrCreateEntry(hash, expected_entry, atomic_entry);
+  assert(status == Status::Ok);
 
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
@@ -1074,7 +918,9 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
 
   KeyHash hash = pending_context.get_key_hash();
   HashBucketEntry expected_entry;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
+  AtomicHashBucketEntry* atomic_entry;
+  Status status = hash_index_.FindOrCreateEntry(hash, expected_entry, atomic_entry);
+  assert(status == Status::Ok);
 
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
@@ -1308,14 +1154,20 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context, boo
 
   KeyHash hash = pending_context.get_key_hash();
   HashBucketEntry expected_entry;
-  AtomicHashBucketEntry* atomic_entry = const_cast<AtomicHashBucketEntry*>(FindEntry(hash, expected_entry));
+  //AtomicHashBucketEntry* atomic_entry =
+  //  const_cast<AtomicHashBucketEntry*>(hash_index_.FindEntry(hash, expected_entry));
+  AtomicHashBucketEntry* atomic_entry;
+  Status status = hash_index_.FindEntry(hash, expected_entry, atomic_entry);
+  assert(status == Status::Ok || status == Status::NotFound);
+
   if(!atomic_entry) {
     // no record found
     if (!force_tombstone) {
       return OperationStatus::NOT_FOUND;
     } else {
       // Create hash bucket entry
-      atomic_entry = FindOrCreateEntry(hash, expected_entry);
+      Status status = hash_index_.FindOrCreateEntry(hash, expected_entry, atomic_entry);
+      assert(status == Status::Ok);
       assert(atomic_entry != nullptr);
       goto create_record;
     }
@@ -1753,7 +1605,9 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingConditionalInsert(Exec
   // Find a hash bucket entry to store the updated value in.
   KeyHash hash = pending_context->get_key_hash();
   HashBucketEntry expected_entry;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
+  AtomicHashBucketEntry* atomic_entry;
+  Status status = hash_index_.FindOrCreateEntry(hash, expected_entry, atomic_entry);
+  assert(status == Status::Ok);
   assert(atomic_entry != nullptr);
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
@@ -1778,7 +1632,9 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
   // Find a hash bucket entry to store the updated value in.
   KeyHash hash = pending_context->get_key_hash();
   HashBucketEntry expected_entry;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
+  AtomicHashBucketEntry* atomic_entry;
+  Status status = hash_index_.FindOrCreateEntry(hash, expected_entry, atomic_entry);
+  assert(status == Status::Ok);
 
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
@@ -1868,9 +1724,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
 
 template <class K, class V, class D>
 void FasterKv<K, V, D>::InitializeCheckpointLocks() {
-  uint32_t table_version = resize_info_.version;
-  uint64_t size = state_[table_version].size();
-  checkpoint_locks_.Initialize(size);
+  checkpoint_locks_.Initialize(hash_index_.size());
 }
 
 template <class K, class V, class D>
@@ -2271,7 +2125,9 @@ Status FasterKv<K, V, D>::RecoverFromPage(Address from_address, Address to_addre
     const key_t& key = record->key();
     KeyHash hash = key.GetHash();
     HashBucketEntry expected_entry;
-    AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
+    AtomicHashBucketEntry* atomic_entry;
+    Status status = hash_index_.FindOrCreateEntry(hash, expected_entry, atomic_entry);
+    assert(status == Status::Ok);
 
     if(record->header.checkpoint_version <= checkpoint_.log_metadata.version) {
       HashBucketEntry new_entry{ address, hash.tag(), false };
@@ -2323,7 +2179,7 @@ Status FasterKv<K, V, D>::RestoreHybridLog() {
 template <class K, class V, class D>
 void FasterKv<K, V, D>::HeavyEnter() {
   if(thread_ctx().phase == Phase::GC_IO_PENDING || thread_ctx().phase == Phase::GC_IN_PROGRESS) {
-    CleanHashTableBuckets();
+    hash_index_.GarbageCollect();
     return;
   }
   while(thread_ctx().phase == Phase::GROW_PREPARE) {
@@ -2338,166 +2194,9 @@ void FasterKv<K, V, D>::HeavyEnter() {
 }
 
 template <class K, class V, class D>
-bool FasterKv<K, V, D>::CleanHashTableBuckets() {
-  uint64_t chunk = gc_.next_chunk++;
-  if(chunk >= gc_.num_chunks) {
-    // No chunk left to clean.
-    return false;
-  }
-  uint8_t version = resize_info_.version;
-  Address begin_address = hlog.begin_address.load();
-  uint64_t upper_bound;
-  if(chunk + 1 < gc_.num_chunks) {
-    // All chunks but the last chunk contain kGcHashTableChunkSize elements.
-    upper_bound = kGcHashTableChunkSize;
-  } else {
-    // Last chunk might contain more or fewer elements.
-    upper_bound = state_[version].size() - (chunk * kGcHashTableChunkSize);
-  }
-  for(uint64_t idx = 0; idx < upper_bound; ++idx) {
-    HashBucket* bucket = &state_[version].bucket(chunk * kGcHashTableChunkSize + idx);
-    while(true) {
-      for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-        AtomicHashBucketEntry& atomic_entry = bucket->entries[entry_idx];
-        HashBucketEntry expected_entry = atomic_entry.load();
-        if(!expected_entry.unused() && expected_entry.address() != Address::kInvalidAddress &&
-            expected_entry.address() < begin_address) {
-          // The record that this entry points to was truncated; try to delete the entry.
-          atomic_entry.compare_exchange_strong(expected_entry, HashBucketEntry::kInvalidEntry);
-          // If deletion failed, then some other thread must have added a new record to the entry.
-        }
-      }
-      // Go to next bucket in the chain.
-      HashBucketOverflowEntry overflow_entry = bucket->overflow_entry.load();
-      if(overflow_entry.unused()) {
-        // No more buckets in the chain.
-        break;
-      }
-      bucket = &overflow_buckets_allocator_[version].Get(overflow_entry.address());
-    }
-  }
-  // Done with this chunk--did some work.
-  return true;
-}
-
-template <class K, class V, class D>
-void FasterKv<K, V, D>::AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version,
-                                     HashBucketEntry entry) {
-  if(next_idx == HashBucket::kNumEntries) {
-    // Need to allocate a new bucket, first.
-    FixedPageAddress new_bucket_addr = overflow_buckets_allocator_[version].Allocate();
-    HashBucketOverflowEntry new_bucket_entry{ new_bucket_addr };
-    bucket->overflow_entry.store(new_bucket_entry);
-    bucket = &overflow_buckets_allocator_[version].Get(new_bucket_addr);
-    next_idx = 0;
-  }
-  bucket->entries[next_idx].store(entry);
-  ++next_idx;
-}
-
-template <class K, class V, class D>
-Address FasterKv<K, V, D>::TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size,
-    Address from_address, Address min_address, uint8_t side) {
-  assert(side == 0 || side == 1);
-  // Search back as far as min_address.
-  while(from_address >= min_address) {
-    const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(from_address));
-    KeyHash hash = record->key().GetHash();
-    if((hash.idx(new_size) < old_size) != (side == 0)) {
-      // Record's key hashes to the other side.
-      return from_address;
-    }
-    from_address = record->header.previous_address();
-  }
-  return from_address;
-}
-
-template <class K, class V, class D>
 void FasterKv<K, V, D>::SplitHashTableBuckets() {
-  // This thread won't exit until all hash table buckets have been split.
-  Address head_address = hlog.head_address.load();
-  Address begin_address = hlog.begin_address.load();
-  for(uint64_t chunk = grow_.next_chunk++; chunk < grow_.num_chunks; chunk = grow_.next_chunk++) {
-    uint64_t old_size = state_[grow_.old_version].size();
-    uint64_t new_size = state_[grow_.new_version].size();
-    assert(new_size == old_size * 2);
-    // Split this chunk.
-    uint64_t upper_bound;
-    if(chunk + 1 < grow_.num_chunks) {
-      // All chunks but the last chunk contain kGrowHashTableChunkSize elements.
-      upper_bound = kGrowHashTableChunkSize;
-    } else {
-      // Last chunk might contain more or fewer elements.
-      upper_bound = old_size - (chunk * kGrowHashTableChunkSize);
-    }
-    for(uint64_t idx = 0; idx < upper_bound; ++idx) {
+  hash_index_.template Grow<record_t>();
 
-      // Split this (chain of) bucket(s).
-      HashBucket* old_bucket = &state_[grow_.old_version].bucket(
-                                 chunk * kGrowHashTableChunkSize + idx);
-      HashBucket* new_bucket0 = &state_[grow_.new_version].bucket(
-                                  chunk * kGrowHashTableChunkSize + idx);
-      HashBucket* new_bucket1 = &state_[grow_.new_version].bucket(
-                                  old_size + chunk * kGrowHashTableChunkSize + idx);
-      uint32_t new_entry_idx0 = 0;
-      uint32_t new_entry_idx1 = 0;
-      while(true) {
-        for(uint32_t old_entry_idx = 0; old_entry_idx < HashBucket::kNumEntries; ++old_entry_idx) {
-          HashBucketEntry old_entry = old_bucket->entries[old_entry_idx].load();
-          if(old_entry.unused()) {
-            // Nothing to do.
-            continue;
-          } else if(old_entry.address() < head_address) {
-            // Can't tell which new bucket the entry should go into; put it in both.
-            AddHashEntry(new_bucket0, new_entry_idx0, grow_.new_version, old_entry);
-            AddHashEntry(new_bucket1, new_entry_idx1, grow_.new_version, old_entry);
-            continue;
-          }
-
-          const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(
-                                     old_entry.address()));
-          KeyHash hash = record->key().GetHash();
-          if(hash.idx(new_size) < old_size) {
-            // Record's key hashes to the 0 side of the new hash table.
-            AddHashEntry(new_bucket0, new_entry_idx0, grow_.new_version, old_entry);
-            Address other_address = TraceBackForOtherChainStart(old_size, new_size,
-                                    record->header.previous_address(), head_address, 0);
-            if(other_address >= begin_address) {
-              // We found a record that either is on disk or has a key that hashes to the 1 side of
-              // the new hash table.
-              AddHashEntry(new_bucket1, new_entry_idx1, grow_.new_version,
-                           HashBucketEntry{ other_address, old_entry.tag(), false });
-            }
-          } else {
-            // Record's key hashes to the 1 side of the new hash table.
-            AddHashEntry(new_bucket1, new_entry_idx1, grow_.new_version, old_entry);
-            Address other_address = TraceBackForOtherChainStart(old_size, new_size,
-                                    record->header.previous_address(), head_address, 1);
-            if(other_address >= begin_address) {
-              // We found a record that either is on disk or has a key that hashes to the 0 side of
-              // the new hash table.
-              AddHashEntry(new_bucket0, new_entry_idx0, grow_.new_version,
-                           HashBucketEntry{ other_address, old_entry.tag(), false });
-            }
-          }
-        }
-        // Go to next bucket in the chain.
-        HashBucketOverflowEntry overflow_entry = old_bucket->overflow_entry.load();
-        if(overflow_entry.unused()) {
-          // No more buckets in the chain.
-          break;
-        }
-        old_bucket = &overflow_buckets_allocator_[grow_.old_version].Get(overflow_entry.address());
-      }
-    }
-    // Done with this chunk.
-    if(--grow_.num_pending_chunks == 0) {
-      // Free the old hash table.
-      state_[grow_.old_version].Uninitialize();
-      overflow_buckets_allocator_[grow_.old_version].Uninitialize();
-      break;
-    }
-  }
   // Thread has finished growing its part of the hash table.
   thread_ctx().phase = Phase::REST;
   // Thread ack that it has finished growing the hash table.
@@ -2643,13 +2342,13 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
     case Phase::GC_IN_PROGRESS:
       // GC_IO_PENDING -> GC_IN_PROGRESS
       // Tell the disk to truncate the log.
-      hlog.Truncate(gc_.truncate_callback);
+      hlog.Truncate(gc_state_.truncate_callback);
       break;
     case Phase::REST:
       // GC_IN_PROGRESS -> REST
       // GC is done--no more work for threads to do.
-      if(gc_.complete_callback) {
-        gc_.complete_callback();
+      if(gc_state_.complete_callback) {
+        gc_state_.complete_callback();
       }
       system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
       break;
@@ -2667,11 +2366,11 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       break;
     case Phase::GROW_IN_PROGRESS:
       // Swap hash table versions so that all threads will use the new version after populating it.
-      resize_info_.version = grow_.new_version;
+      hash_index_.resize_info.version = grow_state_.new_version;
       break;
     case Phase::REST:
-      if(grow_.callback) {
-        grow_.callback(state_[grow_.new_version].size());
+      if(grow_state_.callback != nullptr) {
+        grow_state_.callback(hash_index_.new_size());
       }
       system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
       break;
@@ -2691,9 +2390,6 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
 
 template <class K, class V, class D>
 void FasterKv<K, V, D>::MarkAllPendingRequests() {
-  uint32_t table_version = resize_info_.version;
-  uint64_t table_size = state_[table_version].size();
-
   for(const IAsyncContext* ctxt : thread_ctx().retry_requests) {
     const pending_context_t* context = static_cast<const pending_context_t*>(ctxt);
     // We will succeed, since no other thread can currently advance the entry's version, since this
@@ -2878,7 +2574,7 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
       case Phase::GC_IN_PROGRESS:
         // Handle GC_IO_PENDING -> GC_IN_PROGRESS and GC_IN_PROGRESS -> GC_IN_PROGRESS.
         if(!epoch_.HasThreadFinishedPhase(Phase::GC_IN_PROGRESS)) {
-          if(!CleanHashTableBuckets()) {
+          if(!hash_index_.GarbageCollect()) {
             // No more buckets for this thread to clean; thread has finished GC.
             thread_ctx().phase = Phase::REST;
             // Thread ack that it has finished GC.
@@ -2938,13 +2634,13 @@ bool FasterKv<K, V, D>::Checkpoint(IndexPersistenceCallback index_persistence_ca
   disk.CreateCprCheckpointDirectory(token);
   // Obtain tail address for fuzzy index checkpoint
   if(!fold_over_snapshot) {
-    checkpoint_.InitializeCheckpoint(token, desired.version, state_[resize_info_.version].size(),
+    checkpoint_.InitializeCheckpoint(token, desired.version, hash_index_.size(),
                                      hlog.begin_address.load(),  hlog.GetTailAddress(), true,
                                      hlog.flushed_until_address.load(),
                                      index_persistence_callback,
                                      hybrid_log_persistence_callback);
   } else {
-    checkpoint_.InitializeCheckpoint(token, desired.version, state_[resize_info_.version].size(),
+    checkpoint_.InitializeCheckpoint(token, desired.version, hash_index_.size(),
                                      hlog.begin_address.load(),  hlog.GetTailAddress(), false,
                                      Address::kInvalidAddress, index_persistence_callback,
                                      hybrid_log_persistence_callback);
@@ -2971,8 +2667,7 @@ bool FasterKv<K, V, D>::CheckpointIndex(IndexPersistenceCallback index_persisten
   // Initialize all contexts
   token = Guid::Create();
   disk.CreateIndexCheckpointDirectory(token);
-  checkpoint_.InitializeIndexCheckpoint(token, desired.version,
-                                        state_[resize_info_.version].size(),
+  checkpoint_.InitializeIndexCheckpoint(token, desired.version, hash_index_.size(),
                                         hlog.begin_address.load(), hlog.GetTailAddress(),
                                         index_persistence_callback);
   // Let other threads know that the checkpoint has started.
@@ -3081,16 +2776,16 @@ bool FasterKv<K, V, D>::ShiftBeginAddress(Address address,
   hlog.begin_address.store(address);
   // Each active thread will notify the epoch when all pending I/Os have completed.
   epoch_.ResetPhaseFinished();
-  uint64_t num_chunks = std::max(state_[resize_info_.version].size() / kGcHashTableChunkSize,
-                                 (uint64_t)1);
-  gc_.Initialize(truncate_callback, complete_callback, num_chunks);
+  // Prepare for index garbage collection
+  hash_index_.GarbageCollectSetup(hlog.begin_address.load(),
+                                  truncate_callback, complete_callback);
   // Let other threads know to complete their pending I/Os, so that the log can be truncated.
   system_state_.store(SystemState{ Action::GC, Phase::GC_IO_PENDING, expected.version });
   return true;
 }
 
 template <class K, class V, class D>
-bool FasterKv<K, V, D>::GrowIndex(GrowState::callback_t caller_callback) {
+bool FasterKv<K, V, D>::GrowIndex(GrowCompleteCallback caller_callback) {
   SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
   if(!system_state_.compare_exchange_strong(expected,
       SystemState{ Action::GrowIndex, Phase::REST, expected.version })) {
@@ -3098,16 +2793,10 @@ bool FasterKv<K, V, D>::GrowIndex(GrowState::callback_t caller_callback) {
     return false;
   }
   epoch_.ResetPhaseFinished();
-  uint8_t current_version = resize_info_.version;
-  assert(current_version == 0 || current_version == 1);
-  uint8_t next_version = 1 - current_version;
-  uint64_t num_chunks = std::max(state_[current_version].size() / kGrowHashTableChunkSize,
-                                 (uint64_t)1);
-  grow_.Initialize(caller_callback, current_version, num_chunks);
-  // Initialize the next version of our hash table to be twice the size of the current version.
-  state_[next_version].Initialize(state_[current_version].size() * 2, disk.log().alignment());
-  overflow_buckets_allocator_[next_version].Initialize(disk.log().alignment(), epoch_);
 
+  // Prepare index for index growing
+  hash_index_.GrowSetup(caller_callback);
+  // Switch system state to GrowIndex
   SystemState next = SystemState{ Action::GrowIndex, Phase::GROW_PREPARE, expected.version };
   system_state_.store(next);
 
@@ -3460,7 +3149,9 @@ inline Status FasterKv<K, V, D>::ConditionalInsert(CIC& context, AsyncCallback c
   // Set initial start address to last entry of hash chain
   HashBucketEntry start_search_entry;
   KeyHash hash = pending_context.get_key_hash();
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, start_search_entry);
+  AtomicHashBucketEntry* atomic_entry;
+  Status index_status = hash_index_.FindOrCreateEntry(hash, start_search_entry, atomic_entry);
+  assert(index_status == Status::Ok);
   pending_context.start_search_entry = start_search_entry;
 
   OperationStatus internal_status = InternalConditionalInsert(pending_context);
@@ -3507,7 +3198,9 @@ inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_c
   // Retrieve or create hash index bucket for this entry
   KeyHash hash = pending_context.get_key_hash();
   HashBucketEntry expected_entry;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
+  AtomicHashBucketEntry* atomic_entry;
+  Status status = hash_index_.FindOrCreateEntry(hash, expected_entry, atomic_entry);
+  assert(status == Status::Ok);
   Address address = expected_entry.address();
 
   if (address == Address::kInvalidAddress) {
@@ -3757,7 +3450,9 @@ bool FasterKv<K, V, D>::ContainsKeyInMemory(key_t key, Address offset)
   // First, retrieve the hash table entry corresponding to this key.
   KeyHash hash = key.GetHash();
   HashBucketEntry _entry;
-  const AtomicHashBucketEntry* atomic_entry = FindEntry(hash, _entry);
+  AtomicHashBucketEntry* atomic_entry;
+  Status status = hash_index_.FindEntry(hash, _entry, atomic_entry);
+  assert(status == Status::Ok || status == Status::NotFound);
   if (!atomic_entry) return false;
 
   HashBucketEntry entry = atomic_entry->load();

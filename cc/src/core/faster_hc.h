@@ -281,7 +281,9 @@ inline Status FasterKvHC<K, V, D>::Rmw(MC& context, AsyncCallback callback,
   // Keep hash bucket entry
   KeyHash hash = context.key().GetHash();
   HashBucketEntry entry;
-  const AtomicHashBucketEntry* atomic_entry = hot_store.FindEntry(hash, entry);
+  AtomicHashBucketEntry* atomic_entry;
+  Status status = hot_store.hash_index_.FindEntry(hash, entry, atomic_entry);
+  assert(status == Status::Ok || status == Status::NotFound);
 
   hc_rmw_context_t hc_rmw_context{ this, RmwOperationStage::HOT_LOG_RMW, entry,
                                   context, callback, monotonic_serial_num };
@@ -468,15 +470,17 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
       until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
       assert(until_address <= hot_store.hlog.safe_read_only_address.control());
       assert(until_address % hot_store.hlog.kPageSize == 0);
-      //fprintf(stdout, "HOT: {%llu} [%llu %llu] %llu\n", hot_store.Size(), hot_store.hlog.begin_address.control(),
+      //fprintf(stderr, "HOT: {%llu} [%llu %llu] %llu\n", hot_store.Size(), hot_store.hlog.begin_address.control(),
       //          hot_store.hlog.GetTailAddress().control(), until_address);
       // perform hot-cold compaction
       StartSession();
+      cold_store.StartSession();
       if (!CompactHotLog(until_address, true)) {
-        fprintf(stdout, "warn: hot-cold compaction not successful\n");
+        fprintf(stderr, "warn: hot-cold compaction not successful\n");
       }
+      cold_store.StopSession();
       StopSession();
-      //fprintf(stdout, "HOT: {%llu} Done!\n", hot_store.Size());
+      //fprintf(stderr, "HOT: {%llu} Done!\n", hot_store.Size());
     }
     if (cold_store.Size() > cold_log_disk_size_limit_) {
       uint64_t until_address = cold_store.hlog.begin_address.control() + (
@@ -486,7 +490,7 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
       until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
       assert(until_address <= cold_store.hlog.safe_read_only_address.control());
       assert(until_address % cold_store.hlog.kPageSize == 0);
-      //fprintf(stdout, "COLD: {%llu} [%llu %llu] %llu\n", cold_store.Size(), cold_store.hlog.begin_address.control(),
+      //fprintf(stderr, "COLD: {%llu} [%llu %llu] %llu\n", cold_store.Size(), cold_store.hlog.begin_address.control(),
       //          cold_store.hlog.GetTailAddress().control(), until_address);
       // perform cold-cold compaction
       cold_store.StartSession();
@@ -494,7 +498,7 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
         fprintf(stdout, "warn: cold-cold compaction not successful\n");
       }
       cold_store.StopSession();
-      //fprintf(stdout, "COLD: {%llu} Done!\n", cold_store.Size());
+      //fprintf(stderr, "COLD: {%llu} Done!\n", cold_store.Size());
     }
 
     std::this_thread::sleep_for(compaction_check_interval_);
@@ -509,7 +513,9 @@ inline void FasterKvHC<K, V, D>::CompleteRmwRetryRequests() {
     // Get hash bucket entry
     KeyHash hash = context->get_key_hash();
     HashBucketEntry entry;
-    const AtomicHashBucketEntry* atomic_entry = hot_store.FindEntry(hash, entry);
+    AtomicHashBucketEntry* atomic_entry;
+    Status index_status = hot_store.hash_index_.FindEntry(hash, entry, atomic_entry);
+    assert(index_status == Status::Ok || index_status == Status::NotFound);
     // Initialize rmw context vars
     context->expected_entry = entry;
     context->stage = RmwOperationStage::HOT_LOG_RMW;
