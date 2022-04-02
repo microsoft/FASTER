@@ -52,6 +52,10 @@ namespace FASTER.server
         {
             var connArgs = (ConnectionArgs)e.UserToken;
             connArgs.socket.Dispose();
+#if !NET5_0_OR_GREATER
+            if (connArgs.recvHandle.IsAllocated)
+                connArgs.recvHandle.Free();
+#endif
             e.UserToken = null;
             e.Dispose();            
             DisposeSession(connArgs.session);
@@ -80,7 +84,7 @@ namespace FASTER.server
             catch (ObjectDisposedException) { }
         }
 
-        private bool HandleNewConnection(SocketAsyncEventArgs e)
+        private unsafe bool HandleNewConnection(SocketAsyncEventArgs e)
         {
             if (e.SocketError != SocketError.Success)
             {
@@ -90,14 +94,21 @@ namespace FASTER.server
 
             // Ok to create new event args on accept because we assume a connection to be long-running            
             var receiveEventArgs = new SocketAsyncEventArgs();
-            var buffer = new byte[NetworkBufferSize];
-            receiveEventArgs.SetBuffer(buffer, 0, NetworkBufferSize);
 
             var args = new ConnectionArgs
             {
                 socket = e.AcceptSocket
             };
 
+#if NET5_0_OR_GREATER
+            var buffer = GC.AllocateArray<byte>(NetworkBufferSize, true);
+#else
+            var buffer = new byte[NetworkBufferSize];
+            args.recvHandle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+#endif
+            args.recvBufferPtr = (byte*)Unsafe.AsPointer(ref buffer[0]);
+
+            receiveEventArgs.SetBuffer(buffer, 0, NetworkBufferSize);
             receiveEventArgs.UserToken = args;
             receiveEventArgs.Completed += RecvEventArg_Completed;
 
@@ -210,12 +221,6 @@ namespace FASTER.server
             var connArgs = (ConnectionArgs)e.UserToken;
             connArgs.bytesRead += e.BytesTransferred;
 
-            if (connArgs.recvBufferPtr == null)
-            {
-                connArgs.recvHandle = GCHandle.Alloc(e.Buffer, GCHandleType.Pinned);
-                connArgs.recvBufferPtr = (byte*)connArgs.recvHandle.AddrOfPinnedObject();
-            }
-
             var readHead = connArgs.session.TryConsumeMessages(connArgs.recvBufferPtr, connArgs.bytesRead);
 
             // The bytes left in the current buffer not consumed by previous operations
@@ -230,11 +235,15 @@ namespace FASTER.server
 
             if (connArgs.bytesRead == e.Buffer.Length)
             {
-                connArgs.recvHandle.Free();
-                connArgs.recvBufferPtr = null;
-
                 // Need to grow input buffer
+#if NET5_0_OR_GREATER
+                var newBuffer = GC.AllocateArray<byte>(e.Buffer.Length * 2, true);
+#else
+                connArgs.recvHandle.Free();
                 var newBuffer = new byte[e.Buffer.Length * 2];
+                connArgs.recvHandle = GCHandle.Alloc(newBuffer, GCHandleType.Pinned);
+#endif
+                connArgs.recvBufferPtr = (byte*)Unsafe.AsPointer(ref newBuffer[0]);
                 Array.Copy(e.Buffer, newBuffer, e.Buffer.Length);
                 e.SetBuffer(newBuffer, connArgs.bytesRead, newBuffer.Length - connArgs.bytesRead);
             }

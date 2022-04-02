@@ -9,8 +9,10 @@ namespace FASTER.server
     internal unsafe class ConnectionArgs
     {
         public Socket socket;
-        public IServerSession session;        
+        public IServerSession session;
+#if !NET5_0_OR_GREATER
         public GCHandle recvHandle;
+#endif
         public byte* recvBufferPtr = null;
         public int bytesRead;
     }
