@@ -182,7 +182,7 @@ namespace FASTER.core
 
         #region Deletes
         /// <summary>
-        /// Single deleter; called on an Delete that does not find the record in the mutable range and so inserts a new record.
+        /// Single deleter; called on a Delete that does not find the record in the mutable range and so inserts a new record.
         /// </summary>
         /// <param name="key">The key for the record to be deleted</param>
         /// <param name="value">The value for the record being deleted; because this method is called only for in-place updates, there is a previous value there. Usually this is ignored or assigned 'default'.</param>
@@ -203,7 +203,7 @@ namespace FASTER.core
         void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo);
 
         /// <summary>
-        /// Concurrent deleter; called on an Delete that finds the record in the mutable range.
+        /// Concurrent deleter; called on a Delete that finds the record in the mutable range.
         /// </summary>
         /// <param name="key">The key for the record to be deleted</param>
         /// <param name="value">The value for the record being deleted; because this method is called only for in-place updates, there is a previous value there. Usually this is ignored or assigned 'default'.</param>
@@ -215,7 +215,7 @@ namespace FASTER.core
 
         #region Dispose
         /// <summary>
-        /// Called after SingleWriter, if the CAS installation of record into the store fails. Can be used to perform object disposal related actions.
+        /// Called after SingleWriter, if the CAS insertion of record into the store fails. Can be used to perform object disposal related actions.
         /// </summary>
         /// <param name="key">The key for this record</param>
         /// <param name="input">The user input that was used to compute <paramref name="dst"/></param>
@@ -225,6 +225,43 @@ namespace FASTER.core
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <param name="reason">The operation for which this write is being done</param>
         void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason);
+
+        /// <summary>
+        /// Called after copy-update for RMW (RCU (Read-Copy-Update) to the tail of the log), if the CAS insertion of record into the store fails. Can be used to perform object disposal related actions.
+        /// </summary>
+        /// <param name="key">The key for this record</param>
+        /// <param name="input">The user input to be used for computing <paramref name="newValue"/> from <paramref name="oldValue"/></param>
+        /// <param name="oldValue">The previous value to be copied/updated</param>
+        /// <param name="newValue">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
+        /// <param name="output">The location where <paramref name="newValue"/> is to be copied</param>
+        /// <param name="rmwInfo">Information about this update operation and its context</param>
+        void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo);
+
+        /// <summary>
+        /// Called after initial update for RMW (insert at the tail of the log), if the CAS insertion of record into the store fails. Can be used to perform object disposal related actions.
+        /// </summary>
+        /// <param name="key">The key for this record</param>
+        /// <param name="input">The user input to be used for computing the updated <paramref name="value"/></param>
+        /// <param name="value">The destination to be updated; because this is an insert, there is no previous value there.</param>
+        /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
+        /// <param name="rmwInfo">Information about this update operation and its context</param>
+        void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo);
+
+        /// <summary>
+        /// Called after a Delete that does not find the record in the mutable range and so inserts a new record, if the CAS insertion of record into the store fails. Can be used to perform object disposal related actions.
+        /// </summary>
+        /// <param name="key">The key for the record to be deleted</param>
+        /// <param name="value">The value for the record being deleted; because this method is called only for in-place updates, there is a previous value there. Usually this is ignored or assigned 'default'.</param>
+        /// <param name="deleteInfo">Information about this update operation and its context</param>
+        /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
+        void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo);
+
+        /// <summary>
+        /// Called after a record has been deserialized from the disk on a pending Read or RMW. Can be used to perform object disposal related actions.
+        /// </summary>
+        /// <param name="key">The key for the record</param>
+        /// <param name="value">The value for the record</param>
+        void DisposeDeserializedFromDisk(ref Key key, ref Value value);
         #endregion Dispose
 
         #region Checkpointing

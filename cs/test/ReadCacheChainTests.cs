@@ -7,7 +7,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using static FASTER.test.TestUtils;
-using FASTER.test.LockableUnsafeContext;
 
 namespace FASTER.test.ReadCacheTests
 {
@@ -147,14 +146,7 @@ namespace FASTER.test.ReadCacheTests
 
         internal static unsafe (long logicalAddress, long physicalAddress) GetHashChain(FasterKV<int, int> fht, int key, out int recordKey, out bool invalid, out bool isReadCache)
         {
-            var bucket = default(HashBucket*);
-            var slot = default(int);
-
-            var hash = fht.Comparer.GetHashCode64(ref key);
-            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-
-            var entry = default(HashBucketEntry);
-            var tagExists = fht.FindTag(hash, tag, ref bucket, ref slot, ref entry);
+            var tagExists = fht.FindKey(ref key, out var entry);
             Assert.IsTrue(tagExists);
 
             isReadCache = entry.ReadCache;
