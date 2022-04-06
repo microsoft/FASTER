@@ -422,7 +422,8 @@ namespace FASTER.core
             }
             var latestLogicalAddress = logicalAddress;
 
-            if (logicalAddress >= hlog.ReadOnlyAddress)
+            var minAddress = processReadOnly ? hlog.HeadAddress : hlog.ReadOnlyAddress; // LUC requires scanning down to HeadAddress
+            if (logicalAddress >= minAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
@@ -430,7 +431,7 @@ namespace FASTER.core
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key,
                                         logicalAddress,
-                                        processReadOnly ? hlog.HeadAddress : hlog.ReadOnlyAddress, // LUC requires scanning down to HeadAddress
+                                        minAddress,
                                         out logicalAddress,
                                         out physicalAddress);
                 }
@@ -1526,7 +1527,8 @@ namespace FASTER.core
             }
             var latestLogicalAddress = logicalAddress;
 
-            if (logicalAddress >= hlog.HeadAddress)
+            var minAddress = processReadOnly ? hlog.HeadAddress : hlog.ReadOnlyAddress; // LUC requires scanning down to HeadAddress
+            if (logicalAddress >= minAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
@@ -1534,7 +1536,7 @@ namespace FASTER.core
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
                     TraceBackForKeyMatch(ref key,
                                         logicalAddress,
-                                        processReadOnly ? hlog.HeadAddress : hlog.ReadOnlyAddress, // LUC requires scanning down to HeadAddress
+                                        minAddress,
                                         out logicalAddress,
                                         out physicalAddress);
                 }
@@ -2041,20 +2043,14 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
-            recordInfo.Unseal();  // Need to do this here because we might not create a new one, and this may have escaped to disk on a failed Upsert etc.a
-            OperationStatus internalStatus;
-
+            recordInfo.Unseal();  // Need to do this here because we might not create a new one, and this may have escaped to disk on a failed Upsert etc.
+        
             if (request.logicalAddress >= hlog.BeginAddress)
             {
                 SpinWaitUntilClosed(request.logicalAddress);
 
-                // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
-                // With the new overload of CompletePending that returns CompletedOutputs, pendingContext must have the key.
-                if (pendingContext.NoKey && pendingContext.key == default)
-                    pendingContext.key = hlog.GetKeyContainer(ref hlog.GetContextRecordKey(ref request));
-
-                if (recordInfo.IsIntermediate(out internalStatus))
-                    goto Done;
+                if (recordInfo.IsIntermediate(out var internalStatus))
+                    return internalStatus;
 
                 if (recordInfo.Tombstone)
                     goto NotFound;
@@ -2073,8 +2069,7 @@ namespace FASTER.core
                     if (readInfo.Action == ReadAction.CancelOperation)
                     {
                         pendingContext.recordInfo = recordInfo;
-                        internalStatus = OperationStatus.CANCELED;
-                        goto Done;
+                        return OperationStatus.CANCELED;
                     }
                     if (readInfo.Action != ReadAction.Expire)
                         goto NotFound;
@@ -2085,24 +2080,15 @@ namespace FASTER.core
                     || pendingContext.CopyReadsToTail
                     || (UseReadCache && !pendingContext.DisableReadCacheUpdates)
                     || readInfo.Action == ReadAction.Expire)
-                {
-                    internalStatus = InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, fasterSession, currentCtx, expired: readInfo.Action == ReadAction.Expire);
-                    goto Done;
-                }
+                    return InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, fasterSession, currentCtx, expired: readInfo.Action == ReadAction.Expire);
 
                 pendingContext.recordInfo = recordInfo;
-                internalStatus = OperationStatus.SUCCESS;
-                goto Done;
+                return OperationStatus.SUCCESS;
             }
 
         NotFound:
             pendingContext.recordInfo = recordInfo;
-            internalStatus = OperationStatus.NOTFOUND;
-            goto Done;
-
-        Done:
-            fasterSession.DisposeDeserializedFromDisk(ref hlog.GetContextRecordKey(ref request), ref hlog.GetContextRecordValue(ref request), ref recordInfo);
-            return internalStatus;
+            return OperationStatus.NOTFOUND;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -2249,22 +2235,18 @@ namespace FASTER.core
                         (request.logicalAddress >= hlog.BeginAddress) && !hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone, true);
 
                 if (status != OperationStatus.RETRY_NOW)
-                    goto Done;
+                    return status;
             }
 
             do
                 status = InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, opCtx, pendingContext.serialNum);
             while (status == OperationStatus.RETRY_NOW);
-
-        Done:
-            ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
-            fasterSession.DisposeDeserializedFromDisk(ref hlog.GetContextRecordKey(ref request), ref hlog.GetContextRecordValue(ref request), ref recordInfo);
             return status;
         }
 
-#endregion
+        #endregion
 
-#region Helper Functions
+        #region Helper Functions
 
         /// <summary>
         /// Performs appropriate handling based on the internal failure status of the trial.

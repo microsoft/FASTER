@@ -37,7 +37,7 @@ namespace FASTER.core
             }
 
             // Option 1: write the source data, leaving the destination size unchanged. You will need
-            // to mange the actual space used by the value if you stop here.
+            // to manage the actual space used by the value if you stop here.
             src.CopyTo(dst);
 
             // We can adjust the length header on the serialized log, if we wish to.

@@ -294,19 +294,22 @@ namespace FASTER.core
             newRequest = default;
 
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
-            ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
+            // With the new overload of CompletePending that returns CompletedOutputs, pendingContext must have the key.
+            if (pendingContext.NoKey && pendingContext.key == default)
+                pendingContext.key = hlog.GetKeyContainer(ref hlog.GetContextRecordKey(ref request));
+            ref Key key = ref pendingContext.key.Get();
 
             OperationStatus internalStatus = pendingContext.type == OperationType.READ
                 ? InternalContinuePendingRead(opCtx, request, ref pendingContext, fasterSession, currentCtx)
                 : InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
 
-            request.Dispose();
-
             if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
             {
                 if (internalStatus == OperationStatus.ALLOCATE_FAILED)
-                    return new(StatusCode.Pending);  // This plus newRequest.IsDefault() means allocate failed
-
+                {
+                    status = new(StatusCode.Pending);  // This plus newRequest.IsDefault() means allocate failed
+                    goto Done;
+                }
                 status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, asyncOp, out newRequest);
             }
 
@@ -332,6 +335,14 @@ namespace FASTER.core
                                                      new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
                 }
             }
+
+        Done:
+            unsafe
+            {
+                ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
+                fasterSession.DisposeDeserializedFromDisk(ref hlog.GetContextRecordKey(ref request), ref hlog.GetContextRecordValue(ref request), ref recordInfo);
+            }
+            request.Dispose();
             return status;
         }
         #endregion
