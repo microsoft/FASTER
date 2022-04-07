@@ -13,7 +13,7 @@ namespace AsyncStress
     public class FasterWrapper<Key, Value> : IFasterWrapper<Key, Value>
     {
         readonly FasterKV<Key, Value> _store;
-        readonly AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>>> _sessionPool;
+        readonly AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>, DefaultStoreFunctions<Key, Value>>> _sessionPool;
         readonly bool useOsReadBuffering;
         int pendingCount = 0;
 
@@ -48,7 +48,7 @@ namespace AsyncStress
 
             this.useOsReadBuffering = useOsReadBuffering;
             _store = new FasterKV<Key, Value>(1L << 20, logSettings);
-            _sessionPool = new AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>>>(
+            _sessionPool = new AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>, DefaultStoreFunctions<Key, Value>>>(
                     logSettings.LogDevice.ThrottleLimit,
                     () => _store.For(new SimpleFunctions<Key, Value, Empty>()).NewSession<SimpleFunctions<Key, Value, Empty>>());
         }

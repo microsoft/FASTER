@@ -5,7 +5,7 @@ namespace FASTER.core
     /// <summary>
     /// Compaction methods
     /// </summary>
-    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
+    public partial class FasterKV<Key, Value, StoreFunctions>
     {
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
@@ -118,7 +118,7 @@ namespace FASTER.core
                 };
             }
 
-            using (var tempKv = new FasterKV<Key, Value>(IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: Comparer, variableLengthStructSettings: variableLengthStructSettings))
+            using (var tempKv = new FasterKV<Key, Value, StoreFunctions>(IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: Comparer, variableLengthStructSettings: variableLengthStructSettings))
             using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
             {
                 using (var iter1 = Log.Scan(hlog.BeginAddress, untilAddress))
@@ -181,7 +181,7 @@ namespace FASTER.core
             return originalUntilAddress;
         }
 
-        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
+        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions, StoreFunctions> tempKvSession)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             using var iter = Log.Scan(untilAddress, scanUntil);

@@ -40,7 +40,7 @@ namespace FASTER.test.async
             TestUtils.DeleteDirectory(path);
         }
 
-        private static async Task Populate(ClientSession<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> s1)
+        private static async Task Populate(ClientSession<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>, DefaultStoreFunctions<long, long>> s1)
         {
             var tasks = new ValueTask<FasterKV<long, long>.UpsertAsyncResult<long, long, Empty>>[numOps];
             for (long key = 0; key < numOps; key++)

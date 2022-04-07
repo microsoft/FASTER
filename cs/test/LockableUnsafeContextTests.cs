@@ -65,7 +65,7 @@ namespace FASTER.test.LockableUnsafeContext
         LockableUnsafeComparer comparer;
 
         private FasterKV<int, int> fht;
-        private ClientSession<int, int, int, int, Empty, LockableUnsafeFunctions> session;
+        private ClientSession<int, int, int, int, Empty, LockableUnsafeFunctions, DefaultStoreFunctions<int, int>> session;
         private IDevice log;
 
         [SetUp]
@@ -129,7 +129,7 @@ namespace FASTER.test.LockableUnsafeContext
                 Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
         }
 
-        static void AssertIsLocked(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext, int key, bool xlock, bool slock)
+        static void AssertIsLocked(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions, DefaultStoreFunctions<int, int>> luContext, int key, bool xlock, bool slock)
         {
             var (isX, isS) = luContext.IsLocked(key);
             Assert.AreEqual(xlock, isX, "xlock mismatch");
@@ -144,21 +144,21 @@ namespace FASTER.test.LockableUnsafeContext
                 this.fht.Log.FlushAndEvict(wait: true);
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext)
+        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions, DefaultStoreFunctions<int, int>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
             luContext.exclusiveLockCount = 0;
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
+        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>, DefaultStoreFunctions<int, int>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
             luContext.exclusiveLockCount = 0;
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> luContext)
+        static void ClearCountsOnError(LockableUnsafeContext<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>, DefaultStoreFunctions<long, long>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -531,7 +531,7 @@ namespace FASTER.test.LockableUnsafeContext
             EnsureNoLocks();
         }
 
-        void AddLockTableEntry(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext, int key, bool immutable)
+        void AddLockTableEntry(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>, DefaultStoreFunctions<int, int>> luContext, int key, bool immutable)
         {
             luContext.Lock(key, LockType.Exclusive);
             var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
@@ -546,7 +546,7 @@ namespace FASTER.test.LockableUnsafeContext
             Assert.IsTrue(recordInfo.IsLockedExclusive);
         }
 
-        void VerifyAndUnlockSplicedInKey(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext, int expectedKey)
+        void VerifyAndUnlockSplicedInKey(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>, DefaultStoreFunctions<int, int>> luContext, int expectedKey)
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = ChainTests.SkipReadCacheChain(fht, expectedKey);

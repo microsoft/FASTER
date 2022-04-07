@@ -22,8 +22,8 @@ namespace FASTER.test.statemachine
         where K : new() where V : new() where F : IFunctions<K,V,I,O,C>
     {
         readonly FasterKV<K, V>.ClientSessionBuilder<I, O, C> fht;
-        ClientSession<K, V, I, O, C, F> s2;
-        UnsafeContext<K, V, I, O, C, F> uc2;
+        ClientSession<K, V, I, O, C, F, DefaultStoreFunctions<K, V>> s2;
+        UnsafeContext<K, V, I, O, C, F, DefaultStoreFunctions<K, V>> uc2;
         readonly F f;
         readonly AutoResetEvent ev = new(false);
         readonly AsyncQueue<string> q = new();

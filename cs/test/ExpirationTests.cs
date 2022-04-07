@@ -487,7 +487,7 @@ namespace FASTER.test.Expiration
         IDevice log;
         ExpirationFunctions functions;
         FasterKV<int, VLValue> fht;
-        ClientSession<int, VLValue, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions> session;
+        ClientSession<int, VLValue, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, DefaultStoreFunctions<int, VLValue>> session;
 
         [SetUp]
         public void Setup()

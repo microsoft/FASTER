@@ -77,7 +77,7 @@ namespace FASTER.test.LockTests
         }
 
         private FasterKV<int, int> fkv;
-        private ClientSession<int, int, Input, int, Empty, Functions> session;
+        private ClientSession<int, int, Input, int, Empty, Functions, DefaultStoreFunctions<int, int>> session;
         private IDevice log;
 
         [SetUp]

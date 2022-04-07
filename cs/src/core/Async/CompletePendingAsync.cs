@@ -11,7 +11,8 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="Key">Key</typeparam>
     /// <typeparam name="Value">Value</typeparam>
-    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
+    /// <typeparam name="StoreFunctions"></typeparam>
+    public partial class FasterKV<Key, Value, StoreFunctions>
     {
         /// <summary>
         /// Check if at least one (sync) request is ready for CompletePending to operate on

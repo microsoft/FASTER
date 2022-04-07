@@ -123,7 +123,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         }
 
         private void CheckAllValues(
-            ref ClientSession<AdId, NumClicks, AdInput, Output, Empty, AdSimpleFunctions> fht,
+            ref ClientSession<AdId, NumClicks, AdInput, Output, Empty, AdSimpleFunctions, DefaultStoreFunctions<AdId, NumClicks>> fht,
             int value)
         {
             AdInput inputArg = default;
@@ -145,7 +145,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         }
 
         private void IncrementAllValues(
-            ref ClientSession<AdId, NumClicks, AdInput, Output, Empty, AdSimpleFunctions> fht, 
+            ref ClientSession<AdId, NumClicks, AdInput, Output, Empty, AdSimpleFunctions, DefaultStoreFunctions<AdId, NumClicks>> fht, 
             ref long sno)
         {
             AdInput inputArg = default;

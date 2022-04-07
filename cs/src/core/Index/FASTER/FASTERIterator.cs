@@ -5,7 +5,7 @@ using System;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
+    public partial class FasterKV<Key, Value, StoreFunctions>
     {
         /// <summary>
         /// Iterator for all (distinct) live key-values stored in FASTER
@@ -19,7 +19,7 @@ namespace FASTER.core
             if (untilAddress == -1)
                 untilAddress = Log.TailAddress;
 
-            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>
+            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions, StoreFunctions>
                 (this, functions, untilAddress);
         }
 
@@ -50,18 +50,18 @@ namespace FASTER.core
     }
 
 
-    internal sealed class FasterKVIterator<Key, Value, Input, Output, Context, Functions> : IFasterScanIterator<Key, Value>
+    internal sealed class FasterKVIterator<Key, Value, Input, Output, Context, Functions, StoreFunctions> : IFasterScanIterator<Key, Value>
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
-        private readonly FasterKV<Key, Value> fht;
-        private readonly FasterKV<Key, Value> tempKv;
-        private readonly ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession;
+        private readonly FasterKV<Key, Value, StoreFunctions> fht;
+        private readonly FasterKV<Key, Value, StoreFunctions> tempKv;
+        private readonly ClientSession<Key, Value, Input, Output, Context, Functions, StoreFunctions> tempKvSession;
         private readonly IFasterScanIterator<Key, Value> iter1;
         private IFasterScanIterator<Key, Value> iter2;
 
         private int enumerationPhase;
 
-        public FasterKVIterator(FasterKV<Key, Value> fht, Functions functions, long untilAddress)
+        public FasterKVIterator(FasterKV<Key, Value, StoreFunctions> fht, Functions functions, long untilAddress)
         {
             this.fht = fht;
             enumerationPhase = 0;
@@ -76,7 +76,9 @@ namespace FASTER.core
                 };
             }
 
-            tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
+            tempKv = new FasterKV<Key, Value, StoreFunctions>(fht.IndexSize,
+                new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 },
+                comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
             tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions);
             iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);
         }

@@ -148,7 +148,7 @@ namespace CacheStoreConcurrent
         {
             Console.WriteLine("Issuing uniform random read workload of {0} reads from thread {1}", numKeys, threadid);
 
-            var sessions = new ClientSession<CacheKey, CacheValue, CacheValue, CacheValue, CacheContext, CacheFunctions>[kNumTables];
+            var sessions = new ClientSession<CacheKey, CacheValue, CacheValue, CacheValue, CacheContext, CacheFunctions, DefaultStoreFunctions<CacheKey, CacheValue>>[kNumTables];
 
             for (int ht = 0; ht < kNumTables; ht++)
                 sessions[ht] = h[ht].For(new CacheFunctions()).NewSession<CacheFunctions>();

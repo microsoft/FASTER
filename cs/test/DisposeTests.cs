@@ -81,11 +81,12 @@ namespace FASTER.test.Dispose
         internal enum DisposeHandler
         {
             None,
-            SingleWriter,
-            CopyUpdater,
-            InitialUpdater,
-            SingleDeleter,
-            DeserializedFromDisk,
+            SingleWriterCASFailed,
+            CopyUpdaterCASFailed,
+            InitialUpdaterCASFailed,
+            SingleDeleterCASFailed,
+            RecordDeserializedFromDisk,
+            PageEviction
         }
 
         public class DisposeFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, Empty>
@@ -235,7 +236,7 @@ namespace FASTER.test.Dispose
                 Assert.AreEqual(TestKey, key.key);
                 Assert.AreEqual(TestInitialValue, src.value);
                 Assert.AreEqual(TestInitialValue, dst.value);  // dst has been populated
-                handlerQueue.Enqueue(DisposeHandler.SingleWriter);
+                handlerQueue.Enqueue(DisposeHandler.SingleWriterCASFailed);
             }
 
             public override void DisposeCopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RMWInfo rmwInfo)
@@ -243,27 +244,27 @@ namespace FASTER.test.Dispose
                 Assert.AreEqual(TestKey, key.key);
                 Assert.AreEqual(TestInitialValue, oldValue.value);
                 Assert.AreEqual(TestInitialValue + TestUpdatedValue, newValue.value);
-                handlerQueue.Enqueue(DisposeHandler.CopyUpdater);
+                handlerQueue.Enqueue(DisposeHandler.CopyUpdaterCASFailed);
             }
 
             public override void DisposeInitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo)
             {
                 Assert.AreEqual(TestKey, key.key);
                 Assert.AreEqual(TestInitialValue, value.value);
-                handlerQueue.Enqueue(DisposeHandler.InitialUpdater);
+                handlerQueue.Enqueue(DisposeHandler.InitialUpdaterCASFailed);
             }
 
             public override void DisposeSingleDeleter(ref MyKey key, ref MyValue value, ref DeleteInfo deleteInfo)
             {
                 Assert.AreEqual(TestKey, key.key);
                 Assert.IsNull(value);   // This is the default value inserted for the Tombstoned record
-                handlerQueue.Enqueue(DisposeHandler.SingleDeleter);
+                handlerQueue.Enqueue(DisposeHandler.SingleDeleterCASFailed);
             }
 
             public override void DisposeDeserializedFromDisk(ref MyKey key, ref MyValue value)
             {
                 VerifyKeyValueCombo(ref key, ref value);
-                handlerQueue.Enqueue(DisposeHandler.DeserializedFromDisk);
+                handlerQueue.Enqueue(DisposeHandler.RecordDeserializedFromDisk);
             }
         }
 
@@ -306,7 +307,7 @@ namespace FASTER.test.Dispose
             public override void DisposeDeserializedFromDisk(ref MyKey key, ref MyValue value)
             {
                 VerifyKeyValueCombo(ref key, ref value);
-                handlerQueue.Enqueue(DisposeHandler.DeserializedFromDisk);
+                handlerQueue.Enqueue(DisposeHandler.RecordDeserializedFromDisk);
             }
         }
 
@@ -358,7 +359,7 @@ namespace FASTER.test.Dispose
 
             Task.WaitAll(tasks);
 
-            Assert.AreEqual(DisposeHandler.SingleWriter, functions1.handlerQueue.Dequeue());
+            Assert.AreEqual(DisposeHandler.SingleWriterCASFailed, functions1.handlerQueue.Dequeue());
             Assert.IsEmpty(functions1.handlerQueue);
         }
 
@@ -396,7 +397,7 @@ namespace FASTER.test.Dispose
             };
             Task.WaitAll(tasks);
 
-            Assert.AreEqual(DisposeHandler.InitialUpdater, functions1.handlerQueue.Dequeue());
+            Assert.AreEqual(DisposeHandler.InitialUpdaterCASFailed, functions1.handlerQueue.Dequeue());
             Assert.IsEmpty(functions1.handlerQueue);
         }
 
@@ -439,9 +440,9 @@ namespace FASTER.test.Dispose
             };
             Task.WaitAll(tasks);
 
-            Assert.AreEqual(DisposeHandler.CopyUpdater, functions1.handlerQueue.Dequeue());
+            Assert.AreEqual(DisposeHandler.CopyUpdaterCASFailed, functions1.handlerQueue.Dequeue());
             if (flushMode == FlushMode.OnDisk)
-                Assert.AreEqual(DisposeHandler.DeserializedFromDisk, functions1.handlerQueue.Dequeue());
+                Assert.AreEqual(DisposeHandler.RecordDeserializedFromDisk, functions1.handlerQueue.Dequeue());
             Assert.IsEmpty(functions1.handlerQueue);
         }
 
@@ -490,7 +491,7 @@ namespace FASTER.test.Dispose
 
             Task.WaitAll(tasks);
 
-            Assert.AreEqual(DisposeHandler.SingleDeleter, functions1.handlerQueue.Dequeue());
+            Assert.AreEqual(DisposeHandler.SingleDeleterCASFailed, functions1.handlerQueue.Dequeue());
             Assert.IsEmpty(functions1.handlerQueue);
         }
 
@@ -574,8 +575,8 @@ namespace FASTER.test.Dispose
             };
             Task.WaitAll(tasks);
 
-            Assert.AreEqual(DisposeHandler.SingleWriter, functions1.handlerQueue.Dequeue());
-            Assert.AreEqual(DisposeHandler.DeserializedFromDisk, functions1.handlerQueue.Dequeue());
+            Assert.AreEqual(DisposeHandler.SingleWriterCASFailed, functions1.handlerQueue.Dequeue());
+            Assert.AreEqual(DisposeHandler.RecordDeserializedFromDisk, functions1.handlerQueue.Dequeue());
             Assert.IsEmpty(functions1.handlerQueue);
         }
 
@@ -603,7 +604,7 @@ namespace FASTER.test.Dispose
             (status, output) = GetSinglePendingResult(completedOutputs);
             Assert.AreEqual(TestInitialValue, output.value.value);
 
-            Assert.AreEqual(DisposeHandler.DeserializedFromDisk, functions.handlerQueue.Dequeue());
+            Assert.AreEqual(DisposeHandler.RecordDeserializedFromDisk, functions.handlerQueue.Dequeue());
         }
 
         [Test]
@@ -631,7 +632,7 @@ namespace FASTER.test.Dispose
             (status, output) = GetSinglePendingResult(completedOutputs);
             Assert.AreEqual(TestInitialValue + TestUpdatedValue, output.value.value);
 
-            Assert.AreEqual(DisposeHandler.DeserializedFromDisk, functions.handlerQueue.Dequeue());
+            Assert.AreEqual(DisposeHandler.RecordDeserializedFromDisk, functions.handlerQueue.Dequeue());
         }
     }
 }

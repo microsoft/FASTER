@@ -29,7 +29,7 @@ namespace FASTER.core
         public const int CheckpointCompletionCallback = 4;
     }
 
-    public partial class FasterKV<Key, Value>
+    public partial class FasterKV<Key, Value, StoreFunctions>
     {
         
         internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);

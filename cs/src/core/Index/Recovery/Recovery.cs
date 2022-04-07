@@ -134,7 +134,7 @@ namespace FASTER.core
         }
     }
 
-    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
+    public partial class FasterKV<Key, Value, StoreFunctions>
     {
         private void FindRecoveryInfo(long requestedVersion, out HybridLogCheckpointInfo recoveredHlcInfo,
             out IndexCheckpointInfo recoveredICInfo)

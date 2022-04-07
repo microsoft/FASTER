@@ -118,7 +118,7 @@ namespace FASTER.test.Cancellation
         IDevice log;
         CancellationFunctions functions;
         FasterKV<int, int> fht;
-        ClientSession<int, int, int, int, Empty, CancellationFunctions> session;
+        ClientSession<int, int, int, int, Empty, CancellationFunctions, DefaultStoreFunctions<int, int>> session;
 
         const int NumRecs = 100;
 

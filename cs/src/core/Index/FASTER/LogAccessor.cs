@@ -13,9 +13,10 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    public sealed class LogAccessor<Key, Value> : IObservable<IFasterScanIterator<Key, Value>>
+    /// <typeparam name="StoreFunctions"></typeparam>
+    public sealed class LogAccessor<Key, Value, StoreFunctions> : IObservable<IFasterScanIterator<Key, Value>>
     {
-        private readonly FasterKV<Key, Value> fht;
+        private readonly FasterKV<Key, Value, StoreFunctions> fht;
         private readonly AllocatorBase<Key, Value> allocator;
 
         /// <summary>
@@ -23,7 +24,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fht"></param>
         /// <param name="allocator"></param>
-        public LogAccessor(FasterKV<Key, Value> fht, AllocatorBase<Key, Value> allocator)
+        public LogAccessor(FasterKV<Key, Value, StoreFunctions> fht, AllocatorBase<Key, Value> allocator)
         {
             this.fht = fht;
             this.allocator = allocator;

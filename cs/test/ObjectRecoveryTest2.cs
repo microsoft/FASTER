@@ -99,7 +99,7 @@ namespace FASTER.test.recovery.objects
             objlog.Dispose();
         }
 
-        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue> fht, CheckpointType checkpointType)
+        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions, DefaultStoreFunctions<MyKey, MyValue>> session, MyContext context, FasterKV<MyKey, MyValue> fht, CheckpointType checkpointType)
         {
             for (int i = 0; i < iterations; i++)
             {
@@ -115,7 +115,7 @@ namespace FASTER.test.recovery.objects
             }
         }
 
-        private void Read(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, bool delete)
+        private void Read(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions, DefaultStoreFunctions<MyKey, MyValue>> session, MyContext context, bool delete)
         {
             for (int i = 0; i < iterations; i++)
             {

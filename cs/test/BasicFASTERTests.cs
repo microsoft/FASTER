@@ -16,7 +16,7 @@ namespace FASTER.test
     internal class BasicFASTERTests
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
-        private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> session;
+        private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, DefaultStoreFunctions<KeyStruct, ValueStruct>> session;
         private IDevice log;
         private string path;
         TestUtils.DeviceType deviceType;

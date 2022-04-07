@@ -11,7 +11,7 @@ namespace FASTER.test
     internal class GenericStringTests
     {
         private FasterKV<string, string> fht;
-        private ClientSession<string, string, string, string, Empty, MyFuncs> session;
+        private ClientSession<string, string, string, string, Empty, MyFuncs, DefaultStoreFunctions<string, string>> session;
         private IDevice log, objlog;
         private string path;
 

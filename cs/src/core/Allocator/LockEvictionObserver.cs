@@ -8,15 +8,15 @@ namespace FASTER.core
     /// <summary>
     /// Observer for page-lock evictions
     /// </summary>
-    public class LockEvictionObserver<Key, Value> : IObserver<IFasterScanIterator<Key, Value>>
+    public class LockEvictionObserver<Key, Value, StoreFunctions> : IObserver<IFasterScanIterator<Key, Value>>
     {
-        readonly FasterKV<Key, Value> store;
+        readonly FasterKV<Key, Value, StoreFunctions> store;
 
         /// <summary>
         /// Class to manage lock eviction transfers to LockTable
         /// </summary>
         /// <param name="store">FASTER store instance</param>
-        public LockEvictionObserver(FasterKV<Key, Value> store) => this.store = store;
+        public LockEvictionObserver(FasterKV<Key, Value, StoreFunctions> store) => this.store = store;
 
         /// <summary>
         /// Subscriber to pages as they are getting evicted from main memory

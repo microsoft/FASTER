@@ -225,7 +225,7 @@ namespace FASTER.test.ReadCacheTests
             Assert.AreEqual(expectedKey, storedKey);
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
+        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>, DefaultStoreFunctions<int, int>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;

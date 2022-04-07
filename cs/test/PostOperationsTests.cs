@@ -44,7 +44,7 @@ namespace FASTER.test
         }
 
         private FasterKV<int, int> fht;
-        private ClientSession<int, int, int, int, Empty, PostFunctions> session;
+        private ClientSession<int, int, int, int, Empty, PostFunctions, DefaultStoreFunctions<int, int>> session;
         private IDevice log;
 
         const int numRecords = 100;

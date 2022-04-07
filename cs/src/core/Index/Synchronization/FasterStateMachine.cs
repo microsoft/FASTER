@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value>
+    public partial class FasterKV<Key, Value, StoreFunctions>
     {
         // The current system state, defined as the combination of a phase and a version number. This value
         // is observed by all sessions and a state machine communicates its progress to sessions through

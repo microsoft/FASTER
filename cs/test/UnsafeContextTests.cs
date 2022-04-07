@@ -15,8 +15,8 @@ namespace FASTER.test.UnsafeContext
     internal class BasicUnsafeContextTests
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
-        private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fullSession;
-        private UnsafeContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> uContext;
+        private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, DefaultStoreFunctions<KeyStruct, ValueStruct>> fullSession;
+        private UnsafeContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, DefaultStoreFunctions<KeyStruct, ValueStruct>> uContext;
         private IDevice log;
         private string path;
         TestUtils.DeviceType deviceType;

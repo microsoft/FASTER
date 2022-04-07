@@ -13,9 +13,9 @@ namespace FASTER.core
     internal sealed class IndexResizeTask : ISynchronizationTask
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value>(
+        public void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(
             SystemState next,
-            FasterKV<Key, Value> faster)
+            FasterKV<Key, Value, StoreFunctions> faster)
         {
             switch (next.Phase)
             {
@@ -44,9 +44,9 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value>(
+        public void GlobalAfterEnteringState<Key, Value, StoreFunctions>(
             SystemState next,
-            FasterKV<Key, Value> faster)
+            FasterKV<Key, Value, StoreFunctions> faster)
         {
             switch (next.Phase)
             {
@@ -63,11 +63,11 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession, StoreFunctions>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value> faster,
-            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterKV<Key, Value, StoreFunctions> faster,
+            FasterKV<Key, Value, StoreFunctions>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)

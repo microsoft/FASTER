@@ -16,7 +16,7 @@ namespace FASTER.test.InputOutputParameterTests
         const int NumRecs = 10;
 
         private FasterKV<int, int> fht;
-        private ClientSession<int, int, int, int, Empty, UpsertInputFunctions> session;
+        private ClientSession<int, int, int, int, Empty, UpsertInputFunctions, DefaultStoreFunctions<int, int>> session;
         private IDevice log;
 
         internal class UpsertInputFunctions : FunctionsBase<int, int, int, int, Empty>

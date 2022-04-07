@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
+    public partial class FasterKV<Key, Value, StoreFunctions>
     {
         internal (string, CommitPoint) InternalContinue<Input, Output, Context>(int sessionID, out FasterExecutionContext<Input, Output, Context> ctx)
         {

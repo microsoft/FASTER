@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
+    public partial class FasterKV<Key, Value, StoreFunctions>
     {
         // UpsertAsync, DeleteAsync, and RMWAsync can go pending when they generate Flush operations on BlockAllocate when inserting new records at the tail.
         // RMW can also go pending with a disk operation. Define some interfaces to and a shared UpdateAsyncInternal class to consolidate the code.
@@ -28,7 +28,7 @@ namespace FASTER.core
 
             /// <summary>
             /// This performs the low-level synchronous operation for the implementation class of <typeparamref name="TAsyncResult"/>; for example,
-            /// <see cref="FasterKV{Key, Value}.InternalRMW"/>.
+            /// <see cref="FasterKV{Key, Value, StoreFunctions}.InternalRMW"/>.
             /// </summary>
             /// <param name="fasterKV">The <see cref="FasterKV{Key, Value}"/> instance the async call was made on</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
@@ -38,7 +38,7 @@ namespace FASTER.core
             /// <param name="flushEvent">The event to wait for flush completion on</param>
             /// <param name="output">The output to be populated by this operation</param>
             /// <returns></returns>
-            Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            Status DoFastOperation(FasterKV<Key, Value, StoreFunctions> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output);
             /// <summary>
             /// Performs the asynchronous operation. This may be a wait for <paramref name="flushEvent"/> or a disk IO.
@@ -50,7 +50,7 @@ namespace FASTER.core
             /// <param name="flushEvent">The event to wait for flush completion on</param>
             /// <param name="token">The cancellation token, if any</param>
             /// <returns></returns>
-            ValueTask<TAsyncResult> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            ValueTask<TAsyncResult> DoSlowOperation(FasterKV<Key, Value, StoreFunctions> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
                                             CompletionEvent flushEvent, CancellationToken token);
 
@@ -75,14 +75,14 @@ namespace FASTER.core
             const int Completed = 1;
             const int Pending = 0;
             ExceptionDispatchInfo _exception;
-            readonly FasterKV<Key, Value> _fasterKV;
+            readonly FasterKV<Key, Value, StoreFunctions> _fasterKV;
             readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
             readonly FasterExecutionContext<Input, Output, Context> _currentCtx;
             TAsyncOperation _asyncOperation;
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 
-            internal UpdateAsyncInternal(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            internal UpdateAsyncInternal(FasterKV<Key, Value, StoreFunctions> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                       FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
                                       ExceptionDispatchInfo exceptionDispatchInfo, TAsyncOperation asyncOperation)
             {
@@ -188,7 +188,8 @@ namespace FASTER.core
             return new(StatusCode.Pending);
         }
 
-        private static async ValueTask<ExceptionDispatchInfo> WaitForFlushCompletionAsync<Input, Output, Context>(FasterKV<Key, Value> @this, FasterExecutionContext<Input, Output, Context> currentCtx, CompletionEvent flushEvent, CancellationToken token)
+        private static async ValueTask<ExceptionDispatchInfo> WaitForFlushCompletionAsync<Input, Output, Context>(FasterKV<Key, Value, StoreFunctions> @this,
+            FasterExecutionContext<Input, Output, Context> currentCtx, CompletionEvent flushEvent, CancellationToken token)
         {
             ExceptionDispatchInfo exceptionDispatchInfo = default;
             try

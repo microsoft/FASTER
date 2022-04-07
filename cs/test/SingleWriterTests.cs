@@ -35,7 +35,7 @@ namespace FASTER.test.SingleWriter
         SingleWriterTestFunctions functions;
 
         private FasterKV<int, int> fht;
-        private ClientSession<int, int, int, int, Empty, SingleWriterTestFunctions> session;
+        private ClientSession<int, int, int, int, Empty, SingleWriterTestFunctions, DefaultStoreFunctions<int, int>> session;
         private IDevice log;
 
         [SetUp]

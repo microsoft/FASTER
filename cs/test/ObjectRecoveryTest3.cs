@@ -101,7 +101,8 @@ namespace FASTER.test.recovery.objects
             objlog.Dispose();
         }
 
-        private List<(int, Guid)> Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue> fht, CheckpointType checkpointType)
+        private List<(int, Guid)> Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions, DefaultStoreFunctions<MyKey, MyValue>> session,
+                                        MyContext context, FasterKV<MyKey, MyValue> fht, CheckpointType checkpointType)
         {
             var tokens = new List<(int, Guid)>();
             for (int i = 0; i < iterations; i++)
@@ -120,7 +121,8 @@ namespace FASTER.test.recovery.objects
             return tokens;
         }
 
-        private void Read(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, bool delete, int iter)
+        private void Read(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions, DefaultStoreFunctions<MyKey, MyValue>> session,
+                        MyContext context, bool delete, int iter)
         {
             for (int i = 0; i < iter; i++)
             {

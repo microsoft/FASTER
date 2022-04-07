@@ -106,7 +106,7 @@ namespace SumStore
 
         private void RunThread(int threadId, bool continueSession)
         {
-            ClientSession<AdId, NumClicks, Input, Output, Empty, Functions> session;
+            ClientSession<AdId, NumClicks, Input, Output, Empty, Functions, DefaultStoreFunctions<AdId, NumClicks>> session;
             long sno = 0;
             if (continueSession)
             {
@@ -127,7 +127,7 @@ namespace SumStore
 
             GenerateClicks(session, sno);
         }
-        private void GenerateClicks(ClientSession<AdId, NumClicks, Input, Output, Empty, Functions> session, long sno)
+        private void GenerateClicks(ClientSession<AdId, NumClicks, Input, Output, Empty, Functions, DefaultStoreFunctions<AdId, NumClicks>> session, long sno)
         {
             inputArrays.TryTake(out Input[] inputArray);
 

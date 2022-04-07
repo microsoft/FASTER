@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
+    public partial class FasterKV<Key, Value, StoreFunctions>
     {
         internal struct UpsertAsyncOperation<Input, Output, Context> : IUpdateAsyncOperation<Input, Output, Context, UpsertAsyncResult<Input, Output, Context>>
         {
@@ -17,7 +17,7 @@ namespace FASTER.core
             public UpsertAsyncResult<Input, Output, Context> CreateResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status, output, recordMetadata);
 
             /// <inheritdoc/>
-            public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            public Status DoFastOperation(FasterKV<Key, Value, StoreFunctions> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output)
             {
                 output = default;
@@ -32,7 +32,7 @@ namespace FASTER.core
             }
 
             /// <inheritdoc/>
-            public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value, StoreFunctions> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CompletionEvent flushEvent, CancellationToken token)
                 => SlowUpsertAsync(fasterKV, fasterSession, currentCtx, pendingContext, flushEvent, token);
 
@@ -67,7 +67,7 @@ namespace FASTER.core
                 this.updateAsyncInternal = default;
             }
 
-            internal UpsertAsyncResult(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, TOutput, Context> fasterSession,
+            internal UpsertAsyncResult(FasterKV<Key, Value, StoreFunctions> fasterKV, IFasterSession<Key, Value, Input, TOutput, Context> fasterSession,
                 FasterExecutionContext<Input, TOutput, Context> currentCtx, PendingContext<Input, TOutput, Context> pendingContext, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 this.Status = new(StatusCode.Pending);
@@ -143,7 +143,7 @@ namespace FASTER.core
         }
 
         private static async ValueTask<UpsertAsyncResult<Input, Output, Context>> SlowUpsertAsync<Input, Output, Context>(
-            FasterKV<Key, Value> @this,
+            FasterKV<Key, Value, StoreFunctions> @this,
             IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx,
             PendingContext<Input, Output, Context> pcontext, CompletionEvent flushEvent, CancellationToken token = default)

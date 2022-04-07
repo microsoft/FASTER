@@ -680,7 +680,7 @@ namespace FASTER.test.readaddress
 
         private IDevice log;
         private FasterKV<long, long> fht;
-        private ClientSession<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> session;
+        private ClientSession<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>, DefaultStoreFunctions<long, long>> session;
 
         [SetUp]
         public void Setup()

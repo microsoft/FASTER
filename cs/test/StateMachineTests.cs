@@ -466,8 +466,8 @@ namespace FASTER.test.statemachine
 
 
         void Prepare(out SimpleFunctions f,
-            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1,
-            out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> uc1,
+            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, DefaultStoreFunctions<AdId, NumClicks>> s1,
+            out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, DefaultStoreFunctions<AdId, NumClicks>> uc1,
             out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s2,
             long toVersion = -1)
         {
@@ -586,7 +586,7 @@ namespace FASTER.test.statemachine
         private readonly HashSet<SystemState> invokedStates = new();
 
 
-        public void BeforeEnteringState<Key1, Value>(SystemState next, FasterKV<Key1, Value> faster)
+        public void BeforeEnteringState<Key1, Value, StoreFunctions>(SystemState next, FasterKV<Key1, Value, StoreFunctions> faster)
         {
             Assert.IsFalse(invokedStates.Contains(next));
             invokedStates.Add(next);

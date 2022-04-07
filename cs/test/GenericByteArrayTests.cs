@@ -13,7 +13,7 @@ namespace FASTER.test
     internal class GenericByteArrayTests
     {
         private FasterKV<byte[], byte[]> fht;
-        private ClientSession<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs> session;
+        private ClientSession<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs, DefaultStoreFunctions<byte[], byte[]>> session;
         private IDevice log, objlog;
 
         [SetUp]

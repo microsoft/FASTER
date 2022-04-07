@@ -17,8 +17,8 @@ namespace FASTER.core
     {
         private long lastVersion;
         /// <inheritdoc />
-        public virtual void GlobalBeforeEnteringState<Key, Value>(SystemState next,
-            FasterKV<Key, Value> faster)
+        public virtual void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(SystemState next,
+            FasterKV<Key, Value, StoreFunctions> faster)
         {
             switch (next.Phase)
             {
@@ -51,7 +51,7 @@ namespace FASTER.core
             }
         }
 
-        protected static void CollectMetadata<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
+        protected static void CollectMetadata<Key, Value, StoreFunctions>(SystemState next, FasterKV<Key, Value, StoreFunctions> faster)
         {
             // Collect object log offsets only after flushes
             // are completed
@@ -95,16 +95,16 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public virtual void GlobalAfterEnteringState<Key, Value>(SystemState next,
-            FasterKV<Key, Value> faster)
+        public virtual void GlobalAfterEnteringState<Key, Value, StoreFunctions>(SystemState next,
+            FasterKV<Key, Value, StoreFunctions> faster)
         {
         }
 
         /// <inheritdoc />
-        public virtual void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public virtual void OnThreadState<Key, Value, Input, Output, Context, FasterSession, StoreFunctions>(
             SystemState current,
-            SystemState prev, FasterKV<Key, Value> faster,
-            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            SystemState prev, FasterKV<Key, Value, StoreFunctions> faster,
+            FasterKV<Key, Value, StoreFunctions>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -135,8 +135,8 @@ namespace FASTER.core
     internal sealed class FoldOverCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState<Key, Value>(SystemState next,
-            FasterKV<Key, Value> faster)
+        public override void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(SystemState next,
+            FasterKV<Key, Value, StoreFunctions> faster)
         {
             base.GlobalBeforeEnteringState(next, faster);
 
@@ -152,11 +152,11 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public override void OnThreadState<Key, Value, Input, Output, Context, FasterSession, StoreFunctions>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value> faster,
-            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterKV<Key, Value, StoreFunctions> faster,
+            FasterKV<Key, Value, StoreFunctions>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -197,7 +197,7 @@ namespace FASTER.core
     internal sealed class SnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
+        public override void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(SystemState next, FasterKV<Key, Value, StoreFunctions> faster)
         {
             switch (next.Phase)
             {
@@ -252,10 +252,10 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public override void OnThreadState<Key, Value, Input, Output, Context, FasterSession, StoreFunctions>(
             SystemState current,
-            SystemState prev, FasterKV<Key, Value> faster,
-            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            SystemState prev, FasterKV<Key, Value, StoreFunctions> faster,
+            FasterKV<Key, Value, StoreFunctions>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -297,7 +297,7 @@ namespace FASTER.core
     internal sealed class IncrementalSnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
+        public override void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(SystemState next, FasterKV<Key, Value, StoreFunctions> faster)
         {
             switch (next.Phase)
             {
@@ -339,10 +339,10 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        public override void OnThreadState<Key, Value, Input, Output, Context, FasterSession, StoreFunctions>(
             SystemState current,
-            SystemState prev, FasterKV<Key, Value> faster,
-            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            SystemState prev, FasterKV<Key, Value, StoreFunctions> faster,
+            FasterKV<Key, Value, StoreFunctions>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)

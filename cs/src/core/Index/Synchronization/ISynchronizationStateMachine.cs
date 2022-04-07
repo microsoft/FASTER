@@ -32,20 +32,16 @@ namespace FASTER.core
         /// </summary>
         /// <param name="next"></param>
         /// <param name="faster"></param>
-        /// <typeparam name="Key"></typeparam>
-        /// <typeparam name="Value"></typeparam>
-        void GlobalBeforeEnteringState<Key, Value>(SystemState next,
-            FasterKV<Key, Value> faster);
+        void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(SystemState next,
+            FasterKV<Key, Value, StoreFunctions> faster);
 
         /// <summary>
         /// This function is invoked immediately after the global state machine enters the given state.
         /// </summary>
         /// <param name="next"></param>
         /// <param name="faster"></param>
-        /// <typeparam name="Key"></typeparam>
-        /// <typeparam name="Value"></typeparam>
-        void GlobalAfterEnteringState<Key, Value>(SystemState next,
-            FasterKV<Key, Value> faster);
+        void GlobalAfterEnteringState<Key, Value, StoreFunctions>(SystemState next,
+            FasterKV<Key, Value, StoreFunctions> faster);
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -59,17 +55,11 @@ namespace FASTER.core
         /// <param name="fasterSession"></param>
         /// <param name="valueTasks"></param>
         /// <param name="token"></param>
-        /// <typeparam name="Key"></typeparam>
-        /// <typeparam name="Value"></typeparam>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="FasterSession"></typeparam>
         /// <returns></returns>
-        void OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(SystemState current,
+        void OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession, StoreFunctions>(SystemState current,
             SystemState prev,
-            FasterKV<Key, Value> faster,
-            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterKV<Key, Value, StoreFunctions> faster,
+            FasterKV<Key, Value, StoreFunctions>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -89,22 +79,18 @@ namespace FASTER.core
         /// </summary>
         /// <param name="next"></param>
         /// <param name="faster"></param>
-        /// <typeparam name="Key"></typeparam>
-        /// <typeparam name="Value"></typeparam>
-        void GlobalBeforeEnteringState<Key, Value>(
+        void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(
             SystemState next,
-            FasterKV<Key, Value> faster);
+            FasterKV<Key, Value, StoreFunctions> faster);
 
         /// <summary>
         /// This function is invoked immediately after the global state machine enters the given state.
         /// </summary>
         /// <param name="next"></param>
         /// <param name="faster"></param>
-        /// <typeparam name="Key"></typeparam>
-        /// <typeparam name="Value"></typeparam>
-        void GlobalAfterEnteringState<Key, Value>(
+        void GlobalAfterEnteringState<Key, Value, StoreFunctions>(
             SystemState next,
-            FasterKV<Key, Value> faster);
+            FasterKV<Key, Value, StoreFunctions> faster);
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -118,18 +104,11 @@ namespace FASTER.core
         /// <param name="fasterSession"></param>
         /// <param name="valueTasks"></param>
         /// <param name="token"></param>
-        /// <typeparam name="Key"></typeparam>
-        /// <typeparam name="Value"></typeparam>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="FasterSession"></typeparam>
-        /// <returns></returns>
-        void OnThreadState<Key, Value, Input, Output, Context, FasterSession>(
+        void OnThreadState<Key, Value, Input, Output, Context, FasterSession, StoreFunctions>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value> faster,
-            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterKV<Key, Value, StoreFunctions> faster,
+            FasterKV<Key, Value, StoreFunctions>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -169,27 +148,27 @@ namespace FASTER.core
         public abstract SystemState NextState(SystemState start);
 
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value>(SystemState next,
-            FasterKV<Key, Value> faster) 
+        public void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(SystemState next,
+            FasterKV<Key, Value, StoreFunctions> faster) 
         {
             foreach (var task in tasks)
                 task.GlobalBeforeEnteringState(next, faster);
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value>(SystemState next,
-            FasterKV<Key, Value> faster)
+        public void GlobalAfterEnteringState<Key, Value, StoreFunctions>(SystemState next,
+            FasterKV<Key, Value, StoreFunctions> faster)
         {
             foreach (var task in tasks)
                 task.GlobalAfterEnteringState(next, faster);
         }
 
         /// <inheritdoc />
-        public void OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession>(
+        public void OnThreadEnteringState<Key, Value, Input, Output, Context, FasterSession, StoreFunctions>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value> faster,
-            FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterKV<Key, Value, StoreFunctions> faster,
+            FasterKV<Key, Value, StoreFunctions>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)

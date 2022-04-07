@@ -311,8 +311,8 @@ namespace FASTER.benchmark
             dash.Start();
 #endif
 
-            ClientSession<Key, Value, Input, Output, Empty, Functions> session = default;
-            LockableUnsafeContext<Key, Value, Input, Output, Empty, Functions> luContext = default;
+            ClientSession<Key, Value, Input, Output, Empty, Functions, DefaultStoreFunctions<Key, Value>> session = default;
+            LockableUnsafeContext<Key, Value, Input, Output, Empty, Functions, DefaultStoreFunctions<Key, Value>> luContext = default;
 
             (Key key, LockType kind) xlock = (new Key { value = long.MaxValue }, LockType.Exclusive);
             (Key key, LockType kind) slock = (new Key { value = long.MaxValue - 1 }, LockType.Shared);

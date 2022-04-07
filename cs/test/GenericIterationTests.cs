@@ -10,7 +10,7 @@ namespace FASTER.test
     internal class GenericIterationTests
     {
         private FasterKV<MyKey, MyValue> fht;
-        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
+        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, DefaultStoreFunctions<MyKey, MyValue>> session;
         private IDevice log, objlog;
 
         [SetUp]

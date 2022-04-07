@@ -24,7 +24,7 @@ namespace FASTER.core
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void Add(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void Add<StoreFunctions>(ref FasterKV<TKey, TValue, StoreFunctions>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
         {
             // Note: vector is never null
             if (this.maxIndex >= vector.Length - 1)
@@ -112,7 +112,7 @@ namespace FASTER.core
         /// </summary>
         public Status Status;
 
-        internal void Set(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void Set<StoreFunctions>(ref FasterKV<TKey, TValue, StoreFunctions>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
         {
             this.keyContainer = pendingContext.key;
             this.inputContainer = pendingContext.input;
