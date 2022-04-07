@@ -114,7 +114,7 @@ class FasterKv {
     , hlog{ filename.empty() /*hasNoBackingStorage*/, log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
     , system_state_{ Action::None, Phase::REST, 1 }
     , grow_state_{ &hlog }
-    , hash_index_{ disk.log().alignment(), epoch_, gc_state_, grow_state_ }
+    , hash_index_{ disk, epoch_, gc_state_, grow_state_ }
     , num_pending_ios{ 0 }
     , num_compaction_truncs{ 0 }
     , num_active_sessions{ 0 } {
@@ -126,10 +126,6 @@ class FasterKv {
     }
 
     hash_index_.Initialize(table_size);
-
-    /*resize_info_.version = 0;
-    state_[0].Initialize(table_size, disk.log().alignment());
-    overflow_buckets_allocator_[0].Initialize(disk.log().alignment(), epoch_);*/
   }
 
   // No copy constructor.
@@ -190,8 +186,6 @@ class FasterKv {
   }
   inline void DumpDistribution() {
     hash_index_.DumpDistribution();
-    //state_[resize_info_.version].DumpDistribution(
-    //  overflow_buckets_allocator_[resize_info_.version]);
   }
 
  private:
@@ -265,6 +259,8 @@ class FasterKv {
   static void AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status result,
                                        size_t bytes_transferred);
 
+  static void AsyncGetHashIndexEntryFromDiskCallback(IAsyncContext* ctxt, Status result);
+
   void CompleteIoPendingRequests(ExecutionContext& context);
   void CompleteRetryRequests(ExecutionContext& context);
 
@@ -280,13 +276,6 @@ class FasterKv {
   void HandleSpecialPhases();
   bool GlobalMoveToNextState(SystemState current_state);
 
-  Status CheckpointFuzzyIndex();
-  Status CheckpointFuzzyIndexComplete();
-  Status RecoverFuzzyIndex();
-  Status RecoverFuzzyIndexComplete(bool wait);
-
-  Status WriteIndexMetadata();
-  Status ReadIndexMetadata(const Guid& token);
   Status WriteCprMetadata();
   Status ReadCprMetadata(const Guid& token);
   Status WriteCprContext();
@@ -301,9 +290,7 @@ class FasterKv {
 
   /// Grow Index methods
   inline void HeavyEnter();
-  void SplitHashTableBuckets();
-  void AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version,
-                    HashBucketEntry entry);
+  void GrowIndexBlocking();
 
   /// Compaction/Garbage collect methods
   Address LogScanForValidity(Address from, faster_t* temp);
@@ -338,17 +325,12 @@ class FasterKv {
   /// Initial size of the table
   uint64_t min_table_size_;
 
-  // Allocator for the hash buckets that don't fit in the hash table.
-  MallocFixedPageSize<HashBucket, disk_t> overflow_buckets_allocator_[2];
-
   // An array of size two, that contains the old and new versions of the hash-table
   InternalHashTable<disk_t> state_[2];
 
   HashIndex<disk_t> hash_index_;
 
   CheckpointLocks checkpoint_locks_;
-
-  ResizeInfo resize_info_;
 
   AtomicSystemState system_state_;
 
@@ -358,7 +340,6 @@ class FasterKv {
   typename HashIndex<disk_t>::gc_state_t gc_state_;
   /// Grow (hash table) state.
   typename HashIndex<disk_t>::grow_state_t grow_state_;
-
 
   /// Global count of pending I/Os, used for throttling.
   std::atomic<uint64_t> num_pending_ios;
@@ -685,14 +666,26 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
   if(thread_ctx().phase != Phase::REST) {
     const_cast<faster_t*>(this)->HeavyEnter();
   }
+  // Stamp request (if not stamped already)
+  pending_context.stamp_request(thread_ctx().phase, thread_ctx().version);
 
   KeyHash hash = pending_context.get_key_hash();
+  HashIndexEntryPendingContext index_pending_context{ OperationType::Read, hash, pending_context, nullptr};
+
   HashBucketEntry entry;
-  //const AtomicHashBucketEntry* atomic_entry = hash_index_.FindEntry(hash, entry);
   AtomicHashBucketEntry* atomic_entry;
-  Status status = hash_index_.FindEntry(hash, entry, atomic_entry);
-  assert(status == Status::Ok || status == Status::NotFound);
-  if(!atomic_entry) {
+
+  //Status status = hash_index_.FindEntry(hash, entry, atomic_entry);
+  Status status = hash_index_.FindEntry(index_pending_context);
+  assert(status == Status::Ok || status == Status::NotFound || status == Status::Pending);
+  if (status == Status::Pending) {
+    return OperationStatus::INDEX_ENTRY_ON_DISK;
+  }
+
+  atomic_entry = index_pending_context.atomic_entry;
+  entry = index_pending_context.expected_entry;
+
+  if(!index_pending_context.atomic_entry) {
     // no record found
     return OperationStatus::NOT_FOUND;
   }
@@ -726,7 +719,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     if(latest_record_version > thread_ctx().version) {
       // CPR shift detected: we are in the "PREPARE" phase, and a record has a version later than
       // what we've seen.
-      pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, entry);
+      pending_context.go_async(address, entry);
       return OperationStatus::CPR_SHIFT_DETECTED;
     }
     break;
@@ -756,7 +749,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     return OperationStatus::SUCCESS;
   } else if(address >= begin_address) {
     // Record not available in-memory
-    pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, entry);
+    pending_context.go_async(address, entry);
     return OperationStatus::RECORD_ON_DISK;
   } else {
     // No record found
@@ -772,6 +765,8 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
   if(thread_ctx().phase != Phase::REST) {
     HeavyEnter();
   }
+  // Stamp request (if not stamped already)
+  pending_context.stamp_request(thread_ctx().phase, thread_ctx().version);
 
   KeyHash hash = pending_context.get_key_hash();
   HashBucketEntry expected_entry;
@@ -813,14 +808,13 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
   case Phase::PREPARE:
     // Working on old version (v).
     if(!lock_guard.try_lock_old()) {
-      pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
+      pending_context.go_async(address, expected_entry);
       return OperationStatus::CPR_SHIFT_DETECTED;
     } else {
       if(latest_record_version > thread_ctx().version) {
         // CPR shift detected: we are in the "PREPARE" phase, and a record has a version later than
         // what we've seen.
-        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address,
-                                 expected_entry);
+        pending_context.go_async(address, expected_entry);
         return OperationStatus::CPR_SHIFT_DETECTED;
       }
     }
@@ -830,8 +824,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
     if(latest_record_version < thread_ctx().version) {
       // Will create new record or update existing record to new version (v+1).
       if(!lock_guard.try_lock_new()) {
-        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address,
-                                 expected_entry);
+        pending_context.go_async(address, expected_entry);
         return OperationStatus::RETRY_LATER;
       } else {
         // Update to new version (v+1) requires RCU.
@@ -843,8 +836,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
     // All other threads are in phase {IN_PROGRESS,WAIT_PENDING,WAIT_FLUSH}.
     if(latest_record_version < thread_ctx().version) {
       if(lock_guard.old_locked()) {
-        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address,
-                                 expected_entry);
+        pending_context.go_async(address, expected_entry);
         return OperationStatus::RETRY_LATER;
       } else {
         // Update to new version (v+1) requires RCU.
@@ -915,6 +907,9 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
   if(phase != Phase::REST) {
     HeavyEnter();
   }
+  // Stamp request (if not stamped already)
+  pending_context.stamp_request(thread_ctx().phase, thread_ctx().version);
+
 
   KeyHash hash = pending_context.get_key_hash();
   HashBucketEntry expected_entry;
@@ -963,14 +958,14 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
       // succeed in obtaining a second. Otherwise, another thread has acquired the new lock, so
       // a CPR shift has occurred.
       assert(!retrying);
-      pending_context.go_async(phase, version, address, expected_entry);
+      pending_context.go_async(address, expected_entry);
       return OperationStatus::CPR_SHIFT_DETECTED;
     } else {
       if(latest_record_version > version) {
         // CPR shift detected: we are in the "PREPARE" phase, and a mutable record has a version
         // later than what we've seen.
         assert(!retrying);
-        pending_context.go_async(phase, version, address, expected_entry);
+        pending_context.go_async(address, expected_entry);
         return OperationStatus::CPR_SHIFT_DETECTED;
       }
     }
@@ -980,11 +975,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
     if(latest_record_version < version) {
       // Will create new record or update existing record to new version (v+1).
       if(!lock_guard.try_lock_new()) {
-        if(!retrying) {
-          pending_context.go_async(phase, version, address, expected_entry);
-        } else {
-          pending_context.continue_async(address, expected_entry);
-        }
+        pending_context.go_async(address, expected_entry);
         return OperationStatus::RETRY_LATER;
       } else {
         // Update to new version (v+1) requires RCU.
@@ -996,11 +987,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
     // All other threads are in phase {IN_PROGRESS,WAIT_PENDING,WAIT_FLUSH}.
     if(latest_record_version < version) {
       if(lock_guard.old_locked()) {
-        if(!retrying) {
-          pending_context.go_async(phase, version, address, expected_entry);
-        } else {
-          pending_context.continue_async(address, expected_entry);
-        }
+        pending_context.go_async(address, expected_entry);
         return OperationStatus::RETRY_LATER;
       } else {
         // Update to new version (v+1) requires RCU.
@@ -1035,21 +1022,13 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
     }
   } else if(address >= safe_read_only_address && !reinterpret_cast<record_t*>(hlog.Get(address))->header.tombstone) {
     // Fuzzy Region: Must go pending due to lost-update anomaly
-    if(!retrying) {
-      pending_context.go_async(phase, version, address, expected_entry);
-    } else {
-      pending_context.continue_async(address, expected_entry);
-    }
+    pending_context.go_async(address, expected_entry);
     return OperationStatus::RETRY_LATER;
   } else if(address >= head_address) {
     goto create_record;
   } else if(address >= begin_address) {
     // Need to obtain old record from disk.
-    if(!retrying) {
-      pending_context.go_async(phase, version, address, expected_entry);
-    } else {
-      pending_context.continue_async(address, expected_entry);
-    }
+    pending_context.go_async(address, expected_entry);
     return OperationStatus::RECORD_ON_DISK;
   } else {
     // No record exists in the log
@@ -1078,16 +1057,15 @@ create_record:
 
   // Allocating a block may have the side effect of advancing the head address.
   head_address = hlog.head_address.load();
-  // Allocating a block may have the side effect of advancing the thread context's version and
-  // phase.
+  // Allocating a block may have the side effect of advancing the thread context's version and phase
   if(!retrying) {
-    phase = thread_ctx().phase;
-    version = thread_ctx().version;
+    // Re-stamp request with new version/phase
+    pending_context.stamp_request(thread_ctx().phase, thread_ctx().version, true);
   }
 
   new(new_record) record_t{
     RecordInfo{
-      static_cast<uint16_t>(version), true, false, false,
+      static_cast<uint16_t>(pending_context.version), true, false, false,
       expected_entry.address() }
   };
   pending_context.write_deep_key_at(const_cast<key_t*>(&new_record->key()));
@@ -1104,11 +1082,7 @@ create_record:
     // The block we allocated for the new record caused the head address to advance beyond
     // the old record. Need to obtain the old record from disk.
     new_record->header.invalid = true;
-    if(!retrying) {
-      pending_context.go_async(phase, version, address, expected_entry);
-    } else {
-      pending_context.continue_async(address, expected_entry);
-    }
+    pending_context.go_async(address, expected_entry);
     return OperationStatus::RECORD_ON_DISK;
   }
 
@@ -1118,11 +1092,7 @@ create_record:
   } else {
     // CAS failed; try again.
     new_record->header.invalid = true;
-    if(!retrying) {
-      pending_context.go_async(phase, version, address, expected_entry);
-    } else {
-      pending_context.continue_async(address, expected_entry);
-    }
+    pending_context.go_async(address, expected_entry);
     return OperationStatus::RETRY_NOW;
   }
 }
@@ -1153,12 +1123,13 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context, boo
   uint64_t latest_record_version = 0;
 
   KeyHash hash = pending_context.get_key_hash();
-  HashBucketEntry expected_entry;
-  //AtomicHashBucketEntry* atomic_entry =
-  //  const_cast<AtomicHashBucketEntry*>(hash_index_.FindEntry(hash, expected_entry));
-  AtomicHashBucketEntry* atomic_entry;
-  Status status = hash_index_.FindEntry(hash, expected_entry, atomic_entry);
+  HashIndexEntryPendingContext index_pending_context{ OperationType::Delete, hash, pending_context, nullptr};
+
+  Status status = hash_index_.FindEntry(index_pending_context);
   assert(status == Status::Ok || status == Status::NotFound);
+
+  HashBucketEntry expected_entry{ index_pending_context.expected_entry };
+  AtomicHashBucketEntry* atomic_entry{ index_pending_context.atomic_entry };
 
   if(!atomic_entry) {
     // no record found
@@ -1192,12 +1163,12 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context, boo
     case Phase::PREPARE:
       // Working on old version (v).
       if(!lock_guard.try_lock_old()) {
-        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
+        pending_context.go_async(address, expected_entry);
         return OperationStatus::CPR_SHIFT_DETECTED;
       } else if(latest_record_version > thread_ctx().version) {
         // CPR shift detected: we are in the "PREPARE" phase, and a record has a version later than
         // what we've seen.
-        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
+        pending_context.go_async(address, expected_entry);
         return OperationStatus::CPR_SHIFT_DETECTED;
       }
       break;
@@ -1206,7 +1177,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context, boo
       if(latest_record_version < thread_ctx().version) {
         // Will create new record or update existing record to new version (v+1).
         if(!lock_guard.try_lock_new()) {
-          pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
+          pending_context.go_async(address, expected_entry);
           return OperationStatus::RETRY_LATER;
         } else {
           // Update to new version (v+1) requires RCU.
@@ -1218,7 +1189,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context, boo
       // All other threads are in phase {IN_PROGRESS,WAIT_PENDING,WAIT_FLUSH}.
       if(latest_record_version < thread_ctx().version) {
         if(lock_guard.old_locked()) {
-          pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
+          pending_context.go_async(address, expected_entry);
           return OperationStatus::RETRY_LATER;
         } else {
           // Update to new version (v+1) requires RCU.
@@ -1373,6 +1344,9 @@ inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
       }
     }
     return IssueAsyncIoRequest(ctx, pending_context, async);
+  case OperationStatus::INDEX_ENTRY_ON_DISK:
+    //
+    return Status::Pending;
   case OperationStatus::SUCCESS_UNMARK:
     checkpoint_locks_.get_lock(pending_context.get_key_hash()).unlock_old();
     return Status::Ok;
@@ -1400,9 +1374,9 @@ inline Status FasterKv<K, V, D>::PivotAndRetry(ExecutionContext& ctx,
   Refresh();
   // thread must have moved to IN_PROGRESS phase
   assert(thread_ctx().version == ctx.version + 1);
+  // update request phase & version
+  pending_context.stamp_request(thread_ctx().phase, thread_ctx().version, true);
   // retry with new contexts
-  pending_context.phase = thread_ctx().phase;
-  pending_context.version = thread_ctx().version;
   return HandleOperationStatus(thread_ctx(), pending_context, OperationStatus::RETRY_NOW, async);
 }
 
@@ -1530,6 +1504,16 @@ void FasterKv<K, V, D>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status res
       }
     }
   }
+}
+
+template <class K, class V, class D>
+void FasterKv<K, V, D>::AsyncGetHashIndexEntryFromDiskCallback(IAsyncContext* ctxt, Status result) {
+  CallbackContext<HashIndexEntryPendingContext> context{ ctxt };
+  faster_t* faster = reinterpret_cast<faster_t*>(context->faster);
+  // Context stack is: HashIndexEntryPendingContext, PendingContext
+  pending_context_t* pending_context = static_cast<pending_context_t*>(context->caller_callback);
+  assert(!context->test_pending);
+  // TODO IMPLEMENT
 }
 
 template <class K, class V, class D>
@@ -1662,7 +1646,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
     //     Calling InternalRmw will result in launching a new search in the hash chain, by reading
     //     the newly introduced entries in the chain, so we won't miss any potential entries with same key.
     //
-    pending_context->continue_async(address, expected_entry);
+    pending_context->go_async(address, expected_entry);
     return OperationStatus::RETRY_NOW;
   }
   assert(address < begin_address || address == pending_context->entry.address());
@@ -1717,7 +1701,7 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
   } else {
     // CAS failed; try again.
     new_record->header.invalid = true;
-    pending_context->continue_async(address, expected_entry);
+    pending_context->go_async(address, expected_entry);
     return OperationStatus::RETRY_NOW;
   }
 }
@@ -1725,44 +1709,6 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
 template <class K, class V, class D>
 void FasterKv<K, V, D>::InitializeCheckpointLocks() {
   checkpoint_locks_.Initialize(hash_index_.size());
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::WriteIndexMetadata() {
-  std::string filename = disk.index_checkpoint_path(checkpoint_.index_token) + "info.dat";
-  // (This code will need to be refactored into the disk_t interface, if we want to support
-  // unformatted disks.)
-  std::FILE* file = std::fopen(filename.c_str(), "wb");
-  if(!file) {
-    return Status::IOError;
-  }
-  if(std::fwrite(&checkpoint_.index_metadata, sizeof(checkpoint_.index_metadata), 1, file) != 1) {
-    std::fclose(file);
-    return Status::IOError;
-  }
-  if(std::fclose(file) != 0) {
-    return Status::IOError;
-  }
-  return Status::Ok;
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::ReadIndexMetadata(const Guid& token) {
-  std::string filename = disk.index_checkpoint_path(token) + "info.dat";
-  // (This code will need to be refactored into the disk_t interface, if we want to support
-  // unformatted disks.)
-  std::FILE* file = std::fopen(filename.c_str(), "rb");
-  if(!file) {
-    return Status::IOError;
-  }
-  if(std::fread(&checkpoint_.index_metadata, sizeof(checkpoint_.index_metadata), 1, file) != 1) {
-    std::fclose(file);
-    return Status::IOError;
-  }
-  if(std::fclose(file) != 0) {
-    return Status::IOError;
-  }
-  return Status::Ok;
 }
 
 template <class K, class V, class D>
@@ -1858,94 +1804,6 @@ Status FasterKv<K, V, D>::ReadCprContexts(const Guid& token, const Guid* guids) 
   } else {
     return Status::Ok;
   }
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::CheckpointFuzzyIndex() {
-  uint32_t hash_table_version = resize_info_.version;
-  // Checkpoint the main hash table.
-  file_t ht_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
-                                "ht.dat");
-  RETURN_NOT_OK(ht_file.Open(&disk.handler()));
-  RETURN_NOT_OK(state_[hash_table_version].Checkpoint(disk, std::move(ht_file),
-                checkpoint_.index_metadata.num_ht_bytes));
-  // Checkpoint the hash table's overflow buckets.
-  file_t ofb_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
-                                 "ofb.dat");
-  RETURN_NOT_OK(ofb_file.Open(&disk.handler()));
-  RETURN_NOT_OK(overflow_buckets_allocator_[hash_table_version].Checkpoint(disk,
-                std::move(ofb_file), checkpoint_.index_metadata.num_ofb_bytes));
-  checkpoint_.index_checkpoint_started = true;
-  return Status::Ok;
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::CheckpointFuzzyIndexComplete() {
-  if(!checkpoint_.index_checkpoint_started) {
-    return Status::Pending;
-  }
-  uint32_t hash_table_version = resize_info_.version;
-  Status result = state_[hash_table_version].CheckpointComplete(false);
-  if(result == Status::Pending) {
-    return Status::Pending;
-  } else if(result != Status::Ok) {
-    return result;
-  } else {
-    return overflow_buckets_allocator_[hash_table_version].CheckpointComplete(false);
-  }
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RecoverFuzzyIndex() {
-  uint8_t hash_table_version = resize_info_.version;
-  assert(state_[hash_table_version].size() == checkpoint_.index_metadata.table_size);
-
-  // Recover the main hash table.
-  file_t ht_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
-                                "ht.dat");
-  RETURN_NOT_OK(ht_file.Open(&disk.handler()));
-  RETURN_NOT_OK(state_[hash_table_version].Recover(disk, std::move(ht_file),
-                checkpoint_.index_metadata.num_ht_bytes));
-  // Recover the hash table's overflow buckets.
-  file_t ofb_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
-                                 "ofb.dat");
-  RETURN_NOT_OK(ofb_file.Open(&disk.handler()));
-  return overflow_buckets_allocator_[hash_table_version].Recover(disk, std::move(ofb_file),
-         checkpoint_.index_metadata.num_ofb_bytes, checkpoint_.index_metadata.ofb_count);
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RecoverFuzzyIndexComplete(bool wait) {
-  uint8_t hash_table_version = resize_info_.version;
-  Status result = state_[hash_table_version].RecoverComplete(true);
-  if(result != Status::Ok) {
-    return result;
-  }
-  result = overflow_buckets_allocator_[hash_table_version].RecoverComplete(true);
-  if(result != Status::Ok) {
-    return result;
-  }
-
-  // Clear all tentative entries.
-  for(uint64_t bucket_idx = 0; bucket_idx < state_[hash_table_version].size(); ++bucket_idx) {
-    HashBucket* bucket = &state_[hash_table_version].bucket(bucket_idx);
-    while(true) {
-      for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-        if(bucket->entries[entry_idx].load().tentative()) {
-          bucket->entries[entry_idx].store(HashBucketEntry::kInvalidEntry);
-        }
-      }
-      // Go to next bucket in the chain
-      HashBucketOverflowEntry entry = bucket->overflow_entry.load();
-      if(entry.unused()) {
-        // No more buckets in the chain.
-        break;
-      }
-      bucket = &overflow_buckets_allocator_[hash_table_version].Get(entry.address());
-      assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-    }
-  }
-  return Status::Ok;
 }
 
 template <class K, class V, class D>
@@ -2189,12 +2047,12 @@ void FasterKv<K, V, D>::HeavyEnter() {
     Refresh();
   }
   if(thread_ctx().phase == Phase::GROW_IN_PROGRESS) {
-    SplitHashTableBuckets();
+    GrowIndexBlocking();
   }
 }
 
 template <class K, class V, class D>
-void FasterKv<K, V, D>::SplitHashTableBuckets() {
+void FasterKv<K, V, D>::GrowIndexBlocking() {
   hash_index_.template Grow<record_t>();
 
   // Thread has finished growing its part of the hash table.
@@ -2232,7 +2090,7 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       assert(next_state.action != Action::CheckpointHybridLog);
       // Issue async request for fuzzy checkpoint
       assert(!checkpoint_.failed);
-      if(CheckpointFuzzyIndex() != Status::Ok) {
+      if(hash_index_.Checkpoint(checkpoint_) != Status::Ok) {
         checkpoint_.failed = true;
       }
       break;
@@ -2241,12 +2099,8 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       // case directly.
       assert(next_state.action == Action::CheckpointFull);
       // INDEX_CHKPT -> PREPARE
-      // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the ofb.
-      // (Ensures that recovery won't accidentally reallocate from the ofb.)
-      checkpoint_.index_metadata.ofb_count =
-        overflow_buckets_allocator_[resize_info_.version].count();
       // Write index meta data on disk
-      if(WriteIndexMetadata() != Status::Ok) {
+      if(hash_index_.WriteCheckpointMetadata(checkpoint_) != Status::Ok) {
         checkpoint_.failed = true;
       }
       if(checkpoint_.index_persistence_callback) {
@@ -2307,12 +2161,8 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
         // Checkpoint is done--no more work for threads to do.
         system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
       } else {
-        // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the
-        // ofb. (Ensures that recovery won't accidentally reallocate from the ofb.)
-        checkpoint_.index_metadata.ofb_count =
-          overflow_buckets_allocator_[resize_info_.version].count();
         // Write index meta data on disk
-        if(WriteIndexMetadata() != Status::Ok) {
+        if(hash_index_.WriteCheckpointMetadata(checkpoint_) != Status::Ok) {
           checkpoint_.failed = true;
         }
         auto index_persistence_callback = checkpoint_.index_persistence_callback;
@@ -2437,21 +2287,23 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
       case Phase::INDEX_CHKPT: {
         assert(current_state.action != Action::CheckpointHybridLog);
         // Both from PREP_INDEX_CHKPT -> INDEX_CHKPT and INDEX_CHKPT -> INDEX_CHKPT
-        Status result = CheckpointFuzzyIndexComplete();
-        if(result != Status::Pending && result != Status::Ok) {
-          checkpoint_.failed = true;
-        }
-        if(result != Status::Pending) {
-          if(current_state.action == Action::CheckpointIndex) {
-            // This thread is done now.
-            thread_ctx().phase = Phase::REST;
-            // Thread ack that it is done.
-            if(epoch_.FinishThreadPhase(Phase::INDEX_CHKPT)) {
+        if (checkpoint_.index_checkpoint_started) {
+          Status result = hash_index_.CheckpointComplete();
+          if(result != Status::Pending && result != Status::Ok) {
+            checkpoint_.failed = true;
+          }
+          if(result != Status::Pending) {
+            if(current_state.action == Action::CheckpointIndex) {
+              // This thread is done now.
+              thread_ctx().phase = Phase::REST;
+              // Thread ack that it is done.
+              if(epoch_.FinishThreadPhase(Phase::INDEX_CHKPT)) {
+                GlobalMoveToNextState(current_state);
+              }
+            } else {
+              // Index checkpoint is done; move on to PREPARE phase.
               GlobalMoveToNextState(current_state);
             }
-          } else {
-            // Index checkpoint is done; move on to PREPARE phase.
-            GlobalMoveToNextState(current_state);
           }
         }
         break;
@@ -2604,7 +2456,7 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::GROW_IN_PROGRESS:
-        SplitHashTableBuckets();
+        GrowIndexBlocking();
         break;
       }
       break;
@@ -2723,7 +2575,7 @@ Status FasterKv<K, V, D>::Recover(const Guid& index_token, const Guid& hybrid_lo
 
   do {
     // Index and log metadata.
-    BREAK_NOT_OK(ReadIndexMetadata(index_token));
+    BREAK_NOT_OK(hash_index_.ReadCheckpointMetadata(index_token, checkpoint_));
     BREAK_NOT_OK(ReadCprMetadata(hybrid_log_token));
     if(checkpoint_.index_metadata.version != checkpoint_.log_metadata.version) {
       // Index and hybrid-log checkpoints should have the same version.
@@ -2736,8 +2588,8 @@ Status FasterKv<K, V, D>::Recover(const Guid& index_token, const Guid& hybrid_lo
 
     BREAK_NOT_OK(ReadCprContexts(hybrid_log_token, checkpoint_.log_metadata.guids));
     // The index itself (including overflow buckets).
-    BREAK_NOT_OK(RecoverFuzzyIndex());
-    BREAK_NOT_OK(RecoverFuzzyIndexComplete(true));
+    BREAK_NOT_OK(hash_index_.Recover(checkpoint_));
+    BREAK_NOT_OK(hash_index_.RecoverComplete());
     // Any changes made to the log while the index was being fuzzy-checkpointed.
     if(fold_over_snapshot) {
       BREAK_NOT_OK(RecoverHybridLog());
@@ -3243,7 +3095,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_c
     // Stable region [on-disk]
     if (address > min_search_offset) {
       // Record not available in-memory -- issue disk I/O request
-      pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
+      pending_context.go_async(address, expected_entry);
       return OperationStatus::RECORD_ON_DISK;
     }
     assert(address == min_search_offset);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "async.h"
+#include "checkpoint_state.h"
 #include "gc_state.h"
 #include "grow_state.h"
 #include "hash_table.h"
@@ -12,63 +13,64 @@ namespace FASTER {
 namespace core {
 
 class HashIndexEntryPendingContext : public IAsyncContext {
-
- protected:
-  HashIndexEntryPendingContext(OperationType type_, IAsyncContext& caller_context_,
-                 AsyncCallback caller_callback_)
-    : type{ type_ }
+ public:
+  HashIndexEntryPendingContext(OperationType type_, KeyHash hash_,
+            IAsyncContext& caller_context_, AsyncCallback caller_callback_)
+    : faster{ nullptr }
+    , hash{ hash_ }
     , caller_context{ &caller_context_ }
     , caller_callback{ caller_callback_ }
-    , version{ UINT32_MAX }
-    , phase{ Phase::INVALID }
-    , result{ Status::Pending }
-    , address{ Address::kInvalidAddress }
-    , entry{ HashBucketEntry::kInvalidEntry } {
+    , expected_entry{ HashBucketEntry::kInvalidEntry }
+    , atomic_entry{ nullptr }
+    //, test_pending{ true } {
+    , test_pending{ false } {
+  }
+
+  /// The deep-copy constructor.
+  HashIndexEntryPendingContext(const HashIndexEntryPendingContext& other, IAsyncContext* caller_context_)
+    : hash{ other.hash }
+    , caller_context{ caller_context_ }
+    , caller_callback{ other.caller_callback }
+    , expected_entry{ other.expected_entry }
+    , test_pending{ other.test_pending } {
+  }
+
+ protected:
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+    //test_pending = false;
+    return IAsyncContext::DeepCopy_Internal(*this, caller_context, context_copy);
   }
 
  public:
-  /// The deep-copy constructor.
-  HashIndexEntryPendingContext(const HashIndexEntryPendingContext& other, IAsyncContext* caller_context_)
-    : type{ other.type }
-    , caller_context{ caller_context_ }
-    , caller_callback{ other.caller_callback }
-    , version{ other.version }
-    , phase{ other.phase }
-    , result{ other.result }
-    , address{ other.address }
-    , entry{ other.entry } {
-  }
-
+  ///
+  void* faster;
+  /// Hash of the key
+  KeyHash hash;
   /// Caller context.
   IAsyncContext* caller_context;
   /// Caller callback.
   AsyncCallback caller_callback;
-  /// Checkpoint version.
-  uint32_t version;
-  /// Checkpoint phase.
-  Phase phase;
-  /// Type of operation (Read, Upsert, RMW, etc.).
-  OperationType type;
-  ///
-  Status result;
-  /// Address of the record being read or modified.
-  Address address;
   /// Hash table entry that (indirectly) leads to the record being read or modified.
-  HashBucketEntry entry;
+  HashBucketEntry expected_entry;
+  ///
+  AtomicHashBucketEntry* atomic_entry;
+  // dummy flag -- remove
+  bool test_pending;
 };
 
 template<class D>
 class HashIndex {
  public:
   typedef D disk_t;
+  typedef typename D::file_t file_t;
   typedef PersistentMemoryMalloc<disk_t> hlog_t;
 
   typedef GcStateWithIndex gc_state_t;
   typedef GrowState<hlog_t> grow_state_t;
 
 
-  HashIndex(uint64_t alignment, LightEpoch& epoch, gc_state_t& gc_state, grow_state_t& grow_state)
-    : disk_alignment_{ alignment }
+  HashIndex(disk_t& disk, LightEpoch& epoch, gc_state_t& gc_state, grow_state_t& grow_state)
+    : disk_{ disk }
     , epoch_{ epoch }
     , gc_state_{ &gc_state }
     , grow_state_{ &grow_state } {
@@ -76,8 +78,8 @@ class HashIndex {
 
   inline void Initialize(uint64_t new_size) {
     resize_info.version = 0;
-    table_[0].Initialize(new_size, disk_alignment_);
-    overflow_buckets_allocator_[0].Initialize(disk_alignment_, epoch_);
+    table_[0].Initialize(new_size, disk_.log().alignment());
+    overflow_buckets_allocator_[0].Initialize(disk_.log().alignment(), epoch_);
   }
 
   inline void DumpDistribution() {
@@ -87,8 +89,10 @@ class HashIndex {
 
   // Find the hash bucket entry, if any, corresponding to the specified hash.
   // The caller can use the "expected_entry" to CAS its desired address into the entry.
-  inline Status FindEntry(KeyHash hash, HashBucketEntry& expected_entry,
-                          AtomicHashBucketEntry*& atomic_entry) const;
+  //inline Status FindEntry(KeyHash hash, HashBucketEntry& expected_entry,
+  //                        AtomicHashBucketEntry*& atomic_entry) const;
+  inline Status FindEntry(HashIndexEntryPendingContext& pending_context) const;
+
 
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
   // create a new entry. The caller can use the "expected_entry" to CAS its desired address into
@@ -108,6 +112,15 @@ class HashIndex {
   template<class R>
   void Grow();
 
+  // Checkpointing methods
+  Status Checkpoint(CheckpointState<file_t>& checkpoint);
+  inline Status CheckpointComplete();
+  Status WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint);
+  // Recovery methods
+  Status Recover(CheckpointState<file_t>& checkpoint);
+  inline Status RecoverComplete();
+  Status ReadCheckpointMetadata(const Guid& token, CheckpointState<file_t>& checkpoint);
+
   inline uint64_t size() const {
     return table_[resize_info.version].size();
   }
@@ -116,6 +129,27 @@ class HashIndex {
   }
 
  private:
+  // Checkpointing and recovery context
+  class CheckpointMetadataIoContext : public IAsyncContext {
+   public:
+    CheckpointMetadataIoContext(Status* result_, std::atomic<bool>* completed_)
+      : result{ result_ }
+      , completed{ completed_ } {
+    }
+    /// The deep-copy constructor
+    CheckpointMetadataIoContext(CheckpointMetadataIoContext& other)
+      : result{ other.result }
+      , completed{ other.completed } {
+    }
+   protected:
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+   public:
+    Status* result;
+    std::atomic<bool>* completed;
+  };
+
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
   // return an unused bucket entry.
   inline AtomicHashBucketEntry* FindTentativeEntry(KeyHash hash, HashBucket* bucket, uint8_t version,
@@ -130,11 +164,14 @@ class HashIndex {
   Address TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size,
                                       Address from_address, Address min_address, uint8_t side);
 
+  // Remove tantative entries from the index
+  inline void ClearTentativeEntries();
+
  public:
   ResizeInfo resize_info;
 
  private:
-  uint64_t disk_alignment_;
+  disk_t& disk_;
   LightEpoch& epoch_;
   gc_state_t* gc_state_;
   grow_state_t* grow_state_;
@@ -146,17 +183,20 @@ class HashIndex {
 };
 
 template<class D>
-//inline const AtomicHashBucketEntry* HashIndex<D>::FindEntry(KeyHash hash,
-//    HashBucketEntry& expected_entry) const {
-inline Status HashIndex<D>::FindEntry(KeyHash hash, HashBucketEntry& expected_entry,
-                                      AtomicHashBucketEntry*& atomic_entry) const {
+//inline Status HashIndex<D>::FindEntry(KeyHash hash, HashBucketEntry& expected_entry,
+//                                      AtomicHashBucketEntry*& atomic_entry) const {
+inline Status HashIndex<D>::FindEntry(HashIndexEntryPendingContext& pending_context) const {
 
-  expected_entry = HashBucketEntry::kInvalidEntry;
+  if (pending_context.test_pending) {
+    return Status::Pending;
+  }
+
+  pending_context.expected_entry = HashBucketEntry::kInvalidEntry;
   // Truncate the hash to get a bucket page_index < table[version].size.
   uint32_t version = resize_info.version;
   assert(version == 0 || version == 1);
 
-  const HashBucket* bucket = &table_[version].bucket(hash);
+  const HashBucket* bucket = &table_[version].bucket(pending_context.hash);
   assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
 
   while(true) {
@@ -167,13 +207,13 @@ inline Status HashIndex<D>::FindEntry(KeyHash hash, HashBucketEntry& expected_en
       if(entry.unused()) {
         continue;
       }
-      if(hash.tag() == entry.tag()) {
+      if(pending_context.hash.tag() == entry.tag()) {
         // Found a matching tag.
         // (So, the input hash matches the entry on 14 tag bits + log_2(table size) address bits.)
         if(!entry.tentative()) {
           // If (final key, return immediately)
-          expected_entry = entry;
-          atomic_entry = const_cast<AtomicHashBucketEntry*>(&bucket->entries[entry_idx]);
+          pending_context.expected_entry = entry;
+          pending_context.atomic_entry = const_cast<AtomicHashBucketEntry*>(&bucket->entries[entry_idx]);
           return Status::Ok;
         }
       }
@@ -183,8 +223,8 @@ inline Status HashIndex<D>::FindEntry(KeyHash hash, HashBucketEntry& expected_en
     HashBucketOverflowEntry entry = bucket->overflow_entry.load();
     if(entry.unused()) {
       // No more buckets in the chain.
-      assert(expected_entry == HashBucketEntry::kInvalidEntry);
-      atomic_entry = nullptr;
+      assert(pending_context.expected_entry == HashBucketEntry::kInvalidEntry);
+      pending_context.atomic_entry = nullptr;
       return Status::NotFound;
     }
     bucket = &overflow_buckets_allocator_[version].Get(entry.address());
@@ -383,8 +423,8 @@ void HashIndex<D>::GrowSetup(GrowCompleteCallback callback) {
   grow_state_->Initialize(callback, current_version, num_chunks);
 
   // Initialize the next version of our hash table to be twice the size of the current version.
-  table_[next_version].Initialize(size() * 2, disk_alignment_);
-  overflow_buckets_allocator_[next_version].Initialize(disk_alignment_, epoch_);
+  table_[next_version].Initialize(size() * 2, disk_.log().alignment());
+  overflow_buckets_allocator_[next_version].Initialize(disk_.log().alignment(), epoch_);
 }
 
 template <class D>
@@ -517,6 +557,180 @@ Address HashIndex<D>::TraceBackForOtherChainStart(uint64_t old_size, uint64_t ne
   return from_address;
 }
 
+template <class D>
+Status HashIndex<D>::Checkpoint(CheckpointState<file_t>& checkpoint) {
+  // Checkpoint the hash table
+  auto path = disk_.relative_index_checkpoint_path(checkpoint.index_token);
+  file_t ht_file = disk_.NewFile(path + "ht.dat");
+  RETURN_NOT_OK(ht_file.Open(&disk_.handler()));
+  RETURN_NOT_OK(table_[resize_info.version].Checkpoint(disk_, std::move(ht_file),
+                                              checkpoint.index_metadata.num_ht_bytes));
+  // Checkpoint overflow buckets
+  file_t ofb_file = disk_.NewFile(path + "ofb.dat");
+  RETURN_NOT_OK(ofb_file.Open(&disk_.handler()));
+  RETURN_NOT_OK(overflow_buckets_allocator_[resize_info.version].Checkpoint(disk_,
+                std::move(ofb_file), checkpoint.index_metadata.num_ofb_bytes));
+
+  checkpoint.index_checkpoint_started = true;
+  return Status::Ok;
+}
+
+template <class D>
+inline Status HashIndex<D>::CheckpointComplete() {
+  Status result = table_[resize_info.version].CheckpointComplete(false);
+  if(result == Status::Pending) {
+    return Status::Pending;
+  } else if(result != Status::Ok) {
+    return result;
+  } else {
+    return overflow_buckets_allocator_[resize_info.version].CheckpointComplete(false);
+  }
+}
+
+template <class D>
+Status HashIndex<D>::WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint) {
+  // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the ofb.
+  // (Ensures that recovery won't accidentally reallocate from the ofb.)
+  checkpoint.index_metadata.ofb_count =
+    overflow_buckets_allocator_[resize_info.version].count();
+
+  auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
+    CallbackContext<CheckpointMetadataIoContext> context{ ctxt };
+    // callback is called only once
+    assert(*(context->result) == Status::Corruption && context->completed->load() == false);
+    // mark request completed
+    *(context->result) = result;
+    context->completed->store(true);
+  };
+
+  Status write_result{ Status::Corruption };
+  std::atomic<bool> write_completed{ false };
+  CheckpointMetadataIoContext context{ &write_result, &write_completed };
+
+  // Create file
+  auto filepath = disk_.relative_index_checkpoint_path(checkpoint.index_token) + "info.dat";
+  file_t file = disk_.NewFile(filepath);
+  RETURN_NOT_OK(file.Open(&disk_.handler()));
+
+  // Create aligned buffer used in write async
+  uint32_t write_size = sizeof(checkpoint.index_metadata);
+  assert(write_size <= file.alignment());       // less than file alignment
+  write_size += file.alignment() - write_size;  // pad to file alignment
+  assert(write_size % file.alignment() == 0);
+  uint8_t* buffer = reinterpret_cast<uint8_t*>(aligned_alloc(file.alignment(), write_size));
+  memset(buffer, 0, write_size);
+  memcpy(buffer, &checkpoint.index_metadata, sizeof(checkpoint.index_metadata));
+  // Write to file
+  RETURN_NOT_OK(file.WriteAsync(buffer, 0, write_size, callback, context));
+
+  // Wait until disk I/O completes
+  while(!write_completed) {
+    disk_.TryComplete();
+    std::this_thread::yield();
+  }
+  return write_result;
+}
+
+template <class D>
+Status HashIndex<D>::Recover(CheckpointState<file_t>& checkpoint) {
+  uint8_t version = resize_info.version;
+  assert(table_[version].size() == checkpoint.index_metadata.table_size);
+  auto path = disk_.relative_index_checkpoint_path(checkpoint.index_token);
+
+  // Recover the main hash table.
+  file_t ht_file = disk_.NewFile(path + "ht.dat");
+  RETURN_NOT_OK(ht_file.Open(&disk_.handler()));
+  RETURN_NOT_OK(table_[version].Recover(disk_, std::move(ht_file),
+                                              checkpoint.index_metadata.num_ht_bytes));
+  // Recover the hash table's overflow buckets.
+  file_t ofb_file = disk_.NewFile(path + "ofb.dat");
+  RETURN_NOT_OK(ofb_file.Open(&disk_.handler()));
+  RETURN_NOT_OK(overflow_buckets_allocator_[version].Recover(disk_, std::move(ofb_file),
+         checkpoint.index_metadata.num_ofb_bytes, checkpoint.index_metadata.ofb_count));
+
+  return Status::Ok;
+}
+
+template <class D>
+inline Status HashIndex<D>::RecoverComplete() {
+  Status result = table_[resize_info.version].RecoverComplete(true);
+  if(result != Status::Ok) {
+    return result;
+  }
+  result = overflow_buckets_allocator_[resize_info.version].RecoverComplete(true);
+  if(result != Status::Ok) {
+    return result;
+  }
+
+  ClearTentativeEntries();
+  return Status::Ok;
+}
+
+template <class D>
+Status HashIndex<D>::ReadCheckpointMetadata(const Guid& token, CheckpointState<file_t>& checkpoint) {
+
+  auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
+    CallbackContext<CheckpointMetadataIoContext> context{ ctxt };
+    // callback is called only once
+    assert(*(context->result) == Status::Corruption && context->completed->load() == false);
+    // mark request completed
+    *(context->result) = result;
+    context->completed->store(true);
+  };
+
+  Status read_result{ Status::Corruption };
+  std::atomic<bool> read_completed{ false };
+  CheckpointMetadataIoContext context{ &read_result, &read_completed };
+
+  // Read from file
+  auto filepath = disk_.relative_index_checkpoint_path(token) + "info.dat";
+  file_t file = disk_.NewFile(filepath);
+  RETURN_NOT_OK(file.Open(&disk_.handler()));
+
+  // Create aligned buffer used in read async
+  uint32_t read_size = sizeof(checkpoint.index_metadata);
+  assert(read_size <= file.alignment());      // less than file alignment
+  read_size += file.alignment() - read_size;  // pad to file alignment
+  assert(read_size % file.alignment() == 0);
+  uint8_t* buffer = reinterpret_cast<uint8_t*>(aligned_alloc(file.alignment(), read_size));
+  memset(buffer, 0, read_size);
+  // Write to file
+  RETURN_NOT_OK(file.ReadAsync(0, buffer, read_size, callback, context));
+
+  // Wait until disk I/O completes
+  while(!read_completed) {
+    disk_.TryComplete();
+    std::this_thread::yield();
+  }
+  // Copy from buffer to struct
+  memcpy(&checkpoint.index_metadata, buffer, sizeof(checkpoint.index_metadata));
+
+  return read_result;
+}
+
+template <class D>
+inline void HashIndex<D>::ClearTentativeEntries() {
+  // Clear all tentative entries.
+  uint8_t version = resize_info.version;
+  for(uint64_t bucket_idx = 0; bucket_idx < table_[version].size(); ++bucket_idx) {
+    HashBucket* bucket = &table_[version].bucket(bucket_idx);
+    while(true) {
+      for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
+        if(bucket->entries[entry_idx].load().tentative()) {
+          bucket->entries[entry_idx].store(HashBucketEntry::kInvalidEntry);
+        }
+      }
+      // Go to next bucket in the chain
+      HashBucketOverflowEntry entry = bucket->overflow_entry.load();
+      if(entry.unused()) {
+        // No more buckets in the chain.
+        break;
+      }
+      bucket = &overflow_buckets_allocator_[version].Get(entry.address());
+      assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
+    }
+  }
+}
 
 
 }
