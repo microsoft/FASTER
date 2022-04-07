@@ -74,8 +74,19 @@ namespace FASTER.server
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
-        public void DisposeKey(ref Key key) { functions.DisposeKey(ref key); }
+        public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => functions.DisposeSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
 
-        public void DisposeValue(ref Value value) { functions.DisposeValue(ref value); }
+        public void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
+            => functions.DisposeCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+
+        public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
+            => DisposeInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+
+        public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo)
+            => functions.DisposeSingleDeleter(ref key, ref value, ref deleteInfo);
+
+        public void DisposeDeserializedFromDisk(ref Key key, ref Value value)
+            => functions.DisposeDeserializedFromDisk(ref key, ref value);
     }
 }

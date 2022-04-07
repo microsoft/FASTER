@@ -212,5 +212,19 @@ namespace FASTER.test
                 verification(arg);
             }
         }
+
+        internal unsafe static bool FindKey<Key, Value>(this FasterKV<Key, Value> fht, ref Key key, out HashBucketEntry entry, out HashBucket* bucket, out int slot)
+        {
+            bucket = default;
+            slot = default;
+            entry = default;
+
+            var hash = fht.Comparer.GetHashCode64(ref key);
+            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+            return fht.FindTag(hash, tag, ref bucket, ref slot, ref entry);
+        }
+
+        internal static unsafe bool FindKey<Key, Value>(this FasterKV<Key, Value> fht, ref Key key, out HashBucketEntry entry) => FindKey(fht, ref key, out entry, out _, out _);
     }
 }
