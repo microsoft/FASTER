@@ -10,7 +10,7 @@ namespace FASTER.server
         where Functions : IFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
-        protected readonly ClientSession<Key, Value, Input, Output, long, ServerKVFunctions<Key, Value, Input, Output, Functions>> session;
+        protected readonly ClientSession<Key, Value, Input, Output, long, ServerKVFunctions<Key, Value, Input, Output, Functions>, DefaultStoreFunctions<Key, Value>> session;
         protected readonly ParameterSerializer serializer;
 
         public FasterKVServerSessionBase(
