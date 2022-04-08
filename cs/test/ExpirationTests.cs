@@ -548,7 +548,7 @@ namespace FASTER.test.Expiration
                 (status, output) = GetSinglePendingResult(completedOutputs);
             }
 
-            Assert.AreEqual(expectedStatus, status);
+            Assert.AreEqual(expectedStatus, status, status.ToString());
             return output;
         }
 
@@ -563,7 +563,8 @@ namespace FASTER.test.Expiration
                 (status, output) = GetSinglePendingResult(completedOutputs);
             }
 
-            Assert.AreEqual(expectedStatus, status);
+            Assert.AreEqual(expectedStatus, status, status.ToString());
+            Assert.AreEqual(expectedStatus.Expired, status.Expired, status.ToString());
             return output;
         }
 
@@ -1028,6 +1029,7 @@ namespace FASTER.test.Expiration
 
             // For this test, IPU will Cancel rather than go to the IPU path
             Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired) : new(StatusCode.CreatedRecord | StatusCode.Expired);
+            Assert.IsTrue(expectedFoundRmwStatus.Expired, expectedFoundRmwStatus.ToString());
 
             VerifyKeyNotCreated(testOp, flushMode);
             session.ctx.phase = phase;

@@ -35,10 +35,7 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public abstract unsafe int TryConsumeMessages(byte* req_buf, int bytesReceived);
-
-        /// <inheritdoc />
-        public void AddBytesRead(int bytesRead) => this.bytesRead += bytesRead;           
+        public abstract unsafe int TryConsumeMessages(byte* req_buf, int bytesRead);
 
         /// <summary>
         /// Publish an update to a key to all the subscribers of the key

@@ -41,23 +41,13 @@ namespace FASTER.server
                 this.networkSender.GetMaxSizeSettings.MaxOutputSize = sizeof(int);
         }
 
-        public override unsafe int TryConsumeMessages(byte* req_buf, int bytesReceived)
+        public override unsafe int TryConsumeMessages(byte* req_buf, int bytesRead)
         {
+            this.bytesRead = bytesRead;
+            readHead = 0;
             while (TryReadMessages(req_buf, out var offset))
                 ProcessBatch(req_buf, offset);
-
-            // The bytes left in the current buffer not consumed by previous operations
-            var bytesLeft = bytesRead - readHead;
-            if (bytesLeft != bytesRead)
-            {
-                // Shift them to the head of the array so we can reset the buffer to a consistent state                
-                if (bytesLeft > 0) 
-                    Buffer.MemoryCopy(req_buf + readHead, req_buf, bytesLeft, bytesLeft);
-                bytesRead = bytesLeft;
-                readHead = 0;
-            }
-
-            return bytesRead;
+            return readHead;
         }
 
         public override void CompleteRead(ref Output output, long ctx, Status status)
