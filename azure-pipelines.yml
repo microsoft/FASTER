@@ -119,6 +119,7 @@ jobs:
       make -j
     displayName: 'Compile'
   - script: |
+      sudo ulimit -s 65536
       CTEST_OUTPUT_ON_FAILURE=1 make test
     workingDirectory: 'cc/build/Debug'
     displayName: 'Run Tests (Debug)'
