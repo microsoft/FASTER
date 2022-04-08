@@ -119,6 +119,7 @@ jobs:
       make -j
     displayName: 'Compile'
   - script: |
+      sudo ulimit -s 65536
       CTEST_OUTPUT_ON_FAILURE=1 make test
     workingDirectory: 'cc/build/Debug'
     displayName: 'Run Tests (Debug)'
@@ -251,6 +252,7 @@ jobs:
 #     displayName: 'Install and launch azurite (linux storage emulator)'
 
 #   - script: |
+#       sudo ulimit -s 65536
 #       export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
 #       CTEST_OUTPUT_ON_FAILURE=1 make test
 #     workingDirectory: 'cc/build/Debug'
