@@ -22,6 +22,7 @@ namespace FASTER.core
         public static Status Upsert<Input, Output, Context, Functions, StoreFunctions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions, StoreFunctions> clientSession,
                 ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
+            where StoreFunctions : IStoreFunctions<SpanByte, SpanByte>
         {
             fixed (byte* k = key)
             fixed (byte* v = desiredValue)
@@ -41,6 +42,7 @@ namespace FASTER.core
         public static Status Read<Input, Output, Context, Functions, StoreFunctions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions, StoreFunctions> clientSession,
                 ReadOnlySpan<byte> key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
+            where StoreFunctions : IStoreFunctions<SpanByte, SpanByte>
         {
             fixed (byte* k = key)
             {
@@ -61,6 +63,7 @@ namespace FASTER.core
         public static Status RMW<Input, Output, Context, Functions, StoreFunctions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions, StoreFunctions> clientSession,
                 ReadOnlySpan<byte> key, ref Input input, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
+            where StoreFunctions : IStoreFunctions<SpanByte, SpanByte>
         {
             fixed (byte* k = key)
             {
@@ -85,6 +88,7 @@ namespace FASTER.core
         public static Status Delete<Input, Output, Context, Functions, StoreFunctions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions, StoreFunctions> clientSession,
                 ReadOnlySpan<byte> key, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
+            where StoreFunctions : IStoreFunctions<SpanByte, SpanByte>
         {
             fixed (byte* k = key)
             {

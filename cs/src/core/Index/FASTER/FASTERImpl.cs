@@ -781,11 +781,11 @@ namespace FASTER.core
             }
 
             // CAS failed - let user dispose similar to a deleted record
-            ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
+            ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
 
             recordInfo.SetInvalid();
-            fasterSession.DisposeSingleWriter(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref recordInfo, ref upsertInfo, WriteReason.Upsert);
+            storeFunctions.Dispose(ref insertedKey, ref insertedValue, DisposeReason.SingleWriterCASFailed);
             if (WriteDefaultOnDelete)
             {
                 insertedKey = default;
@@ -1434,16 +1434,9 @@ namespace FASTER.core
             {
                 // CAS failed
                 hlog.GetInfo(newPhysicalAddress).SetInvalid();
-                ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
                 ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
-                if (!doingCU)
-                {
-                    fasterSession.DisposeInitialUpdater(ref insertedKey, ref input, ref insertedValue, ref output, ref recordInfo, ref rmwInfo);
-                }
-                else
-                {
-                    fasterSession.DisposeCopyUpdater(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref recordInfo, ref rmwInfo);
-                }
+                ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
+                storeFunctions.Dispose(ref insertedKey, ref insertedValue, doingCU ? DisposeReason.CopyUpdaterCASFailed : DisposeReason.InitialUpdaterCASFailed);
 
                 status = OperationStatus.RETRY_NOW;
                 return status;
@@ -1769,9 +1762,9 @@ namespace FASTER.core
                 {
                     recordInfo.SetInvalid();
 
-                    ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
                     ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
-                    fasterSession.DisposeSingleDeleter(ref insertedKey, ref insertedValue, ref recordInfo, ref deleteInfo);
+                    ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
+                    storeFunctions.Dispose(ref insertedKey, ref insertedValue, DisposeReason.SingleDeleterCASFailed);
 
                     status = OperationStatus.RETRY_NOW;
 
@@ -2771,9 +2764,7 @@ namespace FASTER.core
                 log.GetInfo(newPhysicalAddress).SetInvalid();
 
                 // CAS failed - let user dispose similar to a deleted record
-                fasterSession.DisposeSingleWriter(ref hlog.GetKey(newPhysicalAddress), ref input, ref value, 
-                    ref hlog.GetValue(newPhysicalAddress), ref output, 
-                    ref log.GetInfo(newPhysicalAddress), ref upsertInfo, reason);
+                storeFunctions.Dispose(ref hlog.GetKey(newPhysicalAddress), ref hlog.GetValue(newPhysicalAddress), DisposeReason.SingleWriterCASFailed);
                 return OperationStatus.RETRY_NOW;
             }
             else

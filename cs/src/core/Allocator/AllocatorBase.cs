@@ -243,6 +243,11 @@ namespace FASTER.core
         internal IObserver<IFasterScanIterator<Key, Value>> OnEvictionObserver;
 
         /// <summary>
+        /// Observer for records getting evicted from memory (page closed)
+        /// </summary>
+        internal IObserver<IFasterScanIterator<Key, Value>> OnPageEvictionDisposeObserver;
+
+        /// <summary>
         /// Observer for locked records getting evicted from memory (page closed)
         /// </summary>
         internal IObserver<IFasterScanIterator<Key, Value>> OnLockEvictionObserver;
@@ -1286,6 +1291,9 @@ namespace FASTER.core
 
                     if (OnEvictionObserver is not null) 
                         MemoryPageScan(start, end, OnEvictionObserver);
+
+                    if (OnPageEvictionDisposeObserver is not null)
+                        MemoryPageScan(start, end, OnPageEvictionDisposeObserver);
 
                     int closePage = (int)(closePageAddress >> LogPageSizeBits);
                     int closePageIndex = closePage % BufferSize;

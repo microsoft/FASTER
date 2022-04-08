@@ -9,6 +9,7 @@ namespace FASTER.core
     /// Observer for page-lock evictions
     /// </summary>
     public class LockEvictionObserver<Key, Value, StoreFunctions> : IObserver<IFasterScanIterator<Key, Value>>
+        where StoreFunctions : IStoreFunctions<Key, Value>
     {
         readonly FasterKV<Key, Value, StoreFunctions> store;
 

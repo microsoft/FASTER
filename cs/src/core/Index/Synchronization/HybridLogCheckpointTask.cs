@@ -19,6 +19,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public virtual void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(SystemState next,
             FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
             switch (next.Phase)
             {
@@ -52,6 +53,7 @@ namespace FASTER.core
         }
 
         protected static void CollectMetadata<Key, Value, StoreFunctions>(SystemState next, FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
             // Collect object log offsets only after flushes
             // are completed
@@ -97,6 +99,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public virtual void GlobalAfterEnteringState<Key, Value, StoreFunctions>(SystemState next,
             FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
         }
 
@@ -109,6 +112,7 @@ namespace FASTER.core
             List<ValueTask> valueTasks,
             CancellationToken token = default)
             where FasterSession : IFasterSession
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
             if (current.Phase != Phase.PERSISTENCE_CALLBACK) return;
 

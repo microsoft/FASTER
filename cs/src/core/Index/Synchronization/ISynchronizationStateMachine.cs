@@ -33,7 +33,8 @@ namespace FASTER.core
         /// <param name="next"></param>
         /// <param name="faster"></param>
         void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(SystemState next,
-            FasterKV<Key, Value, StoreFunctions> faster);
+            FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>;
 
         /// <summary>
         /// This function is invoked immediately after the global state machine enters the given state.
@@ -41,7 +42,8 @@ namespace FASTER.core
         /// <param name="next"></param>
         /// <param name="faster"></param>
         void GlobalAfterEnteringState<Key, Value, StoreFunctions>(SystemState next,
-            FasterKV<Key, Value, StoreFunctions> faster);
+            FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>;
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -63,7 +65,8 @@ namespace FASTER.core
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where FasterSession: IFasterSession;
+            where FasterSession: IFasterSession
+            where StoreFunctions : IStoreFunctions<Key, Value>;
     }
 
     /// <summary>
@@ -81,7 +84,8 @@ namespace FASTER.core
         /// <param name="faster"></param>
         void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(
             SystemState next,
-            FasterKV<Key, Value, StoreFunctions> faster);
+            FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>;
 
         /// <summary>
         /// This function is invoked immediately after the global state machine enters the given state.
@@ -90,7 +94,8 @@ namespace FASTER.core
         /// <param name="faster"></param>
         void GlobalAfterEnteringState<Key, Value, StoreFunctions>(
             SystemState next,
-            FasterKV<Key, Value, StoreFunctions> faster);
+            FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>;
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
@@ -112,7 +117,8 @@ namespace FASTER.core
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where FasterSession: IFasterSession;
+            where FasterSession: IFasterSession
+            where StoreFunctions : IStoreFunctions<Key, Value>;
     }
 
     /// <summary>
@@ -149,7 +155,8 @@ namespace FASTER.core
 
         /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(SystemState next,
-            FasterKV<Key, Value, StoreFunctions> faster) 
+            FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
             foreach (var task in tasks)
                 task.GlobalBeforeEnteringState(next, faster);
@@ -158,6 +165,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public void GlobalAfterEnteringState<Key, Value, StoreFunctions>(SystemState next,
             FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
             foreach (var task in tasks)
                 task.GlobalAfterEnteringState(next, faster);
@@ -173,6 +181,7 @@ namespace FASTER.core
             List<ValueTask> valueTasks,
             CancellationToken token = default)
             where FasterSession: IFasterSession
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
             foreach (var task in tasks)
             {

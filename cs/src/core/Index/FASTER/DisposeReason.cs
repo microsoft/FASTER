@@ -36,7 +36,7 @@ namespace FASTER.core
         /// <summary>
         /// A record was deserialized from the disk for a pending Read or RMW operation.
         /// </summary>
-        RecordDeserializedFromDisk,
+        DeserializedFromDisk,
 
         /// <summary>
         /// A page was evicted from the in-memory portion of the main log, or from the readcache.

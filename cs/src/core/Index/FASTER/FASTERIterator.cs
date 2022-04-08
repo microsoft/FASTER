@@ -52,6 +52,7 @@ namespace FASTER.core
 
     internal sealed class FasterKVIterator<Key, Value, Input, Output, Context, Functions, StoreFunctions> : IFasterScanIterator<Key, Value>
         where Functions : IFunctions<Key, Value, Input, Output, Context>
+        where StoreFunctions : IStoreFunctions<Key, Value>
     {
         private readonly FasterKV<Key, Value, StoreFunctions> fht;
         private readonly FasterKV<Key, Value, StoreFunctions> tempKv;
@@ -78,6 +79,7 @@ namespace FASTER.core
 
             tempKv = new FasterKV<Key, Value, StoreFunctions>(fht.IndexSize,
                 new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 },
+                fht.storeFunctions,
                 comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
             tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions);
             iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);

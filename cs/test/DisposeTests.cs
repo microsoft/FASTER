@@ -1,10 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
+using NuGet.Frameworks;
 using NUnit.Framework;
 using static FASTER.test.TestUtils;
 
@@ -14,8 +15,9 @@ namespace FASTER.test.Dispose
     internal class DisposeTests
     {
         // MyKey and MyValue are classes; we want to be sure we are getting the right Keys and Values to Dispose().
-        private FasterKV<MyKey, MyValue> fht;
+        private FasterKV<MyKey, MyValue, DisposeTestStoreFunctions> fht;
         private IDevice log, objlog;
+        private DisposeTestStoreFunctions storeFunctions;
 
         // Events to coordinate forcing CAS failure (by appending a new item), etc.
         private SemaphoreSlim sutGate;      // Session Under Test
@@ -31,6 +33,7 @@ namespace FASTER.test.Dispose
 
             log = Devices.CreateLogDevice(MethodTestDir + "/ObjectFASTERTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(MethodTestDir + "/ObjectFASTERTests.obj.log", deleteOnClose: true);
+            storeFunctions = new DisposeTestStoreFunctions();
 
             LogSettings logSettings = new () { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 };
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
@@ -43,7 +46,7 @@ namespace FASTER.test.Dispose
                 }
             }
 
-            fht = new FasterKV<MyKey, MyValue>(128, logSettings: logSettings, comparer: new MyKeyComparer(),
+            fht = new FasterKV<MyKey, MyValue, DisposeTestStoreFunctions>(128, logSettings: logSettings, storeFunctions, comparer: new MyKeyComparer(),
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
         }
@@ -58,6 +61,26 @@ namespace FASTER.test.Dispose
             objlog?.Dispose();
             objlog = null;
             DeleteDirectory(MethodTestDir);
+        }
+
+        class DisposeTestStoreFunctions : IStoreFunctions<MyKey, MyValue>
+        {
+            internal ConcurrentQueue<DisposeReason> handlerQueue = new();
+
+            public bool DisposeOnPageEviction => true;
+
+            public void Dispose(ref MyKey key, ref MyValue value, DisposeReason reason)
+            {
+                Assert.AreNotEqual(DisposeReason.None, reason);
+                VerifyKeyValueCombo(ref key, ref value, reason);
+                handlerQueue.Enqueue(reason);
+            }
+
+            internal DisposeReason Dequeue()
+            {
+                Assert.IsTrue(handlerQueue.TryDequeue(out DisposeReason reason));
+                return reason;
+            }
         }
 
         // This is passed to the FasterKV ctor to override the default one. This lets us use a different key for the colliding
@@ -78,30 +101,20 @@ namespace FASTER.test.Dispose
         const int TestCollidingValue = 7777;
         const int TestCollidingValue2 = 9999;
 
-        internal enum DisposeHandler
-        {
-            None,
-            SingleWriterCASFailed,
-            CopyUpdaterCASFailed,
-            InitialUpdaterCASFailed,
-            SingleDeleterCASFailed,
-            RecordDeserializedFromDisk,
-            PageEviction
-        }
-
         public class DisposeFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, Empty>
         {
             private readonly DisposeTests tester;
             internal readonly bool isSUT; // IsSessionUnderTest
-            internal Queue<DisposeHandler> handlerQueue = new();
             private bool isRetry;
-            private bool isSplice;
+            private readonly bool isSplice;
+            bool isPendingInitialUpdate;
 
-            internal DisposeFunctions(DisposeTests tester, bool sut, bool splice = false)
+            internal DisposeFunctions(DisposeTests tester, bool sut, bool splice = false, bool pendingInitialUpdate = false)
             {
                 this.tester = tester;
                 isSUT = sut;
                 isSplice = splice;
+                isPendingInitialUpdate = pendingInitialUpdate;
             }
 
             void WaitForEvent()
@@ -213,10 +226,10 @@ namespace FASTER.test.Dispose
 
             public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                if (isSUT)
+                if (isSUT && !isPendingInitialUpdate)
                 {
                     Assert.IsTrue(status.Found, status.ToString());
-                    Assert.IsTrue(status.Record.CopyUpdated, status.ToString()); // InPlace due to RETRY_NOW after CAS failure
+                    Assert.IsTrue(status.Record.CopyUpdated, status.ToString());
                 }
                 else
                 {
@@ -230,50 +243,19 @@ namespace FASTER.test.Dispose
                 dst.value = value;
                 return true;
             }
-
-            public override void DisposeSingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
-            {
-                Assert.AreEqual(TestKey, key.key);
-                Assert.AreEqual(TestInitialValue, src.value);
-                Assert.AreEqual(TestInitialValue, dst.value);  // dst has been populated
-                handlerQueue.Enqueue(DisposeHandler.SingleWriterCASFailed);
-            }
-
-            public override void DisposeCopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RMWInfo rmwInfo)
-            {
-                Assert.AreEqual(TestKey, key.key);
-                Assert.AreEqual(TestInitialValue, oldValue.value);
-                Assert.AreEqual(TestInitialValue + TestUpdatedValue, newValue.value);
-                handlerQueue.Enqueue(DisposeHandler.CopyUpdaterCASFailed);
-            }
-
-            public override void DisposeInitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo)
-            {
-                Assert.AreEqual(TestKey, key.key);
-                Assert.AreEqual(TestInitialValue, value.value);
-                handlerQueue.Enqueue(DisposeHandler.InitialUpdaterCASFailed);
-            }
-
-            public override void DisposeSingleDeleter(ref MyKey key, ref MyValue value, ref DeleteInfo deleteInfo)
-            {
-                Assert.AreEqual(TestKey, key.key);
-                Assert.IsNull(value);   // This is the default value inserted for the Tombstoned record
-                handlerQueue.Enqueue(DisposeHandler.SingleDeleterCASFailed);
-            }
-
-            public override void DisposeDeserializedFromDisk(ref MyKey key, ref MyValue value)
-            {
-                VerifyKeyValueCombo(ref key, ref value);
-                handlerQueue.Enqueue(DisposeHandler.RecordDeserializedFromDisk);
-            }
         }
 
-        static void VerifyKeyValueCombo(ref MyKey key, ref MyValue value)
+        static void VerifyKeyValueCombo(ref MyKey key, ref MyValue value, DisposeReason reason)
         {
+            if (reason == DisposeReason.SingleDeleterCASFailed)
+                return; // no value for Delete
             switch (key.key)
             {
                 case TestKey:
-                    Assert.AreEqual(TestInitialValue, value.value);
+                    if (reason == DisposeReason.CopyUpdaterCASFailed)
+                        Assert.AreEqual(TestInitialValue + TestUpdatedValue, value.value);
+                    else
+                        Assert.AreEqual(TestInitialValue, value.value);
                     break;
                 case TestCollidingKey:
                     Assert.AreEqual(TestCollidingValue, value.value);
@@ -290,8 +272,6 @@ namespace FASTER.test.Dispose
         // Override some things from MyFunctions for our purposes here
         class DisposeFunctionsNoSync : MyFunctions
         {
-            internal Queue<DisposeHandler> handlerQueue = new();
-
             public override bool CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RMWInfo rmwInfo)
             {
                 newValue = new MyValue { value = oldValue.value + input.value };
@@ -302,12 +282,6 @@ namespace FASTER.test.Dispose
             public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 Assert.IsTrue(status.Found);
-            }
-
-            public override void DisposeDeserializedFromDisk(ref MyKey key, ref MyValue value)
-            {
-                VerifyKeyValueCombo(ref key, ref value);
-                handlerQueue.Enqueue(DisposeHandler.RecordDeserializedFromDisk);
             }
         }
 
@@ -359,8 +333,8 @@ namespace FASTER.test.Dispose
 
             Task.WaitAll(tasks);
 
-            Assert.AreEqual(DisposeHandler.SingleWriterCASFailed, functions1.handlerQueue.Dequeue());
-            Assert.IsEmpty(functions1.handlerQueue);
+            Assert.AreEqual(DisposeReason.SingleWriterCASFailed, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
         }
 
         [Test]
@@ -368,26 +342,51 @@ namespace FASTER.test.Dispose
         [Category("Smoke")]
         public void DisposeInitialUpdaterTest([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode)
         {
-            var functions1 = new DisposeFunctions(this, sut: true);
+            var functions1 = new DisposeFunctions(this, sut: true, pendingInitialUpdate: flushMode == FlushMode.OnDisk);
             var functions2 = new DisposeFunctions(this, sut: false);
 
-            MyKey key = new() { key = TestKey };
-            MyKey collidingKey = new() { key = TestCollidingKey };
-            MyInput input = new() { value = TestInitialValue };
-            MyInput collidingInput = new() { value = TestCollidingValue };
+            Status status;
 
-            DoFlush(flushMode);
+            if (flushMode == FlushMode.OnDisk)
+            {
+                // Use colliding2 so the insert will still use InitialUpdater (not CopyUpdateR)
+                using var session = fht.NewSession(new DisposeFunctionsNoSync());
+                MyKey collidingKey2 = new() { key = TestCollidingKey2 };
+                MyInput collidingInput2 = new() { value = TestCollidingValue2 };
+                status = session.RMW(ref collidingKey2, ref collidingInput2);
+                Assert.IsTrue(status.Record.Created);
+
+                // Make it immutable so CopyUpdater is called.
+                DoFlush(flushMode);
+                Assert.AreEqual(DisposeReason.PageEviction, storeFunctions.Dequeue());
+                Assert.IsEmpty(storeFunctions.handlerQueue);
+            }
 
             void DoInsert(DisposeFunctions functions)
             {
                 using var session = fht.NewSession(functions);
                 if (functions.isSUT)
-                    session.RMW(ref key, ref input);
+                {
+                    MyKey key = new() { key = TestKey };
+                    MyInput input = new() { value = TestInitialValue };
+                    status = session.RMW(ref key, ref input);
+
+                    if (flushMode == FlushMode.OnDisk)
+                    {
+                        Assert.IsTrue(status.IsPending, status.ToString());
+                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        (status, _) = GetSinglePendingResult(completedOutputs);
+                    }
+                }
                 else
                 {
                     otherGate.Wait();
-                    session.RMW(ref collidingKey, ref collidingInput);
+
+                    MyKey collidingKey = new() { key = TestCollidingKey };
+                    MyValue collidingValue = new() { value = TestCollidingValue };
+                    status = session.Upsert(ref collidingKey, ref collidingValue);
                 }
+                Assert.IsTrue(status.Record.Created);
             }
 
             var tasks = new[]
@@ -397,8 +396,10 @@ namespace FASTER.test.Dispose
             };
             Task.WaitAll(tasks);
 
-            Assert.AreEqual(DisposeHandler.InitialUpdaterCASFailed, functions1.handlerQueue.Dequeue());
-            Assert.IsEmpty(functions1.handlerQueue);
+            Assert.AreEqual(DisposeReason.InitialUpdaterCASFailed, storeFunctions.Dequeue());
+            if (flushMode == FlushMode.OnDisk)
+                Assert.AreEqual(DisposeReason.DeserializedFromDisk, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
         }
 
         [Test]
@@ -410,7 +411,6 @@ namespace FASTER.test.Dispose
             var functions2 = new DisposeFunctions(this, sut: false);
 
             MyKey key = new() { key = TestKey };
-            MyKey collidingKey = new() { key = TestCollidingKey };
             {
                 using var session = fht.NewSession(new DisposeFunctionsNoSync());
                 MyValue value = new() { value = TestInitialValue };
@@ -419,17 +419,26 @@ namespace FASTER.test.Dispose
 
             // Make it immutable so CopyUpdater is called.
             DoFlush(flushMode);
+            if (flushMode == FlushMode.OnDisk)
+            {
+                Assert.AreEqual(DisposeReason.PageEviction, storeFunctions.Dequeue());
+                Assert.IsEmpty(storeFunctions.handlerQueue);
+            }
 
             void DoUpdate(DisposeFunctions functions)
             {
                 using var session = fht.NewSession(functions);
-                MyInput input = new() { value = functions.isSUT ? TestUpdatedValue : TestCollidingValue };
                 if (functions.isSUT)
+                {
+                    MyInput input = new() { value = TestUpdatedValue };
                     session.RMW(ref key, ref input);
+                }
                 else
                 {
                     otherGate.Wait();
-                    session.RMW(ref collidingKey, ref input);
+                    MyKey collidingKey = new() { key = TestCollidingKey };
+                    MyValue collidingValue = new() { value = TestCollidingValue };
+                    session.Upsert(ref collidingKey, ref collidingValue);
                 }
             }
 
@@ -440,10 +449,10 @@ namespace FASTER.test.Dispose
             };
             Task.WaitAll(tasks);
 
-            Assert.AreEqual(DisposeHandler.CopyUpdaterCASFailed, functions1.handlerQueue.Dequeue());
+            Assert.AreEqual(DisposeReason.CopyUpdaterCASFailed, storeFunctions.Dequeue());
             if (flushMode == FlushMode.OnDisk)
-                Assert.AreEqual(DisposeHandler.RecordDeserializedFromDisk, functions1.handlerQueue.Dequeue());
-            Assert.IsEmpty(functions1.handlerQueue);
+                Assert.AreEqual(DisposeReason.DeserializedFromDisk, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
         }
 
         [Test]
@@ -467,6 +476,13 @@ namespace FASTER.test.Dispose
 
             // Make it immutable so we don't simply set Tombstone.
             DoFlush(flushMode);
+            if (flushMode == FlushMode.OnDisk)
+            {
+                // Two records were upserted.
+                Assert.AreEqual(DisposeReason.PageEviction, storeFunctions.Dequeue());
+                Assert.AreEqual(DisposeReason.PageEviction, storeFunctions.Dequeue());
+                Assert.IsEmpty(storeFunctions.handlerQueue);
+            }
 
             // This is necessary for FlushMode.ReadOnly to test the readonly range in Delete() (otherwise we can't test SingleDeleter there)
             using var luc = fht.NewSession(new DisposeFunctionsNoSync()).GetLockableUnsafeContext();
@@ -491,8 +507,8 @@ namespace FASTER.test.Dispose
 
             Task.WaitAll(tasks);
 
-            Assert.AreEqual(DisposeHandler.SingleDeleterCASFailed, functions1.handlerQueue.Dequeue());
-            Assert.IsEmpty(functions1.handlerQueue);
+            Assert.AreEqual(DisposeReason.SingleDeleterCASFailed, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
         }
 
         [Test]
@@ -506,7 +522,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeCopyToTailWithInitialReadCacheTest([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest)
+        public void DisposeCopyToTailWithInitialReadCacheTest([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination _)
         {
             // We use the ReadCopyDestination.ReadCache parameter so Setup() knows to set up the readcache, but
             // for the actual test it is used only for setup; we execute CopyToTail.
@@ -533,6 +549,10 @@ namespace FASTER.test.Dispose
 
             // FlushAndEvict so we go pending
             DoFlush(FlushMode.OnDisk);
+            Assert.AreEqual(DisposeReason.PageEviction, storeFunctions.Dequeue());
+            if (initialReadCacheInsert)
+                Assert.AreEqual(DisposeReason.PageEviction, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
 
             if (initialReadCacheInsert)
             {
@@ -575,9 +595,11 @@ namespace FASTER.test.Dispose
             };
             Task.WaitAll(tasks);
 
-            Assert.AreEqual(DisposeHandler.SingleWriterCASFailed, functions1.handlerQueue.Dequeue());
-            Assert.AreEqual(DisposeHandler.RecordDeserializedFromDisk, functions1.handlerQueue.Dequeue());
-            Assert.IsEmpty(functions1.handlerQueue);
+            if (initialReadCacheInsert)
+                Assert.AreEqual(DisposeReason.DeserializedFromDisk, storeFunctions.Dequeue());
+            Assert.AreEqual(DisposeReason.SingleWriterCASFailed, storeFunctions.Dequeue());
+            Assert.AreEqual(DisposeReason.DeserializedFromDisk, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
         }
 
         [Test]
@@ -596,6 +618,8 @@ namespace FASTER.test.Dispose
 
             // FlushAndEvict so we go pending
             DoFlush(FlushMode.OnDisk);
+            Assert.AreEqual(DisposeReason.PageEviction, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
 
             MyOutput output = new();
             var status = session.Read(ref key, ref output);
@@ -604,7 +628,8 @@ namespace FASTER.test.Dispose
             (status, output) = GetSinglePendingResult(completedOutputs);
             Assert.AreEqual(TestInitialValue, output.value.value);
 
-            Assert.AreEqual(DisposeHandler.RecordDeserializedFromDisk, functions.handlerQueue.Dequeue());
+            Assert.AreEqual(DisposeReason.DeserializedFromDisk, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
         }
 
         [Test]
@@ -623,6 +648,8 @@ namespace FASTER.test.Dispose
 
             // FlushAndEvict so we go pending
             DoFlush(FlushMode.OnDisk);
+            Assert.AreEqual(DisposeReason.PageEviction, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
 
             MyInput input = new() { value = TestUpdatedValue };
             MyOutput output = new();
@@ -632,7 +659,62 @@ namespace FASTER.test.Dispose
             (status, output) = GetSinglePendingResult(completedOutputs);
             Assert.AreEqual(TestInitialValue + TestUpdatedValue, output.value.value);
 
-            Assert.AreEqual(DisposeHandler.RecordDeserializedFromDisk, functions.handlerQueue.Dequeue());
+            Assert.AreEqual(DisposeReason.DeserializedFromDisk, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+        public void DisposeMainLogPageEvictionTest()
+        {
+            var functions = new DisposeFunctionsNoSync();
+
+            MyKey key = new() { key = TestKey };
+            MyValue value = new() { value = TestInitialValue };
+
+            // Do initial insert
+            using var session = fht.NewSession(functions);
+            session.Upsert(ref key, ref value);
+
+            // FlushAndEvict to cause the eviction
+            DoFlush(FlushMode.OnDisk);
+            Assert.AreEqual(DisposeReason.PageEviction, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+        public void DisposeReadCachePageEvictionTest([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination _)
+        {
+            // We use the ReadCopyDestination.ReadCache parameter so Setup() knows to set up the readcache.
+            var functions = new DisposeFunctionsNoSync();
+
+            MyKey key = new() { key = TestKey };
+            MyValue value = new() { value = TestInitialValue };
+
+            // Do initial insert
+            using var session = fht.NewSession(functions);
+            session.Upsert(ref key, ref value);
+
+            // FlushAndEvict so we go pending
+            DoFlush(FlushMode.OnDisk);
+            Assert.AreEqual(DisposeReason.PageEviction, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
+
+            // Read will go to the ReadCache
+            MyOutput output = new();
+            var status = session.Read(ref key, ref output);
+            Assert.IsTrue(status.IsPending, status.ToString());
+            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            (status, output) = GetSinglePendingResult(completedOutputs);
+            Assert.AreEqual(TestInitialValue, output.value.value);
+
+            fht.ReadCache.FlushAndEvict(wait: true);
+            Assert.AreEqual(DisposeReason.DeserializedFromDisk, storeFunctions.Dequeue());
+            Assert.AreEqual(DisposeReason.PageEviction, storeFunctions.Dequeue());
+            Assert.IsEmpty(storeFunctions.handlerQueue);
         }
     }
 }

@@ -18,6 +18,7 @@ namespace FASTER.core
         public void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(
             SystemState next,
             FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
         }
 
@@ -25,6 +26,7 @@ namespace FASTER.core
         public void GlobalAfterEnteringState<Key, Value, StoreFunctions>(
             SystemState start,
             FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
         }
 
@@ -37,6 +39,7 @@ namespace FASTER.core
             List<ValueTask> valueTasks,
             CancellationToken token = default)
             where FasterSession : IFasterSession
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
             switch (current.Phase)
             {
@@ -92,6 +95,7 @@ namespace FASTER.core
         public void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(
             SystemState next,
             FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
             if (next.Phase == Phase.REST)
                 // Before leaving the checkpoint, make sure all previous versions are read-only.
@@ -102,6 +106,7 @@ namespace FASTER.core
         public void GlobalAfterEnteringState<Key, Value, StoreFunctions>(
             SystemState next,
             FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>
         { }
 
         /// <inheritdoc />
@@ -114,6 +119,7 @@ namespace FASTER.core
             List<ValueTask> valueTasks,
             CancellationToken token = default)
             where FasterSession : IFasterSession
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
         }
     }

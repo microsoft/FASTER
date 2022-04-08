@@ -25,6 +25,7 @@ namespace FASTER.core
         internal int currentIndex = -1;
 
         internal void Add<StoreFunctions>(ref FasterKV<TKey, TValue, StoreFunctions>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+            where StoreFunctions : IStoreFunctions<TKey, TValue>
         {
             // Note: vector is never null
             if (this.maxIndex >= vector.Length - 1)
@@ -113,6 +114,7 @@ namespace FASTER.core
         public Status Status;
 
         internal void Set<StoreFunctions>(ref FasterKV<TKey, TValue, StoreFunctions>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+            where StoreFunctions : IStoreFunctions<TKey, TValue>
         {
             this.keyContainer = pendingContext.key;
             this.inputContainer = pendingContext.input;

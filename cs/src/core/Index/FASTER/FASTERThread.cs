@@ -340,7 +340,7 @@ namespace FASTER.core
             unsafe
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
-                fasterSession.DisposeDeserializedFromDisk(ref hlog.GetContextRecordKey(ref request), ref hlog.GetContextRecordValue(ref request), ref recordInfo);
+                storeFunctions.Dispose(ref hlog.GetContextRecordKey(ref request), ref hlog.GetContextRecordValue(ref request), DisposeReason.DeserializedFromDisk);
             }
             request.Dispose();
             return status;

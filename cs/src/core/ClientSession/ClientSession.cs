@@ -22,6 +22,7 @@ namespace FASTER.core
     /// <typeparam name="StoreFunctions"></typeparam>
     public sealed class ClientSession<Key, Value, Input, Output, Context, Functions, StoreFunctions> : IClientSession, IFasterContext<Key, Value, Input, Output, Context, StoreFunctions>, IDisposable
         where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where StoreFunctions : IStoreFunctions<Key, Value>
     {
         internal readonly FasterKV<Key, Value, StoreFunctions> fht;
 
@@ -1072,19 +1073,6 @@ namespace FASTER.core
                 }
             }
             #endregion IFunctions - Deletes
-
-            #region IFunctions - Dispose
-            public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
-                => _clientSession.functions.DisposeSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
-            public void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
-                => _clientSession.functions.DisposeCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
-            public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
-                => _clientSession.functions.DisposeInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
-            public void DisposeSingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
-                => _clientSession.functions.DisposeSingleDeleter(ref key, ref value, ref deleteInfo);
-            public void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo)
-                => _clientSession.functions.DisposeDeserializedFromDisk(ref key, ref value);
-            #endregion IFunctions - Dispose
 
             #region IFunctions - Checkpointing
             public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)

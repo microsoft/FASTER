@@ -24,7 +24,7 @@ namespace FASTER.core
         /// Create FasterKV instance
         /// </summary>
         public FasterKV(FasterKVSettings<Key, Value> fasterKVSettings)
-            : base(fasterKVSettings)
+            : base(fasterKVSettings, new DefaultStoreFunctions<Key, Value>())
         { }
 
         /// <summary>
@@ -34,11 +34,12 @@ namespace FASTER.core
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
             VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableLocking = false)
-            : base(size, logSettings, checkpointSettings, serializerSettings, comparer, variableLengthStructSettings, tryRecoverLatest, disableLocking)
+            : base(size, logSettings, new DefaultStoreFunctions<Key, Value>(), checkpointSettings, serializerSettings, comparer, variableLengthStructSettings, tryRecoverLatest, disableLocking)
         { }
     }
 
     public partial class FasterKV<Key, Value, StoreFunctions> : FasterBase, IFasterKV<Key, Value, StoreFunctions>
+        where StoreFunctions : IStoreFunctions<Key, Value>
     {
         internal readonly AllocatorBase<Key, Value> hlog;
         internal readonly AllocatorBase<Key, Value> readcache;
@@ -90,6 +91,8 @@ namespace FASTER.core
         internal readonly bool DisableLocking;
         internal readonly LockTable<Key> LockTable;
 
+        internal readonly StoreFunctions storeFunctions;
+
         internal void IncrementNumLockingSessions()
         {
             _hybridLogCheckpoint.info.manualLockingActive = true;
@@ -101,9 +104,9 @@ namespace FASTER.core
         /// Create FasterKV instance
         /// </summary>
         /// <param name="fasterKVSettings">Config settings</param>
-        public FasterKV(FasterKVSettings<Key, Value> fasterKVSettings) :
-            this(
-                fasterKVSettings.GetIndexSizeCacheLines(), fasterKVSettings.GetLogSettings(),
+        /// <param name="storeFunctions">Store functions implementation</param>
+        public FasterKV(FasterKVSettings<Key, Value> fasterKVSettings, StoreFunctions storeFunctions) :
+            this(fasterKVSettings.GetIndexSizeCacheLines(), fasterKVSettings.GetLogSettings(), storeFunctions,
                 fasterKVSettings.GetCheckpointSettings(), fasterKVSettings.GetSerializerSettings(),
                 fasterKVSettings.EqualityComparer, fasterKVSettings.GetVariableLengthStructSettings(),
                 fasterKVSettings.TryRecoverLatest, fasterKVSettings.DisableLocking)
@@ -114,17 +117,22 @@ namespace FASTER.core
         /// </summary>
         /// <param name="size">Size of core index (#cache lines)</param>
         /// <param name="logSettings">Log settings</param>
+        /// <param name="storeFunctions">Store functions implementation</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
         /// <param name="serializerSettings">Serializer settings</param>
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
         /// <param name="disableLocking">Whether FASTER takes read and write locks on records</param>
-        public FasterKV(long size, LogSettings logSettings,
+        public FasterKV(long size, LogSettings logSettings, StoreFunctions storeFunctions,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
             VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableLocking = false)
         {
+            if (storeFunctions is null)
+                throw new FasterException("StoreFunctions is required");
+            this.storeFunctions = storeFunctions;
+
             if (comparer != null)
                 this.comparer = comparer;
             else
@@ -236,6 +244,13 @@ namespace FASTER.core
 
             hlog.Initialize();
             hlog.OnLockEvictionObserver = new LockEvictionObserver<Key, Value, StoreFunctions>(this);
+
+            if (storeFunctions.DisposeOnPageEviction)
+            {
+                hlog.OnPageEvictionDisposeObserver = new PageEvictionDisposeObserver<Key, Value, StoreFunctions>(this.storeFunctions);
+                if (readcache is not null)
+                    readcache.OnPageEvictionDisposeObserver = hlog.OnPageEvictionDisposeObserver;
+            }
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);

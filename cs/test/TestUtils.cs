@@ -214,6 +214,7 @@ namespace FASTER.test
         }
 
         internal unsafe static bool FindKey<Key, Value, StoreFunctions>(this FasterKV<Key, Value, StoreFunctions> fht, ref Key key, out HashBucketEntry entry, out HashBucket* bucket, out int slot)
+            where StoreFunctions : IStoreFunctions<Key, Value>
         {
             bucket = default;
             slot = default;
@@ -225,6 +226,8 @@ namespace FASTER.test
             return fht.FindTag(hash, tag, ref bucket, ref slot, ref entry);
         }
 
-        internal static unsafe bool FindKey<Key, Value, StoreFunctions>(this FasterKV<Key, Value, StoreFunctions> fht, ref Key key, out HashBucketEntry entry) => FindKey(fht, ref key, out entry, out _, out _);
+        internal static unsafe bool FindKey<Key, Value, StoreFunctions>(this FasterKV<Key, Value, StoreFunctions> fht, ref Key key, out HashBucketEntry entry)
+            where StoreFunctions : IStoreFunctions<Key, Value>
+            => FindKey(fht, ref key, out entry, out _, out _);
     }
 }

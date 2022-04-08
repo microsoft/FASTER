@@ -587,6 +587,7 @@ namespace FASTER.test.statemachine
 
 
         public void BeforeEnteringState<Key1, Value, StoreFunctions>(SystemState next, FasterKV<Key1, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key1, Value>
         {
             Assert.IsFalse(invokedStates.Contains(next));
             invokedStates.Add(next);

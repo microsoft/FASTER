@@ -16,6 +16,7 @@ namespace FASTER.core
         /// <typeparam name="Key">Key Type</typeparam>
         /// <typeparam name="Value">Value Type</typeparam>
         /// <typeparam name="StoreFunctions">Store functions type</typeparam>
-        void BeforeEnteringState<Key, Value, StoreFunctions>(SystemState next, FasterKV<Key, Value, StoreFunctions> faster);
+        void BeforeEnteringState<Key, Value, StoreFunctions>(SystemState next, FasterKV<Key, Value, StoreFunctions> faster)
+            where StoreFunctions : IStoreFunctions<Key, Value>;
     }
 }

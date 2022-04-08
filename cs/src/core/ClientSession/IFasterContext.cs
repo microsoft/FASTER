@@ -10,6 +10,7 @@ namespace FASTER.core
     /// Interface for FASTER operations
     /// </summary>
     public interface IFasterContext<Key, Value, Input, Output, Context, StoreFunctions>
+        where StoreFunctions : IStoreFunctions<Key, Value>
     {
         /// <summary>
         /// Synchronously complete outstanding pending synchronous operations.

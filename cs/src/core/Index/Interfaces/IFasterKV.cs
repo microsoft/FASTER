@@ -11,6 +11,7 @@ namespace FASTER.core
     /// Interface to FASTER key-value store
     /// </summary>
     public interface IFasterKV<Key, Value, StoreFunctions> : IDisposable
+        where StoreFunctions : IStoreFunctions<Key, Value>
     {
         #region New Session Operations
 

@@ -18,10 +18,8 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// If true, <see cref="Dispose(ref Key, ref Value, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
-        /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and
-        /// do any needed disposal there.
+        /// Default implementation does nothing
         /// </summary>
-        public bool DisposeOnPageEviction { get; }
+        public bool DisposeOnPageEviction => false;
     }
 }
