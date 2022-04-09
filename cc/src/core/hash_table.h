@@ -43,6 +43,7 @@ class InternalHashTable {
     assert(Utility::IsPowerOfTwo(new_size));
     assert(Utility::IsPowerOfTwo(alignment));
     assert(alignment >= Constants::kCacheLineBytes);
+
     if(size_ != new_size) {
       size_ = new_size;
       if(buckets_) {
@@ -52,6 +53,8 @@ class InternalHashTable {
                  size_ * sizeof(HashBucket)));
     }
     std::memset(buckets_, 0, size_ * sizeof(HashBucket));
+
+    // No checkpointing is in progress
     assert(pending_checkpoint_writes_ == 0);
     assert(pending_recover_reads_ == 0);
     assert(checkpoint_pending_ == false);
@@ -66,6 +69,8 @@ class InternalHashTable {
       buckets_ = nullptr;
     }
     size_ = 0;
+
+    // No checkpointing is in progress
     assert(pending_checkpoint_writes_ == 0);
     assert(pending_recover_reads_ == 0);
     assert(checkpoint_pending_ == false);
@@ -126,8 +131,8 @@ class InternalHashTable {
   };
 
  private:
-  uint64_t size_;
   HashBucket* buckets_;
+  uint64_t size_;
 
   /// State for ongoing checkpoint/recovery.
   disk_t* disk_;
