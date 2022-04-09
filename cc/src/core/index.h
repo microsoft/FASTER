@@ -1,6 +1,7 @@
 #pragma once
 
 #include "async.h"
+#include "async_result_types.h"
 #include "checkpoint_state.h"
 #include "gc_state.h"
 #include "grow_state.h"
@@ -12,51 +13,6 @@
 namespace FASTER {
 namespace core {
 
-class HashIndexEntryPendingContext : public IAsyncContext {
- public:
-  HashIndexEntryPendingContext(OperationType type_, KeyHash hash_,
-            IAsyncContext& caller_context_, AsyncCallback caller_callback_)
-    : faster{ nullptr }
-    , hash{ hash_ }
-    , caller_context{ &caller_context_ }
-    , caller_callback{ caller_callback_ }
-    , expected_entry{ HashBucketEntry::kInvalidEntry }
-    , atomic_entry{ nullptr }
-    //, test_pending{ true } {
-    , test_pending{ false } {
-  }
-
-  /// The deep-copy constructor.
-  HashIndexEntryPendingContext(const HashIndexEntryPendingContext& other, IAsyncContext* caller_context_)
-    : hash{ other.hash }
-    , caller_context{ caller_context_ }
-    , caller_callback{ other.caller_callback }
-    , expected_entry{ other.expected_entry }
-    , test_pending{ other.test_pending } {
-  }
-
- protected:
-  Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
-    //test_pending = false;
-    return IAsyncContext::DeepCopy_Internal(*this, caller_context, context_copy);
-  }
-
- public:
-  ///
-  void* faster;
-  /// Hash of the key
-  KeyHash hash;
-  /// Caller context.
-  IAsyncContext* caller_context;
-  /// Caller callback.
-  AsyncCallback caller_callback;
-  /// Hash table entry that (indirectly) leads to the record being read or modified.
-  HashBucketEntry expected_entry;
-  ///
-  AtomicHashBucketEntry* atomic_entry;
-  // dummy flag -- remove
-  bool test_pending;
-};
 
 template<class D>
 class HashIndex {
@@ -73,7 +29,8 @@ class HashIndex {
     : disk_{ disk }
     , epoch_{ epoch }
     , gc_state_{ &gc_state }
-    , grow_state_{ &grow_state } {
+    , grow_state_{ &grow_state }
+    , pending_requests_{ new concurrent_queue<IAsyncContext*>() } {
   }
 
   inline void Initialize(uint64_t new_size) {
@@ -89,16 +46,22 @@ class HashIndex {
 
   // Find the hash bucket entry, if any, corresponding to the specified hash.
   // The caller can use the "expected_entry" to CAS its desired address into the entry.
-  //inline Status FindEntry(KeyHash hash, HashBucketEntry& expected_entry,
-  //                        AtomicHashBucketEntry*& atomic_entry) const;
-  inline Status FindEntry(HashIndexEntryPendingContext& pending_context) const;
+  template <class C>
+  inline Status FindEntry(ExecutionContext& exec_context, C& pending_context) const;
 
 
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
   // create a new entry. The caller can use the "expected_entry" to CAS its desired address into
   // the entry.
   inline Status FindOrCreateEntry(KeyHash hash, HashBucketEntry& expected_entry,
-                                  AtomicHashBucketEntry*& atomic_entry);
+                                  AtomicHashBucketEntry*& atomic_entry){ return Status::Ok; }
+
+  template <class C>
+  inline Status FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context);
+
+
+  template <class C>
+  inline Status TryUpdateEntry(ExecutionContext& context, C& pending_context, HashBucketEntry& new_entry);
 
   // Garbage Collect methods
   void GarbageCollectSetup(Address new_begin_address,
@@ -111,6 +74,14 @@ class HashIndex {
 
   template<class R>
   void Grow();
+
+  //
+  void CompletePendingRequests() {
+    IAsyncContext* ctxt;
+    while(pending_requests_->try_pop(ctxt)) {
+      AsyncIndexGetFromDiskCallback(ctxt, Status::Ok);
+    }
+  }
 
   // Checkpointing methods
   Status Checkpoint(CheckpointState<file_t>& checkpoint);
@@ -150,12 +121,16 @@ class HashIndex {
     std::atomic<bool>* completed;
   };
 
+  static void AsyncIndexGetFromDiskCallback(IAsyncContext* ctxt, Status result);
+
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
   // return an unused bucket entry.
   inline AtomicHashBucketEntry* FindTentativeEntry(KeyHash hash, HashBucket* bucket, uint8_t version,
                                                     HashBucketEntry& expected_entry);
   inline bool HasConflictingEntry(KeyHash hash, const HashBucket* bucket, uint8_t version,
                                                 const AtomicHashBucketEntry* atomic_entry) const;
+
+  Status IssueAsyncIoRequest(ExecutionContext& ctx, IAsyncContext& pending_context, KeyHash& hash) const;
 
   /// Helper functions needed for Grow
   void AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version, HashBucketEntry entry);
@@ -180,23 +155,23 @@ class HashIndex {
   InternalHashTable<disk_t> table_[2];
   // Allocator for the hash buckets that don't fit in the hash table.
   MallocFixedPageSize<HashBucket, disk_t> overflow_buckets_allocator_[2];
+
+  std::unique_ptr<concurrent_queue<IAsyncContext*>> pending_requests_;
 };
 
-template<class D>
-//inline Status HashIndex<D>::FindEntry(KeyHash hash, HashBucketEntry& expected_entry,
-//                                      AtomicHashBucketEntry*& atomic_entry) const {
-inline Status HashIndex<D>::FindEntry(HashIndexEntryPendingContext& pending_context) const {
+template <class D>
+template <class C>
+inline Status HashIndex<D>::FindEntry(ExecutionContext& exec_context,
+                                      C& pending_context) const {
+  // TODO: add static asserts for typename C
+  //pending_context.index_op_type = IndexOperationType::Retrieve;
+  KeyHash hash = pending_context.get_key_hash();
 
-  if (pending_context.test_pending) {
-    return Status::Pending;
-  }
-
-  pending_context.expected_entry = HashBucketEntry::kInvalidEntry;
   // Truncate the hash to get a bucket page_index < table[version].size.
   uint32_t version = resize_info.version;
   assert(version == 0 || version == 1);
 
-  const HashBucket* bucket = &table_[version].bucket(pending_context.hash);
+  const HashBucket* bucket = &table_[version].bucket(hash);
   assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
 
   while(true) {
@@ -207,13 +182,16 @@ inline Status HashIndex<D>::FindEntry(HashIndexEntryPendingContext& pending_cont
       if(entry.unused()) {
         continue;
       }
-      if(pending_context.hash.tag() == entry.tag()) {
+      if(hash.tag() == entry.tag()) {
         // Found a matching tag.
         // (So, the input hash matches the entry on 14 tag bits + log_2(table size) address bits.)
         if(!entry.tentative()) {
           // If (final key, return immediately)
-          pending_context.expected_entry = entry;
-          pending_context.atomic_entry = const_cast<AtomicHashBucketEntry*>(&bucket->entries[entry_idx]);
+          pending_context.set_index_entry(entry,
+              const_cast<AtomicHashBucketEntry*>(&bucket->entries[entry_idx]));
+          //pending_context.index_op_result = Status::Ok;
+          //return IssueAsyncIoRequest(exec_context, static_cast<IAsyncContext&>(pending_context), hash);
+          // TODO CHANGE To OK
           return Status::Ok;
         }
       }
@@ -223,8 +201,7 @@ inline Status HashIndex<D>::FindEntry(HashIndexEntryPendingContext& pending_cont
     HashBucketOverflowEntry entry = bucket->overflow_entry.load();
     if(entry.unused()) {
       // No more buckets in the chain.
-      assert(pending_context.expected_entry == HashBucketEntry::kInvalidEntry);
-      pending_context.atomic_entry = nullptr;
+      pending_context.set_index_entry(HashBucketEntry::kInvalidEntry, nullptr);
       return Status::NotFound;
     }
     bucket = &overflow_buckets_allocator_[version].Get(entry.address());
@@ -235,9 +212,21 @@ inline Status HashIndex<D>::FindEntry(HashIndexEntryPendingContext& pending_cont
   return Status::Corruption; // NOT REACHED
 }
 
+
 template <class D>
-inline Status HashIndex<D>::FindOrCreateEntry(KeyHash hash, HashBucketEntry& expected_entry,
-                                              AtomicHashBucketEntry*& atomic_entry) {
+//inline Status HashIndex<D>::FindOrCreateEntry(KeyHash hash, HashBucketEntry& expected_entry,
+//                                              AtomicHashBucketEntry*& atomic_entry) {
+template<class C>
+inline Status HashIndex<D>::FindOrCreateEntry(ExecutionContext& exec_context,
+                                              C& pending_context) {
+  //typedef C pending_context_t;
+  //static_assert(std::is_base_of<PendingContext, typename pending_context_t>::value,
+  //              "value_t is not a base class of read_context_t::value_t");
+
+  KeyHash hash = pending_context.get_key_hash();
+  HashBucketEntry expected_entry;
+  AtomicHashBucketEntry* atomic_entry;
+
   // Truncate the hash to get a bucket page_index < table[version].size.
   const uint32_t version = resize_info.version;
   assert(version == 0 || version == 1);
@@ -249,10 +238,11 @@ inline Status HashIndex<D>::FindOrCreateEntry(KeyHash hash, HashBucketEntry& exp
     atomic_entry = FindTentativeEntry(hash, bucket, version, expected_entry);
     if(expected_entry != HashBucketEntry::kInvalidEntry) {
       // Found an existing hash bucket entry; nothing further to check.
+      pending_context.set_index_entry(expected_entry, atomic_entry);
       return Status::Ok;
     }
     // We have a free slot.
-    assert(atomic_entry);
+    assert(atomic_entry != nullptr);
     assert(expected_entry == HashBucketEntry::kInvalidEntry);
 
     // Try to install tentative tag in free slot.
@@ -267,6 +257,8 @@ inline Status HashIndex<D>::FindOrCreateEntry(KeyHash hash, HashBucketEntry& exp
         // so we can clear our entry's "tentative" bit.
         expected_entry = HashBucketEntry{ Address::kInvalidAddress, hash.tag(), false };
         atomic_entry->store(expected_entry);
+
+        pending_context.set_index_entry(expected_entry, atomic_entry);
         return Status::Ok;
       }
     }
@@ -274,6 +266,16 @@ inline Status HashIndex<D>::FindOrCreateEntry(KeyHash hash, HashBucketEntry& exp
   assert(false);
   return Status::Corruption; // NOT REACHED
 }
+
+template <class D>
+template <class C>
+inline Status HashIndex<D>::TryUpdateEntry(ExecutionContext& context, C& pending_context, HashBucketEntry& new_entry) {
+  assert(pending_context.atomic_entry != nullptr);
+
+  bool success = pending_context.atomic_entry->compare_exchange_strong(pending_context.entry, new_entry);
+  return success ? Status::Ok : Status::Aborted;
+}
+
 
 template <class D>
 inline AtomicHashBucketEntry* HashIndex<D>::FindTentativeEntry(KeyHash hash,
@@ -368,6 +370,27 @@ void HashIndex<D>::GarbageCollectSetup(Address new_begin_address,
                                       GcState::complete_callback_t complete_callback) {
   uint64_t num_chunks = std::max(size() / gc_state_t::kHashTableChunkSize, (uint64_t)1);
   gc_state_->Initialize(new_begin_address, truncate_callback, complete_callback, num_chunks);
+}
+
+template <class D>
+Status HashIndex<D>::IssueAsyncIoRequest(ExecutionContext& exec_context, IAsyncContext& pending_context,
+                                          KeyHash& hash) const {
+  /*auto index_context = alloc_context<AsyncIndexIOContext>(sizeof(AsyncIndexIOContext));
+  if (!index_context.get()) {
+    return Status::OutOfMemory;
+  }
+  */
+  uint64_t io_id = exec_context.io_id++;
+  exec_context.pending_ios.insert({ io_id, hash });
+
+  AsyncIndexIOContext index_context { nullptr, hash,
+                                      static_cast<IAsyncContext*>(&pending_context),
+                                      &exec_context.index_io_responses, io_id };
+
+  IAsyncContext* index_context_copy;
+  RETURN_NOT_OK(index_context.DeepCopy(index_context_copy));
+  pending_requests_->push(index_context_copy);
+  return Status::Pending;
 }
 
 template <class D>
@@ -730,6 +753,14 @@ inline void HashIndex<D>::ClearTentativeEntries() {
       assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
     }
   }
+}
+
+
+template <class D>
+void HashIndex<D>::AsyncIndexGetFromDiskCallback(IAsyncContext* ctxt, Status result) {
+  CallbackContext<AsyncIndexIOContext> context{ ctxt };
+  context.async = true;
+  context->thread_io_responses->push(context.get());
 }
 
 

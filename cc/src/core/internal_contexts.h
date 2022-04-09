@@ -40,11 +40,18 @@ enum class OperationStatus : uint8_t {
   RETRY_NOW,
   RETRY_LATER,
   RECORD_ON_DISK,
+  INDEX_ENTRY_ON_DISK,
   SUCCESS_UNMARK,
   NOT_FOUND_UNMARK,
   CPR_SHIFT_DETECTED,
   ABORTED,
   ABORTED_UNMARK,
+};
+
+enum class IndexOperationType : uint8_t {
+  None,
+  Retrieve,
+  Update,
 };
 
 /// Internal FASTER context.
@@ -63,7 +70,10 @@ class PendingContext : public IAsyncContext {
     , phase{ Phase::INVALID }
     , result{ Status::Pending }
     , address{ Address::kInvalidAddress }
-    , entry{ HashBucketEntry::kInvalidEntry } {
+    , index_op_type{ IndexOperationType::None }
+    , index_op_result{ Status::Corruption }
+    , entry{ HashBucketEntry::kInvalidEntry }
+    , atomic_entry{ nullptr } {
   }
 
  public:
@@ -76,22 +86,44 @@ class PendingContext : public IAsyncContext {
     , phase{ other.phase }
     , result{ other.result }
     , address{ other.address }
-    , entry{ other.entry } {
+    , index_op_type{ other.index_op_type }
+    , index_op_result{ other.index_op_result }
+    , entry{ other.entry }
+    , atomic_entry{ other.atomic_entry } {
   }
 
  public:
-  /// Go async, for the first time.
-  void go_async(Phase phase_, uint32_t version_, Address address_, HashBucketEntry entry_) {
+  // Store the current phase and thread version
+  inline void try_stamp_request(Phase phase_, uint32_t version_) {
+    if (phase == Phase::INVALID || version == UINT32_MAX) {
+      assert(phase == Phase::INVALID && version == UINT32_MAX);
+      stamp_request(phase_, version_);
+    }
+  }
+
+  inline void stamp_request(Phase phase_, uint32_t version_) {
     phase = phase_;
     version = version_;
+  }
+
+  /// Go async
+  inline void go_async(Address address_) {
+    address = address_;
+
+    // reset index op fields
+    index_op_type = IndexOperationType::None;
+    index_op_result = Status::Corruption;
+  }
+
+  /// Go async -- TODO: remove after Hash Index integration
+  inline void go_async(Address address_, HashBucketEntry entry_) {
     address = address_;
     entry = entry_;
   }
 
-  /// Go async, again.
-  void continue_async(Address address_, HashBucketEntry entry_) {
-    address = address_;
+  void set_index_entry(HashBucketEntry entry_, AtomicHashBucketEntry* atomic_entry_) {
     entry = entry_;
+    atomic_entry = atomic_entry_;
   }
 
   virtual uint32_t key_size() const = 0;
@@ -113,8 +145,16 @@ class PendingContext : public IAsyncContext {
   Status result;
   /// Address of the record being read or modified.
   Address address;
+  // TODO: encapsulate the following into a single class
+  /// Type of index operation that went pending
+  IndexOperationType index_op_type;
+  // Result of index operation
+  Status index_op_result;
+  /// Pointer to record that
   /// Hash table entry that (indirectly) leads to the record being read or modified.
   HashBucketEntry entry;
+  ///
+  AtomicHashBucketEntry* atomic_entry;
 };
 
 /// FASTER's internal Read() context.
@@ -563,6 +603,7 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
 };
 
 class AsyncIOContext;
+class AsyncIndexIOContext;
 
 /// Per-thread execution context. (Just the stuff that's checkpointed to disk.)
 struct PersistentExecContext {
@@ -597,6 +638,7 @@ struct ExecutionContext : public PersistentExecContext {
     assert(retry_requests.empty());
     assert(pending_ios.empty());
     assert(io_responses.empty());
+    assert(index_io_responses.empty());
 
     PersistentExecContext::Initialize(version_, guid_, serial_num_);
     phase = phase_;
@@ -604,6 +646,7 @@ struct ExecutionContext : public PersistentExecContext {
     io_id = 0;
     pending_ios.clear();
     io_responses.clear();
+    index_io_responses.clear();
   }
 
   Phase phase;
@@ -618,6 +661,10 @@ struct ExecutionContext : public PersistentExecContext {
   /// The I/O completion thread hands the PendingContext back to the thread that issued the
   /// request.
   concurrent_queue<AsyncIOContext*> io_responses;
+
+  /// The I/O completion thread hands the PendingContext back to the thread that issued the
+  /// request.
+  concurrent_queue<AsyncIndexIOContext*> index_io_responses;
 };
 
 }
