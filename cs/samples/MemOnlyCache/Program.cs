@@ -69,23 +69,26 @@ namespace MemOnlyCache
             var log = new NullDevice(); // no storage involved
 
             // Define settings for log
-            var logSettings = new LogSettings
+            FasterKVSettings<CacheKey, CacheValue> fkvSettings = new()
             {
-                LogDevice = log, ObjectLogDevice = log,
+                LogDevice = log,
+                ObjectLogDevice = log,
                 MutableFraction = 0.9, // 10% of memory log is "read-only region"
                 ReadFlags = ReadFlags.CopyReadsToTail, // reads in read-only region are copied to tail
-                PageSizeBits = 14, // Each page is sized at 2^14 bytes
-                MemorySizeBits = 25, // (2^25 / 24) = ~1.39M key-value pairs (log uses 24 bytes per KV pair)
+                PageSize = 1L << 14, // Each page is sized at 2^14 bytes
+                MemorySize = 1L << 25, // (2^25 / 24) = ~1.39M key-value pairs (log uses 24 bytes per KV pair)
+                EqualityComparer = new CacheKey()
             };
 
             // Number of records in memory, assuming class keys and values and x64 platform
             // (8-byte key + 8-byte value + 8-byte header = 24 bytes per record)
-            int numRecords = (int)(Math.Pow(2, logSettings.MemorySizeBits) / 24);
+            int numRecords = (int)(fkvSettings.MemorySize / 24);
 
             // Set hash table size targeting 1 record per bucket
-            var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)); 
+            var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords));
+            fkvSettings.IndexSize = 1L << numBucketBits;
 
-            h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, comparer: new CacheKey());
+            h = new FasterKV<CacheKey, CacheValue>(fkvSettings);
             sizeTracker = new CacheSizeTracker(h, targetSize);
 
             // Initially populate store

@@ -18,24 +18,21 @@ namespace StoreLogCompaction
 
             var context = default(CacheContext);
 
-            var log =  Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
-            var objlog = Devices.CreateLogDevice("hlog.obj.log", deleteOnClose: true);
-
-            var logSettings = new LogSettings {
-                LogDevice = log, ObjectLogDevice = objlog,
-                MutableFraction = 0.9, MemorySizeBits = 20, PageSizeBits = 12, SegmentSizeBits = 20
+            FasterKVSettings<CacheKey, CacheValue> fkvSettings = new()
+            { 
+                IndexSize = 1L << 26,
+                LogDevice = Devices.CreateLogDevice("hlog.log", deleteOnClose: true),
+                ObjectLogDevice = Devices.CreateLogDevice("hlog.obj.log", deleteOnClose: true),
+                MutableFraction = 0.9,
+                MemorySize = 1L << 20,
+                PageSize = 1L << 12,
+                SegmentSize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                KeySerializer = () => new CacheKeySerializer(),
+                ValueSerializer = () => new CacheValueSerializer()
             };
 
-            if (useReadCache)
-            {
-                logSettings.ReadCacheSettings = new ReadCacheSettings();
-            }
-
-            using var h = new FasterKV<CacheKey, CacheValue>(
-                1L << 20,
-                logSettings,
-                serializerSettings: new SerializerSettings<CacheKey, CacheValue> { keySerializer = () => new CacheKeySerializer(), valueSerializer = () => new CacheValueSerializer() }
-                );
+            using var h = new FasterKV<CacheKey, CacheValue>(fkvSettings);
 
             using var s = h.For(new CacheFunctions()).NewSession<CacheFunctions>();
 

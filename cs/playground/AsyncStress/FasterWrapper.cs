@@ -32,24 +32,27 @@ namespace AsyncStress
         {
             var logDirectory = "d:/AsyncStress";
             var logFileName = Guid.NewGuid().ToString();
-            var logSettings = new LogSettings
+
+            FasterKVSettings<Key, Value> fkvSettings = new()
             {
+                IndexSize = 1L << 26,
                 LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering),
                 ObjectLogDevice = isRefType ? new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.obj.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering) : default
             };
 
             if (!useLargeLog)
             {
-                logSettings.PageSizeBits = 12;
-                logSettings.MemorySizeBits = 13;
+                fkvSettings.PageSize = 1L << 12;
+                fkvSettings.MemorySize = 1L << 13;
             }
 
-            Console.WriteLine($"    FasterWrapper using {logSettings.LogDevice.GetType()}, {(useLargeLog ? "large" : "small")} memory log, and {(isRefType ? string.Empty : "no ")}object log");
+            Console.WriteLine($"    FasterWrapper using {fkvSettings.LogDevice.GetType()}, {(useLargeLog ? "large" : "small")} memory log, and {(isRefType ? string.Empty : "no ")}object log");
 
             this.useOsReadBuffering = useOsReadBuffering;
-            _store = new FasterKV<Key, Value>(1L << 20, logSettings);
+
+            _store = new FasterKV<Key, Value>(fkvSettings);
             _sessionPool = new AsyncPool<ClientSession<Key, Value, Value, Value, Empty, SimpleFunctions<Key, Value, Empty>, DefaultStoreFunctions<Key, Value>>>(
-                    logSettings.LogDevice.ThrottleLimit,
+                    fkvSettings.LogDevice.ThrottleLimit,
                     () => _store.For(new SimpleFunctions<Key, Value, Empty>()).NewSession<SimpleFunctions<Key, Value, Empty>>());
         }
 

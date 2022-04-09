@@ -77,10 +77,18 @@ namespace FASTER.core
                 };
             }
 
-            tempKv = new FasterKV<Key, Value, StoreFunctions>(fht.IndexSize,
-                new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 },
-                fht.storeFunctions,
-                comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
+            FasterKVSettings<Key, Value> fkvSettings = new()
+            {
+                IndexSize = FasterKVSettings<Key, Value>.IndexSizeFromCacheLines(fht.IndexSize),
+                LogDevice = new NullDevice(),
+                ObjectLogDevice = new NullDevice(),
+                MutableFraction = 1,
+                EqualityComparer = fht.Comparer,
+                KeyLength = variableLengthStructSettings?.keyLength,
+                ValueLength = variableLengthStructSettings?.valueLength
+            };
+
+            tempKv = new FasterKV<Key, Value, StoreFunctions>(fkvSettings, fht.storeFunctions);
             tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions);
             iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);
         }

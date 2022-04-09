@@ -10,7 +10,7 @@ namespace SumStore
     class RecoveryTest
     {
         const long numUniqueKeys = 1 << 23;
-        const long indexSize = 1L << 20;
+        const long indexSize = 1L << 26;
         const long numOps = 4 * numUniqueKeys;
         const long refreshInterval = 1 << 8;
         const long completePendingInterval = 1 << 12;
@@ -26,9 +26,15 @@ namespace SumStore
 
             // Create FASTER index
             var log = Devices.CreateLogDevice("logs/hlog");
-            fht = new FasterKV<AdId, NumClicks>
-                (indexSize, new LogSettings { LogDevice = log },
-                new CheckpointSettings { CheckpointDir = "logs" });
+
+            FasterKVSettings<AdId, NumClicks> fkvSettings = new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                CheckpointDir = "logs"
+            };
+
+            fht = new(fkvSettings);
 
             inputArrays = new BlockingCollection<Input[]>();
             Prepare();

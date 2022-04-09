@@ -45,14 +45,23 @@ namespace CacheStore
                 valueSerializer = () => new CacheValueSerializer()
             };
 
+            FasterKVSettings<CacheKey, CacheValue> fkvSettings = new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                ReadCacheEnabled = true,
+                // Uncomment below for low memory footprint demo
+                // PageSizeBits = 12, // (4K pages)
+                // MemorySizeBits = 20 // (1M memory for main log)
+                CheckpointDir = path,
+                KeySerializer = serializerSettings?.keySerializer,
+                ValueSerializer = serializerSettings?.valueSerializer,
+                EqualityComparer = new CacheKey(0)
+            };
+
             // Create instance of store
-            var store = new FasterKV<CacheKey, CacheValue>(
-                size: 1L << 20,
-                logSettings: logSettings,
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path },
-                serializerSettings: serializerSettings,
-                comparer: new CacheKey(0)
-                );
+            var store = new FasterKV<CacheKey, CacheValue>(fkvSettings);
 
             // Populate the store
             PopulateStore(store);

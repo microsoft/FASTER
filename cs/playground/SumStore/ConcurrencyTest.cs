@@ -12,7 +12,7 @@ namespace SumStore
     public class ConcurrencyTest
     {
         const long numUniqueKeys = (1 << 22);
-        const long keySpace = (1L << 14);
+        const long keySpace = (1L << 20);
         const long numOps = (1L << 20);
         const long completePendingInterval = (1 << 12);
         readonly int threadCount;
@@ -27,9 +27,15 @@ namespace SumStore
 
             // Create FASTER index
             var log = Devices.CreateLogDevice("logs/hlog");
-            fht = new FasterKV<AdId, NumClicks>
-                (keySpace, new LogSettings { LogDevice = log }, 
-                new CheckpointSettings { CheckpointDir = "logs" });
+
+            FasterKVSettings<AdId, NumClicks> fkvSettings = new()
+            {
+                IndexSize = keySpace,
+                LogDevice = log,
+                CheckpointDir = "logs"
+            };
+
+            fht = new(fkvSettings);
             numActiveThreads = 0;
 
             inputArrays = new BlockingCollection<Input[]>();

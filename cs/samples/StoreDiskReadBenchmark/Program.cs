@@ -35,16 +35,22 @@ namespace StoreDiskReadBenchmark
             if (Directory.Exists(path))
                 new DirectoryInfo(path).Delete(true);
 
-            // Use real local storage device
-            var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+            FasterKVSettings<Key, Value> fkvSettings = new()
+            {
+                IndexSize = 1L << 31,
 
-            // Use in-memory device
-            // var log = new LocalMemoryDevice(1L << 33, 1L << 30, 1);
+                // Use real local storage device
+                LogDevice = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true),
 
-            var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20 };
-            var checkpointSettings = new CheckpointSettings { CheckpointDir = path };
+                // Use in-memory device
+                // LogDevice = new LocalMemoryDevice(1L << 33, 1L << 30, 1),
 
-            faster = new FasterKV<Key, Value>(1L << 25, logSettings, checkpointSettings);
+                MemorySize = 1L << 25,
+                PageSize = 1L << 20,
+                CheckpointDir = path
+            };
+
+            faster = new(fkvSettings);
 
             ThreadPool.SetMinThreads(2 * Environment.ProcessorCount, 2 * Environment.ProcessorCount);
             TaskScheduler.UnobservedTaskException += (object sender, UnobservedTaskExceptionEventArgs e) =>

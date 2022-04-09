@@ -34,23 +34,23 @@ namespace AsyncStress
         {
             var logDirectory = "d:/FasterLogs";
             var logFileName = Guid.NewGuid().ToString();
-            var logSettings = new LogSettings
+            FasterKVSettings<SpanByte, SpanByte> fkvSettings = new()
             {
                 LogDevice = new ManagedLocalStorageDevice(Path.Combine(logDirectory, $"{logFileName}.log"), deleteOnClose: true, osReadBuffering: useOsReadBuffering)
             };
 
             if (!useLargeLog)
             {
-                logSettings.PageSizeBits = 12;
-                logSettings.MemorySizeBits = 13;
+                fkvSettings.PageSize = 1L << 12;
+                fkvSettings.MemorySize = 1L << 13;
             }
 
-            Console.WriteLine($"    SerializedFasterWrapper using {logSettings.LogDevice.GetType()} and {(useLargeLog ? "large" : "small")} memory log");
+            Console.WriteLine($"    SerializedFasterWrapper using {fkvSettings.LogDevice.GetType()} and {(useLargeLog ? "large" : "small")} memory log");
 
             this.useOsReadBuffering = useOsReadBuffering;
-            _store = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings);
+            _store = new FasterKV<SpanByte, SpanByte>(fkvSettings);
             _sessionPool = new AsyncPool<ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions, DefaultStoreFunctions<SpanByte, SpanByte>>>(
-                    logSettings.LogDevice.ThrottleLimit,
+                    fkvSettings.LogDevice.ThrottleLimit,
                     () => _store.For(new SpanByteFunctions()).NewSession<SpanByteFunctions>());
         }
 

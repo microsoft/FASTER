@@ -44,28 +44,21 @@ namespace CacheStoreConcurrent
                 var objlog = Devices.CreateLogDevice(path + "hlog" + ht + ".obj.log", deleteOnClose: true);
 
                 // Define settings for log
-                var logSettings = new LogSettings
+                FasterKVSettings<CacheKey, CacheValue> fkvSettings = new()
                 {
                     LogDevice = log,
                     ObjectLogDevice = objlog,
-                    ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null
+                    ReadCacheEnabled = useReadCache,
+
+                    // Define serializers; otherwise FASTER will use the slower DataContract
+                    // Needed only for class keys/values
+                    KeySerializer = () => new CacheKeySerializer(),
+                    ValueSerializer = () => new CacheValueSerializer(),
+                    CheckpointDir = path,
+                    EqualityComparer = new CacheKey(0)
                 };
 
-                // Define serializers; otherwise FASTER will use the slower DataContract
-                // Needed only for class keys/values
-                var serializerSettings = new SerializerSettings<CacheKey, CacheValue>
-                {
-                    keySerializer = () => new CacheKeySerializer(),
-                    valueSerializer = () => new CacheValueSerializer()
-                };
-                
-                h[ht] = new FasterKV
-                    <CacheKey, CacheValue>(
-                    1L << 20, logSettings,
-                    checkpointSettings: new CheckpointSettings { CheckpointDir = path },
-                    serializerSettings: serializerSettings,
-                    comparer: new CacheKey(0)
-                    );
+                h[ht] = new FasterKV<CacheKey, CacheValue>(fkvSettings);
                 
                 PopulateStore(h[ht]);
 

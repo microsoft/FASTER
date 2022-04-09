@@ -103,6 +103,16 @@ non-blittable types such as C# class objects.*
 The total in-memory footprint of FASTER is controlled by `IndexSize` and `MemorySize`. Read more about managing memory
 in FASTER in the [tuning](/FASTER/docs/fasterkv-tuning) guide.
 
+The older forms of the FasterKV constructor (without FasterKVSettings) has been deprecated.
+
+#### StoreFunctions
+
+IStoreFunctions is a FasterKV-level analog of the session-level IFunctions. It provides a home for IFunctions-like callbacks that do not require session-level type parameters such as Input and Output.
+
+Currently it includes `Dispose(ref Key, ref Value, DisposeReason)`, which is called when a record is disposed. It provides a way to release resources held by objects.
+
+FASTER provides a `DefaultStoreFunctions<Key, Value>`, which is currently implements false for `DisposeOnPageEviction` and a no-op for Dispose().
+
 ### Callback Functions
 
 #### IFunctions

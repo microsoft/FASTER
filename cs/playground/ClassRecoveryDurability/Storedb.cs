@@ -22,31 +22,23 @@ namespace ClassRecoveryDurablity
 
         public bool InitAndRecover()
         {
-            var logSize = 1L << 20;
             log = Devices.CreateLogDevice(@$"{this.dataFolder}\data\Store-hlog.log", preallocateFile: false);
             objLog = Devices.CreateLogDevice(@$"{this.dataFolder}\data\Store-hlog-obj.log", preallocateFile: false);
 
-            this.db = new FasterKV
-                <Types.StoreKey, Types.StoreValue>(
-                    logSize,
-                    new LogSettings
-                    {
-                        LogDevice = this.log,
-                        ObjectLogDevice = this.objLog,
-                        MutableFraction = 0.3,
-                        PageSizeBits = 15,
-                        MemorySizeBits = 20
-                    },
-                    new CheckpointSettings
-                    {
-                        CheckpointDir = $"{this.dataFolder}/data/checkpoints"
-                    },
-                    new SerializerSettings<Types.StoreKey, Types.StoreValue>
-                    {
-                        keySerializer = () => new Types.StoreKeySerializer(),
-                        valueSerializer = () => new Types.StoreValueSerializer()
-                    }
-                );
+            FasterKVSettings<Types.StoreKey, Types.StoreValue> fkvSettings = new()
+            {
+                IndexSize = 1L << 20,
+                LogDevice = log,
+                ObjectLogDevice = objLog,
+                MutableFraction = 0.3,
+                PageSize = 1L << 15,
+                MemorySize = 1L << 20,
+                CheckpointDir = $"{this.dataFolder}/data/checkpoints",
+                KeySerializer = () => new Types.StoreKeySerializer(),
+                ValueSerializer = () => new Types.StoreValueSerializer()
+            };
+
+            this.db = new FasterKV<Types.StoreKey, Types.StoreValue>(fkvSettings);
 
             if (Directory.Exists($"{this.dataFolder}/data/checkpoints"))
             {

@@ -14,13 +14,19 @@ namespace StoreVarLenTypes
     {
         public static void Run()
         {
-            // Memory<T> where T : unmanaged does not need an object log
-            var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
+            FasterKVSettings<ReadOnlyMemory<int>, Memory<int>> fkvSettings = new()
+            {
+                IndexSize = 1L << 26,
+
+                // Memory<T> where T : unmanaged does not need an object log
+                LogDevice = Devices.CreateLogDevice("hlog.log", deleteOnClose: true),
+
+                MemorySize = 1L << 16,
+                PageSize = 1L << 14
+            };
 
             // Create store for Memory<int> values. You can use any key type; we use ReadOnlyMemory<int> here
-            var store = new FasterKV<ReadOnlyMemory<int>, Memory<int>>(
-                size: 1L << 20,
-                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 16, PageSizeBits = 14 });
+            var store = new FasterKV<ReadOnlyMemory<int>, Memory<int>>(fkvSettings);
 
             // Create session with Memory<int> as Input, (IMemoryOwner<int> memoryOwner, int length) as Output, 
             // and int as Context (to verify read result in callback)
@@ -82,7 +88,7 @@ namespace StoreVarLenTypes
 
             s.Dispose();
             store.Dispose();
-            log.Dispose();
+            fkvSettings.LogDevice.Dispose();
         }
     }
 }

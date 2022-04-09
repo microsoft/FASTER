@@ -27,10 +27,16 @@ namespace StoreAsyncApi
             var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
             var objlog = Devices.CreateLogDevice(path + "hlog.obj.log", deleteOnClose: true);
 
-            var logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = objlog };
-            var serializerSettings = new SerializerSettings<CacheKey, CacheValue> { keySerializer = () => new CacheKeySerializer(), valueSerializer = () => new CacheValueSerializer() };
+            FasterKVSettings<CacheKey, CacheValue> fkvSettings = new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                KeySerializer = () => new CacheKeySerializer(),
+                ValueSerializer = () => new CacheValueSerializer()
+            };
 
-            faster = new FasterKV<CacheKey, CacheValue>(1L << 20, logSettings, serializerSettings: serializerSettings);
+            faster = new FasterKV<CacheKey, CacheValue>(fkvSettings);
 
             const int NumParallelTasks = 1;
             ThreadPool.SetMinThreads(2 * Environment.ProcessorCount, 2 * Environment.ProcessorCount);

@@ -30,12 +30,15 @@ namespace FASTER.core
         /// <summary>
         /// Create FasterKV instance
         /// </summary>
+        [Obsolete("Deprecated in favor of: FasterKV<Key, Value, StoreFunctions>(FasterKVSettings<Key, Value> fasterKVSettings)")]
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
             VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableLocking = false)
             : base(size, logSettings, new DefaultStoreFunctions<Key, Value>(), checkpointSettings, serializerSettings, comparer, variableLengthStructSettings, tryRecoverLatest, disableLocking)
         { }
+
+
     }
 
     public partial class FasterKV<Key, Value, StoreFunctions> : FasterBase, IFasterKV<Key, Value, StoreFunctions>
@@ -105,11 +108,13 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fasterKVSettings">Config settings</param>
         /// <param name="storeFunctions">Store functions implementation</param>
+#pragma warning disable CS0618 // Type or member is obsolete
         public FasterKV(FasterKVSettings<Key, Value> fasterKVSettings, StoreFunctions storeFunctions) :
-            this(fasterKVSettings.GetIndexSizeCacheLines(), fasterKVSettings.GetLogSettings(), storeFunctions,
+            this(fasterKVSettings.IndexSizeToCacheLines(), fasterKVSettings.GetLogSettings(), storeFunctions,
                 fasterKVSettings.GetCheckpointSettings(), fasterKVSettings.GetSerializerSettings(),
                 fasterKVSettings.EqualityComparer, fasterKVSettings.GetVariableLengthStructSettings(),
                 fasterKVSettings.TryRecoverLatest, fasterKVSettings.DisableLocking)
+#pragma warning restore CS0618 // Type or member is obsolete
         { }
 
         /// <summary>
@@ -124,6 +129,7 @@ namespace FASTER.core
         /// <param name="variableLengthStructSettings"></param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
         /// <param name="disableLocking">Whether FASTER takes read and write locks on records</param>
+        [Obsolete("Deprecated in favor of: FasterKV<Key, Value, StoreFunctions>(FasterKVSettings<Key, Value> fasterKVSettings)")]
         public FasterKV(long size, LogSettings logSettings, StoreFunctions storeFunctions,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,

@@ -75,14 +75,30 @@ namespace FASTER.benchmark
 
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
+            FasterKVSettings<SpanByte, SpanByte> fkvSettings;
             if (testLoader.Options.UseSmallMemoryLog)
-                store = new FasterKV<SpanByte, SpanByte>
-                    (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableLocking: testLoader.LockImpl != LockImpl.Ephemeral);
+                fkvSettings = new()
+                {
+                    IndexSize = testLoader.MaxKey << 5,
+                    LogDevice = device,
+                    PreallocateLog = true,
+                    PageSize = 1L << 22,
+                    SegmentSize = 1L << 26,
+                    MemorySize = 1L << 26,
+                    CheckpointDir = testLoader.BackupPath,
+                    DisableLocking = testLoader.LockImpl != LockImpl.Ephemeral
+                };
             else
-                store = new FasterKV<SpanByte, SpanByte>
-                    (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizeBits = 35 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableLocking: testLoader.LockImpl != LockImpl.Ephemeral);
+                fkvSettings = new ()
+                {
+                    IndexSize = testLoader.MaxKey << 5,
+                    LogDevice = device,
+                    PreallocateLog = true,
+                    MemorySize = 1L << 35,
+                    CheckpointDir = testLoader.BackupPath, 
+                    DisableLocking = testLoader.LockImpl != LockImpl.Ephemeral
+                };
+            store = new FasterKV<SpanByte, SpanByte>(fkvSettings);
         }
 
         internal void Dispose()

@@ -29,12 +29,15 @@ namespace AzureBackedStore
                 new AzureStorageNamedDeviceFactory(STORAGE_STRING),
                 new DefaultCheckpointNamingScheme($"{BASE_CONTAINER}/checkpoints/"));
 
+            FasterKVSettings<long, string> fkvSettings = new()
+            {
+                IndexSize = 1L << 23,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                CheckpointManager = checkpointManager
+            };
 
-            var store = new FasterKV<long, string>(
-                1L << 17,
-                new LogSettings {  LogDevice = log, ObjectLogDevice = objlog },
-                new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
+            var store = new FasterKV<long, string>(fkvSettings);
 
             using (var s = store.NewSession(new Functions()))
             {
@@ -76,11 +79,10 @@ namespace AzureBackedStore
             log = new AzureStorageDevice(STORAGE_STRING, BASE_CONTAINER, "", "hlog.log");
             objlog = new AzureStorageDevice(STORAGE_STRING, BASE_CONTAINER, "", "hlog.obj.log");
 
-            var store2 = new FasterKV<long, string>(
-                1L << 17,
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
-                new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
+            fkvSettings.LogDevice = log;
+            fkvSettings.ObjectLogDevice = objlog;
+
+            var store2 = new FasterKV<long, string>(fkvSettings);
 
             // Recover store from latest checkpoint
             store2.Recover();

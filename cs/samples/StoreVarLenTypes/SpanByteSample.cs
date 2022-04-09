@@ -23,11 +23,17 @@ namespace StoreVarLenTypes
             // VarLen types do not need an object log
             var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
 
+            FasterKVSettings<SpanByte, SpanByte> fkvSettings = new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 12
+            };
+
             // Create store
             // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer
-            var store = new FasterKV<SpanByte, SpanByte>(
-                size: 1L << 20,
-                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
+            FasterKV<SpanByte, SpanByte> store = new(fkvSettings);
 
             // Create session
             var s = store.For(new CustomSpanByteFunctions()).NewSession<CustomSpanByteFunctions>();

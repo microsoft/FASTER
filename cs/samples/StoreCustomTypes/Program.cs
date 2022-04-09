@@ -17,27 +17,26 @@ namespace StoreCustomTypes
             // (1) Make Key implement IFasterEqualityComparer<Key> interface
             // (2) Provide IFasterEqualityComparer<Key> instance as param to FASTER constructor
 
-            // Main hybrid log device
             var path = Path.GetTempPath() + "StoreCustomTypes/";
-            var log = Devices.CreateLogDevice(path + "hlog.log");
 
-            // With non-blittable types, you need an object log device in addition to the
-            // main device. FASTER serializes the actual objects in the object log.
-            var objlog = Devices.CreateLogDevice(path + "hlog.obj.log");
+            FasterKVSettings<MyKey, MyValue> fkvSettings = new()
+            {
+                IndexSize = 1L << 26,
 
-            // Serializers are required for class types in order to write to storage
-            // You can also mark types as DataContract (lower performance)
-            var serializerSettings =
-                new SerializerSettings<MyKey, MyValue> { 
-                    keySerializer = () => new MyKeySerializer(), 
-                    valueSerializer = () => new MyValueSerializer()
-                };
+                // Main hybrid log device
+                LogDevice = Devices.CreateLogDevice(path + "hlog.log"),
 
-            var store = new FasterKV<MyKey, MyValue>(
-                1L << 20,
-                new LogSettings {  LogDevice = log, ObjectLogDevice = objlog },
-                serializerSettings: serializerSettings
-                );
+                // With non-blittable types, you need an object log device in addition to the
+                // main device. FASTER serializes the actual objects in the object log.
+                ObjectLogDevice = Devices.CreateLogDevice(path + "hlog.obj.log"),
+
+                // Serializers are required for class types in order to write to storage
+                // You can also mark types as DataContract (lower performance)
+                KeySerializer = () => new MyKeySerializer(),
+                ValueSerializer = () => new MyValueSerializer()
+            };
+
+            FasterKV<MyKey, MyValue> store = new(fkvSettings);
 
             // A session calls StartSession to register itself with FASTER
             // Functions specify various callbacks that FASTER makes to user code
@@ -88,8 +87,8 @@ namespace StoreCustomTypes
             store.Dispose();
 
             // Close logs
-            log.Dispose();
-            objlog.Dispose();
+            fkvSettings.LogDevice.Dispose();
+            fkvSettings.ObjectLogDevice.Dispose();
 
             try { new DirectoryInfo(path).Delete(true); } catch { }
 

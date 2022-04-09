@@ -24,17 +24,18 @@ namespace SecondaryReaderStore
 
             var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
 
-            primaryStore = new FasterKV<long, long>
-                (1L << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
-                );
+            FasterKVSettings<long, long> fkvSettings = new()
+            {
+                IndexSize = 1L << 16,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                CheckpointDir = path
+            };
 
-            secondaryStore = new FasterKV<long, long>
-                (1L << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
-                );
+            primaryStore = new FasterKV<long, long>(fkvSettings);
+            secondaryStore = new FasterKV<long, long>(fkvSettings);
 
             var p = new Thread(new ThreadStart(PrimaryWriter));
             var s = new Thread(new ThreadStart(SecondaryReader));

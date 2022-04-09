@@ -84,23 +84,21 @@ namespace ReadAddress
             var path = Path.GetTempPath() + "FasterReadAddressSample\\";
             var log = Devices.CreateLogDevice(path + "hlog.log");
 
-            var logSettings = new LogSettings
+            FasterKVSettings<Key, Value> fkvSettings = new()
             {
                 LogDevice = log,
                 ObjectLogDevice = new NullDevice(),
-                ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null,
+                ReadCacheEnabled = useReadCache,
+
                 // Use small-footprint values
-                PageSizeBits = 12, // (4K pages)
-                MemorySizeBits = 20 // (1M memory for main log)
+                PageSize = 1L << 12, // (4K pages)
+                MemorySize = 1L << 20, // (1M memory for main log)
+                
+                CheckpointDir = path,
+                EqualityComparer = new Key.Comparer()
             };
 
-            var store = new FasterKV<Key, Value>(
-                size: 1L << 20,
-                logSettings: logSettings,
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path },
-                serializerSettings: null,
-                comparer: new Key.Comparer()
-                );
+            var store = new FasterKV<Key, Value>(fkvSettings);
             return (store, log, path);
         }
 

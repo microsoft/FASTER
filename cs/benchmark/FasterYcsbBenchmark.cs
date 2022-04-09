@@ -75,14 +75,29 @@ namespace FASTER.benchmark
             if (testLoader.Options.ThreadCount >= 16)
                 device.ThrottleLimit = testLoader.Options.ThreadCount * 12;
 
+            FasterKVSettings<Key, Value> fkvSettings;
             if (testLoader.Options.UseSmallMemoryLog)
-                store = new FasterKV<Key, Value>
-                    (testLoader.MaxKey / 4, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableLocking: testLoader.LockImpl != LockImpl.Ephemeral);
+                fkvSettings = new()
+                {
+                    IndexSize = testLoader.MaxKey << 4,
+                    LogDevice = device,
+                    PreallocateLog = true,
+                    PageSize = 1L << 25,
+                    SegmentSize = 1L << 30,
+                    MemorySize = 1L << 28,
+                    CheckpointDir = testLoader.BackupPath,
+                    DisableLocking = testLoader.LockImpl != LockImpl.Ephemeral
+                };
             else
-                store = new FasterKV<Key, Value>
-                    (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableLocking: testLoader.LockImpl != LockImpl.Ephemeral);
+                fkvSettings = new()
+                {
+                    IndexSize = testLoader.MaxKey << 5,
+                    LogDevice = device,
+                    PreallocateLog = true,
+                    CheckpointDir = testLoader.BackupPath,
+                    DisableLocking = testLoader.LockImpl != LockImpl.Ephemeral
+                };
+            store = new FasterKV<Key, Value>(fkvSettings);
         }
 
         internal void Dispose()

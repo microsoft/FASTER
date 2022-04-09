@@ -38,7 +38,7 @@
   </PropertyGroup>
   
   <PropertyGroup>
-    <NoWarn>1701;1702;1591</NoWarn>
+    <NoWarn>1701;1702;1591;0618</NoWarn>
   </PropertyGroup>
 
 	<PropertyGroup>

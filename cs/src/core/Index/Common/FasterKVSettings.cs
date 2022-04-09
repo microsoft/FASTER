@@ -19,6 +19,7 @@ namespace FASTER.core
         /// <summary>
         /// Size of main hash index, in bytes. Rounds down to power of 2.
         /// </summary>
+        /// <remarks>Equivalent of old "cache lines" value &lt;&lt; 6.</remarks>
         public long IndexSize = 1L << 26;
 
         /// <summary>
@@ -192,7 +193,7 @@ namespace FASTER.core
             return retStr;
         }
 
-        internal long GetIndexSizeCacheLines()
+        internal long IndexSizeToCacheLines()
         {
             long adjustedSize = Utility.PreviousPowerOf2(IndexSize);
             if (adjustedSize < 64)
@@ -201,6 +202,11 @@ namespace FASTER.core
                 Trace.TraceInformation($"Warning: using lower value {adjustedSize} instead of specified {IndexSize} for {nameof(IndexSize)}");
             return adjustedSize / 64;
         }
+
+        /// <summary>
+        /// Utility function to convert from old constructor style to FasterKVSettings
+        /// </summary>
+        internal static long IndexSizeFromCacheLines(long cacheLines) => cacheLines * 64;
 
         internal LogSettings GetLogSettings()
         {
