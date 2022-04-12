@@ -13,9 +13,8 @@ set (FASTER_HEADERS
   core/gc_state.h
   core/grow_state.h
   core/guid.h
-  core/hash_bucket.h
-  core/hash_table.h
   core/internal_contexts.h
+  core/hc_internal_contexts.h
   core/key_hash.h
   core/light_epoch.h
   core/lss_allocator.h
@@ -33,6 +32,10 @@ set (FASTER_HEADERS
   device/null_disk.h
   environment/file.h
   environment/file_common.h
+  index/hash_bucket.h
+  index/hash_table.h
+  index/index.h
+  index/mem_index.h
 )
 
 if (MSVC)

@@ -7,11 +7,15 @@
 #include <cinttypes>
 #include <cstdint>
 
+#include "../core/address.h"
+#include "../core/key_hash.h"
+
 #include "hash_bucket.h"
-#include "key_hash.h"
+
+using namespace FASTER::core;
 
 namespace FASTER {
-namespace core {
+namespace index {
 
 /// The hash table itself: a sized array of HashBuckets.
 template <class D>
@@ -34,7 +38,7 @@ class InternalHashTable {
 
   ~InternalHashTable() {
     if(buckets_) {
-      aligned_free(buckets_);
+      core::aligned_free(buckets_);
     }
   }
 
@@ -49,7 +53,7 @@ class InternalHashTable {
       if(buckets_) {
         aligned_free(buckets_);
       }
-      buckets_ = reinterpret_cast<HashBucket*>(aligned_alloc(alignment,
+      buckets_ = reinterpret_cast<HashBucket*>(core::aligned_alloc(alignment,
                  size_ * sizeof(HashBucket)));
     }
     std::memset(buckets_, 0, size_ * sizeof(HashBucket));

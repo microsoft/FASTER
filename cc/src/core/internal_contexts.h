@@ -8,17 +8,22 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
-#include <unordered_map>
 #include <string>
+#include <unordered_map>
+
 #include "address.h"
 #include "guid.h"
-#include "hash_bucket.h"
+#include "key_hash.h"
 #include "native_buffer_pool.h"
 #include "record.h"
 #include "state_transitions.h"
 #include "thread.h"
-#include "key_hash.h"
+
 #include "hc_internal_contexts.h"
+
+#include "../index/hash_bucket.h"
+
+using namespace FASTER::index;
 
 namespace FASTER {
 namespace core {
@@ -602,6 +607,56 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
   }
 };
 
+/// Context used for sync hash index operations
+template <class K, class V>
+class IndexContext : public IAsyncContext {
+ public:
+  typedef K key_t;
+  typedef V value_t;
+  typedef Record<key_t, value_t> record_t;
+
+  /// Constructs and returns a context given a pointer to a record.
+  IndexContext(record_t* record)
+    : record_{ record }
+    , entry{ HashBucketEntry::kInvalidEntry }
+    , atomic_entry{ nullptr } {
+  }
+  /// Copy constructor deleted -- op does not go async
+  IndexContext(const IndexContext& from)
+    : record_{ from.record_ }
+    , entry{ from.entry }
+    , atomic_entry{ from.atomic_entry } {
+  }
+
+  inline const key_t& key() const {
+    return record_->key();
+  }
+  inline KeyHash get_key_hash() const {
+    return key().GetHash();
+  }
+
+  inline void set_index_entry(HashBucketEntry entry_, AtomicHashBucketEntry* atomic_entry_) {
+    entry = entry_;
+    atomic_entry = atomic_entry_;
+  }
+
+ protected:
+  /// Copies this context into a passed-in pointer if the operation goes
+  /// asynchronous inside FASTER.
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+  }
+
+ private:
+  /// Pointer to the record
+  record_t* record_;
+ public:
+  ///
+  HashBucketEntry entry;
+  AtomicHashBucketEntry* atomic_entry;
+};
+
+/// Forward class declaration
 class AsyncIOContext;
 class AsyncIndexIOContext;
 

@@ -8,12 +8,14 @@
 #include <cstdint>
 #include <thread>
 
-#include "address.h"
-#include "constants.h"
-#include "malloc_fixed_page_size.h"
+#include "../core/address.h"
+#include "../core/constants.h"
+#include "../core/malloc_fixed_page_size.h"
+
+using namespace FASTER::core;
 
 namespace FASTER {
-namespace core {
+namespace index {
 
 static_assert(Address::kAddressBits == 48, "Address::kAddressBits != 48");
 
@@ -198,4 +200,4 @@ static_assert(sizeof(HashBucket) == Constants::kCacheLineBytes,
               "sizeof(HashBucket) != Constants::kCacheLineBytes");
 
 }
-} // namespace FASTER::core
+} // namespace FASTER::index

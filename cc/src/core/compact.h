@@ -4,7 +4,6 @@
 #pragma once
 
 #include "async.h"
-#include "hash_bucket.h"
 #include "internal_contexts.h"
 #include "log_scan.h"
 #include "record.h"

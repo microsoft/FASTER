@@ -5,9 +5,11 @@
 
 #include <atomic>
 #include <cstdint>
+
 #include "address.h"
 #include "async.h"
 #include "native_buffer_pool.h"
+#include "../index/hash_bucket.h"
 
 #ifdef _WIN32
 #include <concurrent_queue.h>
@@ -15,6 +17,8 @@
 template <typename T>
 using concurrent_queue = concurrency::concurrent_queue<T>;
 #endif
+
+using namespace FASTER::index;
 
 namespace FASTER {
 namespace core {

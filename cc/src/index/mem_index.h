@@ -1,18 +1,22 @@
 #pragma once
 
-#include "async.h"
-#include "async_result_types.h"
-#include "checkpoint_state.h"
-#include "gc_state.h"
-#include "grow_state.h"
+#include "../core/async.h"
+#include "../core/async_result_types.h"
+#include "../core/checkpoint_state.h"
+#include "../core/gc_state.h"
+#include "../core/grow_state.h"
+#include "../core/internal_contexts.h"
+#include "../core/persistent_memory_malloc.h"
+#include "../core/state_transitions.h"
+#include "../core/status.h"
+
+#include "hash_bucket.h"
 #include "hash_table.h"
-#include "persistent_memory_malloc.h"
-#include "state_transitions.h"
-#include "status.h"
+
+using namespace FASTER::core;
 
 namespace FASTER {
-namespace core {
-
+namespace index {
 
 template<class D>
 class HashIndex {
@@ -24,13 +28,11 @@ class HashIndex {
   typedef GcStateWithIndex gc_state_t;
   typedef GrowState<hlog_t> grow_state_t;
 
-
   HashIndex(disk_t& disk, LightEpoch& epoch, gc_state_t& gc_state, grow_state_t& grow_state)
     : disk_{ disk }
     , epoch_{ epoch }
     , gc_state_{ &gc_state }
-    , grow_state_{ &grow_state }
-    , pending_requests_{ new concurrent_queue<IAsyncContext*>() } {
+    , grow_state_{ &grow_state } {
   }
 
   inline void Initialize(uint64_t new_size) {
@@ -49,19 +51,17 @@ class HashIndex {
   template <class C>
   inline Status FindEntry(ExecutionContext& exec_context, C& pending_context) const;
 
-
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
   // create a new entry. The caller can use the "expected_entry" to CAS its desired address into
   // the entry.
-  inline Status FindOrCreateEntry(KeyHash hash, HashBucketEntry& expected_entry,
-                                  AtomicHashBucketEntry*& atomic_entry){ return Status::Ok; }
-
   template <class C>
   inline Status FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context);
 
+  template <class C>
+  inline Status TryUpdateEntry(ExecutionContext& context, C& pending_context, Address new_address);
 
   template <class C>
-  inline Status TryUpdateEntry(ExecutionContext& context, C& pending_context, HashBucketEntry& new_entry);
+  inline Status UpdateEntry(ExecutionContext& context, C& pending_context, Address new_address);
 
   // Garbage Collect methods
   void GarbageCollectSetup(Address new_begin_address,
@@ -75,18 +75,14 @@ class HashIndex {
   template<class R>
   void Grow();
 
-  //
-  void CompletePendingRequests() {
-    IAsyncContext* ctxt;
-    while(pending_requests_->try_pop(ctxt)) {
-      AsyncIndexGetFromDiskCallback(ctxt, Status::Ok);
-    }
-  }
+  // Hash index ops do not go pending
+  inline void CompletePendingRequests() { };
 
   // Checkpointing methods
   Status Checkpoint(CheckpointState<file_t>& checkpoint);
   inline Status CheckpointComplete();
   Status WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint);
+
   // Recovery methods
   Status Recover(CheckpointState<file_t>& checkpoint);
   inline Status RecoverComplete();
@@ -130,9 +126,7 @@ class HashIndex {
   inline bool HasConflictingEntry(KeyHash hash, const HashBucket* bucket, uint8_t version,
                                                 const AtomicHashBucketEntry* atomic_entry) const;
 
-  Status IssueAsyncIoRequest(ExecutionContext& ctx, IAsyncContext& pending_context, KeyHash& hash) const;
-
-  /// Helper functions needed for Grow
+  // Helper functions needed for Grow
   void AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version, HashBucketEntry entry);
 
   template <class R>
@@ -155,8 +149,6 @@ class HashIndex {
   InternalHashTable<disk_t> table_[2];
   // Allocator for the hash buckets that don't fit in the hash table.
   MallocFixedPageSize<HashBucket, disk_t> overflow_buckets_allocator_[2];
-
-  std::unique_ptr<concurrent_queue<IAsyncContext*>> pending_requests_;
 };
 
 template <class D>
@@ -164,7 +156,6 @@ template <class C>
 inline Status HashIndex<D>::FindEntry(ExecutionContext& exec_context,
                                       C& pending_context) const {
   // TODO: add static asserts for typename C
-  //pending_context.index_op_type = IndexOperationType::Retrieve;
   KeyHash hash = pending_context.get_key_hash();
 
   // Truncate the hash to get a bucket page_index < table[version].size.
@@ -189,9 +180,6 @@ inline Status HashIndex<D>::FindEntry(ExecutionContext& exec_context,
           // If (final key, return immediately)
           pending_context.set_index_entry(entry,
               const_cast<AtomicHashBucketEntry*>(&bucket->entries[entry_idx]));
-          //pending_context.index_op_result = Status::Ok;
-          //return IssueAsyncIoRequest(exec_context, static_cast<IAsyncContext&>(pending_context), hash);
-          // TODO CHANGE To OK
           return Status::Ok;
         }
       }
@@ -212,10 +200,7 @@ inline Status HashIndex<D>::FindEntry(ExecutionContext& exec_context,
   return Status::Corruption; // NOT REACHED
 }
 
-
 template <class D>
-//inline Status HashIndex<D>::FindOrCreateEntry(KeyHash hash, HashBucketEntry& expected_entry,
-//                                              AtomicHashBucketEntry*& atomic_entry) {
 template<class C>
 inline Status HashIndex<D>::FindOrCreateEntry(ExecutionContext& exec_context,
                                               C& pending_context) {
@@ -269,13 +254,25 @@ inline Status HashIndex<D>::FindOrCreateEntry(ExecutionContext& exec_context,
 
 template <class D>
 template <class C>
-inline Status HashIndex<D>::TryUpdateEntry(ExecutionContext& context, C& pending_context, HashBucketEntry& new_entry) {
+inline Status HashIndex<D>::TryUpdateEntry(ExecutionContext& context, C& pending_context,
+                                          Address new_address) {
   assert(pending_context.atomic_entry != nullptr);
-
+  // Try to atomically update the hash index entry based on expected entry
+  HashBucketEntry new_entry{ new_address, pending_context.get_key_hash().tag(), false };
   bool success = pending_context.atomic_entry->compare_exchange_strong(pending_context.entry, new_entry);
   return success ? Status::Ok : Status::Aborted;
 }
 
+template <class D>
+template <class C>
+inline Status HashIndex<D>::UpdateEntry(ExecutionContext& context, C& pending_context,
+                                        Address new_address) {
+  assert(pending_context.atomic_entry != nullptr);
+  // Atomically update hash bucket entry
+  HashBucketEntry new_entry{ new_address, pending_context.get_key_hash().tag(), false };
+  pending_context.atomic_entry->store(new_entry);
+  return Status::Ok;
+}
 
 template <class D>
 inline AtomicHashBucketEntry* HashIndex<D>::FindTentativeEntry(KeyHash hash,
@@ -370,27 +367,6 @@ void HashIndex<D>::GarbageCollectSetup(Address new_begin_address,
                                       GcState::complete_callback_t complete_callback) {
   uint64_t num_chunks = std::max(size() / gc_state_t::kHashTableChunkSize, (uint64_t)1);
   gc_state_->Initialize(new_begin_address, truncate_callback, complete_callback, num_chunks);
-}
-
-template <class D>
-Status HashIndex<D>::IssueAsyncIoRequest(ExecutionContext& exec_context, IAsyncContext& pending_context,
-                                          KeyHash& hash) const {
-  /*auto index_context = alloc_context<AsyncIndexIOContext>(sizeof(AsyncIndexIOContext));
-  if (!index_context.get()) {
-    return Status::OutOfMemory;
-  }
-  */
-  uint64_t io_id = exec_context.io_id++;
-  exec_context.pending_ios.insert({ io_id, hash });
-
-  AsyncIndexIOContext index_context { nullptr, hash,
-                                      static_cast<IAsyncContext*>(&pending_context),
-                                      &exec_context.index_io_responses, io_id };
-
-  IAsyncContext* index_context_copy;
-  RETURN_NOT_OK(index_context.DeepCopy(index_context_copy));
-  pending_requests_->push(index_context_copy);
-  return Status::Pending;
 }
 
 template <class D>
@@ -640,7 +616,7 @@ Status HashIndex<D>::WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint
   assert(write_size <= file.alignment());       // less than file alignment
   write_size += file.alignment() - write_size;  // pad to file alignment
   assert(write_size % file.alignment() == 0);
-  uint8_t* buffer = reinterpret_cast<uint8_t*>(aligned_alloc(file.alignment(), write_size));
+  uint8_t* buffer = reinterpret_cast<uint8_t*>(core::aligned_alloc(file.alignment(), write_size));
   memset(buffer, 0, write_size);
   memcpy(buffer, &checkpoint.index_metadata, sizeof(checkpoint.index_metadata));
   // Write to file
@@ -715,7 +691,7 @@ Status HashIndex<D>::ReadCheckpointMetadata(const Guid& token, CheckpointState<f
   assert(read_size <= file.alignment());      // less than file alignment
   read_size += file.alignment() - read_size;  // pad to file alignment
   assert(read_size % file.alignment() == 0);
-  uint8_t* buffer = reinterpret_cast<uint8_t*>(aligned_alloc(file.alignment(), read_size));
+  uint8_t* buffer = reinterpret_cast<uint8_t*>(core::aligned_alloc(file.alignment(), read_size));
   memset(buffer, 0, read_size);
   // Write to file
   RETURN_NOT_OK(file.ReadAsync(0, buffer, read_size, callback, context));
@@ -765,4 +741,4 @@ void HashIndex<D>::AsyncIndexGetFromDiskCallback(IAsyncContext* ctxt, Status res
 
 
 }
-} // namespace FASTER::core
+} // namespace FASTER::index
