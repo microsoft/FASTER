@@ -10,7 +10,7 @@ header:
       url: "/docs/quick-start-guide/"
 excerpt: >
   A fast concurrent persistent key-value store and log, in C# and C++.<br />
-  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v1.9.14">Latest release v1.9.14</a></small>
+  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v2.0.0">Latest release v2.0.0</a></small>
 features:
   - image_path: /assets/images/faster-feature-1.png
     alt: "feature1"
@@ -63,9 +63,9 @@ NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded se
 
 # News and Updates
 
-* A high-performance remote (TCP) interface to FasterKV is now available! It provides linear server scalability with increasing client sessions, with similar server throughput as embedded FasterKV. We provide a default C# client as well as an ability to extend to other protocols. Learn more [here](docs/remote-basics/).
+* Version 2 of FASTER has been released with many API and performance improvements across the board. Learn more about the features in v2 at https://github.com/microsoft/FASTER/pull/563
 
-* Async API support has been improved, with async versions of `Upsert` and `Delete` added. Spin-wait has been significantly reduced in the codebase.
+* A high-performance remote (TCP) interface to FasterKV is now available! It provides linear server scalability with increasing client sessions, with similar server throughput as embedded FasterKV. We provide a default C# client as well as an ability to extend to other protocols. Learn more [here](docs/remote-basics/).
 
 * We support variable-length keys and values in FasterKV C# via `Memory<byte>` and more generally `Memory<T> where T : unmanaged` as key/value/input types. We also added
 a new type called `SpanByte` to represent variable-length keys and values. See the sample [here](https://github.com/Microsoft/FASTER/tree/main/cs/samples/StoreVarLenTypes) for details on these capabilities. This is in addition to the existing object-log support for class types.
