@@ -48,7 +48,7 @@ namespace ClassRecoveryDurablity
 
             if (first)
             {
-                var ss = store.db.For(new Types.StoreFunctions()).NewSession<Types.StoreFunctions>();
+                var ss = store.db.For(new Types.TestStoreFunctions()).NewSession<Types.TestStoreFunctions>();
 
                 lastBlockvalue = new Types.StoreValue { value = BitConverter.GetBytes(0) };
                 Types.StoreContext context1 = new();
@@ -65,7 +65,7 @@ namespace ClassRecoveryDurablity
             Task.Run(() =>
             {
                 // insert loop
-                var session = store.db.NewSession(new Types.StoreFunctions());
+                var session = store.db.NewSession(new Types.TestStoreFunctions());
 
                 while (stop == false)
                 {
@@ -157,7 +157,7 @@ namespace ClassRecoveryDurablity
         {
             Task.Run(() =>
             {
-                var session = store.db.NewSession(new Types.StoreFunctions());
+                var session = store.db.NewSession(new Types.TestStoreFunctions());
 
                 var lastblockKey = new Types.StoreKey { tableType = "L", key = new byte[1] { 0 } };
                 var lastBlockvalue = new Types.StoreValue();

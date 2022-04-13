@@ -191,7 +191,7 @@ namespace FASTER.core
             return originalUntilAddress;
         }
 
-        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions, StoreFunctions> tempKvSession)
+        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator> tempKvSession)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             using var iter = Log.Scan(untilAddress, scanUntil);

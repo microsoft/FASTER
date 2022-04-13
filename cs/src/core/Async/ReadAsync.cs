@@ -12,20 +12,20 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value, StoreFunctions> : FasterBase
     {
-        internal sealed class ReadAsyncInternal<Input, Output, Context>
+        internal sealed class ReadAsyncInternal<Input, Output, Context, Allocator>
         {
             const int Completed = 1;
             const int Pending = 0;
             ExceptionDispatchInfo _exception;
             readonly FasterKV<Key, Value, StoreFunctions> _fasterKV;
-            readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
+            readonly IFasterSession<Key, Value, Input, Output, Context, Allocator> _fasterSession;
             readonly FasterExecutionContext<Input, Output, Context> _currentCtx;
             PendingContext<Input, Output, Context> _pendingContext;
             readonly AsyncIOContext<Key, Value> _diskRequest;
             int CompletionComputeStatus;
             internal RecordMetadata _recordMetadata;
 
-            internal ReadAsyncInternal(FasterKV<Key, Value, StoreFunctions> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession, FasterExecutionContext<Input, Output, Context> currentCtx,
+            internal ReadAsyncInternal(FasterKV<Key, Value, StoreFunctions> fasterKV, IFasterSession<Key, Value, Input, Output, Context, Allocator> fasterSession, FasterExecutionContext<Input, Output, Context> currentCtx,
                                        PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 _exception = exceptionDispatchInfo;
@@ -52,7 +52,8 @@ namespace FASTER.core
                             _fasterSession.UnsafeResumeThread();
                             try
                             {
-                                var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _);
+                                var status = _fasterKV.InternalCompletePendingRequestFromContext<Input, Output, Context, Allocator, IFasterSession<Key, Value, Input, Output, Context, Allocator>>(
+                                        _currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _);
                                 Debug.Assert(!status.IsPending);
                                 _result = (status, _pendingContext.output);
                                 _recordMetadata = new(_pendingContext.recordInfo, _pendingContext.logicalAddress);
@@ -92,13 +93,13 @@ namespace FASTER.core
         /// <summary>
         /// State storage for the completion of an async Read, or the result if the read was completed synchronously
         /// </summary>
-        public struct ReadAsyncResult<Input, Output, Context>
+        public struct ReadAsyncResult<Input, Output, Context, Allocator>
         {
             private readonly Status status;
             private readonly Output output;
             readonly RecordMetadata recordMetadata;
 
-            internal readonly ReadAsyncInternal<Input, Output, Context> readAsyncInternal;
+            internal readonly ReadAsyncInternal<Input, Output, Context, Allocator> readAsyncInternal;
 
             internal ReadAsyncResult(Status status, Output output, RecordMetadata recordMetadata)
             {
@@ -110,14 +111,14 @@ namespace FASTER.core
 
             internal ReadAsyncResult(
                 FasterKV<Key, Value, StoreFunctions> fasterKV,
-                IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+                IFasterSession<Key, Value, Input, Output, Context, Allocator> fasterSession,
                 FasterExecutionContext<Input, Output, Context> currentCtx,
                 PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 status = new(StatusCode.Pending);
                 output = default;
                 this.recordMetadata = default;
-                readAsyncInternal = new ReadAsyncInternal<Input, Output, Context>(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
+                readAsyncInternal = new ReadAsyncInternal<Input, Output, Context, Allocator>(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
             }
 
             /// <summary>
@@ -148,9 +149,10 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<ReadAsyncResult<Input, Output, Context>> ReadAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+        internal ValueTask<ReadAsyncResult<Input, Output, Context, Allocator>> ReadAsync<Input, Output, Context, Allocator, FasterSession>(FasterSession fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx,
             ref Key key, ref Input input, ref ReadOptions readOptions, Context context, long serialNo, CancellationToken token, bool noKey = false)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context, Allocator>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             var operationFlags = PendingContext<Input, Output, Context>.GetOperationFlags(MergeReadFlags(currentCtx.ReadFlags, readOptions.ReadFlags), noKey);
@@ -163,16 +165,16 @@ namespace FASTER.core
             {
                 OperationStatus internalStatus;
                 do
-                    internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
+                    internalStatus = InternalRead<Input, Output, Context, Allocator, FasterSession>(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
                 while (internalStatus == OperationStatus.RETRY_NOW);
                 Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);
 
                 if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                    return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(new(internalStatus), output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
+                    return new ValueTask<ReadAsyncResult<Input, Output, Context, Allocator>>(new ReadAsyncResult<Input, Output, Context, Allocator>(new(internalStatus), output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
 
-                status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, true, out diskRequest);
+                status = HandleOperationStatus<Input, Output, Context, Allocator, FasterSession>(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, true, out diskRequest);
                 if (!status.IsPending)
-                    return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
+                    return new ValueTask<ReadAsyncResult<Input, Output, Context, Allocator>>(new ReadAsyncResult<Input, Output, Context, Allocator>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
             finally
             {
@@ -184,9 +186,9 @@ namespace FASTER.core
             return SlowReadAsync(this, fasterSession, currentCtx, pcontext, diskRequest, token);
         }
 
-        private static async ValueTask<ReadAsyncResult<Input, Output, Context>> SlowReadAsync<Input, Output, Context>(
+        private static async ValueTask<ReadAsyncResult<Input, Output, Context, Allocator>> SlowReadAsync<Input, Output, Context, Allocator>(
             FasterKV<Key, Value, StoreFunctions> @this,
-            IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            IFasterSession<Key, Value, Input, Output, Context, Allocator> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx,
             PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, CancellationToken token = default)
         {
@@ -210,7 +212,7 @@ namespace FASTER.core
                 exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
             }
 
-            return new ReadAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
+            return new ReadAsyncResult<Input, Output, Context, Allocator>(@this, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
         }
     }
 }

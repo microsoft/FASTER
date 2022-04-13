@@ -15,7 +15,7 @@ namespace FASTER.core
         // UpsertAsync, DeleteAsync, and RMWAsync can go pending when they generate Flush operations on BlockAllocate when inserting new records at the tail.
         // RMW can also go pending with a disk operation. Define some interfaces to and a shared UpdateAsyncInternal class to consolidate the code.
 
-        internal interface IUpdateAsyncOperation<Input, Output, Context, TAsyncResult>
+        internal interface IUpdateAsyncOperation<Input, Output, Context, Allocator, TAsyncResult>
         {
             /// <summary>
             /// This creates an instance of the <typeparamref name="TAsyncResult"/>, for example <see cref="RmwAsyncResult{Input, Output, Context}"/>
@@ -32,34 +32,35 @@ namespace FASTER.core
             /// </summary>
             /// <param name="fasterKV">The <see cref="FasterKV{Key, Value}"/> instance the async call was made on</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
-            /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
+            /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context, Allocator}"/> for this operation</param>
             /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
             /// <param name="asyncOp">Whether this is from a synchronous or asynchronous completion call</param>
             /// <param name="flushEvent">The event to wait for flush completion on</param>
             /// <param name="output">The output to be populated by this operation</param>
             /// <returns></returns>
-            Status DoFastOperation(FasterKV<Key, Value, StoreFunctions> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            Status DoFastOperation(FasterKV<Key, Value, StoreFunctions> fasterKV, ref PendingContext<Input, Output, Context> pendingContext,
+                                            IFasterSession<Key, Value, Input, Output, Context, Allocator> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output);
             /// <summary>
             /// Performs the asynchronous operation. This may be a wait for <paramref name="flushEvent"/> or a disk IO.
             /// </summary>
             /// <param name="fasterKV">The <see cref="FasterKV{Key, Value}"/> instance the async call was made on</param>
-            /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
+            /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context, Allocator}"/> for this operation</param>
             /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
             /// <param name="flushEvent">The event to wait for flush completion on</param>
             /// <param name="token">The cancellation token, if any</param>
             /// <returns></returns>
-            ValueTask<TAsyncResult> DoSlowOperation(FasterKV<Key, Value, StoreFunctions> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            ValueTask<TAsyncResult> DoSlowOperation(FasterKV<Key, Value, StoreFunctions> fasterKV, IFasterSession<Key, Value, Input, Output, Context, Allocator> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
                                             CompletionEvent flushEvent, CancellationToken token);
 
             /// <summary>
             /// For RMW only, completes any pending IO; no-op for other implementations.
             /// </summary>
-            /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
+            /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context, Allocator}"/> for this operation</param>
             /// <returns>Whether the pending operation was complete</returns>
-            bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession);
+            bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context, Allocator> fasterSession);
 
             /// <summary>
             /// For RMW only, decrements the count of pending IOs and async operations; no-op for other implementations.
@@ -69,20 +70,22 @@ namespace FASTER.core
             void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext);
         }
 
-        internal sealed class UpdateAsyncInternal<Input, Output, Context, TAsyncOperation, TAsyncResult>
-            where TAsyncOperation : IUpdateAsyncOperation<Input, Output, Context, TAsyncResult>
+        internal sealed class UpdateAsyncInternal<Input, Output, Context, Allocator, TAsyncOperation, TAsyncResult>
+            where TAsyncOperation : IUpdateAsyncOperation<Input, Output, Context, Allocator, TAsyncResult>
         {
             const int Completed = 1;
             const int Pending = 0;
             ExceptionDispatchInfo _exception;
             readonly FasterKV<Key, Value, StoreFunctions> _fasterKV;
-            readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
+            readonly IFasterSession<Key, Value, Input, Output, Context, Allocator> _fasterSession;
             readonly FasterExecutionContext<Input, Output, Context> _currentCtx;
+#pragma warning disable IDE0044 // ** DO NOT** Add readonly modifier; it will result in writing to a temp copy
             TAsyncOperation _asyncOperation;
+#pragma warning restore IDE0044 // Add readonly modifier
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 
-            internal UpdateAsyncInternal(FasterKV<Key, Value, StoreFunctions> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            internal UpdateAsyncInternal(FasterKV<Key, Value, StoreFunctions> fasterKV, IFasterSession<Key, Value, Input, Output, Context, Allocator> fasterSession,
                                       FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
                                       ExceptionDispatchInfo exceptionDispatchInfo, TAsyncOperation asyncOperation)
             {

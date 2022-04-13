@@ -31,17 +31,18 @@ namespace FASTER.core
         /// Async operations (e.g., ReadAsync) need to be completed individually
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompletePendingAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+        internal async ValueTask CompletePendingAsync<Input, Output, Context, Allocator, FasterSession>(FasterSession fasterSession,
                                       FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token,
                                       CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context, Allocator>
         {
             while (true)
             {
                 fasterSession.UnsafeResumeThread();
                 try
                 {
-                    InternalCompletePendingRequests(currentCtx, currentCtx, fasterSession, completedOutputs);
-                    InternalCompleteRetryRequests(currentCtx, currentCtx, fasterSession);
+                    InternalCompletePendingRequests<Input, Output, Context, Allocator, FasterSession>(currentCtx, currentCtx, fasterSession, completedOutputs);
+                    InternalCompleteRetryRequests<Input, Output, Context, Allocator, FasterSession>(currentCtx, currentCtx, fasterSession);
                 }
                 finally
                 {

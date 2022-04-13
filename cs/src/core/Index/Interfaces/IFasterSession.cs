@@ -23,7 +23,8 @@ namespace FASTER.core
     /// <typeparam name="Input"></typeparam>
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    internal interface IFasterSession<Key, Value, Input, Output, Context> : IFasterSession, IVariableLengthStruct<Value, Input>
+    /// <typeparam name="Allocator"></typeparam>
+    internal interface IFasterSession<Key, Value, Input, Output, Context, Allocator> : IFasterSession, IVariableLengthStruct<Value, Input>
     {
         #region Optional features supported by this implementation
         bool DisableLocking { get; }

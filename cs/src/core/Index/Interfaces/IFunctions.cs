@@ -222,6 +222,19 @@ namespace FASTER.core
         /// <param name="commitPoint">Commit point descriptor</param>
         void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint);
         #endregion Checkpointing
+
+        #region Input-dependent Variable Length 
+        /// <summary>
+        /// Initial expected length of Input, when populated by RMW using given input
+        /// </summary>
+        int GetInitialInputLength(ref Input input);
+
+        /// <summary>
+        /// Length of resulting Value when performing RMW with given input
+        /// </summary>
+        int GetKeyLength(ref Value value, ref Input input);
+
+        #endregion Input-dependent Variable Length 
     }
 
     /// <summary>

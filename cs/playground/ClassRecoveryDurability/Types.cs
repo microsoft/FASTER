@@ -121,7 +121,7 @@ namespace ClassRecoveryDurablity
             }
         }
 
-        public sealed class StoreFunctions : FunctionsBase<StoreKey, StoreValue, StoreInput, StoreOutput, StoreContext>
+        public sealed class TestStoreFunctions : FunctionsBase<StoreKey, StoreValue, StoreInput, StoreOutput, StoreContext>
         {
             public override bool SingleReader(ref StoreKey key, ref StoreInput input, ref StoreValue value, ref StoreOutput dst, ref ReadInfo readInfo)
             {
