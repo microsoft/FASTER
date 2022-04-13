@@ -6,12 +6,14 @@
 #include "../core/gc_state.h"
 #include "../core/grow_state.h"
 #include "../core/internal_contexts.h"
+#include "../core/light_epoch.h"
 #include "../core/persistent_memory_malloc.h"
 #include "../core/state_transitions.h"
 #include "../core/status.h"
 
 #include "hash_bucket.h"
 #include "hash_table.h"
+#include "index.h"
 
 using namespace FASTER::core;
 
@@ -19,7 +21,7 @@ namespace FASTER {
 namespace index {
 
 template<class D>
-class HashIndex {
+class HashIndex : public IHashIndex<D> {
  public:
   typedef D disk_t;
   typedef typename D::file_t file_t;
@@ -35,33 +37,33 @@ class HashIndex {
     , grow_state_{ &grow_state } {
   }
 
-  inline void Initialize(uint64_t new_size) {
-    resize_info.version = 0;
+  void Initialize(uint64_t new_size) {
+    this->resize_info.version = 0;
     table_[0].Initialize(new_size, disk_.log().alignment());
     overflow_buckets_allocator_[0].Initialize(disk_.log().alignment(), epoch_);
   }
 
-  inline void DumpDistribution() {
-    table_[resize_info.version].DumpDistribution(
-      overflow_buckets_allocator_[resize_info.version]);
+  void DumpDistribution() {
+    table_[this->resize_info.version].DumpDistribution(
+      overflow_buckets_allocator_[this->resize_info.version]);
   }
 
   // Find the hash bucket entry, if any, corresponding to the specified hash.
   // The caller can use the "expected_entry" to CAS its desired address into the entry.
   template <class C>
-  inline Status FindEntry(ExecutionContext& exec_context, C& pending_context) const;
+  Status FindEntry(ExecutionContext& exec_context, C& pending_context) const;
 
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
   // create a new entry. The caller can use the "expected_entry" to CAS its desired address into
   // the entry.
   template <class C>
-  inline Status FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context);
+  Status FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context);
 
   template <class C>
-  inline Status TryUpdateEntry(ExecutionContext& context, C& pending_context, Address new_address);
+  Status TryUpdateEntry(ExecutionContext& context, C& pending_context, Address new_address);
 
   template <class C>
-  inline Status UpdateEntry(ExecutionContext& context, C& pending_context, Address new_address);
+  Status UpdateEntry(ExecutionContext& context, C& pending_context, Address new_address);
 
   // Garbage Collect methods
   void GarbageCollectSetup(Address new_begin_address,
@@ -76,23 +78,23 @@ class HashIndex {
   void Grow();
 
   // Hash index ops do not go pending
-  inline void CompletePendingRequests() { };
+  void CompletePendingRequests() { };
 
   // Checkpointing methods
   Status Checkpoint(CheckpointState<file_t>& checkpoint);
-  inline Status CheckpointComplete();
+  Status CheckpointComplete();
   Status WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint);
 
   // Recovery methods
   Status Recover(CheckpointState<file_t>& checkpoint);
-  inline Status RecoverComplete();
+  Status RecoverComplete();
   Status ReadCheckpointMetadata(const Guid& token, CheckpointState<file_t>& checkpoint);
 
-  inline uint64_t size() const {
-    return table_[resize_info.version].size();
+  uint64_t size() const {
+    return table_[this->resize_info.version].size();
   }
-  inline uint64_t new_size() const {
-    return table_[1 - resize_info.version].size();
+  uint64_t new_size() const {
+    return table_[1 - this->resize_info.version].size();
   }
 
  private:
@@ -117,14 +119,13 @@ class HashIndex {
     std::atomic<bool>* completed;
   };
 
-  static void AsyncIndexGetFromDiskCallback(IAsyncContext* ctxt, Status result);
-
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
   // return an unused bucket entry.
-  inline AtomicHashBucketEntry* FindTentativeEntry(KeyHash hash, HashBucket* bucket, uint8_t version,
-                                                    HashBucketEntry& expected_entry);
-  inline bool HasConflictingEntry(KeyHash hash, const HashBucket* bucket, uint8_t version,
-                                                const AtomicHashBucketEntry* atomic_entry) const;
+  AtomicHashBucketEntry* FindTentativeEntry(KeyHash hash, HashBucket* bucket, uint8_t version,
+                                            HashBucketEntry& expected_entry);
+
+  bool HasConflictingEntry(KeyHash hash, const HashBucket* bucket, uint8_t version,
+                            const AtomicHashBucketEntry* atomic_entry) const;
 
   // Helper functions needed for Grow
   void AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version, HashBucketEntry entry);
@@ -134,10 +135,7 @@ class HashIndex {
                                       Address from_address, Address min_address, uint8_t side);
 
   // Remove tantative entries from the index
-  inline void ClearTentativeEntries();
-
- public:
-  ResizeInfo resize_info;
+  void ClearTentativeEntries();
 
  private:
   disk_t& disk_;
@@ -159,7 +157,7 @@ inline Status HashIndex<D>::FindEntry(ExecutionContext& exec_context,
   KeyHash hash = pending_context.get_key_hash();
 
   // Truncate the hash to get a bucket page_index < table[version].size.
-  uint32_t version = resize_info.version;
+  uint32_t version = this->resize_info.version;
   assert(version == 0 || version == 1);
 
   const HashBucket* bucket = &table_[version].bucket(hash);
@@ -213,7 +211,7 @@ inline Status HashIndex<D>::FindOrCreateEntry(ExecutionContext& exec_context,
   AtomicHashBucketEntry* atomic_entry;
 
   // Truncate the hash to get a bucket page_index < table[version].size.
-  const uint32_t version = resize_info.version;
+  const uint32_t version = this->resize_info.version;
   assert(version == 0 || version == 1);
 
   while(true) {
@@ -275,8 +273,9 @@ inline Status HashIndex<D>::UpdateEntry(ExecutionContext& context, C& pending_co
 }
 
 template <class D>
-inline AtomicHashBucketEntry* HashIndex<D>::FindTentativeEntry(KeyHash hash,
-    HashBucket* bucket, uint8_t version, HashBucketEntry& expected_entry) {
+inline AtomicHashBucketEntry* HashIndex<D>::FindTentativeEntry(KeyHash hash, HashBucket* bucket,
+                                                              uint8_t version,
+                                                              HashBucketEntry& expected_entry) {
 
   expected_entry = HashBucketEntry::kInvalidEntry;
   AtomicHashBucketEntry* atomic_entry = nullptr;
@@ -337,7 +336,8 @@ inline AtomicHashBucketEntry* HashIndex<D>::FindTentativeEntry(KeyHash hash,
 
 template <class D>
 inline bool HashIndex<D>::HasConflictingEntry(KeyHash hash, const HashBucket* bucket,
-    uint8_t version, const AtomicHashBucketEntry* atomic_entry) const {
+                                              uint8_t version,
+                                              const AtomicHashBucketEntry* atomic_entry) const {
   uint16_t tag = atomic_entry->load().tag();
   while(true) {
     for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
@@ -362,21 +362,21 @@ inline bool HashIndex<D>::HasConflictingEntry(KeyHash hash, const HashBucket* bu
 }
 
 template <class D>
-void HashIndex<D>::GarbageCollectSetup(Address new_begin_address,
-                                      GcState::truncate_callback_t truncate_callback,
-                                      GcState::complete_callback_t complete_callback) {
+inline void HashIndex<D>::GarbageCollectSetup(Address new_begin_address,
+                                            GcState::truncate_callback_t truncate_callback,
+                                            GcState::complete_callback_t complete_callback) {
   uint64_t num_chunks = std::max(size() / gc_state_t::kHashTableChunkSize, (uint64_t)1);
   gc_state_->Initialize(new_begin_address, truncate_callback, complete_callback, num_chunks);
 }
 
 template <class D>
-bool HashIndex<D>::GarbageCollect() {
+inline bool HashIndex<D>::GarbageCollect() {
   uint64_t chunk = gc_state_->next_chunk++;
   if(chunk >= gc_state_->num_chunks) {
     // No chunk left to clean.
     return false;
   }
-  uint8_t version = resize_info.version;
+  uint8_t version = this->resize_info.version;
   uint64_t upper_bound;
   if(chunk + 1 < gc_state_->num_chunks) {
     // All chunks but the last chunk contain gc.kHashTableChunkSize elements.
@@ -413,9 +413,9 @@ bool HashIndex<D>::GarbageCollect() {
 }
 
 template <class D>
-void HashIndex<D>::GrowSetup(GrowCompleteCallback callback) {
+inline void HashIndex<D>::GrowSetup(GrowCompleteCallback callback) {
   // Initialize index grow state
-  uint8_t current_version = resize_info.version;
+  uint8_t current_version = this->resize_info.version;
   assert(current_version == 0 || current_version == 1);
   uint8_t next_version = 1 - current_version;
   uint64_t num_chunks = std::max(size() / grow_state_t::kHashTableChunkSize, (uint64_t)1);
@@ -428,7 +428,7 @@ void HashIndex<D>::GrowSetup(GrowCompleteCallback callback) {
 
 template <class D>
 template <class R>
-void HashIndex<D>::Grow() {
+inline void HashIndex<D>::Grow() {
   typedef R record_t;
 
   // This thread won't exit until all hash table buckets have been split.
@@ -522,8 +522,8 @@ void HashIndex<D>::Grow() {
 }
 
 template <class D>
-void HashIndex<D>::AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version,
-                                     HashBucketEntry entry) {
+inline void HashIndex<D>::AddHashEntry(HashBucket*& bucket, uint32_t& next_idx,
+                                      uint8_t version, HashBucketEntry entry) {
   if(next_idx == HashBucket::kNumEntries) {
     // Need to allocate a new bucket, first.
     FixedPageAddress new_bucket_addr = overflow_buckets_allocator_[version].Allocate();
@@ -538,8 +538,9 @@ void HashIndex<D>::AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t
 
 template <class D>
 template <class R>
-Address HashIndex<D>::TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size,
-                                          Address from_address, Address min_address, uint8_t side) {
+inline Address HashIndex<D>::TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size,
+                                                        Address from_address, Address min_address,
+                                                        uint8_t side) {
   typedef R record_t;
 
   assert(side == 0 || side == 1);
@@ -557,17 +558,17 @@ Address HashIndex<D>::TraceBackForOtherChainStart(uint64_t old_size, uint64_t ne
 }
 
 template <class D>
-Status HashIndex<D>::Checkpoint(CheckpointState<file_t>& checkpoint) {
+inline Status HashIndex<D>::Checkpoint(CheckpointState<file_t>& checkpoint) {
   // Checkpoint the hash table
   auto path = disk_.relative_index_checkpoint_path(checkpoint.index_token);
   file_t ht_file = disk_.NewFile(path + "ht.dat");
   RETURN_NOT_OK(ht_file.Open(&disk_.handler()));
-  RETURN_NOT_OK(table_[resize_info.version].Checkpoint(disk_, std::move(ht_file),
+  RETURN_NOT_OK(table_[this->resize_info.version].Checkpoint(disk_, std::move(ht_file),
                                               checkpoint.index_metadata.num_ht_bytes));
   // Checkpoint overflow buckets
   file_t ofb_file = disk_.NewFile(path + "ofb.dat");
   RETURN_NOT_OK(ofb_file.Open(&disk_.handler()));
-  RETURN_NOT_OK(overflow_buckets_allocator_[resize_info.version].Checkpoint(disk_,
+  RETURN_NOT_OK(overflow_buckets_allocator_[this->resize_info.version].Checkpoint(disk_,
                 std::move(ofb_file), checkpoint.index_metadata.num_ofb_bytes));
 
   checkpoint.index_checkpoint_started = true;
@@ -576,22 +577,22 @@ Status HashIndex<D>::Checkpoint(CheckpointState<file_t>& checkpoint) {
 
 template <class D>
 inline Status HashIndex<D>::CheckpointComplete() {
-  Status result = table_[resize_info.version].CheckpointComplete(false);
+  Status result = table_[this->resize_info.version].CheckpointComplete(false);
   if(result == Status::Pending) {
     return Status::Pending;
   } else if(result != Status::Ok) {
     return result;
   } else {
-    return overflow_buckets_allocator_[resize_info.version].CheckpointComplete(false);
+    return overflow_buckets_allocator_[this->resize_info.version].CheckpointComplete(false);
   }
 }
 
 template <class D>
-Status HashIndex<D>::WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint) {
+inline Status HashIndex<D>::WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint) {
   // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the ofb.
   // (Ensures that recovery won't accidentally reallocate from the ofb.)
   checkpoint.index_metadata.ofb_count =
-    overflow_buckets_allocator_[resize_info.version].count();
+    overflow_buckets_allocator_[this->resize_info.version].count();
 
   auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
     CallbackContext<CheckpointMetadataIoContext> context{ ctxt };
@@ -631,8 +632,8 @@ Status HashIndex<D>::WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint
 }
 
 template <class D>
-Status HashIndex<D>::Recover(CheckpointState<file_t>& checkpoint) {
-  uint8_t version = resize_info.version;
+inline Status HashIndex<D>::Recover(CheckpointState<file_t>& checkpoint) {
+  uint8_t version = this->resize_info.version;
   assert(table_[version].size() == checkpoint.index_metadata.table_size);
   auto path = disk_.relative_index_checkpoint_path(checkpoint.index_token);
 
@@ -652,11 +653,11 @@ Status HashIndex<D>::Recover(CheckpointState<file_t>& checkpoint) {
 
 template <class D>
 inline Status HashIndex<D>::RecoverComplete() {
-  Status result = table_[resize_info.version].RecoverComplete(true);
+  Status result = table_[this->resize_info.version].RecoverComplete(true);
   if(result != Status::Ok) {
     return result;
   }
-  result = overflow_buckets_allocator_[resize_info.version].RecoverComplete(true);
+  result = overflow_buckets_allocator_[this->resize_info.version].RecoverComplete(true);
   if(result != Status::Ok) {
     return result;
   }
@@ -666,7 +667,8 @@ inline Status HashIndex<D>::RecoverComplete() {
 }
 
 template <class D>
-Status HashIndex<D>::ReadCheckpointMetadata(const Guid& token, CheckpointState<file_t>& checkpoint) {
+inline Status HashIndex<D>::ReadCheckpointMetadata(const Guid& token,
+                                                  CheckpointState<file_t>& checkpoint) {
 
   auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
     CallbackContext<CheckpointMetadataIoContext> context{ ctxt };
@@ -710,7 +712,7 @@ Status HashIndex<D>::ReadCheckpointMetadata(const Guid& token, CheckpointState<f
 template <class D>
 inline void HashIndex<D>::ClearTentativeEntries() {
   // Clear all tentative entries.
-  uint8_t version = resize_info.version;
+  uint8_t version = this->resize_info.version;
   for(uint64_t bucket_idx = 0; bucket_idx < table_[version].size(); ++bucket_idx) {
     HashBucket* bucket = &table_[version].bucket(bucket_idx);
     while(true) {
@@ -730,15 +732,6 @@ inline void HashIndex<D>::ClearTentativeEntries() {
     }
   }
 }
-
-
-template <class D>
-void HashIndex<D>::AsyncIndexGetFromDiskCallback(IAsyncContext* ctxt, Status result) {
-  CallbackContext<AsyncIndexIOContext> context{ ctxt };
-  context.async = true;
-  context->thread_io_responses->push(context.get());
-}
-
 
 }
 } // namespace FASTER::index
