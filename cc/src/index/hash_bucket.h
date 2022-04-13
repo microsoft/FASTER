@@ -62,9 +62,6 @@ struct HashBucketEntry {
   inline bool tentative() const {
     return static_cast<bool>(tentative_);
   }
-  inline void set_tentative(bool desired) {
-    tentative_ = desired;
-  }
 
   union {
       struct {

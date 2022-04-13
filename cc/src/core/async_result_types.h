@@ -8,6 +8,7 @@
 
 #include "address.h"
 #include "async.h"
+#include "key_hash.h"
 #include "native_buffer_pool.h"
 #include "../index/hash_bucket.h"
 
