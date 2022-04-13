@@ -70,10 +70,15 @@ namespace FASTER.core
             int recordSize = 1;
             int requiredSize = sectorSize + (((numRecords) * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
 
+#if NET5_0_OR_GREATER
+            buffer = GC.AllocateArray<byte>(requiredSize, true);
+#else
             buffer = new byte[requiredSize];
             handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-            aligned_pointer = (byte*)(((long)handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
-            offset = (int)((long)aligned_pointer - (long)handle.AddrOfPinnedObject());
+#endif
+            long bufferAddr = (long)Unsafe.AsPointer(ref buffer[0]);
+            aligned_pointer = (byte*)((bufferAddr + (sectorSize - 1)) & ~((long)sectorSize - 1));
+            offset = (int)((long)aligned_pointer - bufferAddr);
         }
 
         /// <summary>
@@ -81,7 +86,9 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+#if !NET5_0_OR_GREATER
             handle.Free();
+#endif
             buffer = null;
         }
 
@@ -126,14 +133,14 @@ namespace FASTER.core
         /// Disable buffer pool.
         /// This static option should be enabled on program entry, and not modified once FASTER is instantiated.
         /// </summary>
-        public static bool Disabled = false;
+        public static bool Disabled;
 
         /// <summary>
         /// Unpin objects when they are returned to the pool, so that we do not hold pinned objects long term.
         /// If set, we will unpin when objects are returned and re-pin when objects are returned from the pool.
         /// This static option should be enabled on program entry, and not modified once FASTER is instantiated.
         /// </summary>
-        public static bool UnpinOnReturn = false;
+        public static bool UnpinOnReturn;
 
         private const int levels = 32;
         private readonly int recordSize;
@@ -182,7 +189,12 @@ namespace FASTER.core
             }
             else
             {
+#if NET5_0_OR_GREATER
+                if (UnpinOnReturn)
+                    page.handle.Free();
+#else
                 page.handle.Free();
+#endif
                 page.buffer = null;
             }
         }
@@ -234,14 +246,19 @@ namespace FASTER.core
                 return page;
             }
 
-            page = new SectorAlignedMemory
-            {
-                level = index,
-                buffer = new byte[sectorSize * (1 << index)]
-            };
+            page = new SectorAlignedMemory { level = index };
+
+#if NET5_0_OR_GREATER
+            page.buffer = GC.AllocateArray<byte>(sectorSize * (1 << index), !UnpinOnReturn);
+            if (UnpinOnReturn)
+                page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
+#else
+            page.buffer = new byte[sectorSize * (1 << index)];
             page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
-            page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
-            page.offset = (int) ((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
+#endif
+            long pageAddr = (long)Unsafe.AsPointer(ref page.buffer[0]);
+            page.aligned_pointer = (byte*)((pageAddr + (sectorSize - 1)) & ~((long)sectorSize - 1));
+            page.offset = (int)((long)page.aligned_pointer - pageAddr);
             page.pool = this;
             return page;
         }
@@ -260,8 +277,10 @@ namespace FASTER.core
                 if (queue[i] == null) continue;
                 while (queue[i].TryDequeue(out SectorAlignedMemory result))
                 {
+#if !NET5_0_OR_GREATER
                     if (!UnpinOnReturn)
                         result.handle.Free();
+#endif
                     result.buffer = null;
                 }
             }

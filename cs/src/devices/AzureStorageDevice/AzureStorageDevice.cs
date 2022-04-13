@@ -182,7 +182,7 @@ namespace FASTER.devices
         {
             foreach (var entry in blobs)
             {
-                entry.Value.PageBlob.Delete();
+                entry.Value.PageBlob?.Delete();
             }
         }
 
@@ -365,8 +365,8 @@ namespace FASTER.devices
             {
                 var nonLoadedBlob = this.blobDirectory.GetPageBlobReference(GetSegmentBlobName(segmentId));
                 var exception = new InvalidOperationException("Attempt to read a non-loaded segment");
-                this.BlobManager?.HandleBlobError(nameof(ReadAsync), exception.Message, nonLoadedBlob?.Name, exception, true);
-                throw exception;
+                this.BlobManager?.HandleBlobError(nameof(ReadAsync), exception.Message, nonLoadedBlob?.Name, exception, false);
+                throw new FasterException(exception.Message, exception);
             }
 
             var t = this.ReadFromBlobUnsafeAsync(blobEntry.PageBlob, (long)sourceAddress, (long)destinationAddress, readLength);

@@ -15,10 +15,12 @@ namespace FASTER.core
         public const int kRecordAlignment = 8; // RecordInfo has a long field, so it should be aligned to 8-bytes
 
         // Circular buffer definition
-        private byte[][] values;
-        private GCHandle[] handles;
-        private long[] pointers;
+        private readonly byte[][] values;
+        private readonly long[] pointers;
+#if !NET5_0_OR_GREATER
+        private readonly GCHandle[] handles;
         private readonly GCHandle ptrHandle;
+#endif
         private readonly long* nativePointers;
         private readonly bool fixedSizeKey;
         private readonly bool fixedSizeValue;
@@ -31,14 +33,28 @@ namespace FASTER.core
         public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
             : base(settings, comparer, evictCallback, epoch, flushCallback)
         {
-            overflowPagePool = new OverflowPool<PageUnit>(4, p => p.handle.Free());
+            overflowPagePool = new OverflowPool<PageUnit>(4, p =>
+#if NET5_0_OR_GREATER
+            { }
+#else
+                p.handle.Free()
+#endif
+            );
 
-            values = new byte[BufferSize][];
-            handles = new GCHandle[BufferSize];
-            pointers = new long[BufferSize];
+            if (BufferSize > 0)
+            {
+                values = new byte[BufferSize][];
 
-            ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
-            nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
+#if NET5_0_OR_GREATER
+                pointers = GC.AllocateArray<long>(BufferSize, true);
+                nativePointers = (long*)Unsafe.AsPointer(ref pointers[0]);
+#else
+                pointers = new long[BufferSize];
+                handles = new GCHandle[BufferSize];
+                ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
+                nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
+#endif
+            }
 
             KeyLength = vlSettings.keyLength;
             ValueLength = vlSettings.valueLength;
@@ -206,18 +222,17 @@ namespace FASTER.core
         {
             base.Dispose();
 
-            if (values != null)
+#if !NET5_0_OR_GREATER
+            if (BufferSize > 0)
             {
-                for (int i = 0; i < values.Length; i++)
+                for (int i = 0; i < handles.Length; i++)
                 {
                     if (handles[i].IsAllocated)
                         handles[i].Free();
-                    values[i] = null;
                 }
+                ptrHandle.Free();
             }
-            handles = null;
-            pointers = null;
-            values = null;
+#endif
             overflowPagePool.Dispose();
         }
 
@@ -241,18 +256,25 @@ namespace FASTER.core
 
             if (overflowPagePool.TryGet(out var item))
             {
+#if !NET5_0_OR_GREATER
                 handles[index] = item.handle;
+#endif
                 pointers[index] = item.pointer;
                 values[index] = item.value;
                 return;
             }
 
             var adjustedSize = PageSize + 2 * sectorSize;
-            byte[] tmp = new byte[adjustedSize];
-            Array.Clear(tmp, 0, adjustedSize);
 
+#if NET5_0_OR_GREATER
+            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
+            long p = (long)Unsafe.AsPointer(ref tmp[0]);
+#else
+            byte[] tmp = new byte[adjustedSize];
             handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
             long p = (long)handles[index].AddrOfPinnedObject();
+#endif
+            Array.Clear(tmp, 0, adjustedSize);
             pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
             values[index] = tmp;
         }
@@ -325,7 +347,7 @@ namespace FASTER.core
             else
             {
                 // Adjust array offset for cache alignment
-                offset += (int)(pointers[page % BufferSize] - (long)handles[page % BufferSize].AddrOfPinnedObject());
+                offset += (int)(pointers[page % BufferSize] - (long)Unsafe.AsPointer(ref values[page % BufferSize][0]));
                 Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
             }
         }
@@ -338,13 +360,17 @@ namespace FASTER.core
                 int index = (int)(page % BufferSize);
                 overflowPagePool.TryAdd(new PageUnit
                 {
+#if !NET5_0_OR_GREATER
                     handle = handles[index],
+#endif
                     pointer = pointers[index],
                     value = values[index]
                 });
                 values[index] = null;
                 pointers[index] = 0;
+#if !NET5_0_OR_GREATER
                 handles[index] = default;
+#endif
                 Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
@@ -356,13 +382,12 @@ namespace FASTER.core
         {
             for (int i = 0; i < values.Length; i++)
             {
+#if !NET5_0_OR_GREATER
                 if (handles[i].IsAllocated)
                     handles[i].Free();
+#endif
                 values[i] = null;
             }
-            handles = null;
-            pointers = null;
-            values = null;
         }
 
         protected override void ReadAsync<TContext>(
@@ -462,12 +487,11 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
             using var iter = new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
-            OnEvictionObserver?.OnNext(iter);
+            observer?.OnNext(iter);
         }
-
 
         /// <summary>
         /// Read pages from specified device

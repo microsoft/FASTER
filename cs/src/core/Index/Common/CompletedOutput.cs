@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 
 namespace FASTER.core
 {
@@ -94,7 +93,7 @@ namespace FASTER.core
         public ref TInput Input => ref inputContainer.Get();
 
         /// <summary>
-        /// The output for this pending operation.
+        /// The output for this pending operation. It is the caller's responsibility to dispose this if necessary; <see cref="Dispose()"/> will not try to dispose this member.
         /// </summary>
         public TOutput Output;
 
@@ -104,17 +103,12 @@ namespace FASTER.core
         public TContext Context;
 
         /// <summary>
-        /// The header of the record for this operation
+        /// The record metadata for this operation
         /// </summary>
-        public RecordInfo RecordInfo;
+        public RecordMetadata RecordMetadata;
 
         /// <summary>
-        /// The logical address of the record for this operation
-        /// </summary>
-        public long Address;
-
-        /// <summary>
-        /// The status of the operation: OK or NOTFOUND
+        /// The status of the operation
         /// </summary>
         public Status Status;
 
@@ -124,8 +118,7 @@ namespace FASTER.core
             this.inputContainer = pendingContext.input;
             this.Output = pendingContext.output;
             this.Context = pendingContext.userContext;
-            this.RecordInfo = pendingContext.recordInfo;
-            this.Address = pendingContext.logicalAddress;
+            this.RecordMetadata = new(pendingContext.recordInfo, pendingContext.logicalAddress);
             this.Status = status;
         }
 

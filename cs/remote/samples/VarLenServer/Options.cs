@@ -11,7 +11,7 @@ namespace FasterServerOptions
         [Option("port", Required = false, Default = 3278, HelpText = "Port to run server on")]
         public int Port { get; set; }
 
-        [Option("bind", Required = false, Default = "127.0.0.1", HelpText = "IP address to bind server to")]
+        [Option("bind", Required = false, Default = null, HelpText = "IP address to bind server to (default: any)")]
         public string Address { get; set; }
 
         [Option('m', "memory", Required = false, Default = "16g", HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
@@ -26,7 +26,7 @@ namespace FasterServerOptions
         [Option('i', "index", Required = false, Default = "8g", HelpText = "Size of hash index in bytes (rounds down to power of 2)")]
         public string IndexSize { get; set; }
 
-        [Option('l', "logdir", Required = false, Default = null, HelpText = "Storage directory for data (hybrid log). Runs memory-only if unspecified.")]
+        [Option('l', "logdir", Required = false, Default = null, HelpText = "Storage directory for data (hybrid log). Current folder if unspecified, and memory-only if empty string provided.")]
         public string LogDir { get; set; }
 
         [Option('c', "checkpointdir", Required = false, Default = null, HelpText = "Storage directory for checkpoints. Uses 'checkpoints' folder under logdir if unspecified.")]

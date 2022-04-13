@@ -31,11 +31,11 @@ namespace FasterLogSample
                 staticEntry[i] = (byte)i;
             }
 
-            var path = Path.GetTempPath() + "FasterLogSample/";
-            IDevice device = Devices.CreateLogDevice(path + "hlog.log");
+            // Create settings to write logs and commits at specified local path
+            using var config = new FasterLogSettings("./FasterLogSample", deleteDirOnDispose: true);
 
             // FasterLog will recover and resume if there is a previous commit found
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(config);
 
             using (iter = log.Scan(log.BeginAddress, long.MaxValue))
             {
@@ -156,9 +156,8 @@ namespace FasterLogSample
             {
                 while (!iter.GetNext(out result, out _, out _))
                 {
-                    // For finite end address, check if iteration ended
-                    // if (currentAddress >= endAddress) return; 
-                    iter.WaitAsync().GetAwaiter().GetResult();
+                    if (iter.Ended) return;
+                    iter.WaitAsync().AsTask().GetAwaiter().GetResult();
                 }
 
                 // Memory pool variant:
@@ -197,7 +196,7 @@ namespace FasterLogSample
             long lastValue = log.TailAddress;
             long lastIterValue = log.BeginAddress;
 
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
 
             while (true)

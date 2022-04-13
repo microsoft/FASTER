@@ -35,18 +35,18 @@ namespace FASTER.remote.test
     /// </summary>
     sealed class FixedLenClientFunctions : CallbackFunctionsBase<long, long, long, long, long>
     {
-        readonly ManualResetEvent evt = new ManualResetEvent(false);
+        readonly ManualResetEvent evt = new(false);
 
         public override void ReadCompletionCallback(ref long key, ref long input, ref long output, long ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(status.Found, status.ToString());
             Assert.IsTrue(output == ctx);
         }
 
         /// <inheritdoc />
         public override void SubscribeKVCallback(ref long key, ref long input, ref long output, long ctx, Status status)
         {
-            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(status.Found, status.ToString());
             Assert.IsTrue(output == 23);
             evt.Set();
         }

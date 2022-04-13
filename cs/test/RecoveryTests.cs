@@ -42,7 +42,7 @@ namespace FASTER.test.recovery.sumstore
             fht = new FasterKV<AdId, NumClicks>(keySpace,
                 //new LogSettings { LogDevice = log, MemorySizeBits = 14, PageSizeBits = 9 },  // locks ups at session.RMW line in Populate() for Local Memory
                 new LogSettings { LogDevice = log, SegmentSizeBits = 25 },
-                new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.Snapshot }
+                new CheckpointSettings { CheckpointDir = path }
             );
         }
 
@@ -104,7 +104,7 @@ namespace FASTER.test.recovery.sumstore
             if ((opNum + 1) % checkpointInterval == 0)
             {
                 Guid token;
-                while (!fht.TakeFullCheckpoint(out token)) { }
+                while (!fht.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot)) { }
                 logTokens.Add(token);
                 indexTokens.Add(token);
                 fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -120,12 +120,12 @@ namespace FASTER.test.recovery.sumstore
             Guid token;
             if (checkpointNum % 2 == 1)
             {
-                while (!fht.TakeHybridLogCheckpoint(out token)) { }
+                while (!fht.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot)) { }
                 logTokens.Add(token);
             }
             else
             {
-                while (!fht.TakeIndexCheckpoint(out token)) { }
+                while (!fht.TryInitiateIndexCheckpoint(out token)) { }
                 indexTokens.Add(token);
             }
             fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -188,7 +188,7 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < numUniqueKeys; i++)
             {
                 var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                Assert.AreEqual(Status.OK, status, $"At tokenIndex {tokenIndex}, keyIndex {i}, AdId {inputArray[i].adId.adId}");
+                Assert.IsTrue(status.Found, $"At tokenIndex {tokenIndex}, keyIndex {i}, AdId {inputArray[i].adId.adId}");
                 inputArray[i].numClicks = output.value;
             }
 
@@ -210,7 +210,7 @@ namespace FASTER.test.recovery.sumstore
             long[] expected = new long[numUniqueKeys];
             foreach (var guid in checkpointInfo.continueTokens.Keys)
             {
-                var cp = checkpointInfo.continueTokens[guid];
+                var cp = checkpointInfo.continueTokens[guid].Item2;
                 for (long i = 0; i <= cp.UntilSerialNo; i++)
                 {
                     var id = i % numUniqueKeys;
@@ -290,7 +290,7 @@ namespace FASTER.test.recovery.sumstore
 
             var result = new FasterKV<TData, TData>(DeviceTypeRecoveryTests.keySpace,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, SegmentSizeBits = 25 },
-                new CheckpointSettings { CheckpointDir = path, CheckPointType = CheckpointType.Snapshot },
+                new CheckpointSettings { CheckpointDir = path },
                 this.serializerSettingsObj as SerializerSettings<TData, TData>,
                 variableLengthStructSettings: varLenStructSettings
             );
@@ -448,7 +448,7 @@ namespace FASTER.test.recovery.sumstore
             }
             else
             {
-                while (!fht.TakeFullCheckpoint(out this.logToken)) { }
+                while (!fht.TryInitiateFullCheckpoint(out this.logToken, CheckpointType.Snapshot)) { }
                 fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             }
             this.indexToken = this.logToken;
@@ -467,7 +467,7 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < DeviceTypeRecoveryTests.numUniqueKeys; i++)
             {
                 var status = session.Read(i % DeviceTypeRecoveryTests.numUniqueKeys, default, out long output);
-                Assert.AreEqual(Status.OK, status, $"keyIndex {i}");
+                Assert.IsTrue(status.Found, $"keyIndex {i}");
                 Assert.AreEqual(ExpectedValue(i), output);
             }
         }
@@ -493,7 +493,7 @@ namespace FASTER.test.recovery.sumstore
                 int[] output = null;
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(len, output[0], "Length");
                 Assert.AreEqual(ExpectedValue(i), output[1], "field1");
                 for (int j = 2; j < len; j++)
@@ -515,7 +515,7 @@ namespace FASTER.test.recovery.sumstore
             {
                 var key = new MyValue { value = i };
                 var status = session.Read(key, default, out MyOutput output);
-                Assert.AreEqual(Status.OK, status, $"keyIndex {i}");
+                Assert.IsTrue(status.Found, $"keyIndex {i}");
                 Assert.AreEqual(ExpectedValue(i), output.value.value);
             }
         }

@@ -18,7 +18,7 @@ namespace FASTER.core
         readonly Record<Key, Value>[] page;
         readonly long pageStartAddress;
         readonly int recordSize;
-        readonly int end;
+        readonly int start, end;
         int offset;
         
 
@@ -27,6 +27,7 @@ namespace FASTER.core
             this.page = new Record<Key, Value>[page.Length];
             Array.Copy(page, start, this.page, start, end - start);
             offset = start - 1;
+            this.start = start;
             this.end = end;
             this.pageStartAddress = pageStartAddress;
             this.recordSize = recordSize;
@@ -35,6 +36,10 @@ namespace FASTER.core
         public long CurrentAddress => pageStartAddress + offset * recordSize;
 
         public long NextAddress => pageStartAddress + (offset + 1) * recordSize;
+
+        public long BeginAddress => pageStartAddress + start * recordSize;
+
+        public long EndAddress => pageStartAddress + end * recordSize;
 
         public void Dispose()
         {

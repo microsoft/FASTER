@@ -60,7 +60,7 @@ namespace ClassRecoveryDurablity
 
         public Guid Checkpoint()
         {
-            db.TakeFullCheckpoint(out Guid token);
+            db.TryInitiateFullCheckpoint(out Guid token, CheckpointType.Snapshot);
             db.CompleteCheckpointAsync().GetAwaiter().GetResult();
             return token;
         }

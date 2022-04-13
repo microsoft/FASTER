@@ -2,7 +2,7 @@
 title: "Quick-Start Guide"
 permalink: /docs/quick-start-guide/
 excerpt: "Get started with FASTER"
-last_modified_at: 2021-04-23
+last_modified_at: 2022-03-04
 toc: false
 classes: wide
 ---

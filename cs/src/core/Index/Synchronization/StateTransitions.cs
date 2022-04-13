@@ -28,9 +28,6 @@ namespace FASTER.core
         /// <summary>In-progress phase, entering (v+1) version</summary>
         IN_PROGRESS,
 
-        /// <summary>Wait-pending phase, waiting for pending (v) operations to complete</summary>
-        WAIT_PENDING,
-
         /// <summary>Wait for an index checkpoint to finish</summary>
         WAIT_INDEX_CHECKPOINT,
 
@@ -68,23 +65,57 @@ namespace FASTER.core
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct SystemState
     {
-        /// <summary>
-        /// The current <see cref="Phase"/> of the operation
-        /// </summary>
-        [FieldOffset(0)]
-        public Phase Phase;
+        const int kTotalSizeInBytes = 8;
+        const int kTotalBits = kTotalSizeInBytes * 8;
 
-        /// <summary>
-        /// The version of the database when this operation is complete
-        /// </summary>
-        [FieldOffset(4)]
-        public int Version;
-        
+        // Phase
+        const int kPhaseBits = 8;
+        const int kPhaseShiftInWord = kTotalBits - kPhaseBits;
+        const long kPhaseMaskInWord = ((1L << kPhaseBits) - 1) << kPhaseShiftInWord;
+        const long kPhaseMaskInInteger = (1L << kPhaseBits) - 1;
+
+        // Version
+        const int kVersionBits = kPhaseShiftInWord;
+        const long kVersionMaskInWord = (1L << kVersionBits) - 1;
+
         /// <summary>
         /// The word containing information in bitfields
         /// </summary>
         [FieldOffset(0)]
         internal long Word;
+
+
+        /// <summary>
+        /// The current <see cref="Phase"/> of the operation
+        /// </summary>
+        public Phase Phase
+        {
+            get
+            {
+                return (Phase)((Word >> kPhaseShiftInWord) & kPhaseMaskInInteger);
+            }
+            set
+            {
+                Word &= ~kPhaseMaskInWord;
+                Word |= (((long)value) & kPhaseMaskInInteger) << kPhaseShiftInWord;
+            }
+        }
+
+        /// <summary>
+        /// The version of the database when this operation is complete
+        /// </summary>
+        public long Version
+        {
+            get
+            {
+                return Word & kVersionMaskInWord;
+            }
+            set
+            {
+                Word &= ~kVersionMaskInWord;
+                Word |= value & kVersionMaskInWord;
+            }
+        }
 
         /// <summary>
         /// Copy the <paramref name="other"/> <see cref="SystemState"/> into this <see cref="SystemState"/>
@@ -101,7 +132,7 @@ namespace FASTER.core
         /// Create a <see cref="SystemState"/> with the specified values
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static SystemState Make(Phase status, int version)
+        internal static SystemState Make(Phase status, long version)
         {
             var info = default(SystemState);
             info.Phase = status;

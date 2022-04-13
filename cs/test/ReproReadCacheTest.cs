@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using FASTER.core;
 using NUnit.Framework;
 
-namespace FASTER.test
+namespace FASTER.test.ReadCacheTests
 {
     [TestFixture]
     internal class RandomReadCacheTest
@@ -18,15 +18,21 @@ namespace FASTER.test
 
         class Functions : FunctionsBase<SpanByte, long, long, long, Context>
         {
-            public override void ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst)
-                => dst = value;
-
-            public override void SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst)
-                => dst = value;
-
-            public override void ReadCompletionCallback(ref SpanByte key, ref long input, ref long output, Context context, Status status)
+            public override bool ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref ReadInfo readInfo)
             {
-                Assert.AreEqual(status, Status.OK);
+                dst = value;
+                return true;
+            }
+
+            public override bool SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref ReadInfo readInfo)
+            {
+                dst = value;
+                return true;
+            }
+
+            public override void ReadCompletionCallback(ref SpanByte key, ref long input, ref long output, Context context, Status status, RecordMetadata recordMetadata)
+            {
+                Assert.IsTrue(status.Found);
                 Assert.AreEqual(input, output);
                 context.Status = status;
             }
@@ -69,13 +75,13 @@ namespace FASTER.test
                     long output = 0;
                     var status = session.Read(ref sb, ref input, ref output, context);
 
-                    if (status == Status.OK)
+                    if (status.Found)
                     {
                         Assert.AreEqual(input, output);
                         return;
                     }
 
-                    Assert.AreEqual(Status.PENDING, status, $"was not OK or PENDING: {keyString}");
+                    Assert.IsTrue(status.IsPending, $"was not Pending: {keyString}");
 
                     session.CompletePending(wait: true);
                 }
@@ -91,7 +97,8 @@ namespace FASTER.test
                 fixed (byte* _ = key)
                 {
                     var sb = SpanByte.FromFixedSpan(key);
-                    Assert.AreEqual(Status.OK, session.Upsert(sb, i * 2));
+                    var status = session.Upsert(sb, i * 2);
+                    Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
             }
 

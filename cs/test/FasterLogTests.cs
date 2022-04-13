@@ -9,6 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.core;
+using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using NUnit.Framework;
 
 namespace FASTER.test
@@ -19,8 +20,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterLog")]
         [Category("Smoke")]
-
-        public void TestDisposeReleasesFileLocksWithInprogressCommit([Values] TestUtils.DeviceType deviceType)
+        public void TestDisposeReleasesFileLocksWithCompletedCommit([Values] TestUtils.DeviceType deviceType)
         {
             string path = TestUtils.MethodTestDir + "/";
             string filename = path + "TestDisposeRelease" + deviceType.ToString() + ".log";
@@ -29,9 +29,9 @@ namespace FASTER.test
             IDevice device = TestUtils.CreateTestDevice(deviceType, filename);
             FasterLog fasterLog = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path, LogChecksum = LogChecksumType.PerEntry });
 
-            Assert.IsTrue(fasterLog.TryEnqueue(new byte[100], out long beginAddress));
+            Assert.IsTrue(fasterLog.TryEnqueue(new byte[100], out _));
 
-            fasterLog.Commit(spinWait: false);
+            fasterLog.Commit(spinWait: true);
             fasterLog.Dispose();
             device.Dispose();
             while (true)
@@ -60,6 +60,8 @@ namespace FASTER.test
         protected static readonly byte[] entry = new byte[100];
         protected static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10000);
 
+        private bool deleteOnClose;
+
         protected struct ReadOnlySpanBatch : IReadOnlySpanBatch
         {
             private readonly int batchSize;
@@ -68,20 +70,23 @@ namespace FASTER.test
             public int TotalEntries() => batchSize;
         }
 
-        protected void BaseSetup()
+        protected void BaseSetup(bool deleteOnClose = true)
         {
             path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path, wait: true);
 
-            manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: true), new DefaultCheckpointNamingScheme(path));
+            manager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(deleteOnClose: deleteOnClose), new DefaultCheckpointNamingScheme(path), false);
+            this.deleteOnClose = deleteOnClose;
         }
 
         protected void BaseTearDown()
         {
             log?.Dispose();
             log = null;
+            if (!deleteOnClose)
+                manager.RemoveAllCommits();
             manager?.Dispose();
             manager = null;
             device?.Dispose();
@@ -115,7 +120,7 @@ namespace FASTER.test
         {
             AsyncByteVector,
             AsyncMemoryOwner,
-            Sync
+            Sync,
         }
 
         internal static bool IsAsync(IteratorType iterType) => iterType == IteratorType.AsyncByteVector || iterType == IteratorType.AsyncMemoryOwner;
@@ -164,9 +169,9 @@ namespace FASTER.test
             // Enter in some entries then wait on this separate thread
             await log.EnqueueAsync(entry);
             await log.EnqueueAsync(entry);
-            var commitTask = await log.CommitAsync(null, token);
+            var commitTask = await log.CommitAsync(null, token: token);
             await log.EnqueueAsync(entry);
-            await log.CommitAsync(commitTask, token);
+            await log.CommitAsync(commitTask, token: token);
         }
     }
 
@@ -184,7 +189,7 @@ namespace FASTER.test
         public async ValueTask FasterLogTest1([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
@@ -231,6 +236,79 @@ namespace FASTER.test
             }
             Assert.AreEqual(numEntries, counter.count);
         }
+
+
+        internal class TestConsumer : ILogEntryConsumer
+        {
+            private Counter counter;
+            private byte[] entry;
+
+            internal TestConsumer(Counter counter, byte[] entry)
+            {
+                this.counter = counter;
+                this.entry = entry;
+            }
+            
+            public void Consume(ReadOnlySpan<byte> result, long currentAddress, long nextAddress)
+            {
+                Assert.IsTrue(result.SequenceEqual(entry));
+                counter.IncrementAndMaybeTruncateUntil(nextAddress);
+                
+            }
+        }
+        
+        [Test]
+        [Category("FasterLog")]
+        public void FasterLogConsumerTest([Values] LogChecksumType logChecksum)
+        {
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
+            log = new FasterLog(logSettings);
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+            log.Commit(true);
+
+            using var iter = log.Scan(0, long.MaxValue);
+            var counter = new Counter(log);
+            var consumer = new TestConsumer(counter, entry);
+
+            while (iter.TryConsumeNext(consumer)) {}
+              
+            Assert.AreEqual(numEntries, counter.count);
+        }
+        
+        [Test]
+        [Category("FasterLog")]
+        public async ValueTask FasterLogAsyncConsumerTest([Values] LogChecksumType logChecksum)
+        {
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
+            log = await FasterLog.CreateAsync(logSettings);
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+            log.Commit(true);
+            log.CompleteLog(true);
+
+            using var iter = log.Scan(0, long.MaxValue);
+            var counter = new Counter(log);
+            var consumer = new TestConsumer(counter, entry);
+            await iter.ConsumeAllAsync(consumer);
+            Assert.AreEqual(numEntries, counter.count);
+        }
     }
 
 
@@ -251,7 +329,7 @@ namespace FASTER.test
             CancellationToken token = cts.Token;
 
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager };
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             const int dataLength = 1000;
@@ -280,7 +358,7 @@ namespace FASTER.test
                     }
                     Assert.IsFalse(waitingReader.IsCompleted);
 
-                    await log.CommitAsync(token);
+                    await log.CommitAsync(token: token);
                     while (!waitingReader.IsCompleted) ;
                     Assert.IsTrue(waitingReader.IsCompleted);
 
@@ -298,7 +376,7 @@ namespace FASTER.test
             string filename = path + "TryEnqueue2" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
 
-            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22 };
+            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22, TryRecoverLatest = false };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             const int dataLength = 10000;
@@ -371,7 +449,7 @@ namespace FASTER.test
             string filename = path + "TruncateUntilBasic" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
 
-            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22 };
+            var logSettings = new FasterLogSettings { LogDevice = device, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, SegmentSizeBits = 22, TryRecoverLatest = false };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             byte[] data1 = new byte[100];
@@ -459,7 +537,7 @@ namespace FASTER.test
         public async ValueTask TruncateUntil2([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager };
+            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             byte[] data1 = new byte[1000];
@@ -613,15 +691,13 @@ namespace FASTER.test
             //*******
             // Main point of the test ... If commit(true) (like other tests do) it waits until commit completes before moving on.
             // If set to false, it will fire and forget the commit and return immediately (which is the way this test is set up).
-            // There won't be that much difference from True to False here as the True case is so quick but there can be issues if start checking right after commit without giving time to commit.
+            // There won't be that much difference from True to False here as the True case is so quick but there can be issues
+            // if start checking right after commit without giving time to commit.
             // Also, it is a good basic check to make sure it isn't crashing and that it does actually commit it
-            // Can take two approaches
-            //    1) Just give it a few seconds to commit before checking as literally takes a second or so to commit. If commit isn't finished after this slight delay, then we have issues and it will show as a fail when reads and it needs investigated
-            //    2) Check right away but if it fails, check again and repeat until it is done committing. No need to add this extra complexity into the test and so this is appropriate use of a sleep
             //*******
 
             log.Commit(false);
-            Thread.Sleep(5000);
+            while (log.CommittedUntilAddress < log.TailAddress) Thread.Yield();
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
@@ -654,7 +730,7 @@ namespace FASTER.test
 
             string filename = $"{path}/CommitAsyncPrevTask_{deviceType}.log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 };
+            var logSettings = new FasterLogSettings { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22, TryRecoverLatest = false };
             log = await FasterLog.CreateAsync(logSettings);
 
             // make it small since launching each on separate threads 
@@ -783,6 +859,114 @@ namespace FASTER.test
             }
             log.Dispose();
         }
+    }
+    
+     [TestFixture]
+    internal class FasterLogCustomCommitTests : FasterLogTestBase
+    {
+        [SetUp]
+        public void Setup() => base.BaseSetup(false);
 
+        [TearDown]
+        public void TearDown() => base.BaseTearDown();
+
+        [Test]
+        [Category("FasterLog")]
+        [Category("Smoke")]
+        public void FasterLogSimpleCommitCookieTest([Values] bool fastCommit)
+        {
+            var cookie = new byte[100];
+            new Random().NextBytes(cookie);
+            
+            device = Devices.CreateLogDevice(path + "SimpleCommitCookie" + fastCommit + ".log", deleteOnClose: true);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = fastCommit};
+            log = new FasterLog(logSettings);
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+
+            log.CommitStrongly(out _, out _, true, cookie);
+
+            var recoveredLog = new FasterLog(logSettings);
+            Assert.AreEqual(cookie, recoveredLog.RecoveredCookie);
+            recoveredLog.Dispose();
+        }
+
+        [Test]
+        [Category("FasterLog")]
+        public void FasterLogManualCommitTest()
+        {
+            device = Devices.CreateLogDevice(path + "logManualCommitTest.log", deleteOnClose: true);
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager, TryRecoverLatest = false };
+            log = new FasterLog(logSettings);
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+
+            var cookie1 = new byte[100];
+            new Random().NextBytes(cookie1);
+            var commitSuccessful = log.CommitStrongly(out var commit1Addr, out _, true, cookie1, 1);
+            Assert.IsTrue(commitSuccessful);
+            
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+            
+            var cookie2 = new byte[100];
+            new Random().NextBytes(cookie2);
+            commitSuccessful = log.CommitStrongly(out var commit2Addr, out _, true, cookie2, 2);
+            Assert.IsTrue(commitSuccessful);
+            
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+            
+            var cookie6 = new byte[100];
+            new Random().NextBytes(cookie6);
+            commitSuccessful = log.CommitStrongly(out var commit6Addr, out _, true, cookie6, 6);
+            Assert.IsTrue(commitSuccessful);
+
+            var recoveredLog = new FasterLog(logSettings);
+            recoveredLog.Recover(1);
+            Assert.AreEqual(cookie1, recoveredLog.RecoveredCookie);
+            Assert.AreEqual(commit1Addr, recoveredLog.TailAddress);
+            recoveredLog.Dispose();
+            
+            recoveredLog = new FasterLog(logSettings);
+            recoveredLog.Recover(2);
+            Assert.AreEqual(cookie2, recoveredLog.RecoveredCookie);
+            Assert.AreEqual(commit2Addr, recoveredLog.TailAddress);
+            recoveredLog.Dispose();
+
+            // recovering to a non-existent commit should throw FasterException
+            try
+            {
+                recoveredLog = new FasterLog(logSettings);
+                recoveredLog.Recover(4);
+                Assert.Fail();
+            }
+            catch (FasterException) {}
+
+            // Default argument should recover to most recent, with TryRecoverLatest set to true
+            logSettings.TryRecoverLatest = true;
+            recoveredLog = new FasterLog(logSettings);
+            Assert.AreEqual(cookie6, recoveredLog.RecoveredCookie);
+            Assert.AreEqual(commit6Addr, recoveredLog.TailAddress);
+            recoveredLog.Dispose();
+        }
     }
 }

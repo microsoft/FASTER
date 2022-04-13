@@ -3,16 +3,11 @@
 
 using System;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 using System.Threading.Tasks;
-using System.Threading;
-using System.Collections.Generic;
-using System.Diagnostics;
 
 namespace FASTER.test.readaddress
 {
-#if false // TODO temporarily deactivated due to removal of addresses from single-writer callbacks (also add UpsertAsync where we do RMWAsync/Upsert); update to new test format
     [TestFixture]
     public class ReadAddressTests
     {
@@ -49,76 +44,95 @@ namespace FASTER.test.readaddress
             public override string ToString() => value.ToString();
         }
 
-        public class Context
+        public struct Output
         {
-            public Value output;
-            public RecordInfo recordInfo;
-            public Status status;
+            public long value;
+            public long address;
 
-            public void Reset()
-            {
-                this.output = default;
-                this.recordInfo = default;
-                this.status = Status.OK;
-            }
+            public override string ToString() => $"val {value}; addr {address}";
         }
 
         private static long SetReadOutput(long key, long value) => (key << 32) | value;
 
-        internal class Functions : AdvancedSimpleFunctions<Key, Value, Context>
+        public enum UseReadCache { NoReadCache, ReadCache }
+
+        internal class Functions : FunctionsBase<Key, Value, Value, Output, Empty>
         {
             internal long lastWriteAddress = Constants.kInvalidAddress;
+            readonly bool useReadCache;
+            internal ReadFlags readFlags = ReadFlags.None | ReadFlags.DisableReadCache;
 
-            public override void ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref RecordInfo recordInfo, long address) 
-                => dst.value = SetReadOutput(key.key, value.value);
+            internal Functions()
+            {
+                foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+                {
+                    if (arg is UseReadCache urc)
+                    {
+                        this.useReadCache = urc == UseReadCache.ReadCache;
+                        continue;
+                    }
+                }
+            }
 
-            public override void SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, long address) 
-                => dst.value = SetReadOutput(key.key, value.value);
+            public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Output output, ref ReadInfo readInfo)
+            {
+                output.value = SetReadOutput(key.key, value.value);
+                output.address = readInfo.Address;
+                return true;
+            }
+
+            public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Output output, ref ReadInfo readInfo)
+            {
+                output.value = SetReadOutput(key.key, value.value);
+                output.address = readInfo.Address;
+                return true;
+            }
 
             // Return false to force a chain of values.
-            public override bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address) => false;
+            public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo) => false;
 
-            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref RecordInfo recordInfo, long address) => false;
+            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RMWInfo rmwInfo) => false;
 
             // Record addresses
-            public override void SingleWriter(ref Key key, ref Value src, ref Value dst, long address)
+            public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
-                this.lastWriteAddress = address;
-                base.SingleWriter(ref key, ref src, ref dst, address);
+                dst = src;
+                output.address = upsertInfo.Address;
+                this.lastWriteAddress = upsertInfo.Address;
+                return true;
             }
 
-            public override void InitialUpdater(ref Key key, ref Value input, ref Value value)
+            public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
             {
-                this.lastWriteAddress = address;
-                base.InitialUpdater(ref key, ref input, ref value);
+                this.lastWriteAddress = rmwInfo.Address;
+                output.address = rmwInfo.Address;
+                output.value = value.value = input.value;
+                return true;
             }
 
-            public override void CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue)
+            public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
             {
-                this.lastWriteAddress = newAddress;
-                base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue);
+                this.lastWriteAddress = rmwInfo.Address;
+                output.address = rmwInfo.Address;
+                output.value = newValue.value = input.value;
+                return true;
             }
 
-            // Track the recordInfo for its PreviousAddress.
-            public override void ReadCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status, RecordInfo recordInfo)
+            public override void ReadCompletionCallback(ref Key key, ref Value input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                if (ctx is not null)
+                if (status.Found)
                 {
-                    ctx.output = output;
-                    ctx.recordInfo = recordInfo;
-                    ctx.status = status;
+                    if (this.useReadCache && !this.readFlags.HasFlag(ReadFlags.DisableReadCacheReads))
+                        Assert.AreEqual(Constants.kInvalidAddress, recordMetadata.Address, $"key {key}");
+                    else
+                        Assert.AreEqual(output.address, recordMetadata.Address, $"key {key}");  // Should agree with what SingleWriter set
                 }
             }
 
-            public override void RMWCompletionCallback(ref Key key, ref Value input, ref Value output, Context ctx, Status status)
+            public override void RMWCompletionCallback(ref Key key, ref Value input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                if (ctx is not null)
-                {
-                    ctx.output = input;
-                    ctx.recordInfo = default;
-                    ctx.status = status;
-                }
-                base.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
+                if (status.Found)
+                    Assert.AreEqual(output.address, recordMetadata.Address);
             }
         }
 
@@ -131,7 +145,7 @@ namespace FASTER.test.readaddress
 
             internal long[] InsertAddresses = new long[numKeys];
 
-            internal TestStore(bool useReadCache, CopyReadsToTail copyReadsToTail, bool flush)
+            internal TestStore(bool useReadCache, ReadFlags readFlags, bool flush)
             {
                 this.testDir = TestUtils.MethodTestDir;
                 TestUtils.DeleteDirectory(this.testDir, wait:true);
@@ -143,7 +157,7 @@ namespace FASTER.test.readaddress
                     LogDevice = logDevice,
                     ObjectLogDevice = new NullDevice(),
                     ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null,
-                    CopyReadsToTail = copyReadsToTail,
+                    ReadFlags = readFlags,
                     // Use small-footprint values
                     PageSizeBits = 12, // (4K pages)
                     MemorySizeBits = 20 // (1M memory for main log)
@@ -154,7 +168,8 @@ namespace FASTER.test.readaddress
                     logSettings: logSettings,
                     checkpointSettings: new CheckpointSettings { CheckpointDir = $"{this.testDir}/CheckpointDir" },
                     serializerSettings: null,
-                    comparer: new Key.Comparer()
+                    comparer: new Key.Comparer(),
+                    disableLocking: true
                     );
             }
 
@@ -172,7 +187,6 @@ namespace FASTER.test.readaddress
             {
                 var functions = new Functions();
                 using var session = this.fkv.For(functions).NewSession<Functions>();
-                var context = new Context();
 
                 var prevLap = 0;
                 for (int ii = 0; ii < numKeys; ii++)
@@ -191,11 +205,11 @@ namespace FASTER.test.readaddress
 
                     var status = useRMW
                         ? useAsync
-                            ? (await session.RMWAsync(ref key, ref value, context, serialNo: lap)).Complete()
+                            ? (await session.RMWAsync(ref key, ref value, serialNo: lap)).Complete().status
                             : session.RMW(ref key, ref value, serialNo: lap)
                         : session.Upsert(ref key, ref value, serialNo: lap);
 
-                    if (status == Status.PENDING)
+                    if (status.IsPending)
                         await session.CompletePendingAsync();
 
                     InsertAddresses[ii] = functions.lastWriteAddress;
@@ -209,25 +223,24 @@ namespace FASTER.test.readaddress
                 await Flush();
             }
 
-            internal bool ProcessChainRecord(Status status, RecordInfo recordInfo, int lap, ref Value actualOutput, ref int previousVersion)
+            internal bool ProcessChainRecord(Status status, RecordMetadata recordMetadata, int lap, ref Output actualOutput)
             {
+                var recordInfo = recordMetadata.RecordInfo;
                 Assert.GreaterOrEqual(lap, 0);
                 long expectedValue = SetReadOutput(defaultKeyToScan, LapOffset(lap) + defaultKeyToScan);
 
-                Assert.AreEqual(status == Status.NOTFOUND, recordInfo.Tombstone, $"status({status}) == NOTFOUND != Tombstone ({recordInfo.Tombstone})");
+                Assert.AreEqual(status.NotFound, recordInfo.Tombstone, $"status({status}) == NOTFOUND != Tombstone ({recordInfo.Tombstone}) on lap {lap}");
                 Assert.AreEqual(lap == deleteLap, recordInfo.Tombstone, $"lap({lap}) == deleteLap({deleteLap}) != Tombstone ({recordInfo.Tombstone})");
-                Assert.GreaterOrEqual(previousVersion, recordInfo.Version);
                 if (!recordInfo.Tombstone)
-                    Assert.AreEqual(expectedValue, actualOutput.value);
+                    Assert.AreEqual(expectedValue, actualOutput.value, $"lap({lap})");
 
                 // Check for end of loop
-                previousVersion = recordInfo.Version;
-                return recordInfo.PreviousAddress >= this.fkv.Log.BeginAddress;
+                return recordInfo.PreviousAddress >= fkv.Log.BeginAddress;
             }
 
-            internal void ProcessNoKeyRecord(Status status, ref Value actualOutput, int keyOrdinal)
+            internal static void ProcessNoKeyRecord(Status status, ref Output actualOutput, int keyOrdinal)
             {
-                if (status != Status.NOTFOUND)
+                if (status.Found)
                 {
                     var keyToScan = keyOrdinal % keyMod;
                     var lap = keyOrdinal / keyMod;
@@ -247,52 +260,52 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, CopyReadsToTail.None, false, false)]
-        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
-        [TestCase(true, CopyReadsToTail.None, false, true)]
-        [Category("FasterKV")]
-        public void VersionedReadSyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [Category("FasterKV"), Category("Read")]
+        public void VersionedReadSyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
-            using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
+            var useReadCache = urc == UseReadCache.ReadCache;
+            using var testStore = new TestStore(useReadCache, readFlags, flush);
             testStore.Populate(useRMW, useAsync:false).GetAwaiter().GetResult();
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
             {
-                var output = default(Value);
+                var output = default(Output);
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                var context = new Context();
-                RecordInfo recordInfo = default;
-                int version = int.MaxValue;
+                RecordMetadata recordMetadata = default;
+                ReadOptions readOptions = new() { ReadFlags = session.functions.readFlags };
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var status = session.Read(ref key, ref input, ref output, ref recordInfo, userContext: context, serialNo: maxLap + 1);
-                    if (status == Status.PENDING)
+                    var status = session.Read(ref key, ref input, ref output, ref readOptions, out _, serialNo: maxLap + 1);
+
+                    if (status.IsPending)
                     {
-                        // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(wait: true);
-                        output = context.output;
-                        recordInfo = context.recordInfo;
-                        status = context.status;
-                        context.Reset();
+                        // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
+                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
+                    readOptions.StartAddress = recordMetadata.RecordInfo.PreviousAddress;
                 }
             }
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, CopyReadsToTail.None, false, false)]
-        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
-        [TestCase(true, CopyReadsToTail.None, false, true)]
-        [Category("FasterKV")]
-        public async Task VersionedReadAsyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [Category("FasterKV"), Category("Read")]
+        public async Task VersionedReadAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
-            using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
+            var useReadCache = urc == UseReadCache.ReadCache;
+            using var testStore = new TestStore(useReadCache, readFlags, flush);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -301,88 +314,85 @@ namespace FASTER.test.readaddress
             {
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                RecordInfo recordInfo = default;
-                int version = int.MaxValue;
+                RecordMetadata recordMetadata = default;
+                ReadOptions readOptions = new() { ReadFlags = session.functions.readFlags };
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1);
-                    var (status, output) = readAsyncResult.Complete(out recordInfo);
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                    var readAsyncResult = await session.ReadAsync(ref key, ref input, ref readOptions, default, serialNo: maxLap + 1);
+                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
+
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
+                    readOptions.StartAddress = recordMetadata.RecordInfo.PreviousAddress;
                 }
             }
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, CopyReadsToTail.None, false, false)]
-        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
-        [TestCase(true, CopyReadsToTail.None, false, true)]
-        [Category("FasterKV")]
-        public void ReadAtAddressSyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [Category("FasterKV"), Category("Read")]
+        public void ReadAtAddressSyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
-            using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
+            var useReadCache = urc == UseReadCache.ReadCache;
+            using var testStore = new TestStore(useReadCache, readFlags, flush);
             testStore.Populate(useRMW, useAsync: false).GetAwaiter().GetResult();
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
             {
-                var output = default(Value);
+                var output = default(Output);
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                var context = new Context();
-                RecordInfo recordInfo = default;
-                int version = int.MaxValue;
+                RecordMetadata recordMetadata = default;
+                ReadOptions readOptions = new() { ReadFlags = session.functions.readFlags };
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var readAtAddress = recordInfo.PreviousAddress;
-
-                    var status = session.Read(ref key, ref input, ref output, ref recordInfo, userContext: context, serialNo: maxLap + 1);
-                    if (status == Status.PENDING)
+                    var status = session.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata, serialNo: maxLap + 1);
+                    if (status.IsPending)
                     {
-                        // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(wait: true);
-                        output = context.output;
-                        recordInfo = context.recordInfo;
-                        status = context.status;
-                        context.Reset();
+                        // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
+                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
 
-                    if (readAtAddress >= testStore.fkv.Log.BeginAddress)
+                    if (readOptions.StartAddress >= testStore.fkv.Log.BeginAddress)
                     {
                         var saveOutput = output;
-                        var saveRecordInfo = recordInfo;
+                        var saveRecordMetadata = recordMetadata;
 
-                        status = session.ReadAtAddress(readAtAddress, ref input, ref output, userContext: context, serialNo: maxLap + 1);
-                        if (status == Status.PENDING)
+                        status = session.ReadAtAddress(ref input, ref output, ref readOptions, serialNo: maxLap + 1);
+                        if (status.IsPending)
                         {
-                            // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                            session.CompletePending(wait: true);
-                            output = context.output;
-                            recordInfo = context.recordInfo;
-                            status = context.status;
-                            context.Reset();
+                            // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
+                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
                         }
 
                         Assert.AreEqual(saveOutput, output);
-                        Assert.AreEqual(saveRecordInfo, recordInfo);
+                        Assert.AreEqual(saveRecordMetadata.RecordInfo, recordMetadata.RecordInfo);
                     }
+                    readOptions.StartAddress = recordMetadata.RecordInfo.PreviousAddress;
                 }
             }
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, CopyReadsToTail.None, false, false)]
-        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
-        [TestCase(true, CopyReadsToTail.None, false, true)]
-        [Category("FasterKV")]
-        public async Task ReadAtAddressAsyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [Category("FasterKV"), Category("Read")]
+        public async Task ReadAtAddressAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
-            using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
+            var useReadCache = urc == UseReadCache.ReadCache;
+            using var testStore = new TestStore(useReadCache, readFlags, flush);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -391,42 +401,43 @@ namespace FASTER.test.readaddress
             {
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                RecordInfo recordInfo = default;
-                int version = int.MaxValue;
+                RecordMetadata recordMetadata = default;
+                ReadOptions readOptions = new() { ReadFlags = session.functions.readFlags };
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var readAtAddress = recordInfo.PreviousAddress;
+                    var readAsyncResult = await session.ReadAsync(ref key, ref input, ref readOptions, default, serialNo: maxLap + 1);
+                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
-                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1);
-                    var (status, output) = readAsyncResult.Complete(out recordInfo);
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
 
-                    if (readAtAddress >= testStore.fkv.Log.BeginAddress)
+                    if (readOptions.StartAddress >= testStore.fkv.Log.BeginAddress)
                     {
                         var saveOutput = output;
-                        var saveRecordInfo = recordInfo;
+                        var saveRecordMetadata = recordMetadata;
 
-                        readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, default, serialNo: maxLap + 1);
-                        (status, output) = readAsyncResult.Complete(out recordInfo);
+                        readAsyncResult = await session.ReadAtAddressAsync(ref input, ref readOptions, default, serialNo: maxLap + 1);
+                        (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                         Assert.AreEqual(saveOutput, output);
-                        Assert.AreEqual(saveRecordInfo, recordInfo);
+                        Assert.AreEqual(saveRecordMetadata.RecordInfo, recordMetadata.RecordInfo);
                     }
+
+                    readOptions.StartAddress = recordMetadata.RecordInfo.PreviousAddress;
                 }
             }
         }
 
         // Test is similar to others but tests the Overload where RadFlag.none is set -- probably don't need all combinations of test but doesn't hurt 
-        [TestCase(false, CopyReadsToTail.None, false, false)]
-        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
-        [TestCase(true, CopyReadsToTail.None, false, true)]
-        [Category("FasterKV")]
-        public async Task ReadAtAddressAsyncReadFlagsNoneTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [Category("FasterKV"), Category("Read")]
+        public async Task ReadAtAddressAsyncReadFlagsNoneTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
-            CancellationToken cancellationToken;
-            using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
+            var useReadCache = urc == UseReadCache.ReadCache;
+            using var testStore = new TestStore(useReadCache, readFlags, flush);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -435,42 +446,43 @@ namespace FASTER.test.readaddress
             {
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                RecordInfo recordInfo = default;
-                int version = int.MaxValue;
+                RecordMetadata recordMetadata = default;
+                ReadOptions readOptions = new() { ReadFlags = session.functions.readFlags };
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var readAtAddress = recordInfo.PreviousAddress;
+                    var readAsyncResult = await session.ReadAsync(ref key, ref input, ref readOptions, default, serialNo: maxLap + 1);
+                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
-                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1);
-                    var (status, output) = readAsyncResult.Complete(out recordInfo);
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
 
-                    if (readAtAddress >= testStore.fkv.Log.BeginAddress)
+                    if (readOptions.StartAddress >= testStore.fkv.Log.BeginAddress)
                     {
                         var saveOutput = output;
-                        var saveRecordInfo = recordInfo;
+                        var saveRecordMetadata = recordMetadata;
 
-                        readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, ReadFlags.None, default, serialNo: maxLap + 1, cancellationToken);
-                        (status, output) = readAsyncResult.Complete(out recordInfo);
+                        readAsyncResult = await session.ReadAtAddressAsync(ref input, ref readOptions, default, serialNo: maxLap + 1);
+                        (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                         Assert.AreEqual(saveOutput, output);
-                        Assert.AreEqual(saveRecordInfo, recordInfo);
+                        Assert.AreEqual(saveRecordMetadata.RecordInfo, recordMetadata.RecordInfo);
                     }
+
+                    readOptions.StartAddress = recordMetadata.RecordInfo.PreviousAddress;
                 }
             }
         }
 
-        // Test is similar to others but tests the Overload where RadFlag.SkipReadCache is set
-        [TestCase(false, CopyReadsToTail.None, false, false)]
-        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
-        [TestCase(true, CopyReadsToTail.None, false, true)]
-        [Category("FasterKV")]
-        public async Task ReadAtAddressAsyncReadFlagsSkipCacheTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
+        // Test is similar to others but tests the Overload where ReadFlag.SkipReadCache is set
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [Category("FasterKV"), Category("Read")]
+        public async Task ReadAtAddressAsyncReadFlagsSkipCacheTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
-            CancellationToken cancellationToken;
-            using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
+            var useReadCache = urc == UseReadCache.ReadCache;
+            using var testStore = new TestStore(useReadCache, readFlags, flush);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -479,41 +491,44 @@ namespace FASTER.test.readaddress
             {
                 var input = default(Value);
                 var key = new Key(defaultKeyToScan);
-                RecordInfo recordInfo = default;
-                int version = int.MaxValue;
+                RecordMetadata recordMetadata = default;
+                ReadOptions readOptions = default;
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var readAtAddress = recordInfo.PreviousAddress;
+                    readOptions.ReadFlags = session.functions.readFlags;
+                    var readAsyncResult = await session.ReadAsync(ref key, ref input, ref readOptions, default, serialNo: maxLap + 1);
+                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
-                    var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1);
-                    var (status, output) = readAsyncResult.Complete(out recordInfo);
-                    if (!testStore.ProcessChainRecord(status, recordInfo, lap, ref output, ref version))
+                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
 
-                    if (readAtAddress >= testStore.fkv.Log.BeginAddress)
+                    if (readOptions.StartAddress >= testStore.fkv.Log.BeginAddress)
                     {
                         var saveOutput = output;
-                        var saveRecordInfo = recordInfo;
+                        var saveRecordMetadata = recordMetadata;
 
-                        readAsyncResult = await session.ReadAtAddressAsync(readAtAddress, ref input, ReadFlags.SkipReadCache, default, maxLap + 1, cancellationToken);
-                        (status, output) = readAsyncResult.Complete(out recordInfo);
+                        readOptions.ReadFlags = ReadFlags.None | ReadFlags.DisableReadCacheReads | ReadFlags.DisableReadCacheUpdates;
+                        readAsyncResult = await session.ReadAtAddressAsync(ref input, ref readOptions, default, maxLap + 1);
+                        (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                         Assert.AreEqual(saveOutput, output);
-                        Assert.AreEqual(saveRecordInfo, recordInfo);
+                        Assert.AreEqual(saveRecordMetadata.RecordInfo, recordMetadata.RecordInfo);
                     }
+                    readOptions.StartAddress = recordMetadata.RecordInfo.PreviousAddress;
                 }
             }
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, CopyReadsToTail.None, false, false)]
-        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
-        [TestCase(true, CopyReadsToTail.None, false, true)]
-        [Category("FasterKV")]
-        public void ReadNoKeySyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [Category("FasterKV"), Category("Read")]
+        public void ReadNoKeySyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
         {
-            using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
+            var useReadCache = urc == UseReadCache.ReadCache;
+            using var testStore = new TestStore(useReadCache, readFlags, flush);
             testStore.Populate(useRMW, useAsync: false).GetAwaiter().GetResult();
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -521,38 +536,42 @@ namespace FASTER.test.readaddress
             for (int iteration = 0; iteration < 2; ++iteration)
             {
                 var rng = new Random(101);
-                var output = default(Value);
+                var output = default(Output);
                 var input = default(Value);
-                var context = new Context();
 
                 for (int ii = 0; ii < numKeys; ++ii)
                 {
                     var keyOrdinal = rng.Next(numKeys);
-                    var status = session.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, userContext: context, serialNo: maxLap + 1);
-                    if (status == Status.PENDING)
+
+                    ReadOptions readOptions = new()
                     {
-                        // This will spin CPU for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                        session.CompletePending(wait: true);
-                        output = context.output;
-                        status = context.status;
-                        context.Reset();
+                        StartAddress = testStore.InsertAddresses[keyOrdinal],
+                        ReadFlags = session.functions.readFlags
+                    };
+                    var status = session.ReadAtAddress(ref input, ref output, ref readOptions, serialNo: maxLap + 1);
+                    if (status.IsPending)
+                    {
+                        // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
+                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
                     }
 
-                    testStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
+                    TestStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
                 }
 
-                testStore.Flush().GetAwaiter().GetResult();
+                testStore.Flush().AsTask().GetAwaiter().GetResult();
             }
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(false, CopyReadsToTail.None, false, false)]
-        [TestCase(false, CopyReadsToTail.FromStorage, true, true)]
-        [TestCase(true, CopyReadsToTail.None, false, true)]
-        [Category("FasterKV")]
-        public async Task ReadNoKeyAsyncTests(bool useReadCache, CopyReadsToTail copyReadsToTail, bool useRMW, bool flush)
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [Category("FasterKV"), Category("Read")]
+        public async Task ReadNoKeyAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
         {
-            using var testStore = new TestStore(useReadCache, copyReadsToTail, flush);
+            var useReadCache = urc == UseReadCache.ReadCache;
+            using var testStore = new TestStore(useReadCache, readFlags, flush);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -561,21 +580,99 @@ namespace FASTER.test.readaddress
             {
                 var rng = new Random(101);
                 var input = default(Value);
-                RecordInfo recordInfo = default;
+                RecordMetadata recordMetadata = default;
 
                 for (int ii = 0; ii < numKeys; ++ii)
                 {
                     var keyOrdinal = rng.Next(numKeys);
-                    var readAsyncResult = await session.ReadAtAddressAsync(testStore.InsertAddresses[keyOrdinal], ref input, default, serialNo: maxLap + 1);
-                    var (status, output) = readAsyncResult.Complete(out recordInfo);
-                    testStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
+
+                    ReadOptions readOptions = new()
+                    {
+                        StartAddress = testStore.InsertAddresses[keyOrdinal],
+                        ReadFlags = session.functions.readFlags
+                    };
+
+                    var readAsyncResult = await session.ReadAtAddressAsync(ref input, ref readOptions, default, serialNo: maxLap + 1);
+                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
+
+                    TestStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
                 }
             }
 
             await testStore.Flush();
         }
+
+        internal struct ReadFlagsMerge
+        {
+            internal ReadFlags Fkv, Session, Read, Expected;
+        }
+
+        [Test]
+        [Category("FasterKV"), Category("Read")]
+        public void ReadFlagsMergeTest()
+        {
+            ReadFlagsMerge[] merges = new ReadFlagsMerge[]
+            {
+                new()
+                {
+                    Fkv = ReadFlags.None,
+                    Session = ReadFlags.Default,
+                    Read = ReadFlags.Default,
+                    Expected = ReadFlags.Default
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.None,
+                    Read = ReadFlags.Default,
+                    Expected = ReadFlags.Default
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.Default,
+                    Read = ReadFlags.None,
+                    Expected = ReadFlags.Default
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.Default | ReadFlags.DisableReadCache,
+                    Read = ReadFlags.Default,
+                    Expected = ReadFlags.CopyReadsToTail | ReadFlags.DisableReadCacheReads | ReadFlags.DisableReadCacheUpdates
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.Default,
+                    Read = ReadFlags.Default | ReadFlags.DisableReadCacheReads,
+                    Expected = ReadFlags.CopyReadsToTail | ReadFlags.DisableReadCacheReads
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.None | ReadFlags.DisableReadCacheUpdates,
+                    Read = ReadFlags.Default,
+                    Expected = ReadFlags.DisableReadCacheUpdates
+                },
+                new()
+                {
+                    Fkv = ReadFlags.CopyReadsToTail,
+                    Session = ReadFlags.Default,
+                    Read = ReadFlags.None | ReadFlags.DisableReadCache,
+                    Expected = ReadFlags.DisableReadCacheReads | ReadFlags.DisableReadCacheUpdates
+                },
+            };
+
+            for (var ii = 0; ii < merges.Length; ++ii)
+            {
+                var merge = merges[ii];
+                var flags = FasterKV<int, int>.MergeReadFlags(merge.Fkv, merge.Session, merge.Read);
+                Assert.AreEqual(merge.Expected, flags, $"iter {ii}");
+            }
+        }
     }
-#endif
+
     [TestFixture]
     public class ReadMinAddressTests
     {
@@ -635,33 +732,33 @@ namespace FASTER.test.readaddress
             {
                 Status status;
                 long output = 0;
+                ReadOptions readOptions = new() { StopAddress = minAddress };
                 if (isAsync)
-                    (status, output) = (await session.ReadAsync(ref key, ref input, minAddress, ReadFlags.MinAddress)).Complete();
+                    (status, output) = (await session.ReadAsync(ref key, ref input, ref readOptions)).Complete();
                 else
                 {
-                    RecordInfo recordInfo = new() { PreviousAddress = minAddress };
-                    status = session.Read(ref key, ref input, ref output, ref recordInfo, ReadFlags.MinAddress);
-                    if (status == Status.PENDING)
+                    status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
+                    if (status.IsPending)
                     {
                         Assert.IsTrue(session.CompletePendingWithOutputs(out var completedOutputs, wait: true));
                         (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
                     }
                 }
                 Assert.AreEqual(expectedStatus, status);
-                if (status != Status.NOTFOUND)
+                if (status.Found)
                     Assert.AreEqual(output, makeValue(key));
             }
 
             async ValueTask RunTests()
             {
                 // First read at the pivot, to verify that and make sure the rest of the test works
-                await ReadMin(pivotKey, Status.OK);
+                await ReadMin(pivotKey, new(StatusCode.Found));
 
                 // Read a Key that is below the min address
-                await ReadMin(pivotKey - 1, Status.NOTFOUND);
+                await ReadMin(pivotKey - 1, new(StatusCode.NotFound));
 
                 // Read a Key that is above the min address
-                await ReadMin(pivotKey + 1, Status.OK);
+                await ReadMin(pivotKey + 1, new(StatusCode.Found));
             }
 
             await RunTests();

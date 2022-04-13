@@ -21,7 +21,7 @@ namespace FASTER.test.recovery
             var allocator = new MallocFixedPageSize<HashBucket>();
 
             //do something
-            numBucketsToAdd = 16 * allocator.GetPageSize();
+            numBucketsToAdd = 2 * allocator.GetPageSize();
             logicalAddresses = new long[numBucketsToAdd];
             for (int i = 0; i < numBucketsToAdd; i++)
             {

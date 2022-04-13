@@ -27,18 +27,16 @@ namespace FASTER.client
             where Functions : ICallbackFunctions<Key, Value, Input, Output, Context>
             where ParameterSerializer : IClientSerializer<Key, Value, Input, Output>
     {
-        readonly NetworkSender messageManager;
+        readonly INetworkSender networkSender;        
         readonly Functions functions;
-        readonly ParameterSerializer serializer;
-        readonly Socket sendSocket;
+        readonly ParameterSerializer serializer;        
         readonly HeaderReaderWriter hrw;
         readonly int bufferSize;
         readonly WireFormat wireFormat;
         readonly MaxSizeSettings maxSizeSettings;
         private bool subscriptionSession;
 
-        bool disposed;
-        SeaaBuffer sendObject;
+        bool disposed;        
         byte* offset;
         int numMessages;
         int numPendingBatches;
@@ -57,14 +55,19 @@ namespace FASTER.client
         /// <param name="wireFormat"></param>
         /// <param name="serializer">Serializer</param>
         /// <param name="maxSizeSettings">Size settings</param>
-        public ClientSession(string address, int port, Functions functions, WireFormat wireFormat, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
+        public ClientSession(
+            string address, 
+            int port, 
+            Functions functions, 
+            WireFormat wireFormat, 
+            ParameterSerializer serializer, 
+            MaxSizeSettings maxSizeSettings)
         {
             this.functions = functions;
             this.serializer = serializer;
             this.wireFormat = wireFormat;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
             this.bufferSize = BufferSizeUtils.ClientBufferSize(this.maxSizeSettings);
-            this.messageManager = new NetworkSender(bufferSize);
             this.disposed = false;
             this.subscriptionSession = false;
 
@@ -73,11 +76,11 @@ namespace FASTER.client
             pubsubQueue = new ElasticCircularBuffer<(Key, Value, Context)>();
             tcsQueue = new ElasticCircularBuffer<TaskCompletionSource<(Status, Output)>>();
 
-            numPendingBatches = 0;
-            sendObject = messageManager.GetReusableSeaaBuffer();
-            offset = sendObject.bufferPtr + sizeof(int) + BatchHeader.Size;
+            numPendingBatches = 0;            
+            this.networkSender = new TcpNetworkSender(GetSendSocket(address, port), maxSizeSettings ?? new MaxSizeSettings());
+            networkSender.GetResponseObject();
+            offset = networkSender.GetResponseObjectHead() + sizeof(int) + BatchHeader.Size;
             numMessages = 0;
-            sendSocket = GetSendSocket(address, port);
         }
 
         /// <summary>
@@ -255,7 +258,6 @@ namespace FASTER.client
         /// SubscribeKV operation
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="input">Input</param>
         /// <param name="userContext">User context</param>
         /// <param name="serialNo">Serial number</param>
         /// <returns>Status of operation</returns>
@@ -266,7 +268,6 @@ namespace FASTER.client
         /// PSubscribe operation
         /// </summary>
         /// <param name="prefix">Key</param>
-        /// <param name="input">Input</param>
         /// <param name="userContext">User context</param>
         /// <param name="serialNo">Serial number</param>
         /// <returns>Status of operation</returns>
@@ -278,27 +279,19 @@ namespace FASTER.client
         /// </summary>
         public void Flush()
         {
-            if (offset > sendObject.bufferPtr + sizeof(int) + BatchHeader.Size)
+            if (offset > networkSender.GetResponseObjectHead() + sizeof(int) + BatchHeader.Size)
             {
-                int payloadSize = (int)(offset - sendObject.bufferPtr);
+                int payloadSize = (int)(offset - networkSender.GetResponseObjectHead());
 
-                ((BatchHeader*)(sendObject.bufferPtr + sizeof(int)))->SetNumMessagesProtocol(numMessages, wireFormat);
+                ((BatchHeader*)(networkSender.GetResponseObjectHead() + sizeof(int)))->SetNumMessagesProtocol(numMessages, wireFormat);
                 Interlocked.Increment(ref numPendingBatches);
 
                 // Set packet size in header
-                *(int*)sendObject.bufferPtr = -(payloadSize - sizeof(int));
+                *(int*)networkSender.GetResponseObjectHead() = -(payloadSize - sizeof(int));
 
-                try
-                {
-                    messageManager.Send(sendSocket, sendObject, 0, payloadSize);
-                }
-                catch
-                {
-                    Dispose();
-                    throw;
-                }
-                sendObject = messageManager.GetReusableSeaaBuffer();
-                offset = sendObject.bufferPtr + sizeof(int) + BatchHeader.Size;
+                networkSender.SendResponse(0, payloadSize);
+                networkSender.GetResponseObject();
+                offset = networkSender.GetResponseObjectHead() + sizeof(int) + BatchHeader.Size;
                 numMessages = 0;
             }
         }
@@ -322,10 +315,7 @@ namespace FASTER.client
         public void Dispose()
         {
             disposed = true;
-            if (sendObject != null)
-                messageManager.Return(sendObject);
-            sendSocket.Dispose();
-            messageManager.Dispose();
+            networkSender.Dispose();            
         }
 
         /// <summary>
@@ -382,15 +372,15 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
-                                if (status == Status.OK)
-                                {
-                                    result.Item3 = serializer.ReadOutput(ref src);
-                                    functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
-                                }
-                                else if (status == Status.PENDING)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingContext.Add(p, result);
+                                }
+                                else if (status.Found)
+                                {
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
                                 }
                                 else
                                     functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
@@ -402,13 +392,13 @@ namespace FASTER.client
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
-                                if (status == Status.OK)
-                                    tcs.SetResult((status, serializer.ReadOutput(ref src)));
-                                else if (status == Status.PENDING)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingTcs.Add(p, tcs);
                                 }
+                                else if (status.Found)
+                                    tcs.SetResult((status, serializer.ReadOutput(ref src)));
                                 else
                                     tcs.SetResult((status, default));
                                 break;
@@ -417,15 +407,15 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
-                                if (status == Status.OK || status == Status.NOTFOUND)
-                                {
-                                    result.Item3 = serializer.ReadOutput(ref src);
-                                    functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
-                                }
-                                else if (status == Status.PENDING)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingContext.Add(p, result);
+                                }
+                                else if (status.IsCompletedSuccessfully)
+                                {
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
                                 }
                                 else
                                     functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
@@ -436,13 +426,13 @@ namespace FASTER.client
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
-                                if (status == Status.OK || status == Status.NOTFOUND)
-                                    tcs.SetResult((status, serializer.ReadOutput(ref src)));
-                                else if (status == Status.PENDING)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingTcs.Add(p, tcs);
                                 }
+                                else if (status.IsCompletedSuccessfully)
+                                    tcs.SetResult((status, serializer.ReadOutput(ref src)));
                                 else
                                     tcs.SetResult((status, default));
                                 break;
@@ -466,25 +456,21 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var p = hrw.ReadPendingSeqNo(ref src);
-                                if (status == Status.OK)
-                                {
-                                    readRmwPendingContext.TryGetValue(p, out var result);
-                                    result.Item3 = serializer.ReadOutput(ref src);
-                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, Status.OK);
-                                }
-                                else if (status == Status.NOTFOUND)
-                                {
-                                    readRmwPendingContext.TryGetValue(p, out var result);
-                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, Status.NOTFOUND);
-                                }
-                                else if (status == Status.PENDING)
+                                if (status.IsPending)
                                 {
                                     var result = readrmwQueue.Dequeue();
                                     readRmwPendingContext.Add(p, result);
                                 }
+                                else if (status.Found)
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
+                                }
                                 else
                                 {
-                                    throw new Exception("Unexpected status of SubscribeKV");
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
                                 }
                                 break;
                             }
@@ -492,27 +478,23 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var p = hrw.ReadPendingSeqNo(ref src);
-                                if (status == Status.OK)
-                                {
-                                    readRmwPendingContext.TryGetValue(p, out var result);
-                                    result.Item1 = serializer.ReadKey(ref src);
-                                    result.Item3 = serializer.ReadOutput(ref src);
-                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, Status.OK);
-                                }
-                                else if (status == Status.NOTFOUND)
-                                {
-                                    readRmwPendingContext.TryGetValue(p, out var result);
-                                    result.Item1 = serializer.ReadKey(ref src);
-                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, Status.NOTFOUND);
-                                }
-                                else if (status == Status.PENDING)
+                                if (status.IsPending)
                                 {
                                     var result = readrmwQueue.Dequeue();
                                     readRmwPendingContext.Add(p, result);
                                 }
+                                else if (status.Found)
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item1 = serializer.ReadKey(ref src);
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
+                                }
                                 else
                                 {
-                                    throw new Exception("Unexpected status of SubscribeKV");
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item1 = serializer.ReadKey(ref src);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
                                 }
                                 break;
                             }
@@ -527,16 +509,16 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var p = hrw.ReadPendingSeqNo(ref src);
-                                if (status == Status.OK)
+                                if (status.IsPending)
+                                {
+                                    var result = pubsubQueue.Dequeue();
+                                    pubsubPendingContext.Add(p, result);
+                                }
+                                else if (status.Found)
                                 {
                                     pubsubPendingContext.TryGetValue(p, out var result);
                                     result.Item2 = serializer.ReadValue(ref src);
                                     functions.SubscribeCallback(ref result.Item1, ref result.Item2, result.Item3);
-                                }
-                                else if (status == Status.PENDING)
-                                {
-                                    var result = pubsubQueue.Dequeue();
-                                    pubsubPendingContext.Add(p, result);
                                 }
                                 else
                                 {
@@ -548,17 +530,17 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var p = hrw.ReadPendingSeqNo(ref src);
-                                if (status == Status.OK)
+                                if (status.IsPending)
+                                {
+                                    var result = pubsubQueue.Dequeue();
+                                    pubsubPendingContext.Add(p, result);
+                                }
+                                else if (status.Found)
                                 {
                                     pubsubPendingContext.TryGetValue(p, out var result);
                                     result.Item1 = serializer.ReadKey(ref src);
                                     result.Item2 = serializer.ReadValue(ref src);
                                     functions.SubscribeCallback(ref result.Item1, ref result.Item2, result.Item3);
-                                }
-                                else if (status == Status.PENDING)
-                                {
-                                    var result = pubsubQueue.Dequeue();
-                                    pubsubPendingContext.Add(p, result);
                                 }
                                 else
                                 {
@@ -580,7 +562,7 @@ namespace FASTER.client
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status ReadStatus(ref byte* dst) => (Status)(*dst++);
+        private Status ReadStatus(ref byte* dst) => new((StatusCode)(*dst++));
 
         private void HandlePending(ref byte* src)
         {
@@ -598,7 +580,7 @@ namespace FASTER.client
                         readRmwPendingContext.TryGetValue(p, out var result);
                         readRmwPendingContext.Remove(p);
 #endif
-                        if (status == Status.OK)
+                        if (status.Found)
                         {
                             result.Item3 = serializer.ReadOutput(ref src);
                             functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
@@ -617,7 +599,7 @@ namespace FASTER.client
                         readRmwPendingTcs.Remove(p);
 #endif
 
-                        if (status == Status.OK)
+                        if (status.Found)
                             result.SetResult((status, serializer.ReadOutput(ref src)));
                         else
                             result.SetResult((status, default));
@@ -632,7 +614,7 @@ namespace FASTER.client
                         readRmwPendingContext.TryGetValue(p, out var result);
                         readRmwPendingContext.Remove(p);
 #endif
-                        if (status == Status.OK || status == Status.NOTFOUND)
+                        if (status.IsCompletedSuccessfully)
                         {
                             result.Item3 = serializer.ReadOutput(ref src);
                             functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
@@ -650,7 +632,7 @@ namespace FASTER.client
                         readRmwPendingTcs.TryGetValue(p, out var result);
                         readRmwPendingTcs.Remove(p);
 #endif
-                        if (status == Status.OK || status == Status.NOTFOUND)
+                        if (status.IsCompletedSuccessfully)
                             result.SetResult((status, serializer.ReadOutput(ref src)));
                         else
                             result.SetResult((status, default));
@@ -665,7 +647,7 @@ namespace FASTER.client
                             break;
                         }
 
-                        if (status == Status.OK)
+                        if (status.Found)
                         {
                             result.Item3 = serializer.ReadOutput(ref src);
                             functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
@@ -726,7 +708,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -736,7 +718,7 @@ namespace FASTER.client
                                 numMessages++;
                                 offset = curr;
                                 readrmwQueue.Enqueue((key, input, output, userContext));
-                                return Status.PENDING;
+                                return Status.CreatePending();
                             }
                 Flush();
             }
@@ -749,7 +731,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -759,7 +741,7 @@ namespace FASTER.client
                                 numMessages++;
                                 offset = curr;
                                 readrmwQueue.Enqueue((key, input, default, userContext));
-                                return Status.PENDING;
+                                return Status.CreatePending();
                             }
                 Flush();
             }
@@ -772,7 +754,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -782,7 +764,7 @@ namespace FASTER.client
                                 numMessages++;
                                 offset = curr;
                                 upsertQueue.Enqueue((key, desiredValue, userContext));
-                                return Status.PENDING;
+                                return Status.CreatePending();
                             }
                 Flush();
             }
@@ -795,7 +777,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -804,7 +786,7 @@ namespace FASTER.client
                             numMessages++;
                             offset = curr;
                             pubsubQueue.Enqueue((key, default, userContext));
-                            return Status.PENDING;
+                            return Status.CreatePending();
                         }
                 Flush();
             }
@@ -817,7 +799,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -827,7 +809,7 @@ namespace FASTER.client
                                 numMessages++;
                                 offset = curr;
                                 upsertQueue.Enqueue((key, desiredValue, userContext));
-                                return Status.PENDING;
+                                return Status.CreatePending();
                             }
                 Flush();
             }
@@ -840,7 +822,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -850,7 +832,7 @@ namespace FASTER.client
                                 numMessages++;
                                 offset = curr;
                                 readrmwQueue.Enqueue((key, input, output, userContext));
-                                return Status.PENDING;
+                                return Status.CreatePending();
                             }
                 Flush();
             }
@@ -863,7 +845,7 @@ namespace FASTER.client
 
             while (true)
             {
-                byte* end = sendObject.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -872,7 +854,7 @@ namespace FASTER.client
                             numMessages++;
                             offset = curr;
                             upsertQueue.Enqueue((key, default, userContext));
-                            return Status.PENDING;
+                            return Status.CreatePending();
                         }
                 Flush();
             }
@@ -891,7 +873,15 @@ namespace FASTER.client
 
             connState.AddBytesRead(e.BytesTransferred);
             var newHead = connState.TryConsumeMessages(e.Buffer);
-            e.SetBuffer(newHead, e.Buffer.Length - newHead);
+            if (newHead == e.Buffer.Length)
+            {
+                // Need to grow input buffer
+                var newBuffer = new byte[e.Buffer.Length * 2];
+                Array.Copy(e.Buffer, newBuffer, e.Buffer.Length);
+                e.SetBuffer(newBuffer, newHead, newBuffer.Length - newHead);
+            }
+            else
+                e.SetBuffer(newHead, e.Buffer.Length - newHead);
             return true;
         }
 

@@ -90,7 +90,7 @@ namespace FASTER.core
                 case Phase.PREP_INDEX_CHECKPOINT:
                     result.Phase = Phase.PREPARE;
                     break;
-                case Phase.WAIT_PENDING:
+                case Phase.IN_PROGRESS:
                     result.Phase = Phase.WAIT_INDEX_CHECKPOINT;
                     break;
                 case Phase.WAIT_INDEX_CHECKPOINT:

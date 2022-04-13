@@ -44,7 +44,7 @@ namespace FASTER.test.recovery.objectstore
                 (
                     keySpace,
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
-                    new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot },
+                    new CheckpointSettings { CheckpointDir = test_path },
                     new SerializerSettings<AdId, NumClicks> { keySerializer = () => new AdIdSerializer(), valueSerializer = () => new NumClicksSerializer() }
                     );
         }
@@ -102,7 +102,7 @@ namespace FASTER.test.recovery.objectstore
             // Register thread with FASTER
             var session = fht.NewSession(new Functions());
 
-            // Prpcess the batch of input data
+            // Process the batch of input data
             bool first = true;
             for (int i = 0; i < numOps; i++)
             {
@@ -111,9 +111,9 @@ namespace FASTER.test.recovery.objectstore
                 if ((i + 1) % checkpointInterval == 0)
                 {
                     if (first)
-                        while (!fht.TakeFullCheckpoint(out token)) ;
+                        while (!fht.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot)) ;
                     else
-                        while (!fht.TakeFullCheckpoint(out _)) ;
+                        while (!fht.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot)) ;
 
                     fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
@@ -179,7 +179,7 @@ namespace FASTER.test.recovery.objectstore
             long[] expected = new long[numUniqueKeys];
             foreach (var guid in checkpointInfo.continueTokens.Keys)
             {
-                var cp = checkpointInfo.continueTokens[guid];
+                var cp = checkpointInfo.continueTokens[guid].Item2;
                 for (long i = 0; i <= cp.UntilSerialNo; i++)
                 {
                     var id = i % numUniqueKeys;

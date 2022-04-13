@@ -114,7 +114,7 @@ namespace FASTER.core
                 nextAddress = currentAddress + recordSize;
 
                 ref var info = ref hlog.GetInfo(physicalAddress);
-                if (info.Invalid || info.IsNull())
+                if (info.SkipOnScan || info.IsNull())
                 {
                     epoch?.Suspend();
                     continue;

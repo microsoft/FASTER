@@ -43,7 +43,7 @@ namespace MemOnlyCache
     /// <summary>
     /// Callback for FASTER operations
     /// </summary>
-    public sealed class CacheFunctions : AdvancedSimpleFunctions<CacheKey, CacheValue>
+    public sealed class CacheFunctions : SimpleFunctions<CacheKey, CacheValue>
     {
         readonly CacheSizeTracker sizeTracker;
 
@@ -52,26 +52,27 @@ namespace MemOnlyCache
             this.sizeTracker = sizeTracker;
         }
 
-        public override bool ConcurrentWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentWriter(ref CacheKey key, ref CacheValue input, ref CacheValue src, ref CacheValue dst, ref CacheValue output, ref UpsertInfo upsertInfo)
         {
             var old = Interlocked.Exchange(ref dst, src);
             sizeTracker.AddTrackedSize(dst.GetSize - old.GetSize);
             return true;
         }
 
-        public override void SingleWriter(ref CacheKey key, ref CacheValue src, ref CacheValue dst)
+        public override void PostSingleWriter(ref CacheKey key, ref CacheValue input, ref CacheValue src, ref CacheValue dst, ref CacheValue output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             dst = src;
             sizeTracker.AddTrackedSize(key.GetSize + src.GetSize);
         }
 
-        public override void ConcurrentDeleter(ref CacheKey key, ref CacheValue value, ref RecordInfo recordInfo, long address)
+        public override bool ConcurrentDeleter(ref CacheKey key, ref CacheValue value, ref DeleteInfo deleteInfo)
         {
             sizeTracker.AddTrackedSize(-value.GetSize);
 
             // Record is marked invalid (failed to insert), dispose key as well
-            if (recordInfo.Invalid)
+            if (deleteInfo.RecordInfo.Invalid)
                 sizeTracker.AddTrackedSize(-key.GetSize);
+            return true;
         }
     }
 }

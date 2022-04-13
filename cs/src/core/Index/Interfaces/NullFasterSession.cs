@@ -4,7 +4,7 @@
     {
         public static readonly NullFasterSession Instance = new();
 
-        public void CheckpointCompletionCallback(string guid, CommitPoint commitPoint)
+        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
         {
         }
 

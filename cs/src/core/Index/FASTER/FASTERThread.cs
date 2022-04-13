@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -12,13 +11,13 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        internal CommitPoint InternalContinue<Input, Output, Context>(string guid, out FasterExecutionContext<Input, Output, Context> ctx)
+        internal (string, CommitPoint) InternalContinue<Input, Output, Context>(int sessionID, out FasterExecutionContext<Input, Output, Context> ctx)
         {
             ctx = null;
 
             if (_recoveredSessions != null)
             {
-                if (_recoveredSessions.TryGetValue(guid, out _))
+                if (_recoveredSessions.TryGetValue(sessionID, out _))
                 {
                     // We have recovered the corresponding session. 
                     // Now obtain the session by first locking the rest phase
@@ -29,21 +28,21 @@ namespace FASTER.core
                         if (MakeTransition(currentState, intermediateState))
                         {
                             // No one can change from REST phase
-                            if (_recoveredSessions.TryRemove(guid, out CommitPoint cp))
+                            if (_recoveredSessions.TryRemove(sessionID, out var cp))
                             {
                                 // We have atomically removed session details. 
                                 // No one else can continue this session
                                 ctx = new FasterExecutionContext<Input, Output, Context>();
-                                InitContext(ctx, guid);
+                                InitContext(ctx, sessionID, cp.Item1);
                                 ctx.prevCtx = new FasterExecutionContext<Input, Output, Context>();
-                                InitContext(ctx.prevCtx, guid);
+                                InitContext(ctx.prevCtx, sessionID, cp.Item1);
                                 ctx.prevCtx.version--;
-                                ctx.serialNum = cp.UntilSerialNo;
+                                ctx.serialNum = cp.Item2.UntilSerialNo;
                             }
                             else
                             {
                                 // Someone else continued this session
-                                cp = new CommitPoint { UntilSerialNo = -1 };
+                                cp = ((string)null, new CommitPoint { UntilSerialNo = -1 });
                                 Debug.WriteLine("Session already continued by another thread!");
                             }
 
@@ -54,12 +53,12 @@ namespace FASTER.core
 
                     // Need to try again when in REST
                     Debug.WriteLine("Can continue only in REST phase");
-                    return new CommitPoint { UntilSerialNo = -1 };
+                    return (null, new CommitPoint { UntilSerialNo = -1 });
                 }
             }
 
             Debug.WriteLine("No recovered sessions!");
-            return new CommitPoint { UntilSerialNo = -1 };
+            return (null, new CommitPoint { UntilSerialNo = -1 });
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -78,7 +77,7 @@ namespace FASTER.core
             ThreadStateMachineStep(ctx, fasterSession, default);
         }
 
-        internal void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, string token, long lsn = -1)
+        internal void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName, long lsn = -1)
         {
             ctx.phase = Phase.REST;
             // The system version starts at 1. Because we do not know what the current state machine state is,
@@ -87,21 +86,11 @@ namespace FASTER.core
             ctx.version = 1;
             ctx.markers = new bool[8];
             ctx.serialNum = lsn;
-            ctx.guid = token;
+            ctx.sessionID = sessionID;
+            ctx.sessionName = sessionName;
 
-            if (RelaxedCPR)
+            if (ctx.retryRequests == null)
             {
-                if (ctx.retryRequests == null)
-                {
-                    ctx.retryRequests = new Queue<PendingContext<Input, Output, Context>>();
-                    ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
-                    ctx.ioPendingRequests = new Dictionary<long, PendingContext<Input, Output, Context>>();
-                    ctx.pendingReads = new AsyncCountDown();
-                }
-            }
-            else
-            {
-                ctx.totalPending = 0;
                 ctx.retryRequests = new Queue<PendingContext<Input, Output, Context>>();
                 ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
                 ctx.ioPendingRequests = new Dictionary<long, PendingContext<Input, Output, Context>>();
@@ -116,27 +105,16 @@ namespace FASTER.core
             dst.threadStateMachine = src.threadStateMachine;
             dst.markers = src.markers;
             dst.serialNum = src.serialNum;
-            dst.guid = src.guid;
+            dst.sessionName = src.sessionName;
             dst.excludedSerialNos = new List<long>();
 
-            if (!RelaxedCPR)
+            foreach (var v in src.ioPendingRequests.Values)
             {
-                dst.totalPending = src.totalPending;
-                dst.retryRequests = src.retryRequests;
-                dst.readyResponses = src.readyResponses;
-                dst.ioPendingRequests = src.ioPendingRequests;
-                dst.pendingReads = src.pendingReads;
+                dst.excludedSerialNos.Add(v.serialNum);
             }
-            else
+            foreach (var v in src.retryRequests)
             {
-                foreach (var v in src.ioPendingRequests.Values)
-                {
-                    dst.excludedSerialNos.Add(v.serialNum);
-                }
-                foreach (var v in src.retryRequests)
-                {
-                    dst.excludedSerialNos.Add(v.serialNum);
-                }
+                dst.excludedSerialNos.Add(v.serialNum);
             }
         }
 
@@ -148,27 +126,11 @@ namespace FASTER.core
         {
             while (true)
             {
-                bool done = true;
-
-                #region Previous pending requests
-                if (!RelaxedCPR)
-                {
-                    if (ctx.phase == Phase.IN_PROGRESS || ctx.phase == Phase.WAIT_PENDING)
-                    {
-                        InternalCompletePendingRequests(ctx.prevCtx, ctx, fasterSession, completedOutputs);
-                        InternalCompleteRetryRequests(ctx.prevCtx, ctx, fasterSession);
-                        if (wait) ctx.prevCtx.WaitPending(epoch);
-                        done &= ctx.prevCtx.HasNoPendingRequests;
-                    }
-                }
-                #endregion
-
                 InternalCompletePendingRequests(ctx, ctx, fasterSession, completedOutputs);
                 InternalCompleteRetryRequests(ctx, ctx, fasterSession);
                 if (wait) ctx.WaitPending(epoch);
-                done &= ctx.HasNoPendingRequests;
 
-                if (done) return true;
+                if (ctx.HasNoPendingRequests) return true;
 
                 InternalRefresh(ctx, fasterSession);
 
@@ -216,7 +178,7 @@ namespace FASTER.core
                         internalStatus = InternalRMW(ref key, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.UPSERT:
-                        internalStatus = InternalUpsert(ref key, ref pendingContext.value.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                        internalStatus = InternalUpsert(ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                         break;
                     case OperationType.DELETE:
                         internalStatus = InternalDelete(ref key, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
@@ -226,44 +188,24 @@ namespace FASTER.core
                 }
             } while (internalStatus == OperationStatus.RETRY_NOW);
 
-            Status status;
-            // Handle operation status
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-            {
-                status = (Status)internalStatus;
-            }
-            else
-            {
+            if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                 status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, false, out _);
-            }
 
             // If done, callback user code.
-            if (status == Status.OK || status == Status.NOTFOUND)
+            if (status.IsCompletedSuccessfully)
             {
-                if (pendingContext.heldLatch == LatchOperation.Shared)
-                    ReleaseSharedLatch(key);
-
                 switch (pendingContext.type)
                 {
                     case OperationType.RMW:
                         fasterSession.RMWCompletionCallback(ref key,
                                                 ref pendingContext.input.Get(),
                                                 ref pendingContext.output,
-                                                pendingContext.userContext, status);
-                        break;
-                    case OperationType.UPSERT:
-                        fasterSession.UpsertCompletionCallback(ref key,
-                                                 ref pendingContext.value.Get(),
-                                                 pendingContext.userContext);
-                        break;
-                    case OperationType.DELETE:
-                        fasterSession.DeleteCompletionCallback(ref key,
-                                                 pendingContext.userContext);
+                                                pendingContext.userContext, status,
+                                                new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
                         break;
                     default:
                         throw new FasterException("Operation type not allowed for retry");
                 }
-
             }
         }
         #endregion
@@ -330,7 +272,7 @@ namespace FASTER.core
                 // Remove from pending dictionary
                 opCtx.ioPendingRequests.Remove(request.id);
                 var status = InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
-                if (completedOutputs is not null && (status == Status.OK || status == Status.NOTFOUND))
+                if (completedOutputs is not null && status.IsCompletedSuccessfully)
                     completedOutputs.Add(ref pendingContext, status);
                 else
                     pendingContext.Dispose();
@@ -351,45 +293,28 @@ namespace FASTER.core
             newRequest = default;
 
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
-            ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
-            OperationStatus internalStatus;
+            // With the new overload of CompletePending that returns CompletedOutputs, pendingContext must have the key.
+            if (pendingContext.NoKey && pendingContext.key == default)
+                pendingContext.key = hlog.GetKeyContainer(ref hlog.GetContextRecordKey(ref request));
+            ref Key key = ref pendingContext.key.Get();
 
-            // Issue the continue command
-            if (pendingContext.type == OperationType.READ)
-            {
-                internalStatus = InternalContinuePendingRead(opCtx, request, ref pendingContext, fasterSession, currentCtx);
-            }
-            else
-            {
-                internalStatus = InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
-            }
-            unsafe { pendingContext.recordInfo = hlog.GetInfoFromBytePointer(request.record.GetValidPointer()); }
+            OperationStatus internalStatus = pendingContext.type == OperationType.READ
+                ? InternalContinuePendingRead(opCtx, request, ref pendingContext, fasterSession, currentCtx)
+                : InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
 
-            request.Dispose();
-
-            Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
-
-            Status status;
-            // Handle operation status
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
+            if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
             {
-                status = (Status)internalStatus;
-            }
-            else if (internalStatus == OperationStatus.ALLOCATE_FAILED)
-            {
-                return Status.PENDING;  // This plus newRequest.IsDefault() means allocate failed
-            }
-            else
-            {
+                if (internalStatus == OperationStatus.ALLOCATE_FAILED)
+                {
+                    status = new(StatusCode.Pending);  // This plus newRequest.IsDefault() means allocate failed
+                    goto Done;
+                }
                 status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, asyncOp, out newRequest);
             }
 
             // If done, callback user code
-            if (status == Status.OK || status == Status.NOTFOUND)
+            if (status.IsCompletedSuccessfully)
             {
-                if (pendingContext.heldLatch == LatchOperation.Shared)
-                    ReleaseSharedLatch(key);
-
                 if (pendingContext.type == OperationType.READ)
                 {
                     fasterSession.ReadCompletionCallback(ref key,
@@ -397,17 +322,26 @@ namespace FASTER.core
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
                                                      status,
-                                                     pendingContext.recordInfo);
+                                                     new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
                 }
                 else
                 {
                     fasterSession.RMWCompletionCallback(ref key,
-                                                    ref pendingContext.input.Get(),
-                                                    ref pendingContext.output,
-                                                    pendingContext.userContext,
-                                                    status);
+                                                     ref pendingContext.input.Get(),
+                                                     ref pendingContext.output,
+                                                     pendingContext.userContext,
+                                                     status,
+                                                     new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
                 }
             }
+
+        Done:
+            unsafe
+            {
+                ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
+                fasterSession.DisposeDeserializedFromDisk(ref hlog.GetContextRecordKey(ref request), ref hlog.GetContextRecordValue(ref request), ref recordInfo);
+            }
+            request.Dispose();
             return status;
         }
         #endregion

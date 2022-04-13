@@ -43,7 +43,7 @@ namespace FASTER.test.largeobjects
             fht1 = new FasterKV<MyKey, MyLargeValue>
                 (128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
+                new CheckpointSettings { CheckpointDir = test_path },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
@@ -60,7 +60,7 @@ namespace FASTER.test.largeobjects
             }
             session1.Dispose();
 
-            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             fht1.Dispose();
             log.Dispose();
@@ -72,7 +72,7 @@ namespace FASTER.test.largeobjects
             fht2 = new FasterKV<MyKey, MyLargeValue>
                 (128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
+                new CheckpointSettings { CheckpointDir = test_path },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
@@ -84,7 +84,7 @@ namespace FASTER.test.largeobjects
                 var key = new MyKey { key = keycnt };
                 var status = session2.Read(ref key, ref input, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                     session2.CompletePending(true);
                 else
                 {

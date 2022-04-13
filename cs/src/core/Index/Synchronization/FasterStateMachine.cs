@@ -45,6 +45,11 @@ namespace FASTER.core
         public long LastCheckpointedVersion => lastVersion;
 
         /// <summary>
+        /// Recovered version number (1 if started from clean slate)
+        /// </summary>
+        public long RecoveredVersion => systemState.Version;
+
+        /// <summary>
         /// Current version number of the store
         /// </summary>
         public long CurrentVersion => systemState.Version;
@@ -213,7 +218,7 @@ namespace FASTER.core
                         };
 
                         // Thread local action
-                        fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
+                        fasterSession?.CheckpointCompletionCallback(ctx.sessionID, ctx.sessionName, commitPoint);
                     }
                 }
                 if ((ctx.version == targetStartState.Version) && (ctx.phase < Phase.REST) && !(ctx.threadStateMachine is IndexSnapshotStateMachine))
@@ -311,7 +316,7 @@ namespace FASTER.core
                     }
                 }
                 if (commitPoint.ExcludedSerialNos != null)
-                    fasterSession?.CheckpointCompletionCallback(ctx.guid, commitPoint);
+                    fasterSession?.CheckpointCompletionCallback(ctx.sessionID, ctx.sessionName, commitPoint);
             }
 
         }

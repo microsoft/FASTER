@@ -6,8 +6,13 @@ namespace FASTER.core
     /// <summary>
     /// Type of lock taken by FASTER on Read, Upsert, RMW, or Delete operations, either directly or within concurrent callback operations
     /// </summary>
-    public enum LockType
+    public enum LockType : byte
     {
+        /// <summary>
+        /// No lock
+        /// </summary>
+        None,
+
         /// <summary>
         /// Shared lock, taken on Read
         /// </summary>
@@ -16,6 +21,35 @@ namespace FASTER.core
         /// <summary>
         /// Exclusive lock, taken on Upsert, RMW, or Delete
         /// </summary>
-        Exclusive
+        Exclusive,
+
+        /// <summary>
+        /// Promote a Shared lock to an Exclusive lock
+        /// </summary>
+        ExclusiveFromShared
+    }
+
+    internal enum LockOperationType : byte
+    {
+        None,
+        Lock,
+        Unlock,
+        IsLocked
+    }
+
+    internal struct LockOperation
+    {
+        internal LockType LockType;
+        internal LockOperationType LockOperationType;
+
+        internal bool IsSet => LockOperationType != LockOperationType.None;
+
+        internal LockOperation(LockOperationType opType, LockType lockType)
+        {
+            this.LockType = lockType;
+            this.LockOperationType = opType;
+        }
+
+        public override string ToString() => $"{LockType}: opType {LockOperationType}";
     }
 }

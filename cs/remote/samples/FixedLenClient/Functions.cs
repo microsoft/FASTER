@@ -16,13 +16,13 @@ namespace FixedLenClient
             if (ctx == 0)
             {
                 var expected = key + 10000;
-                if (status != Status.OK || expected != output)
+                if (!status.Found || expected != output)
                     throw new Exception($"Incorrect read result for key {key}; expected = {expected}, actual = {output}");
             }
             else if (ctx == 1)
             {
                 var expected = key + 10000 + 25 + 25;
-                if (status != Status.OK || expected != output)
+                if (!status.Found || expected != output)
                     throw new Exception($"Incorrect read result for key {key}; expected = {expected}, actual = {output}");
             }
             else
@@ -40,7 +40,7 @@ namespace FixedLenClient
             if (ctx == 1)
             {
                 var expected = key + 10000 + 25 + 25 + 25;
-                if (status != Status.OK || expected != output)
+                if (!status.Found || expected != output)
                     throw new Exception($"Incorrect read result for key {key}; expected = {expected}, actual = {output}");
             }
         }

@@ -15,16 +15,17 @@ namespace FASTER.server
         where Value : unmanaged
         where Input : unmanaged
         where Output : unmanaged
-        where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
+        where Functions : IFunctions<Key, Value, Input, Output, long>
     {
         /// <summary>
         /// Create server instance; use Start to start the server.
         /// </summary>
         /// <param name="opts"></param>
         /// <param name="functionsGen"></param>
+        /// <param name="disableLocking"></param>
         /// <param name="maxSizeSettings"></param>
-        public FixedLenServer(ServerOptions opts, Func<WireFormat, Functions> functionsGen, MaxSizeSettings maxSizeSettings = default)
-            : base(opts, functionsGen, new FixedLenSerializer<Key, Value, Input, Output>(), new FixedLenKeySerializer<Key, Input>(), maxSizeSettings)
+        public FixedLenServer(ServerOptions opts, Func<Functions> functionsGen, bool disableLocking, MaxSizeSettings maxSizeSettings = default)
+            : base(opts, functionsGen, new FixedLenSerializer<Key, Value, Input, Output>(), new FixedLenKeySerializer<Key, Input>(), disableLocking, maxSizeSettings)
         {
         }
     }

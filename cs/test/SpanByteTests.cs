@@ -96,7 +96,7 @@ namespace FASTER.test
                         status = session.Read(key: SpanByte.FromFixedSpan(key), out var unused);
 
                     // All keys need to be fetched from disk
-                    Assert.AreEqual(Status.PENDING, status);
+                    Assert.IsTrue(status.IsPending);
 
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
 
@@ -107,7 +107,7 @@ namespace FASTER.test
                         while (completedOutputs.Next())
                         {
                             count++;
-                            Assert.AreEqual(Status.OK, completedOutputs.Current.Status);
+                            Assert.IsTrue(completedOutputs.Current.Status.Found);
                             value = completedOutputs.Current.Output;
                         }
                     }
@@ -177,8 +177,17 @@ namespace FASTER.test
 
         class MultiReadSpanByteKeyTestFunctions : FunctionsBase<SpanByte, long, long, long, Empty>
         {
-            public override void SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst) => dst = value;
-            public override void ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst) => dst = value;
+            public override bool SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref ReadInfo readInfo)
+            {
+                dst = value;
+                return true;
+            }
+
+            public override bool ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref ReadInfo readInfo)
+            {
+                dst = value;
+                return true;
+            }
         }
     }
 }

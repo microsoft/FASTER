@@ -54,13 +54,19 @@ namespace FASTER.core
 
             if ((!keyBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
             {
-                Debug.WriteLine("Key is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
+#if DEBUG
+                if (typeof(Key) != typeof(byte[]) && typeof(Key) != typeof(string))
+                    Debug.WriteLine("Key is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
+#endif
                 SerializerSettings.keySerializer = ObjectSerializer.Get<Key>();
             }
 
             if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
             {
-                Debug.WriteLine("Value is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
+#if DEBUG
+                if (typeof(Value) != typeof(byte[]) && typeof(Value) != typeof(string))
+                    Debug.WriteLine("Value is not blittable, but no serializer specified via SerializerSettings. Using (slow) DataContractSerializer as default.");
+#endif
                 SerializerSettings.valueSerializer = ObjectSerializer.Get<Value>();
             }
 
@@ -374,7 +380,7 @@ namespace FASTER.core
                 }
                 fixed (RecordInfo* pin = &src[0].info)
                 {
-                    Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)buffer.handle.AddrOfPinnedObject() + buffer.buffer.Length);
+                    Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)Unsafe.AsPointer(ref buffer.buffer[0]) + buffer.buffer.Length);
 
                     Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + start), buffer.aligned_pointer + start, 
                         numBytesToWrite - start, numBytesToWrite - start);
@@ -384,7 +390,7 @@ namespace FASTER.core
             {
                 fixed (RecordInfo* pin = &src[0].info)
                 {
-                    Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)buffer.handle.AddrOfPinnedObject() + buffer.buffer.Length);
+                    Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)Unsafe.AsPointer(ref buffer.buffer[0]) + buffer.buffer.Length);
 
                     Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + aligned_start), buffer.aligned_pointer + aligned_start, 
                         numBytesToWrite - aligned_start, numBytesToWrite - aligned_start);
@@ -446,8 +452,6 @@ namespace FASTER.core
 
                     var _objBuffer = bufferPool.Get(memoryStreamTotalLength);
 
-                    asyncResult.done = new AutoResetEvent(false);
-
                     var _alignedLength = (memoryStreamTotalLength + (sectorSize - 1)) & ~(sectorSize - 1);
 
                     var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
@@ -476,6 +480,8 @@ namespace FASTER.core
 
                         // Reset address list for next chunk
                         addr = new List<long>();
+
+                        asyncResult.done = new AutoResetEvent(false);
 
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
@@ -1031,7 +1037,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
             long pageStartAddress = beginAddress & ~PageSizeMask;
@@ -1043,7 +1049,7 @@ namespace FASTER.core
             try
             {
                 epoch.Suspend();
-                OnEvictionObserver?.OnNext(iter);
+                observer?.OnNext(iter);
             }
             finally
             {
@@ -1051,7 +1057,7 @@ namespace FASTER.core
             }
         }
 
-        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
+        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog)
         {
             throw new FasterException("Incremental snapshots not supported with generic allocator");
         }
