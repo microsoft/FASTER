@@ -91,27 +91,25 @@ Thanks to [Minimal Mistakes](https://github.com/mmistakes/minimal-mistakes) for 
 # Embedded key-value store sample
 
 ```cs
-public static void Main()
+public static void Test()
 {
-  using var log = Devices.CreateLogDevice("hlog.log"); // backing storage device
-  using var store = new FasterKV<long, long>(1L << 20, // hash table size (number of 64-byte buckets)
-     new LogSettings { LogDevice = log } // log settings (devices, page size, memory size, etc.)
-     );
+   using var settings = new FasterKVSettings<long, long>("c:/temp"); // backing storage device
+   using var store = new FasterKV<long, long>(settings);
 
-  // Create a session per sequence of interactions with FASTER
-  // We use default callback functions with a custom merger: RMW merges input by adding it to value
-  using var s = store.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
-  long key = 1, value = 1, input = 10, output = 0;
-  
-  // Upsert and Read
-  s.Upsert(ref key, ref value);
-  s.Read(ref key, ref output);
-  Debug.Assert(output == value);
-  
-  // Read-Modify-Write (add input to value)
-  s.RMW(ref key, ref input);
-  s.RMW(ref key, ref input);
-  s.Read(ref key, ref output);
-  Debug.Assert(output == value + 20);
+   // Create a session per sequence of interactions with FASTER
+   // We use default callback functions with a custom merger: RMW merges input by adding it to value
+   using var session = store.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
+   
+   long key = 1, value = 1, input = 10, output = 0;
+
+   // Upsert and Read
+   session.Upsert(ref key, ref value);
+   session.Read(ref key, ref output);
+   Debug.Assert(output == value);
+
+   // Read-Modify-Write (add input to value)
+   session.RMW(ref key, ref input);
+   session.RMW(ref key, ref input, ref output);
+   Debug.Assert(output == value + 20);
 }
 ```
