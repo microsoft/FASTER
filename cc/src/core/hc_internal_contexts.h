@@ -3,10 +3,13 @@
 
 #include "address.h"
 #include "async.h"
-#include "hash_bucket.h"
 #include "key_hash.h"
 #include "guid.h"
 #include "record.h"
+
+#include "../index/hash_bucket.h"
+
+using namespace FASTER::index;
 
 namespace FASTER {
 namespace core {
@@ -247,7 +250,7 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
   typedef HotColdRmwConditionalInsertContext<K, V> hc_rmw_ci_context_t;
 
  protected:
-  AsyncHotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, HashBucketEntry& expected_entry_,
+  AsyncHotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, HashBucketEntry expected_entry_,
                       IAsyncContext& caller_context_, AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
     : HotColdContext<key_t>(faster_hc_, caller_context_, caller_callback_, monotonic_serial_num_)
     , stage{ stage_ }
@@ -315,7 +318,7 @@ class HotColdRmwContext : public AsyncHotColdRmwContext<typename MC::key_t, type
   typedef typename rmw_context_t::value_t value_t;
   typedef Record<key_t, value_t> record_t;
 
-  HotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, HashBucketEntry& expected_entry_,
+  HotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, HashBucketEntry expected_entry_,
                   rmw_context_t& caller_context_, AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
     : AsyncHotColdRmwContext<key_t, value_t>(faster_hc_, stage_, expected_entry_,
                                             caller_context_, caller_callback_, monotonic_serial_num_)
@@ -468,6 +471,49 @@ class HotColdRmwReadContext : public IAsyncContext {
  private:
   bool deep_copied_;
 };
+
+/// Context used for hot-cold sync hash index operations
+/// Currently only used when retrying RMW operations
+template <class C>
+class HotColdIndexContext : public IAsyncContext {
+ public:
+  /// Constructs and returns a context given a hot-cold context
+  HotColdIndexContext(C* context)
+    : context_{ context }
+    , entry{ HashBucketEntry::kInvalidEntry }
+    , atomic_entry{ nullptr } {
+  }
+  /// Copy constructor deleted -- op does not go async
+  HotColdIndexContext(const HotColdIndexContext& from)
+    : context_{ from.context_ }
+    , entry{ from.entry }
+    , atomic_entry{ from.atomic_entry } {
+  }
+
+  inline KeyHash get_key_hash() const {
+    return context_->get_key_hash();
+  }
+  inline void set_index_entry(HashBucketEntry entry_, AtomicHashBucketEntry* atomic_entry_) {
+    entry = entry_;
+    atomic_entry = atomic_entry_;
+  }
+
+ protected:
+  /// Copies this context into a passed-in pointer if the operation goes
+  /// asynchronous inside FASTER.
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+  }
+
+ private:
+  /// Pointer to the record
+  C* context_;
+ public:
+  ///
+  HashBucketEntry entry;
+  AtomicHashBucketEntry* atomic_entry;
+};
+
 
 
 template <class RC>

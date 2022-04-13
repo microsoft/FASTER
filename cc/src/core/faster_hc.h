@@ -277,16 +277,25 @@ inline Status FasterKvHC<K, V, D>::Rmw(MC& context, AsyncCallback callback,
                                         uint64_t monotonic_serial_num) {
   typedef MC rmw_context_t;
   typedef HotColdRmwContext<rmw_context_t> hc_rmw_context_t;
+  typedef HotColdIndexContext<hc_rmw_context_t> hc_index_context_t;
 
   // Keep hash bucket entry
   KeyHash hash = context.key().GetHash();
   HashBucketEntry entry;
   AtomicHashBucketEntry* atomic_entry;
-  Status status = hot_store.hash_index_.FindEntry(hash, entry, atomic_entry);
+
+  hc_rmw_context_t hc_rmw_context{ this, RmwOperationStage::HOT_LOG_RMW,
+                                  HashBucketEntry::kInvalidEntry,
+                                  context, callback, monotonic_serial_num };
+
+  hc_index_context_t index_context{ &hc_rmw_context };
+  Status status = hot_store.hash_index_.template FindEntry<hc_index_context_t>(
+                        hot_store.thread_ctx(), index_context);
   assert(status == Status::Ok || status == Status::NotFound);
 
-  hc_rmw_context_t hc_rmw_context{ this, RmwOperationStage::HOT_LOG_RMW, entry,
-                                  context, callback, monotonic_serial_num };
+  // Store index expected entry at the time
+  hc_rmw_context.expected_entry = index_context.entry;
+
   return InternalRmw(hc_rmw_context);
 }
 
@@ -507,17 +516,19 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
 
 template<class K, class V, class D>
 inline void FasterKvHC<K, V, D>::CompleteRmwRetryRequests() {
+  typedef HotColdIndexContext<async_hc_rmw_context_t> hc_index_context_t;
+
   async_hc_rmw_context_t* ctxt;
   while (retry_rmw_requests.try_pop(ctxt)) {
     CallbackContext<async_hc_rmw_context_t> context{ ctxt };
     // Get hash bucket entry
-    KeyHash hash = context->get_key_hash();
-    HashBucketEntry entry;
-    AtomicHashBucketEntry* atomic_entry;
-    Status index_status = hot_store.hash_index_.FindEntry(hash, entry, atomic_entry);
-    assert(index_status == Status::Ok || index_status == Status::NotFound);
+    hc_index_context_t index_context{ context.get() };
+    Status index_status = hot_store.hash_index_.template FindEntry<hc_index_context_t>(
+                                  hot_store.thread_ctx(), index_context);
+    assert(index_status == Status::Ok || index_status == Status::NotFound); // Non-pending status
+
     // Initialize rmw context vars
-    context->expected_entry = entry;
+    context->expected_entry = index_context.entry;
     context->stage = RmwOperationStage::HOT_LOG_RMW;
     // Re-issue RMW request
     Status status = InternalRmw(*context.get());
