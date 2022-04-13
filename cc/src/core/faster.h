@@ -16,7 +16,7 @@
 #include <unordered_set>
 
 #include "device/file_system_disk.h"
-#include "index/index.h"
+#include "index/mem_index.h"
 
 #include "address.h"
 #include "alloc.h"
@@ -82,10 +82,10 @@ class alignas(Constants::kCacheLineBytes) ThreadContext {
 static_assert(sizeof(ThreadContext) == 448, "sizeof(ThreadContext) != 448");
 
 /// The FASTER key-value store.
-template <class K, class V, class D>
+template <class K, class V, class D, class H = HashIndex<D>>
 class FasterKv {
  public:
-  typedef FasterKv<K, V, D> faster_t;
+  typedef FasterKv<K, V, D, H> faster_t;
   friend class FasterKvHC<K, V, D>;
 
   /// Keys and values stored in this key-value store.
@@ -96,8 +96,10 @@ class FasterKv {
   typedef typename D::file_t file_t;
   typedef typename D::log_file_t log_file_t;
 
+
   typedef PersistentMemoryMalloc<disk_t> hlog_t;
 
+  typedef H hash_index_t;
   typedef FASTER::index::HashBucketEntry HashBucketEntry;
 
   /// Contexts that have been deep-copied, for async continuations, and must be accessed via
@@ -302,11 +304,9 @@ class FasterKv {
   disk_t disk;
   hlog_t hlog;
 
-  static constexpr int kNumCompactionThreads = 8;
-
  private:
   static constexpr bool kCopyReadsToTail = false;
-  static constexpr uint64_t kGrowHashTableChunkSize = 16384;
+  static constexpr int kNumCompactionThreads = 8;
 
   bool fold_over_snapshot = true;
 
@@ -343,8 +343,8 @@ class FasterKv {
 };
 
 // Implementations.
-template <class K, class V, class D>
-inline Guid FasterKv<K, V, D>::StartSession(Guid guid) {
+template <class K, class V, class D, class H>
+inline Guid FasterKv<K, V, D, H>::StartSession(Guid guid) {
   SystemState state = system_state_.load();
   if(state.phase != Phase::REST) {
     throw std::runtime_error{ "Can acquire only in REST phase!" };
@@ -358,8 +358,8 @@ inline Guid FasterKv<K, V, D>::StartSession(Guid guid) {
   return thread_ctx().guid;
 }
 
-template <class K, class V, class D>
-inline uint64_t FasterKv<K, V, D>::ContinueSession(const Guid& session_id) {
+template <class K, class V, class D, class H>
+inline uint64_t FasterKv<K, V, D, H>::ContinueSession(const Guid& session_id) {
   auto iter = checkpoint_.continue_tokens.find(session_id);
   if(iter == checkpoint_.continue_tokens.end()) {
     throw std::invalid_argument{ "Unknown session ID" };
@@ -375,8 +375,8 @@ inline uint64_t FasterKv<K, V, D>::ContinueSession(const Guid& session_id) {
   return iter->second;
 }
 
-template <class K, class V, class D>
-inline void FasterKv<K, V, D>::Refresh() {
+template <class K, class V, class D, class H>
+inline void FasterKv<K, V, D, H>::Refresh() {
   epoch_.ProtectAndDrain();
   // We check if we are in normal mode
   SystemState new_state = system_state_.load();
@@ -386,8 +386,8 @@ inline void FasterKv<K, V, D>::Refresh() {
   HandleSpecialPhases();
 }
 
-template <class K, class V, class D>
-inline void FasterKv<K, V, D>::StopSession() {
+template <class K, class V, class D, class H>
+inline void FasterKv<K, V, D, H>::StopSession() {
   // If this thread is still involved in some activity, wait until it finishes.
   while(thread_ctx().phase != Phase::REST ||
         !thread_ctx().pending_ios.empty() ||
@@ -410,9 +410,9 @@ inline void FasterKv<K, V, D>::StopSession() {
   --num_active_sessions;
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H>
 template <class RC>
-inline Status FasterKv<K, V, D>::Read(RC& context, AsyncCallback callback,
+inline Status FasterKv<K, V, D, H>::Read(RC& context, AsyncCallback callback,
                                       uint64_t monotonic_serial_num, bool abort_if_tombstone) {
   typedef RC read_context_t;
   typedef PendingReadContext<RC> pending_read_context_t;
@@ -442,9 +442,9 @@ inline Status FasterKv<K, V, D>::Read(RC& context, AsyncCallback callback,
   return status;
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H>
 template <class UC>
-inline Status FasterKv<K, V, D>::Upsert(UC& context, AsyncCallback callback,
+inline Status FasterKv<K, V, D, H>::Upsert(UC& context, AsyncCallback callback,
                                         uint64_t monotonic_serial_num) {
   typedef UC upsert_context_t;
   typedef PendingUpsertContext<UC> pending_upsert_context_t;
@@ -467,9 +467,9 @@ inline Status FasterKv<K, V, D>::Upsert(UC& context, AsyncCallback callback,
   return status;
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H>
 template <class MC>
-inline Status FasterKv<K, V, D>::Rmw(MC& context, AsyncCallback callback,
+inline Status FasterKv<K, V, D, H>::Rmw(MC& context, AsyncCallback callback,
                                      uint64_t monotonic_serial_num, bool create_if_not_exists) {
   typedef MC rmw_context_t;
   typedef PendingRmwContext<MC> pending_rmw_context_t;
@@ -495,9 +495,9 @@ inline Status FasterKv<K, V, D>::Rmw(MC& context, AsyncCallback callback,
   return status;
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H>
 template <class DC>
-inline Status FasterKv<K, V, D>::Delete(DC& context, AsyncCallback callback,
+inline Status FasterKv<K, V, D, H>::Delete(DC& context, AsyncCallback callback,
                                         uint64_t monotonic_serial_num, bool force_tombstone) {
   typedef DC delete_context_t;
   typedef PendingDeleteContext<DC> pending_delete_context_t;
@@ -521,8 +521,8 @@ inline Status FasterKv<K, V, D>::Delete(DC& context, AsyncCallback callback,
   return status;
 }
 
-template <class K, class V, class D>
-inline bool FasterKv<K, V, D>::CompletePending(bool wait) {
+template <class K, class V, class D, class H>
+inline bool FasterKv<K, V, D, H>::CompletePending(bool wait) {
   do {
     disk.TryComplete();
     hash_index_.CompletePendingRequests();
@@ -551,8 +551,8 @@ inline bool FasterKv<K, V, D>::CompletePending(bool wait) {
   return false;
 }
 
-template <class K, class V, class D>
-inline void FasterKv<K, V, D>::CompleteIoPendingRequests(ExecutionContext& context) {
+template <class K, class V, class D, class H>
+inline void FasterKv<K, V, D, H>::CompleteIoPendingRequests(ExecutionContext& context) {
   AsyncIOContext* ctxt;
   // Clear this thread's I/O response queue. (Does not clear I/Os issued by this thread that have
   // not yet completed.)
@@ -609,8 +609,8 @@ inline void FasterKv<K, V, D>::CompleteIoPendingRequests(ExecutionContext& conte
   }
 }
 
-template <class K, class V, class D>
-inline void FasterKv<K, V, D>::CompleteIndexPendingRequests(ExecutionContext& context) {
+template <class K, class V, class D, class H>
+inline void FasterKv<K, V, D, H>::CompleteIndexPendingRequests(ExecutionContext& context) {
   AsyncIndexIOContext* ctxt;
   // Clear this thread's index I/O response queue.
   // NOTE: Does not clear I/Os issued by this thread that have not yet completed.
@@ -677,8 +677,8 @@ inline void FasterKv<K, V, D>::CompleteIndexPendingRequests(ExecutionContext& co
   }
 }
 
-template <class K, class V, class D>
-inline void FasterKv<K, V, D>::CompleteRetryRequests(ExecutionContext& context) {
+template <class K, class V, class D, class H>
+inline void FasterKv<K, V, D, H>::CompleteRetryRequests(ExecutionContext& context) {
   // If we can't complete a request, it will be pushed back onto the deque. Retry each request
   // only once.
   size_t size = context.retry_requests.size();
@@ -718,9 +718,9 @@ inline void FasterKv<K, V, D>::CompleteRetryRequests(ExecutionContext& context) 
   }
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H>
 template <class C>
-inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const {
+inline OperationStatus FasterKv<K, V, D, H>::InternalRead(C& pending_context) const {
   typedef C pending_read_context_t;
 
   assert(pending_context.index_op_type != IndexOperationType::Update);
@@ -815,9 +815,9 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
   }
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H>
 template <class C>
-inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
+inline OperationStatus FasterKv<K, V, D, H>::InternalUpsert(C& pending_context) {
   typedef C pending_upsert_context_t;
 
   if(thread_ctx().phase != Phase::REST) {
@@ -964,9 +964,9 @@ create_record:
   }
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H>
 template <class C>
-inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool retrying) {
+inline OperationStatus FasterKv<K, V, D, H>::InternalRmw(C& pending_context, bool retrying) {
   typedef C pending_rmw_context_t;
   assert(pending_context.index_op_type != IndexOperationType::Update);
 
@@ -1176,8 +1176,8 @@ create_record:
   }
 }
 
-template <class K, class V, class D>
-inline OperationStatus FasterKv<K, V, D>::InternalRetryPendingRmw(
+template <class K, class V, class D, class H>
+inline OperationStatus FasterKv<K, V, D, H>::InternalRetryPendingRmw(
   async_pending_rmw_context_t& pending_context) {
   OperationStatus status = InternalRmw(pending_context, true);
   if(status == OperationStatus::SUCCESS && pending_context.version != thread_ctx().version) {
@@ -1186,9 +1186,9 @@ inline OperationStatus FasterKv<K, V, D>::InternalRetryPendingRmw(
   return status;
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H>
 template<class C>
-inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context, bool force_tombstone) {
+inline OperationStatus FasterKv<K, V, D, H>::InternalDelete(C& pending_context, bool force_tombstone) {
   typedef C pending_delete_context_t;
 
   assert(pending_context.index_op_type != IndexOperationType::Update);
@@ -1335,9 +1335,9 @@ create_record:
   }
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H>
 template<class C>
-inline Address FasterKv<K, V, D>::TraceBackForKeyMatchCtxt(const C& ctxt, Address from_address,
+inline Address FasterKv<K, V, D, H>::TraceBackForKeyMatchCtxt(const C& ctxt, Address from_address,
     Address min_offset) const {
   while(from_address >= min_offset) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(from_address));
@@ -1351,8 +1351,8 @@ inline Address FasterKv<K, V, D>::TraceBackForKeyMatchCtxt(const C& ctxt, Addres
   return from_address;
 }
 
-template <class K, class V, class D>
-inline Address FasterKv<K, V, D>::TraceBackForKeyMatch(const key_t& key, Address from_address,
+template <class K, class V, class D, class H>
+inline Address FasterKv<K, V, D, H>::TraceBackForKeyMatch(const key_t& key, Address from_address,
                                                        Address min_offset) const {
   while(from_address >= min_offset) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(from_address));
@@ -1366,8 +1366,8 @@ inline Address FasterKv<K, V, D>::TraceBackForKeyMatch(const key_t& key, Address
   return from_address;
 }
 
-template <class K, class V, class D>
-inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
+template <class K, class V, class D, class H>
+inline Status FasterKv<K, V, D, H>::HandleOperationStatus(ExecutionContext& ctx,
     pending_context_t& pending_context, OperationStatus internal_status, bool& async) {
   async = false;
   switch(internal_status) {
@@ -1456,8 +1456,8 @@ inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
   return Status::Corruption;
 }
 
-template <class K, class V, class D>
-inline Status FasterKv<K, V, D>::PivotAndRetry(ExecutionContext& ctx,
+template <class K, class V, class D, class H>
+inline Status FasterKv<K, V, D, H>::PivotAndRetry(ExecutionContext& ctx,
     pending_context_t& pending_context, bool& async) {
   // Some invariants
   assert(ctx.version == thread_ctx().version);
@@ -1471,8 +1471,8 @@ inline Status FasterKv<K, V, D>::PivotAndRetry(ExecutionContext& ctx,
   return HandleOperationStatus(thread_ctx(), pending_context, OperationStatus::RETRY_NOW, async);
 }
 
-template <class K, class V, class D>
-inline Status FasterKv<K, V, D>::RetryLater(ExecutionContext& ctx,
+template <class K, class V, class D, class H>
+inline Status FasterKv<K, V, D, H>::RetryLater(ExecutionContext& ctx,
     pending_context_t& pending_context, bool& async) {
   IAsyncContext* context_copy;
   Status result = pending_context.DeepCopy(context_copy);
@@ -1486,15 +1486,15 @@ inline Status FasterKv<K, V, D>::RetryLater(ExecutionContext& ctx,
   }
 }
 
-template <class K, class V, class D>
-inline constexpr uint32_t FasterKv<K, V, D>::MinIoRequestSize() const {
+template <class K, class V, class D, class H>
+inline constexpr uint32_t FasterKv<K, V, D, H>::MinIoRequestSize() const {
   return static_cast<uint32_t>(
            sizeof(value_t) + pad_alignment(record_t::min_disk_key_size(),
                alignof(value_t)));
 }
 
-template <class K, class V, class D>
-inline Status FasterKv<K, V, D>::IssueAsyncIoRequest(ExecutionContext& ctx,
+template <class K, class V, class D, class H>
+inline Status FasterKv<K, V, D, H>::IssueAsyncIoRequest(ExecutionContext& ctx,
     pending_context_t& pending_context, bool& async) {
   // Issue asynchronous I/O request
   uint64_t io_id = thread_ctx().io_id++;
@@ -1507,8 +1507,8 @@ inline Status FasterKv<K, V, D>::IssueAsyncIoRequest(ExecutionContext& ctx,
   return Status::Pending;
 }
 
-template <class K, class V, class D>
-inline Address FasterKv<K, V, D>::BlockAllocate(uint32_t record_size, faster_t* other_store) {
+template <class K, class V, class D, class H>
+inline Address FasterKv<K, V, D, H>::BlockAllocate(uint32_t record_size, faster_t* other_store) {
   if (other_store == nullptr) {
     other_store = this;
   }
@@ -1530,8 +1530,8 @@ inline Address FasterKv<K, V, D>::BlockAllocate(uint32_t record_size, faster_t* 
   return retval;
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::AsyncGetFromDisk(Address address, uint32_t num_records,
+template <class K, class V, class D, class H>
+void FasterKv<K, V, D, H>::AsyncGetFromDisk(Address address, uint32_t num_records,
     AsyncIOCallback callback, AsyncIOContext& context) {
   if(epoch_.IsProtected()) {
     /// Throttling. (Thread pool, unprotected threads are not throttled.)
@@ -1545,8 +1545,8 @@ void FasterKv<K, V, D>::AsyncGetFromDisk(Address address, uint32_t num_records,
   hlog.AsyncGetFromDisk(address, num_records, callback, context);
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status result,
+template <class K, class V, class D, class H>
+void FasterKv<K, V, D, H>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status result,
     size_t bytes_transferred) {
   CallbackContext<AsyncIOContext> context{ ctxt };
   faster_t* faster = reinterpret_cast<faster_t*>(context->faster);
@@ -1599,8 +1599,8 @@ void FasterKv<K, V, D>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status res
 }
 
 
-template <class K, class V, class D>
-OperationStatus FasterKv<K, V, D>::InternalContinuePendingRead(ExecutionContext& context,
+template <class K, class V, class D, class H>
+OperationStatus FasterKv<K, V, D, H>::InternalContinuePendingRead(ExecutionContext& context,
     AsyncIOContext& io_context, bool& log_truncated) {
 
   async_pending_read_context_t* pending_context = static_cast<async_pending_read_context_t*>(
@@ -1645,8 +1645,8 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRead(ExecutionContext&
   }
 }
 
-template <class K, class V, class D>
-OperationStatus FasterKv<K, V, D>::InternalContinuePendingConditionalInsert(ExecutionContext& context,
+template <class K, class V, class D, class H>
+OperationStatus FasterKv<K, V, D, H>::InternalContinuePendingConditionalInsert(ExecutionContext& context,
     AsyncIOContext& io_context) {
 
   async_pending_ci_context_t* pending_context = (
@@ -1689,8 +1689,8 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingConditionalInsert(Exec
 }
 
 
-template <class K, class V, class D>
-OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& context,
+template <class K, class V, class D, class H>
+OperationStatus FasterKv<K, V, D, H>::InternalContinuePendingRmw(ExecutionContext& context,
                                                               AsyncIOContext& io_context) {
   async_pending_rmw_context_t* pending_context = static_cast<async_pending_rmw_context_t*>(
         io_context.caller_context);
@@ -1797,13 +1797,13 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
   }
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::InitializeCheckpointLocks() {
+template <class K, class V, class D, class H>
+void FasterKv<K, V, D, H>::InitializeCheckpointLocks() {
   checkpoint_locks_.Initialize(hash_index_.size());
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::WriteCprMetadata() {
+template <class K, class V, class D, class H>
+Status FasterKv<K, V, D, H>::WriteCprMetadata() {
   std::string filename = disk.cpr_checkpoint_path(checkpoint_.hybrid_log_token) + "info.dat";
   // (This code will need to be refactored into the disk_t interface, if we want to support
   // unformatted disks.)
@@ -1821,8 +1821,8 @@ Status FasterKv<K, V, D>::WriteCprMetadata() {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::ReadCprMetadata(const Guid& token) {
+template <class K, class V, class D, class H>
+Status FasterKv<K, V, D, H>::ReadCprMetadata(const Guid& token) {
   std::string filename = disk.cpr_checkpoint_path(token) + "info.dat";
   // (This code will need to be refactored into the disk_t interface, if we want to support
   // unformatted disks.)
@@ -1840,8 +1840,8 @@ Status FasterKv<K, V, D>::ReadCprMetadata(const Guid& token) {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::WriteCprContext() {
+template <class K, class V, class D, class H>
+Status FasterKv<K, V, D, H>::WriteCprContext() {
   std::string filename = disk.cpr_checkpoint_path(checkpoint_.hybrid_log_token);
   const Guid& guid = prev_thread_ctx().guid;
   filename += guid.ToString();
@@ -1863,8 +1863,8 @@ Status FasterKv<K, V, D>::WriteCprContext() {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::ReadCprContexts(const Guid& token, const Guid* guids) {
+template <class K, class V, class D, class H>
+Status FasterKv<K, V, D, H>::ReadCprContexts(const Guid& token, const Guid* guids) {
   for(size_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
     const Guid& guid = guids[idx];
     if(guid == Guid{}) {
@@ -1897,8 +1897,8 @@ Status FasterKv<K, V, D>::ReadCprContexts(const Guid& token, const Guid* guids) 
   }
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RecoverHybridLog() {
+template <class K, class V, class D, class H>
+Status FasterKv<K, V, D, H>::RecoverHybridLog() {
   class Context : public IAsyncContext {
    public:
     Context(hlog_t& hlog_, uint32_t page_, RecoveryStatus& recovery_status_)
@@ -1968,8 +1968,8 @@ Status FasterKv<K, V, D>::RecoverHybridLog() {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RecoverHybridLogFromSnapshotFile() {
+template <class K, class V, class D, class H>
+Status FasterKv<K, V, D, H>::RecoverHybridLogFromSnapshotFile() {
   class Context : public IAsyncContext {
    public:
     Context(hlog_t& hlog_, file_t& file_, uint32_t file_start_page_, uint32_t page_,
@@ -2058,8 +2058,8 @@ Status FasterKv<K, V, D>::RecoverHybridLogFromSnapshotFile() {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RecoverFromPage(Address from_address, Address to_address) {
+template <class K, class V, class D, class H>
+Status FasterKv<K, V, D, H>::RecoverFromPage(Address from_address, Address to_address) {
   typedef IndexContext<K, V> index_context_t;
 
   assert(from_address.page() == to_address.page());
@@ -2097,8 +2097,8 @@ Status FasterKv<K, V, D>::RecoverFromPage(Address from_address, Address to_addre
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RestoreHybridLog() {
+template <class K, class V, class D, class H>
+Status FasterKv<K, V, D, H>::RestoreHybridLog() {
   Address tail_address = checkpoint_.log_metadata.final_address;
   uint32_t end_page = tail_address.offset() > 0 ? tail_address.page() + 1 : tail_address.page();
   uint32_t capacity = hlog.buffer_size();
@@ -2128,8 +2128,8 @@ Status FasterKv<K, V, D>::RestoreHybridLog() {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::HeavyEnter() {
+template <class K, class V, class D, class H>
+void FasterKv<K, V, D, H>::HeavyEnter() {
   if(thread_ctx().phase == Phase::GC_IO_PENDING || thread_ctx().phase == Phase::GC_IN_PROGRESS) {
     hash_index_.GarbageCollect();
     return;
@@ -2145,8 +2145,8 @@ void FasterKv<K, V, D>::HeavyEnter() {
   }
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::GrowIndexBlocking() {
+template <class K, class V, class D, class H>
+void FasterKv<K, V, D, H>::GrowIndexBlocking() {
   hash_index_.template Grow<record_t>();
 
   // Thread has finished growing its part of the hash table.
@@ -2164,8 +2164,8 @@ void FasterKv<K, V, D>::GrowIndexBlocking() {
   }
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
+template <class K, class V, class D, class H>
+bool FasterKv<K, V, D, H>::GlobalMoveToNextState(SystemState current_state) {
   SystemState next_state = current_state.GetNextState();
   if(!system_state_.compare_exchange_strong(current_state, next_state)) {
     return false;
@@ -2332,8 +2332,8 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
   return true;
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::MarkAllPendingRequests() {
+template <class K, class V, class D, class H>
+void FasterKv<K, V, D, H>::MarkAllPendingRequests() {
   for(const IAsyncContext* ctxt : thread_ctx().retry_requests) {
     const pending_context_t* context = static_cast<const pending_context_t*>(ctxt);
     // We will succeed, since no other thread can currently advance the entry's version, since this
@@ -2349,8 +2349,8 @@ void FasterKv<K, V, D>::MarkAllPendingRequests() {
   }
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::HandleSpecialPhases() {
+template <class K, class V, class D, class H>
+void FasterKv<K, V, D, H>::HandleSpecialPhases() {
   SystemState final_state = system_state_.load();
   if(final_state.phase == Phase::REST) {
     // Nothing to do; just reset thread context.
@@ -2561,8 +2561,8 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
   } while(previous_state != final_state);
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::Checkpoint(IndexPersistenceCallback index_persistence_callback,
+template <class K, class V, class D, class H>
+bool FasterKv<K, V, D, H>::Checkpoint(IndexPersistenceCallback index_persistence_callback,
                                     HybridLogPersistenceCallback hybrid_log_persistence_callback,
                                     Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
@@ -2598,8 +2598,8 @@ bool FasterKv<K, V, D>::Checkpoint(IndexPersistenceCallback index_persistence_ca
   return true;
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::CheckpointIndex(IndexPersistenceCallback index_persistence_callback,
+template <class K, class V, class D, class H>
+bool FasterKv<K, V, D, H>::CheckpointIndex(IndexPersistenceCallback index_persistence_callback,
                                         Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
   SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
@@ -2621,8 +2621,8 @@ bool FasterKv<K, V, D>::CheckpointIndex(IndexPersistenceCallback index_persisten
   return true;
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::CheckpointHybridLog(HybridLogPersistenceCallback hybrid_log_persistence_callback,
+template <class K, class V, class D, class H>
+bool FasterKv<K, V, D, H>::CheckpointHybridLog(HybridLogPersistenceCallback hybrid_log_persistence_callback,
                                             Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
   SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
@@ -2650,8 +2650,8 @@ bool FasterKv<K, V, D>::CheckpointHybridLog(HybridLogPersistenceCallback hybrid_
   return true;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::Recover(const Guid& index_token, const Guid& hybrid_log_token,
+template <class K, class V, class D, class H>
+Status FasterKv<K, V, D, H>::Recover(const Guid& index_token, const Guid& hybrid_log_token,
                                   uint32_t& version,
                                   std::vector<Guid>& session_ids) {
   version = 0;
@@ -2705,8 +2705,8 @@ Status FasterKv<K, V, D>::Recover(const Guid& index_token, const Guid& hybrid_lo
 #undef BREAK_NOT_OK
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::ShiftBeginAddress(Address address,
+template <class K, class V, class D, class H>
+bool FasterKv<K, V, D, H>::ShiftBeginAddress(Address address,
     GcState::truncate_callback_t truncate_callback,
     GcState::complete_callback_t complete_callback,
     bool after_compaction) {
@@ -2730,8 +2730,8 @@ bool FasterKv<K, V, D>::ShiftBeginAddress(Address address,
   return true;
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::GrowIndex(GrowCompleteCallback caller_callback) {
+template <class K, class V, class D, class H>
+bool FasterKv<K, V, D, H>::GrowIndex(GrowCompleteCallback caller_callback) {
   SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
   if(!system_state_.compare_exchange_strong(expected,
       SystemState{ Action::GrowIndex, Phase::REST, expected.version })) {
@@ -2770,8 +2770,8 @@ inline std::ostream& operator << (std::ostream& out, const FixedPageAddress addr
 /// It identifies live records by looking up the in-memory hash index
 /// and by potentially going through the hash chains, rather than
 /// scanning the entire log from head to tail.
-template<class K, class V, class D>
-bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_begin_address,
+template <class K, class V, class D, class H>
+bool FasterKv<K, V, D, H>::CompactWithLookup (uint64_t until_address, bool shift_begin_address,
                                             int n_threads, faster_t* dest_store, bool checkpoint) {
   // TODO: maybe switch to an initial phase for GC to avoid concurrent actions (e.g. checkpoint, grow index, etc.)
 
@@ -2797,7 +2797,7 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
 
   // Spawn the threads first
   for (int idx = 0; idx < n_threads - 1; ++idx) {
-    threads.emplace_back(&FasterKv<K, V, D>::InternalCompact<faster_t>,
+    threads.emplace_back(&FasterKv<K, V, D, H>::InternalCompact<faster_t>,
                         this, &threads_context, dest_store, idx);
   }
   InternalCompact(&threads_context, dest_store, -1); // participate in the compaction
@@ -2952,9 +2952,9 @@ bool FasterKv<K, V, D>::CompactWithLookup (uint64_t until_address, bool shift_be
 }
 
 
-template<class K, class V, class D>
-template<class F>
-inline void FasterKv<K, V, D>::InternalCompact(CompactionThreadsContext<F>* ct_ctx,
+template <class K, class V, class D, class H>
+template <class F>
+inline void FasterKv<K, V, D, H>::InternalCompact(CompactionThreadsContext<F>* ct_ctx,
                                                 faster_t* dest_store, int thread_idx) {
   constexpr int io_check_freq = 16;
   bool dest_store_differs = (dest_store != this);
@@ -3077,9 +3077,9 @@ complete_pending:
 }
 
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H>
 template <class CIC>
-inline Status FasterKv<K, V, D>::ConditionalInsert(CIC& context, AsyncCallback callback,
+inline Status FasterKv<K, V, D, H>::ConditionalInsert(CIC& context, AsyncCallback callback,
                                                   Address min_search_offset, void* dest_store) {
   typedef CIC conditional_insert_context_t;
   typedef PendingConditionalInsertContext<CIC> pending_ci_context_t;
@@ -3119,9 +3119,9 @@ inline Status FasterKv<K, V, D>::ConditionalInsert(CIC& context, AsyncCallback c
 }
 
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H>
 template <class C>
-inline OperationStatus FasterKv<K, V, D>::InternalConditionalInsert(C& pending_context) {
+inline OperationStatus FasterKv<K, V, D, H>::InternalConditionalInsert(C& pending_context) {
   // TODO: fix cases where start_search_entry can be Address::kInvalidAddress
   faster_t* dest_store = static_cast<faster_t*>(pending_context.dest_store);
   Address min_search_offset = pending_context.min_search_offset;
@@ -3249,8 +3249,8 @@ create_record:
 
 /// When invoked, compacts the hybrid-log between the begin address and a
 /// passed in offset (`untilAddress`).
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
+template <class K, class V, class D, class H>
+bool FasterKv<K, V, D, H>::Compact(uint64_t untilAddress)
 {
   typedef IndexContext<K, V> index_context_t;
 
@@ -3353,8 +3353,8 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
 /// in the safe-read-only region of the main FASTER instance.
 ///
 /// Returns the address upto which the scan was performed.
-template <class K, class V, class D>
-Address FasterKv<K, V, D>::LogScanForValidity(Address from, faster_t* temp)
+template <class K, class V, class D, class H>
+Address FasterKv<K, V, D, H>::LogScanForValidity(Address from, faster_t* temp)
 {
   // Scan upto the safe read only region of the log, deleting all encountered
   // records from the temporary instance of FASTER. Since the safe-read-only
@@ -3394,8 +3394,8 @@ Address FasterKv<K, V, D>::LogScanForValidity(Address from, faster_t* temp)
 
 /// Checks if a key exists between a passed in address (`offset`) and the
 /// current tail of the hybrid log.
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::ContainsKeyInMemory(IndexContext<key_t, value_t> context, Address offset)
+template <class K, class V, class D, class H>
+bool FasterKv<K, V, D, H>::ContainsKeyInMemory(IndexContext<key_t, value_t> context, Address offset)
 {
   typedef IndexContext<key_t, value_t> index_context_t;
 
