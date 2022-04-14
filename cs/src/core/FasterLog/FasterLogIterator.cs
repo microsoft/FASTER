@@ -252,7 +252,7 @@ namespace FASTER.core
                 if (isCommitRecord)
                 {
                     FasterLogRecoveryInfo info = new();
-                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
+                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte*) (headerSize + physicalAddress), entryLength)));
                     if (info.CommitNum != long.MaxValue) continue;
                     
                     // Otherwise, no more entries
