@@ -101,21 +101,13 @@ jobs:
       sudo apt install -y g++ libaio-dev uuid-dev libtbb-dev
     displayName: 'Install depdendencies'
   - script: |
-      git clone https://git.kernel.dk/liburing
-      cd liburing
-      git checkout liburing-0.7
-      ./configure
-      sudo make install
-    displayName: Install Liburing
-
-  - script: |
       cd cc
       mkdir -p build/Debug build/Release
       cd build/Debug
-      cmake -DCMAKE_BUILD_TYPE=Debug -DUSE_URING=ON ../..
+      cmake -DCMAKE_BUILD_TYPE=Debug ../..
       make -j
       cd ../../build/Release
-      cmake -DCMAKE_BUILD_TYPE=Release -DUSE_URING=ON ../..
+      cmake -DCMAKE_BUILD_TYPE=Release ../..
       make -j
     displayName: 'Compile'
   - script: |
