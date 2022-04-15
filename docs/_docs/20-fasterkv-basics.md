@@ -484,9 +484,9 @@ FASTER also support true "log compaction", where the log is scanned and live rec
 
 This call perform synchronous compaction on the provided session until the specific `compactUntil` address, scanning and copying the live records to the tail. It returns the actual log address that the call compacted until (next nearest record boundary). You can only compact until the log's `SafeReadOnlyAddress` as the rest of the log is still mutable in-place. If you wish, you can first move the read-only address to the tail by calling `store.Log.ShiftReadOnlyToTail(store.Log.TailAddress, true)` or by simply taking a fold-over checkpoint (`await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver)`).
 
-Two types of compaction are supported: Scan and Lookup. These represent different algorithms for compaction. Scan based compaction scans the rest of the log (beyond `compactUntil` to detect duplicates, whereas lookup based compaction perform random lookups of records to be compacted, in order to determine liveness. We recommend you start with scan-based compaction (`CompactionType.Scan`).
+Two types of compaction are supported: `Scan` and `Lookup`. These represent different algorithms for compaction. Scan-based compaction scans the rest of the log (beyond `compactUntil`) to detect duplicates, whereas lookup-based compaction perform random lookups (via the hash index) of candidate records to be compacted, in order to determine liveness. We recommend you start with scan-based compaction (`CompactionType.Scan`).
 
-Typically, you may compact around 20% (up to 100%) of the log, e.g., you could set `compactUntil` address to `store.Log.BeginAddress + 0.2 * (store.Log.SafeReadOnlyAddress - store.Log.BeginAddress)`. Compaction shifts `BeginAddress` in memory. The actual log segment files are not deleted until you take a checkpoint, which would first persist `BeginAddress` to disk (as part of the checkpoint metadata) and then delete log segments on disk, as shown:
+Typically, you may compact around 20% (up to 100%) of the log, e.g., you could set `compactUntil` address to `store.Log.BeginAddress + 0.2 * (store.Log.SafeReadOnlyAddress - store.Log.BeginAddress)`. Compaction shifts `BeginAddress` in memory. As described earlier, the actual log segment files are not deleted until you take a checkpoint, which would first persist `BeginAddress` to disk (as part of the checkpoint metadata) and then delete log segments on disk, as shown:
 
 ```cs
   await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
@@ -498,6 +498,7 @@ If you do not need a checkpoint, you can directly force log segment deletion aft
   store.Log.Truncate(long newBeginAddress);
 ```
 
+A consequence of this model is that compacted records can become visible after recovery, if your process crashes after compaction but before a checkpoint/truncate operation. In other words, compaction can be considered complete only after both a Compact and a subsequent Checkpoint/Truncate are finished.
 
 ## Checkpointing and Recovery
 
