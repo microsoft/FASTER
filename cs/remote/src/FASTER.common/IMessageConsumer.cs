@@ -3,12 +3,12 @@
 
 using System;
 
-namespace FASTER.server
+namespace FASTER.common
 {
     /// <summary>
-    /// Interface for server session provider
+    /// Interface for consumers of messages (from networks), such as sessions
     /// </summary>
-    public interface IServerSession : IDisposable
+    public interface IMessageConsumer : IDisposable
     {
         /// <summary>
         /// Consume the message incoming on the wire

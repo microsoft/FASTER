@@ -54,7 +54,7 @@ namespace FASTER.server
         /// called during dispose of server session
         /// </summary>
         /// <param name="session">server session</param>
-        public void RemoveSubscription(IServerSession session)
+        public void RemoveSubscription(IMessageConsumer session)
         {
             if (subscriptions != null)
             {

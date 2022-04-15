@@ -53,7 +53,7 @@ namespace FASTER.server
         /// called during dispose of server session
         /// </summary>
         /// <param name="session">server session</param>
-        public unsafe void RemoveSubscription(IServerSession session)
+        public unsafe void RemoveSubscription(IMessageConsumer session)
         {
             if (subscriptions != null)
             {

@@ -14,7 +14,7 @@ namespace FASTER.server
     /// </summary>
     public abstract class FasterServerBase : IFasterServer
     {
-        readonly ConcurrentDictionary<IServerSession, byte> activeSessions;
+        readonly ConcurrentDictionary<IMessageConsumer, byte> activeSessions;
         readonly ConcurrentDictionary<WireFormat, ISessionProvider> sessionProviders;
         int activeSessionCount;
 
@@ -56,7 +56,7 @@ namespace FASTER.server
             if (networkBufferSize == default)
                 this.networkBufferSize = BufferSizeUtils.ClientBufferSize(new MaxSizeSettings());
 
-            activeSessions = new ConcurrentDictionary<IServerSession, byte>();
+            activeSessions = new ConcurrentDictionary<IMessageConsumer, byte>();
             sessionProviders = new ConcurrentDictionary<WireFormat, ISessionProvider>();
             activeSessionCount = 0;
             Disposed = false;
@@ -78,7 +78,7 @@ namespace FASTER.server
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool AddSession(WireFormat protocol, ref ISessionProvider provider, INetworkSender networkSender, out IServerSession session)
+        public bool AddSession(WireFormat protocol, ref ISessionProvider provider, INetworkSender networkSender, out IMessageConsumer session)
         {
             if (Interlocked.Increment(ref activeSessionCount) <= 0)
             {
@@ -129,7 +129,7 @@ namespace FASTER.server
         /// Dispose given IServerSession
         /// </summary>
         /// <param name="_session"></param>
-        public void DisposeSession(IServerSession _session)
+        public void DisposeSession(IMessageConsumer _session)
         {
             if (_session != null)
             {

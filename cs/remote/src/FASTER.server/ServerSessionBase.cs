@@ -12,7 +12,7 @@ namespace FASTER.server
     /// <summary>
     /// Abstract base class for server session provider
     /// </summary>
-    public abstract class ServerSessionBase : IServerSession
+    public abstract class ServerSessionBase : IMessageConsumer
     {      
         /// <summary>
         /// Bytes read
