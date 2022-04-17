@@ -26,6 +26,7 @@ namespace FASTER.remote.test
         {
             ServerOptions opts = new()
             {
+                EnableStorageTier = logDir != null,
                 LogDir = logDir,
                 Address = Address,
                 Port = Port,
@@ -43,6 +44,7 @@ namespace FASTER.remote.test
         {
             ServerOptions opts = new()
             {
+                EnableStorageTier = logDir != null,
                 LogDir = logDir,
                 Address = Address,
                 Port = Port,

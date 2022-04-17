@@ -29,13 +29,12 @@ namespace FASTER.server
         {
             this.opts = opts;
 
-            if (opts.LogDir != null && !Directory.Exists(opts.LogDir))
+            opts.GetSettings(out logSettings, out var checkpointSettings, out var indexSize);
+            if (opts.EnableStorageTier && !Directory.Exists(opts.LogDir))
                 Directory.CreateDirectory(opts.LogDir);
-
-            if (opts.CheckpointDir != null && !Directory.Exists(opts.CheckpointDir))
+            if (!Directory.Exists(opts.CheckpointDir))
                 Directory.CreateDirectory(opts.CheckpointDir);
 
-            opts.GetSettings(out logSettings, out var checkpointSettings, out var indexSize);
             store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings, disableLocking: false );
 
             if (!opts.DisablePubSub)
@@ -63,8 +62,10 @@ namespace FASTER.server
         public void Dispose()
         {
             InternalDispose();
-            DeleteDirectory(opts.LogDir);
-            DeleteDirectory(opts.CheckpointDir);
+            if (opts.EnableStorageTier && Directory.Exists(opts.LogDir))
+                DeleteDirectory(opts.LogDir);
+            if (Directory.Exists(opts.CheckpointDir))
+                DeleteDirectory(opts.CheckpointDir);
         }
 
         /// <summary>
@@ -74,8 +75,13 @@ namespace FASTER.server
         public void Dispose(bool deleteDir = true)
         {
             InternalDispose();
-            if (deleteDir) DeleteDirectory(opts.LogDir);
-            if (deleteDir) DeleteDirectory(opts.CheckpointDir);
+            if (deleteDir)
+            {
+                if (opts.EnableStorageTier && Directory.Exists(opts.LogDir))
+                    DeleteDirectory(opts.LogDir);
+                if (Directory.Exists(opts.CheckpointDir))
+                    DeleteDirectory(opts.CheckpointDir);
+            }
         }
 
         private void InternalDispose()
@@ -84,7 +90,8 @@ namespace FASTER.server
             broker?.Dispose();
             kvBroker?.Dispose();
             store.Dispose();
-            logSettings.LogDevice.Dispose();
+            logSettings.LogDevice?.Dispose();
+            logSettings.ObjectLogDevice?.Dispose();
         }
 
         private static void DeleteDirectory(string path)

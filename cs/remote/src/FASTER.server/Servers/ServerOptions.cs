@@ -14,42 +14,47 @@ namespace FASTER.server
     public class ServerOptions
     {
         /// <summary>
-        /// Port to run server on
+        /// Port to run server on.
         /// </summary>
         public int Port = 3278;
 
         /// <summary>
-        /// IP address to bind server to
+        /// IP address to bind server to.
         /// </summary>
         public string Address = "127.0.0.1";
 
         /// <summary>
-        /// Total log memory used in bytes (rounds down to power of 2)
+        /// Total log memory used in bytes (rounds down to power of 2).
         /// </summary>
         public string MemorySize = "16g";
 
         /// <summary>
-        /// Size of each page in bytes (rounds down to power of 2)
+        /// Size of each page in bytes (rounds down to power of 2).
         /// </summary>
         public string PageSize = "32m";
 
         /// <summary>
-        /// Size of each log segment in bytes on disk (rounds down to power of 2)
+        /// Size of each log segment in bytes on disk (rounds down to power of 2).
         /// </summary>
         public string SegmentSize = "1g";
 
         /// <summary>
-        /// Size of hash index in bytes (rounds down to power of 2)
+        /// Size of hash index in bytes (rounds down to power of 2).
         /// </summary>
         public string IndexSize = "8g";
 
         /// <summary>
-        /// Storage directory for data (hybrid log). Runs memory-only if unspecified.
+        /// Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use LogDir to specify storage directory.
+        /// </summary>
+        public bool EnableStorageTier = false;
+
+        /// <summary>
+        /// Storage directory for tiered records (hybrid log), if storage tiering (UseStorage) is enabled. Uses current directory if unspecified.
         /// </summary>
         public string LogDir = null;
 
         /// <summary>
-        /// Storage directory for checkpoints. Uses 'checkpoints' folder under logdir if unspecified.
+        /// Storage directory for checkpoints. Uses LogDir if unspecified.
         /// </summary>
         public string CheckpointDir = null;
 
@@ -64,7 +69,7 @@ namespace FASTER.server
         public bool DisablePubSub = false;
 
         /// <summary>
-        /// Page size of log used for pub/sub (rounds down to power of 2)
+        /// Page size of log used for pub/sub (rounds down to power of 2).
         /// </summary>
         public string PubSubPageSize = "4k";
 
@@ -165,15 +170,27 @@ namespace FASTER.server
             indexSize = IndexSizeCachelines();
             Trace.WriteLine($"[Store] Using hash index size of {PrettySize(indexSize * 64L)} ({PrettySize(indexSize)} cache lines)");
 
-            if (LogDir == null)
-                LogDir = Directory.GetCurrentDirectory();
+            if (EnableStorageTier)
+            {
+                if (LogDir is null or "")
+                    LogDir = Directory.GetCurrentDirectory();
+                logSettings.LogDevice = Devices.CreateLogDevice(LogDir + "/Store/hlog");
+            }
+            else
+            {
+                if (LogDir != null)
+                    throw new Exception("LogDir specified without enabling tiered storage (UseStorage)");
+                logSettings.LogDevice = new NullDevice();
+            }
 
-            var device = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "/Store/hlog");
-            logSettings.LogDevice = device;
+            if (CheckpointDir == null) CheckpointDir = LogDir;
+            
+            if (CheckpointDir is null or "")
+                CheckpointDir = Directory.GetCurrentDirectory();
 
             checkpointSettings = new CheckpointSettings
             {
-                CheckpointDir = CheckpointDir ?? (LogDir + "/Store/checkpoints"),
+                CheckpointDir = CheckpointDir + "/Store/checkpoints",
                 RemoveOutdated = true,
             };
         }

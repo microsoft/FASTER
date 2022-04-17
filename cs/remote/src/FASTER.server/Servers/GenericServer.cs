@@ -21,6 +21,7 @@ namespace FASTER.server
         readonly FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer> provider;
         readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> kvBroker;
         readonly SubscribeBroker<Key, Value, IKeySerializer<Key>> broker;
+        readonly LogSettings logSettings;
 
         /// <summary>
         /// Create server instance; use Start to start the server.
@@ -36,13 +37,12 @@ namespace FASTER.server
         {
             this.opts = opts;
 
-            if (opts.LogDir != null && !Directory.Exists(opts.LogDir))
+            opts.GetSettings(out logSettings, out var checkpointSettings, out var indexSize);
+            if (opts.EnableStorageTier && !Directory.Exists(opts.LogDir))
                 Directory.CreateDirectory(opts.LogDir);
-
-            if (opts.CheckpointDir != null && !Directory.Exists(opts.CheckpointDir))
+            if (!Directory.Exists(opts.CheckpointDir))
                 Directory.CreateDirectory(opts.CheckpointDir);
 
-            opts.GetSettings(out var logSettings, out var checkpointSettings, out var indexSize);
             store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings, disableLocking: disableLocking);
 
             if (opts.Recover)
@@ -78,8 +78,11 @@ namespace FASTER.server
         public void Dispose()
         {
             InternalDispose();
-            DeleteDirectory(opts.LogDir);
-            DeleteDirectory(opts.CheckpointDir);
+
+            if (opts.EnableStorageTier && Directory.Exists(opts.LogDir))
+                DeleteDirectory(opts.LogDir);
+            if (Directory.Exists(opts.CheckpointDir))
+                DeleteDirectory(opts.CheckpointDir);
         }
 
         /// <summary>
@@ -89,16 +92,22 @@ namespace FASTER.server
         public void Dispose(bool deleteDir = true)
         {
             InternalDispose();
-            if (deleteDir) DeleteDirectory(opts.LogDir);
-            if (deleteDir) DeleteDirectory(opts.CheckpointDir);
+            if (deleteDir)
+            {
+                if (opts.EnableStorageTier && Directory.Exists(opts.LogDir))
+                    DeleteDirectory(opts.LogDir);
+                if (Directory.Exists(opts.CheckpointDir))
+                    DeleteDirectory(opts.CheckpointDir);
+            }
         }
-
         private void InternalDispose()
         {
             server.Dispose();
             broker?.Dispose();
             kvBroker?.Dispose();
             store.Dispose();
+            logSettings.LogDevice?.Dispose();
+            logSettings.ObjectLogDevice?.Dispose();
         }
 
         private static void DeleteDirectory(string path)

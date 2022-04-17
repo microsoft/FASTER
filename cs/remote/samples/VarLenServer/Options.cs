@@ -26,10 +26,13 @@ namespace FasterServerOptions
         [Option('i', "index", Required = false, Default = "8g", HelpText = "Size of hash index in bytes (rounds down to power of 2)")]
         public string IndexSize { get; set; }
 
-        [Option('l', "logdir", Required = false, Default = null, HelpText = "Storage directory for data (hybrid log). Current folder if unspecified, and memory-only if empty string provided.")]
+        [Option("storage-tier", Required = false, Default = false, HelpText = "Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory.")]
+        public bool EnableStorageTier { get; set; }
+
+        [Option('l', "logdir", Required = false, Default = null, HelpText = "Storage directory for tiered records (hybrid log), if storage tiering (--storage) is enabled. Uses current directory if unspecified.")]
         public string LogDir { get; set; }
 
-        [Option('c', "checkpointdir", Required = false, Default = null, HelpText = "Storage directory for checkpoints. Uses 'checkpoints' folder under logdir if unspecified.")]
+        [Option('c', "checkpointdir", Required = false, Default = null, HelpText = "Storage directory for checkpoints. Uses logdir if unspecified.")]
         public string CheckpointDir { get; set; }
 
         [Option('r', "recover", Required = false, Default = false, HelpText = "Recover from latest checkpoint.")]
@@ -49,8 +52,9 @@ namespace FasterServerOptions
                 Address = Address,
                 MemorySize = MemorySize,
                 PageSize = PageSize,
-                IndexSize = IndexSize,
                 SegmentSize = SegmentSize,
+                IndexSize = IndexSize,
+                EnableStorageTier = EnableStorageTier,
                 LogDir = LogDir,
                 CheckpointDir = CheckpointDir,
                 Recover = Recover,
