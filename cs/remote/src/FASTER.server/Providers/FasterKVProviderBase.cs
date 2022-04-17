@@ -78,7 +78,7 @@ namespace FASTER.server
         public abstract Functions GetFunctions();       
 
         /// <inheritdoc />
-        public virtual IServerSession GetSession(WireFormat wireFormat, INetworkSender networkSender)
+        public virtual IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender)
         {
             switch (wireFormat)
             {

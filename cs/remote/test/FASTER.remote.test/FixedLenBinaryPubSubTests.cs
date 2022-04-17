@@ -13,7 +13,7 @@ namespace FASTER.remote.test
         [SetUp]
         public void Setup()
         {
-            server = TestUtils.CreateFixedLenServer(TestContext.CurrentContext.TestDirectory + "/FixedLenBinaryPubSubTests", (a, b) => a + b, enablePubSub: true);
+            server = TestUtils.CreateFixedLenServer(TestContext.CurrentContext.TestDirectory + "/FixedLenBinaryPubSubTests", (a, b) => a + b, disablePubSub: false);
             server.Start();
             client = new FixedLenClient<long, long>();
         }

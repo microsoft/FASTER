@@ -17,7 +17,7 @@ namespace FASTER.server
         /// <param name="wireFormat">Wire format</param>
         /// <param name="networkSender">Socket connection</param>
         /// <returns>Server session</returns>
-        IServerSession GetSession(WireFormat wireFormat, INetworkSender networkSender);
+        IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender);
 
         /// <summary>
         /// 

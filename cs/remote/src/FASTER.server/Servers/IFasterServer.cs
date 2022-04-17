@@ -40,7 +40,7 @@ namespace FASTER.server
         /// <param name="networkSender"></param>
         /// <param name="session"></param>
         /// <returns></returns>
-        public bool AddSession(WireFormat protocol, ref ISessionProvider provider, INetworkSender networkSender, out IServerSession session);
+        public bool AddSession(WireFormat protocol, ref ISessionProvider provider, INetworkSender networkSender, out IMessageConsumer session);
 
         /// <summary>
         /// Start server

@@ -59,9 +59,14 @@ namespace FASTER.server
         public bool Recover = false;
 
         /// <summary>
-        /// Enable pub/sub feature on server.
+        /// Disable pub/sub feature on server.
         /// </summary>
-        public bool EnablePubSub = true;       
+        public bool DisablePubSub = false;
+
+        /// <summary>
+        /// Page size of log used for pub/sub (rounds down to power of 2)
+        /// </summary>
+        public string PubSubPageSize = "4k";
 
         /// <summary>
         /// Constructor
@@ -94,6 +99,19 @@ namespace FASTER.server
             if (size != adjustedSize)
                 Trace.WriteLine($"Warning: using lower page size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
+        }
+
+        /// <summary>
+        /// Get pub/sub page size
+        /// </summary>
+        /// <returns></returns>
+        public long PubSubPageSizeBytes()
+        {
+            long size = ParseSize(PubSubPageSize);
+            long adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                Trace.WriteLine($"Warning: using lower pub/sub page size than specified (power of 2)");
+            return adjustedSize;
         }
 
         /// <summary>
