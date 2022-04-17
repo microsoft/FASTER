@@ -22,14 +22,14 @@ namespace FASTER.remote.test
         /// <summary>
         /// Create VarLenServer
         /// </summary>
-        public static FixedLenServer<long, long, long, long, SimpleFunctions<long, long, long>> CreateFixedLenServer(string logDir, Func<long, long, long> merger, bool enablePubSub = true, bool tryRecover = false)
+        public static FixedLenServer<long, long, long, long, SimpleFunctions<long, long, long>> CreateFixedLenServer(string logDir, Func<long, long, long> merger, bool disablePubSub = false, bool tryRecover = false)
         {
             ServerOptions opts = new()
             {
                 LogDir = logDir,
                 Address = Address,
                 Port = Port,
-                EnablePubSub = enablePubSub,
+                DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexSize = "1m",
             };
@@ -39,14 +39,14 @@ namespace FASTER.remote.test
         /// <summary>
         /// Create VarLenServer
         /// </summary>
-        public static VarLenServer CreateVarLenServer(string logDir, bool enablePubSub = true, bool tryRecover = false)
+        public static VarLenServer CreateVarLenServer(string logDir, bool disablePubSub = false, bool tryRecover = false)
         {
             ServerOptions opts = new()
             {
                 LogDir = logDir,
                 Address = Address,
                 Port = Port,
-                EnablePubSub = enablePubSub,
+                DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexSize = "1m",
             };

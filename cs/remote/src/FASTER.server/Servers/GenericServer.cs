@@ -54,10 +54,10 @@ namespace FASTER.server
                 catch { }
             }
 
-            if (opts.EnablePubSub)
+            if (!opts.DisablePubSub)
             {
-                kvBroker = new SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>>(keyInputSerializer, null, true);
-                broker = new SubscribeBroker<Key, Value, IKeySerializer<Key>>(keyInputSerializer, null, true);
+                kvBroker = new SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>>(keyInputSerializer, null, opts.PubSubPageSizeBytes(), true);
+                broker = new SubscribeBroker<Key, Value, IKeySerializer<Key>>(keyInputSerializer, null, opts.PubSubPageSizeBytes(), true);
             }
 
             // Create session provider for VarLen

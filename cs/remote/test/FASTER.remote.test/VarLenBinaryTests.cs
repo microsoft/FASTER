@@ -13,7 +13,7 @@ namespace FASTER.remote.test
         [SetUp]
         public void Setup()
         {
-            server = TestUtils.CreateVarLenServer(TestContext.CurrentContext.TestDirectory + "/VarLenBinaryTests");
+            server = TestUtils.CreateVarLenServer(TestContext.CurrentContext.TestDirectory + "/VarLenBinaryTests", disablePubSub: true);
             server.Start();
             client = new VarLenMemoryClient();
         }
