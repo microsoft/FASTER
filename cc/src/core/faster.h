@@ -96,10 +96,10 @@ class FasterKv {
   typedef typename D::file_t file_t;
   typedef typename D::log_file_t log_file_t;
 
-
   typedef PersistentMemoryMalloc<disk_t> hlog_t;
 
   typedef H hash_index_t;
+  typedef typename H::key_hash_t key_hash_t;
   typedef FASTER::index::HashBucketEntry HashBucketEntry;
 
   /// Contexts that have been deep-copied, for async continuations, and must be accessed via
@@ -312,22 +312,19 @@ class FasterKv {
 
   /// Initial size of the table
   uint64_t min_table_size_;
+  /// Instance of hash index that stores hash -> root address mapping
+  hash_index_t hash_index_;
 
-  // An array of size two, that contains the old and new versions of the hash-table
-  InternalHashTable<disk_t> state_[2];
-
-  HashIndex<disk_t> hash_index_;
-
-  CheckpointLocks checkpoint_locks_;
+  CheckpointLocks<key_hash_t> checkpoint_locks_;
 
   AtomicSystemState system_state_;
 
   /// Checkpoint/recovery state.
   CheckpointState<file_t> checkpoint_;
   /// Garbage collection state.
-  typename HashIndex<disk_t>::gc_state_t gc_state_;
+  typename hash_index_t::gc_state_t gc_state_;
   /// Grow (hash table) state.
-  typename HashIndex<disk_t>::grow_state_t grow_state_;
+  typename hash_index_t::grow_state_t grow_state_;
 
   /// Global count of pending I/Os, used for throttling.
   std::atomic<uint64_t> num_pending_ios;
@@ -856,7 +853,7 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalUpsert(C& pending_context) 
     }
   }
 
-  CheckpointLockGuard lock_guard{ checkpoint_locks_, pending_context.get_key_hash() };
+  CheckpointLockGuard<key_hash_t> lock_guard{ checkpoint_locks_, pending_context.get_key_hash() };
 
   // The common case
   if(thread_ctx().phase == Phase::REST && address >= read_only_address) {
@@ -1011,7 +1008,7 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalRmw(C& pending_context, boo
     }
   }
 
-  CheckpointLockGuard lock_guard{ checkpoint_locks_, pending_context.get_key_hash() };
+  CheckpointLockGuard<key_hash_t> lock_guard{ checkpoint_locks_, pending_context.get_key_hash() };
 
   // The common case.
   if(phase == Phase::REST && address >= read_only_address) {
@@ -1243,7 +1240,7 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalDelete(C& pending_context, 
   }
 
   {
-    CheckpointLockGuard lock_guard{ checkpoint_locks_, pending_context.get_key_hash() };
+    CheckpointLockGuard<key_hash_t> lock_guard{ checkpoint_locks_, pending_context.get_key_hash() };
     // NO optimization for most common case
 
     // Acquire necessary locks.

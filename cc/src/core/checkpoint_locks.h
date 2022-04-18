@@ -87,7 +87,10 @@ class AtomicCheckpointLock {
 };
 static_assert(sizeof(AtomicCheckpointLock) == 8, "sizeof(AtomicCheckpointLock) != 8");
 
+template <class KH>
 class CheckpointLocks {
+  typedef KH key_hash_t;
+
  public:
   CheckpointLocks()
     : size_{ 0 }
@@ -129,8 +132,9 @@ class CheckpointLocks {
     return size_;
   }
 
-  inline AtomicCheckpointLock& get_lock(KeyHash hash) {
-    return locks_[hash.idx(size_)];
+  inline AtomicCheckpointLock& get_lock(key_hash_t hash) {
+    size_t index = hash.hash_table_index(size_);
+    return locks_[index];
   }
 
  private:
@@ -138,14 +142,18 @@ class CheckpointLocks {
   AtomicCheckpointLock* locks_;
 };
 
+template <class KH>
 class CheckpointLockGuard {
+  typedef KH key_hash_t;
+
  public:
-  CheckpointLockGuard(CheckpointLocks& locks, KeyHash hash)
+  CheckpointLockGuard(CheckpointLocks<KH>& locks, KeyHash hash)
     : lock_{ nullptr }
     , locked_old_{ false }
     , locked_new_{ false } {
+    key_hash_t hash_{ hash };
     if(locks.size() > 0) {
-      lock_ = &locks.get_lock(hash);
+      lock_ = &locks.get_lock(hash_);
     }
   }
   ~CheckpointLockGuard() {

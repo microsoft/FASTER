@@ -20,12 +20,31 @@ using namespace FASTER::core;
 namespace FASTER {
 namespace index {
 
-template<class D>
+class HotLogHashIndexDefinition {
+ public:
+  typedef HotLogIndexKeyHash key_hash_t;
+  typedef HotLogIndexHashBucket hash_bucket_t;
+  typedef HotLogIndexHashBucketEntry hash_bucket_entry_t;
+};
+
+class ColdLogHashIndexDefinition {
+ public:
+  typedef ColdLogIndexKeyHash key_hash_t;
+  typedef ColdLogIndexHashBucket hash_bucket_t;
+  typedef ColdLogIndexHashBucketEntry hash_bucket_entry_t;
+};
+
+template<class D, class HID = HotLogHashIndexDefinition>
 class HashIndex : public IHashIndex<D> {
  public:
   typedef D disk_t;
   typedef typename D::file_t file_t;
   typedef PersistentMemoryMalloc<disk_t> hlog_t;
+
+  typedef HID hash_index_definition_t;
+  typedef typename HID::key_hash_t key_hash_t;
+  typedef typename HID::hash_bucket_t hash_bucket_t;
+  typedef typename HID::hash_bucket_entry_t hash_bucket_entry_t;
 
   typedef GcStateWithIndex gc_state_t;
   typedef GrowState<hlog_t> grow_state_t;
@@ -41,11 +60,6 @@ class HashIndex : public IHashIndex<D> {
     this->resize_info.version = 0;
     table_[0].Initialize(new_size, disk_.log().alignment());
     overflow_buckets_allocator_[0].Initialize(disk_.log().alignment(), epoch_);
-  }
-
-  void DumpDistribution() {
-    table_[this->resize_info.version].DumpDistribution(
-      overflow_buckets_allocator_[this->resize_info.version]);
   }
 
   // Find the hash bucket entry, if any, corresponding to the specified hash.
@@ -90,6 +104,8 @@ class HashIndex : public IHashIndex<D> {
   Status RecoverComplete();
   Status ReadCheckpointMetadata(const Guid& token, CheckpointState<file_t>& checkpoint);
 
+  void DumpDistribution();
+
   uint64_t size() const {
     return table_[this->resize_info.version].size();
   }
@@ -121,14 +137,14 @@ class HashIndex : public IHashIndex<D> {
 
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
   // return an unused bucket entry.
-  AtomicHashBucketEntry* FindTentativeEntry(KeyHash hash, HashBucket* bucket, uint8_t version,
+  AtomicHashBucketEntry* FindTentativeEntry(key_hash_t hash, hash_bucket_t* bucket, uint8_t version,
                                             HashBucketEntry& expected_entry);
 
-  bool HasConflictingEntry(KeyHash hash, const HashBucket* bucket, uint8_t version,
+  bool HasConflictingEntry(key_hash_t hash, const hash_bucket_t* bucket, uint8_t version,
                             const AtomicHashBucketEntry* atomic_entry) const;
 
   // Helper functions needed for Grow
-  void AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version, HashBucketEntry entry);
+  void AddHashEntry(hash_bucket_t*& bucket, uint32_t& next_idx, uint8_t version, hash_bucket_entry_t entry);
 
   template <class R>
   Address TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size,
@@ -144,30 +160,30 @@ class HashIndex : public IHashIndex<D> {
   grow_state_t* grow_state_;
 
   // An array of size two, that contains the old and new versions of the hash-table
-  InternalHashTable<disk_t> table_[2];
+  InternalHashTable<disk_t, hash_index_definition_t> table_[2];
   // Allocator for the hash buckets that don't fit in the hash table.
-  MallocFixedPageSize<HashBucket, disk_t> overflow_buckets_allocator_[2];
+  MallocFixedPageSize<hash_bucket_t, disk_t> overflow_buckets_allocator_[2];
 };
 
-template <class D>
+template <class D, class HID>
 template <class C>
-inline Status HashIndex<D>::FindEntry(ExecutionContext& exec_context,
-                                      C& pending_context) const {
+inline Status HashIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
+                                          C& pending_context) const {
   // TODO: add static asserts for typename C
-  KeyHash hash = pending_context.get_key_hash();
+  key_hash_t hash{ pending_context.get_key_hash() };
 
   // Truncate the hash to get a bucket page_index < table[version].size.
   uint32_t version = this->resize_info.version;
   assert(version == 0 || version == 1);
 
-  const HashBucket* bucket = &table_[version].bucket(hash);
+  const hash_bucket_t* bucket = &table_[version].bucket(hash);
   assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
 
   while(true) {
     // Search through the bucket looking for our key. Last entry is reserved
     // for the overflow pointer.
-    for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-      HashBucketEntry entry = bucket->entries[entry_idx].load();
+    for(uint32_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
+      hash_bucket_entry_t entry{ bucket->entries[entry_idx].load() };
       if(entry.unused()) {
         continue;
       }
@@ -198,15 +214,15 @@ inline Status HashIndex<D>::FindEntry(ExecutionContext& exec_context,
   return Status::Corruption; // NOT REACHED
 }
 
-template <class D>
+template <class D, class HID>
 template<class C>
-inline Status HashIndex<D>::FindOrCreateEntry(ExecutionContext& exec_context,
-                                              C& pending_context) {
+inline Status HashIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_context,
+                                                  C& pending_context) {
   //typedef C pending_context_t;
   //static_assert(std::is_base_of<PendingContext, typename pending_context_t>::value,
   //              "value_t is not a base class of read_context_t::value_t");
 
-  KeyHash hash = pending_context.get_key_hash();
+  key_hash_t hash{ pending_context.get_key_hash() };
   HashBucketEntry expected_entry;
   AtomicHashBucketEntry* atomic_entry;
 
@@ -215,7 +231,7 @@ inline Status HashIndex<D>::FindOrCreateEntry(ExecutionContext& exec_context,
   assert(version == 0 || version == 1);
 
   while(true) {
-    HashBucket* bucket = &table_[version].bucket(hash);
+    hash_bucket_t* bucket = &table_[version].bucket(hash);
     assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
 
     atomic_entry = FindTentativeEntry(hash, bucket, version, expected_entry);
@@ -229,8 +245,8 @@ inline Status HashIndex<D>::FindOrCreateEntry(ExecutionContext& exec_context,
     assert(expected_entry == HashBucketEntry::kInvalidEntry);
 
     // Try to install tentative tag in free slot.
-    HashBucketEntry entry{ Address::kInvalidAddress, hash.tag(), true };
-    if(atomic_entry->compare_exchange_strong(expected_entry, entry)) {
+    hash_bucket_entry_t desired{ Address::kInvalidAddress, hash.tag(), true };
+    if(atomic_entry->compare_exchange_strong(expected_entry, desired)) {
       // See if some other thread is also trying to install this tag.
       if(HasConflictingEntry(hash, bucket, version, atomic_entry)) {
         // Back off and try again.
@@ -238,7 +254,7 @@ inline Status HashIndex<D>::FindOrCreateEntry(ExecutionContext& exec_context,
       } else {
         // No other thread was trying to install this tag,
         // so we can clear our entry's "tentative" bit.
-        expected_entry = HashBucketEntry{ Address::kInvalidAddress, hash.tag(), false };
+        expected_entry = hash_bucket_entry_t{ Address::kInvalidAddress, hash.tag(), false };
         atomic_entry->store(expected_entry);
 
         pending_context.set_index_entry(expected_entry, atomic_entry);
@@ -250,32 +266,33 @@ inline Status HashIndex<D>::FindOrCreateEntry(ExecutionContext& exec_context,
   return Status::Corruption; // NOT REACHED
 }
 
-template <class D>
+template <class D, class HID>
 template <class C>
-inline Status HashIndex<D>::TryUpdateEntry(ExecutionContext& context, C& pending_context,
-                                          Address new_address) {
+inline Status HashIndex<D, HID>::TryUpdateEntry(ExecutionContext& context, C& pending_context,
+                                                Address new_address) {
   assert(pending_context.atomic_entry != nullptr);
   // Try to atomically update the hash index entry based on expected entry
-  HashBucketEntry new_entry{ new_address, pending_context.get_key_hash().tag(), false };
+  key_hash_t hash{ pending_context.get_key_hash() };
+  hash_bucket_entry_t new_entry{ new_address, hash.tag(), false };
   bool success = pending_context.atomic_entry->compare_exchange_strong(pending_context.entry, new_entry);
   return success ? Status::Ok : Status::Aborted;
 }
 
-template <class D>
+template <class D, class HID>
 template <class C>
-inline Status HashIndex<D>::UpdateEntry(ExecutionContext& context, C& pending_context,
-                                        Address new_address) {
+inline Status HashIndex<D, HID>::UpdateEntry(ExecutionContext& context, C& pending_context,
+                                            Address new_address) {
   assert(pending_context.atomic_entry != nullptr);
   // Atomically update hash bucket entry
-  HashBucketEntry new_entry{ new_address, pending_context.get_key_hash().tag(), false };
+  key_hash_t hash{ pending_context.get_key_hash() };
+  hash_bucket_entry_t new_entry{ new_address, hash.tag(), false };
   pending_context.atomic_entry->store(new_entry);
   return Status::Ok;
 }
 
-template <class D>
-inline AtomicHashBucketEntry* HashIndex<D>::FindTentativeEntry(KeyHash hash, HashBucket* bucket,
-                                                              uint8_t version,
-                                                              HashBucketEntry& expected_entry) {
+template <class D, class HID>
+inline AtomicHashBucketEntry* HashIndex<D, HID>::FindTentativeEntry(key_hash_t hash, hash_bucket_t* bucket,
+                                                        uint8_t version, HashBucketEntry& expected_entry) {
 
   expected_entry = HashBucketEntry::kInvalidEntry;
   AtomicHashBucketEntry* atomic_entry = nullptr;
@@ -283,8 +300,8 @@ inline AtomicHashBucketEntry* HashIndex<D>::FindTentativeEntry(KeyHash hash, Has
   while(true) {
     // Search through the bucket looking for our key. Last entry is reserved
     // for the overflow pointer.
-    for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-      HashBucketEntry entry = bucket->entries[entry_idx].load();
+    for(uint32_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
+      hash_bucket_entry_t entry{ bucket->entries[entry_idx].load() };
       if(entry.unused()) {
         if(!atomic_entry) {
           // Found a free slot; keep track of it, and continue looking for a match.
@@ -334,16 +351,17 @@ inline AtomicHashBucketEntry* HashIndex<D>::FindTentativeEntry(KeyHash hash, Has
   return nullptr; // NOT REACHED
 }
 
-template <class D>
-inline bool HashIndex<D>::HasConflictingEntry(KeyHash hash, const HashBucket* bucket,
-                                              uint8_t version,
-                                              const AtomicHashBucketEntry* atomic_entry) const {
-  uint16_t tag = atomic_entry->load().tag();
+template <class D, class HID>
+inline bool HashIndex<D, HID>::HasConflictingEntry(key_hash_t hash, const hash_bucket_t* bucket,
+                                                  uint8_t version,
+                                                  const AtomicHashBucketEntry* atomic_entry) const {
+  HashBucketEntry entry_ = atomic_entry->load();
+  uint16_t tag = hash_bucket_entry_t(entry_).tag();
   while(true) {
-    for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-      HashBucketEntry entry = bucket->entries[entry_idx].load();
-      if(entry != HashBucketEntry::kInvalidEntry &&
-          entry.tag() == tag &&
+    for(uint32_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
+      HashBucketEntry entry_ = bucket->entries[entry_idx].load();
+      hash_bucket_entry_t entry{ entry_ };
+      if(!entry.unused() && entry.tag() == tag &&
           atomic_entry != &bucket->entries[entry_idx]) {
         // Found a conflict.
         return true;
@@ -361,16 +379,16 @@ inline bool HashIndex<D>::HasConflictingEntry(KeyHash hash, const HashBucket* bu
   }
 }
 
-template <class D>
-inline void HashIndex<D>::GarbageCollectSetup(Address new_begin_address,
-                                            GcState::truncate_callback_t truncate_callback,
-                                            GcState::complete_callback_t complete_callback) {
+template <class D, class HID>
+inline void HashIndex<D, HID>::GarbageCollectSetup(Address new_begin_address,
+                                                GcState::truncate_callback_t truncate_callback,
+                                                GcState::complete_callback_t complete_callback) {
   uint64_t num_chunks = std::max(size() / gc_state_t::kHashTableChunkSize, (uint64_t)1);
   gc_state_->Initialize(new_begin_address, truncate_callback, complete_callback, num_chunks);
 }
 
-template <class D>
-inline bool HashIndex<D>::GarbageCollect() {
+template <class D, class HID>
+inline bool HashIndex<D, HID>::GarbageCollect() {
   uint64_t chunk = gc_state_->next_chunk++;
   if(chunk >= gc_state_->num_chunks) {
     // No chunk left to clean.
@@ -387,15 +405,16 @@ inline bool HashIndex<D>::GarbageCollect() {
   }
 
   for(uint64_t idx = 0; idx < upper_bound; ++idx) {
-    HashBucket* bucket = &table_[version].bucket(chunk * gc_state_t::kHashTableChunkSize + idx);
+    hash_bucket_t* bucket = &table_[version].bucket(chunk * gc_state_t::kHashTableChunkSize + idx);
     while(true) {
-      for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
+      for(uint32_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
         AtomicHashBucketEntry& atomic_entry = bucket->entries[entry_idx];
-        HashBucketEntry expected_entry = atomic_entry.load();
+        hash_bucket_entry_t expected_entry{ atomic_entry.load() };
         if(!expected_entry.unused() && expected_entry.address() != Address::kInvalidAddress &&
             expected_entry.address() < gc_state_->new_begin_address) {
           // The record that this entry points to was truncated; try to delete the entry.
-          atomic_entry.compare_exchange_strong(expected_entry, HashBucketEntry::kInvalidEntry);
+          HashBucketEntry entry{ expected_entry };
+          atomic_entry.compare_exchange_strong(entry, HashBucketEntry::kInvalidEntry);
           // If deletion failed, then some other thread must have added a new record to the entry.
         }
       }
@@ -412,8 +431,8 @@ inline bool HashIndex<D>::GarbageCollect() {
   return true;
 }
 
-template <class D>
-inline void HashIndex<D>::GrowSetup(GrowCompleteCallback callback) {
+template <class D, class HID>
+inline void HashIndex<D, HID>::GrowSetup(GrowCompleteCallback callback) {
   // Initialize index grow state
   uint8_t current_version = this->resize_info.version;
   assert(current_version == 0 || current_version == 1);
@@ -426,9 +445,9 @@ inline void HashIndex<D>::GrowSetup(GrowCompleteCallback callback) {
   overflow_buckets_allocator_[next_version].Initialize(disk_.log().alignment(), epoch_);
 }
 
-template <class D>
+template <class D, class HID>
 template <class R>
-inline void HashIndex<D>::Grow() {
+inline void HashIndex<D, HID>::Grow() {
   typedef R record_t;
 
   // This thread won't exit until all hash table buckets have been split.
@@ -437,7 +456,10 @@ inline void HashIndex<D>::Grow() {
   uint8_t old_version = grow_state_->old_version;
   uint8_t new_version = grow_state_->new_version;
 
-  for(uint64_t chunk = grow_state_->next_chunk++; chunk < grow_state_->num_chunks; chunk = grow_state_->next_chunk++) {
+  for(uint64_t chunk = grow_state_->next_chunk++;
+        chunk < grow_state_->num_chunks;
+        chunk = grow_state_->next_chunk++) {
+
     uint64_t old_size = table_[old_version].size();
     uint64_t new_size = table_[new_version].size();
     // Currently only size-doubling is supported
@@ -454,17 +476,17 @@ inline void HashIndex<D>::Grow() {
 
     for(uint64_t idx = 0; idx < upper_bound; ++idx) {
       // Split this (chain of) bucket(s).
-      HashBucket* old_bucket = &table_[old_version].bucket(
+      hash_bucket_t* old_bucket = &table_[old_version].bucket(
                                  chunk * grow_state_t::kHashTableChunkSize + idx);
-      HashBucket* new_bucket0 = &table_[new_version].bucket(
+      hash_bucket_t* new_bucket0 = &table_[new_version].bucket(
                                   chunk * grow_state_t::kHashTableChunkSize + idx);
-      HashBucket* new_bucket1 = &table_[new_version].bucket(
+      hash_bucket_t* new_bucket1 = &table_[new_version].bucket(
                                   old_size + chunk * grow_state_t::kHashTableChunkSize + idx);
       uint32_t new_entry_idx0 = 0;
       uint32_t new_entry_idx1 = 0;
       while(true) {
-        for(uint32_t old_entry_idx = 0; old_entry_idx < HashBucket::kNumEntries; ++old_entry_idx) {
-          HashBucketEntry old_entry = old_bucket->entries[old_entry_idx].load();
+        for(uint32_t old_entry_idx = 0; old_entry_idx < hash_bucket_t::kNumEntries; ++old_entry_idx) {
+          hash_bucket_entry_t old_entry{ old_bucket->entries[old_entry_idx].load() };
           if(old_entry.unused()) {
             // Nothing to do.
             continue;
@@ -474,11 +496,11 @@ inline void HashIndex<D>::Grow() {
             AddHashEntry(new_bucket1, new_entry_idx1, new_version, old_entry);
             continue;
           }
-
           const record_t* record = reinterpret_cast<const record_t*>(
                                       grow_state_->hlog->Get(old_entry.address()));
-          KeyHash hash = record->key().GetHash();
-          if(hash.idx(new_size) < old_size) {
+
+          key_hash_t hash{ record->key().GetHash() };
+          if(hash.hash_table_index(new_size) < old_size) {
             // Record's key hashes to the 0 side of the new hash table.
             AddHashEntry(new_bucket0, new_entry_idx0, new_version, old_entry);
             Address other_address = TraceBackForOtherChainStart<record_t>(old_size, new_size,
@@ -487,7 +509,7 @@ inline void HashIndex<D>::Grow() {
               // We found a record that either is on disk or has a key that hashes to the 1 side of
               // the new hash table.
               AddHashEntry(new_bucket1, new_entry_idx1, new_version,
-                           HashBucketEntry{ other_address, old_entry.tag(), false });
+                           hash_bucket_entry_t{ other_address, old_entry.tag(), false });
             }
           } else {
             // Record's key hashes to the 1 side of the new hash table.
@@ -498,7 +520,7 @@ inline void HashIndex<D>::Grow() {
               // We found a record that either is on disk or has a key that hashes to the 0 side of
               // the new hash table.
               AddHashEntry(new_bucket0, new_entry_idx0, new_version,
-                           HashBucketEntry{ other_address, old_entry.tag(), false });
+                           hash_bucket_entry_t{ other_address, old_entry.tag(), false });
             }
           }
         }
@@ -521,10 +543,10 @@ inline void HashIndex<D>::Grow() {
   }
 }
 
-template <class D>
-inline void HashIndex<D>::AddHashEntry(HashBucket*& bucket, uint32_t& next_idx,
-                                      uint8_t version, HashBucketEntry entry) {
-  if(next_idx == HashBucket::kNumEntries) {
+template <class D, class HID>
+inline void HashIndex<D, HID>::AddHashEntry(hash_bucket_t*& bucket, uint32_t& next_idx,
+                                          uint8_t version, hash_bucket_entry_t entry) {
+  if(next_idx == hash_bucket_t::kNumEntries) {
     // Need to allocate a new bucket, first.
     FixedPageAddress new_bucket_addr = overflow_buckets_allocator_[version].Allocate();
     HashBucketOverflowEntry new_bucket_entry{ new_bucket_addr };
@@ -536,19 +558,19 @@ inline void HashIndex<D>::AddHashEntry(HashBucket*& bucket, uint32_t& next_idx,
   ++next_idx;
 }
 
-template <class D>
+template <class D, class HID>
 template <class R>
-inline Address HashIndex<D>::TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size,
-                                                        Address from_address, Address min_address,
-                                                        uint8_t side) {
+inline Address HashIndex<D, HID>::TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size,
+                                                            Address from_address, Address min_address,
+                                                            uint8_t side) {
   typedef R record_t;
 
   assert(side == 0 || side == 1);
   // Search back as far as min_address.
   while(from_address >= min_address) {
     const record_t* record = reinterpret_cast<const record_t*>(grow_state_->hlog->Get(from_address));
-    KeyHash hash = record->key().GetHash();
-    if((hash.idx(new_size) < old_size) != (side == 0)) {
+    key_hash_t hash{ record->key().GetHash() };
+    if((hash.hash_table_index(new_size) < old_size) != (side == 0)) {
       // Record's key hashes to the other side.
       return from_address;
     }
@@ -557,8 +579,8 @@ inline Address HashIndex<D>::TraceBackForOtherChainStart(uint64_t old_size, uint
   return from_address;
 }
 
-template <class D>
-inline Status HashIndex<D>::Checkpoint(CheckpointState<file_t>& checkpoint) {
+template <class D, class HID>
+inline Status HashIndex<D, HID>::Checkpoint(CheckpointState<file_t>& checkpoint) {
   // Checkpoint the hash table
   auto path = disk_.relative_index_checkpoint_path(checkpoint.index_token);
   file_t ht_file = disk_.NewFile(path + "ht.dat");
@@ -575,8 +597,8 @@ inline Status HashIndex<D>::Checkpoint(CheckpointState<file_t>& checkpoint) {
   return Status::Ok;
 }
 
-template <class D>
-inline Status HashIndex<D>::CheckpointComplete() {
+template <class D, class HID>
+inline Status HashIndex<D, HID>::CheckpointComplete() {
   Status result = table_[this->resize_info.version].CheckpointComplete(false);
   if(result == Status::Pending) {
     return Status::Pending;
@@ -587,8 +609,8 @@ inline Status HashIndex<D>::CheckpointComplete() {
   }
 }
 
-template <class D>
-inline Status HashIndex<D>::WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint) {
+template <class D, class HID>
+inline Status HashIndex<D, HID>::WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint) {
   // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the ofb.
   // (Ensures that recovery won't accidentally reallocate from the ofb.)
   checkpoint.index_metadata.ofb_count =
@@ -631,8 +653,8 @@ inline Status HashIndex<D>::WriteCheckpointMetadata(CheckpointState<file_t>& che
   return write_result;
 }
 
-template <class D>
-inline Status HashIndex<D>::Recover(CheckpointState<file_t>& checkpoint) {
+template <class D, class HID>
+inline Status HashIndex<D, HID>::Recover(CheckpointState<file_t>& checkpoint) {
   uint8_t version = this->resize_info.version;
   assert(table_[version].size() == checkpoint.index_metadata.table_size);
   auto path = disk_.relative_index_checkpoint_path(checkpoint.index_token);
@@ -651,8 +673,8 @@ inline Status HashIndex<D>::Recover(CheckpointState<file_t>& checkpoint) {
   return Status::Ok;
 }
 
-template <class D>
-inline Status HashIndex<D>::RecoverComplete() {
+template <class D, class HID>
+inline Status HashIndex<D, HID>::RecoverComplete() {
   Status result = table_[this->resize_info.version].RecoverComplete(true);
   if(result != Status::Ok) {
     return result;
@@ -666,9 +688,9 @@ inline Status HashIndex<D>::RecoverComplete() {
   return Status::Ok;
 }
 
-template <class D>
-inline Status HashIndex<D>::ReadCheckpointMetadata(const Guid& token,
-                                                  CheckpointState<file_t>& checkpoint) {
+template <class D, class HID>
+inline Status HashIndex<D, HID>::ReadCheckpointMetadata(const Guid& token,
+                                                      CheckpointState<file_t>& checkpoint) {
 
   auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
     CallbackContext<CheckpointMetadataIoContext> context{ ctxt };
@@ -709,15 +731,16 @@ inline Status HashIndex<D>::ReadCheckpointMetadata(const Guid& token,
   return read_result;
 }
 
-template <class D>
-inline void HashIndex<D>::ClearTentativeEntries() {
+template <class D, class HID>
+inline void HashIndex<D, HID>::ClearTentativeEntries() {
   // Clear all tentative entries.
   uint8_t version = this->resize_info.version;
   for(uint64_t bucket_idx = 0; bucket_idx < table_[version].size(); ++bucket_idx) {
-    HashBucket* bucket = &table_[version].bucket(bucket_idx);
+    hash_bucket_t* bucket = &table_[version].bucket(bucket_idx);
     while(true) {
-      for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-        if(bucket->entries[entry_idx].load().tentative()) {
+      for(uint32_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
+        hash_bucket_entry_t entry = bucket->entries[entry_idx].load();
+        if(entry.tentative()) {
           bucket->entries[entry_idx].store(HashBucketEntry::kInvalidEntry);
         }
       }
@@ -731,6 +754,49 @@ inline void HashIndex<D>::ClearTentativeEntries() {
       assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
     }
   }
+}
+
+template <class D, class HID>
+inline void HashIndex<D, HID>::DumpDistribution() {
+  // stat variables
+  uint64_t total_record_count = 0;
+  uint64_t histogram[16] = { 0 };
+
+  uint8_t version = this->resize_info.version;
+  for(uint64_t bucket_idx = 0; bucket_idx < table_[version].size(); ++bucket_idx) {
+    const hash_bucket_t* bucket = &table_[version].bucket(bucket_idx);
+    uint64_t count = 0;
+
+    while(true) {
+      for(uint32_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
+        hash_bucket_entry_t entry{ bucket->entries[entry_idx].load() };
+        if(!entry.unused()) {
+          ++count;
+          ++total_record_count;
+        }
+      }
+      // Go to the next bucket in the chain
+      HashBucketOverflowEntry overflow_entry = bucket->overflow_entry.load();
+      if(overflow_entry.unused()) {
+        break;
+      }
+      bucket = &overflow_buckets_allocator_[version].Get(overflow_entry.address());
+      assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
+    }
+    if(count < 15) {
+      ++histogram[count];
+    } else {
+      ++histogram[15];
+    }
+  }
+
+  fprintf(stderr, "# of hash buckets: %" PRIu64 "\n", table_[version].size());
+  fprintf(stderr, "Total record count: %" PRIu64 "\n", total_record_count);
+  fprintf(stderr, "Histogram:\n");
+  for(uint8_t idx = 0; idx < 15; ++idx) {
+    fprintf(stderr, "%2u : %" PRIu64 "\n", idx, histogram[idx]);
+  }
+  fprintf(stderr, "15+: %" PRIu64 "\n", histogram[15]);
 }
 
 }

@@ -19,19 +19,19 @@ namespace index {
 
 static_assert(Address::kAddressBits == 48, "Address::kAddressBits != 48");
 
+template <class U>
+class IndexHashBucketEntry;
+
 /// Entry stored in a hash bucket. Packed into 8 bytes.
 struct HashBucketEntry {
   /// Invalid value in the hash table
   static constexpr uint64_t kInvalidEntry = 0;
 
   HashBucketEntry()
-    : control_{ 0 } {
+    : control_{ kInvalidEntry } {
   }
-  HashBucketEntry(Address address, uint16_t tag, bool tentative)
-    : address_{ address.control() }
-    , tag_{ tag }
-    , reserved_{ 0 }
-    , tentative_{ tentative } {
+  HashBucketEntry(Address address)
+    : address_{ address.control() } {
   }
   HashBucketEntry(uint64_t code)
     : control_{ code } {
@@ -39,39 +39,38 @@ struct HashBucketEntry {
   HashBucketEntry(const HashBucketEntry& other)
     : control_{ other.control_ } {
   }
+  template <class U>
+  HashBucketEntry(IndexHashBucketEntry<U>& other) {
+    control_ = other.entry_.control;
+  }
 
   inline HashBucketEntry& operator=(const HashBucketEntry& other) {
     control_ = other.control_;
     return *this;
   }
+  template <class U>
+  inline HashBucketEntry& operator=(const IndexHashBucketEntry<U>& other) {
+    control_ = other.entry_.control;
+    return *this;
+  }
+
   inline bool operator ==(const HashBucketEntry& other) const {
     return control_ == other.control_;
   }
   inline bool operator !=(const HashBucketEntry& other) const {
     return control_ != other.control_;
   }
-  inline bool unused() const {
-    return control_ == 0;
-  }
   inline Address address() const {
     return Address{ address_ };
   }
-  inline uint16_t tag() const {
-    return static_cast<uint16_t>(tag_);
-  }
-  inline bool tentative() const {
-    return static_cast<bool>(tentative_);
-  }
 
   union {
-      struct {
-        uint64_t address_ : 48; // corresponds to logical address
-        uint64_t tag_ : 14;
-        uint64_t reserved_ : 1;
-        uint64_t tentative_ : 1;
-      };
-      uint64_t control_;
+    struct {
+      uint64_t address_ : 48;   // corresponds to logical address
+      uint64_t reserved_ : 16;  // reserved for internal index use
     };
+    uint64_t control_;
+  };
 };
 static_assert(sizeof(HashBucketEntry) == 8, "sizeof(HashBucketEntry) != 8");
 
@@ -105,10 +104,107 @@ class AtomicHashBucketEntry {
   std::atomic<uint64_t> control_;
 };
 
+template <class U>
+struct IndexHashBucketEntry {
+  friend class HashBucketEntry;
+
+  IndexHashBucketEntry()
+    : entry_{ HashBucketEntry::kInvalidEntry } {
+  }
+  IndexHashBucketEntry(Address address, uint16_t tag, bool tentative)
+    : entry_{ address.control(), tag, tentative } {
+  }
+  IndexHashBucketEntry(uint64_t code)
+    : entry_{ code } {
+  }
+  IndexHashBucketEntry(const IndexHashBucketEntry& other)
+    : entry_{ other.entry_ } {
+  }
+  IndexHashBucketEntry(const HashBucketEntry& other)
+    : entry_{ other.control_ } {
+  }
+
+  inline IndexHashBucketEntry& operator=(const IndexHashBucketEntry& other) {
+    entry_ = other.entry_;
+    return *this;
+  }
+  inline bool operator ==(const IndexHashBucketEntry& other) const {
+    return entry_.control == other.entry_.control;
+  }
+  inline bool operator !=(const IndexHashBucketEntry& other) const {
+    return entry_.control != other.entry_.control;
+  }
+
+  inline bool unused() const {
+    return entry_.control == HashBucketEntry::kInvalidEntry;
+  }
+  inline Address address() const {
+    return Address{ entry_.address };
+  }
+  inline uint16_t tag() const {
+    return static_cast<uint16_t>(entry_.tag);
+  }
+  inline bool tentative() const {
+    return static_cast<bool>(entry_.tentative);
+  }
+
+ private:
+  U entry_;
+};
+
+union HotLogIndexBucketEntryDef {
+  HotLogIndexBucketEntryDef(uint64_t code)
+    : control{ code } {
+  }
+  HotLogIndexBucketEntryDef(uint64_t address_, uint64_t tag_, uint64_t tentative_)
+    : address{ address_ }
+    , tag{ tag_ }
+    , reserved{ 0 }
+    , tentative{ tentative_ } {
+  }
+
+  struct {
+    uint64_t address : 48;   // corresponds to logical address
+    uint64_t tag : 14;       // used to distinguish among different entries in same hash table position
+    uint64_t reserved : 1;   // not used
+    uint64_t tentative : 1;  // used (internally) to handle concurrent updates to the hash table
+  };
+  uint64_t control;
+};
+typedef IndexHashBucketEntry<HotLogIndexBucketEntryDef> HotLogIndexHashBucketEntry;
+static_assert(sizeof(HotLogIndexHashBucketEntry) == 8,
+              "sizeof(HotLogIndexHashBucketEntry) != 8");
+
+union ColdLogIndexBucketEntryDef {
+  ColdLogIndexBucketEntryDef(uint64_t code)
+    : control{ code } {
+  }
+  ColdLogIndexBucketEntryDef(uint64_t address_, uint64_t tag_, uint64_t tentative_)
+    : address{ address_ }
+    , tag{ tag_ }
+    , reserved{ 0 }
+    , tentative{ tentative_ } {
+  }
+
+  struct {
+    uint64_t address : 48;   // corresponds to logical address
+    uint64_t tag : 3;        // used to distinguish among different entries in same hash table position
+    uint64_t reserved : 12;  // not used
+    uint64_t tentative : 1;  // used (internally) to handle concurrent updates to the hash table
+  };
+  uint64_t control;
+};
+typedef IndexHashBucketEntry<ColdLogIndexBucketEntryDef> ColdLogIndexHashBucketEntry;
+static_assert(sizeof(ColdLogIndexHashBucketEntry) == 8,
+              "sizeof(ColdLogIndexHashBucketEntry) != 8");
+
 /// Entry stored in a hash bucket that points to the next overflow bucket (if any).
 struct HashBucketOverflowEntry {
+  /// Invalid value in the hash table
+  static constexpr uint64_t kInvalidEntry = 0;
+
   HashBucketOverflowEntry()
-    : control_{ 0 } {
+    : control_{ kInvalidEntry } {
   }
   HashBucketOverflowEntry(FixedPageAddress address)
     : address_{ address.control() }
@@ -132,7 +228,7 @@ struct HashBucketOverflowEntry {
     return control_ != other.control_;
   }
   inline bool unused() const {
-    return address_ == 0;
+    return address_ == kInvalidEntry;
   }
   inline FixedPageAddress address() const {
     return FixedPageAddress{ address_ };
@@ -160,7 +256,7 @@ class AtomicHashBucketOverflowEntry {
   }
   /// Default constructor
   AtomicHashBucketOverflowEntry()
-    : control_{ HashBucketEntry::kInvalidEntry } {
+    : control_{ HashBucketOverflowEntry::kInvalidEntry } {
   }
 
   /// Atomic access.
@@ -183,9 +279,9 @@ class AtomicHashBucketOverflowEntry {
   std::atomic<uint64_t> control_;
 };
 
-/// A bucket consisting of 7 hash bucket entries, plus one hash bucket overflow entry. Fits in
-/// a cache line.
-struct alignas(Constants::kCacheLineBytes) HashBucket {
+/// A bucket consisting of 7 hash bucket entries, plus one hash bucket overflow entry.
+/// Fits in a cache line.
+struct alignas(Constants::kCacheLineBytes) HotLogIndexHashBucket {
   /// Number of entries per bucket (excluding overflow entry).
   static constexpr uint32_t kNumEntries = 7;
   /// The entries.
@@ -193,8 +289,19 @@ struct alignas(Constants::kCacheLineBytes) HashBucket {
   /// Overflow entry points to next overflow bucket, if any.
   AtomicHashBucketOverflowEntry overflow_entry;
 };
-static_assert(sizeof(HashBucket) == Constants::kCacheLineBytes,
+static_assert(sizeof(HotLogIndexHashBucket) == Constants::kCacheLineBytes,
               "sizeof(HashBucket) != Constants::kCacheLineBytes");
+
+/// A bucket consisting of 8 hash bucket entries (no overflow buckets)
+/// Fits in a cache line.
+struct alignas(Constants::kCacheLineBytes) ColdLogIndexHashBucket {
+  /// Number of entries per bucket
+  static constexpr uint32_t kNumEntries = 8;
+  /// The entries.
+  AtomicHashBucketEntry entries[kNumEntries];
+};
+static_assert(sizeof(ColdLogIndexHashBucket) == Constants::kCacheLineBytes,
+              "sizeof(ColdHashBucket) != Constants::kCacheLineBytes");
 
 }
 } // namespace FASTER::index

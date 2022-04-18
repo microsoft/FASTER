@@ -18,11 +18,14 @@ namespace FASTER {
 namespace index {
 
 /// The hash table itself: a sized array of HashBuckets.
-template <class D>
+template <class D, class HID>
 class InternalHashTable {
  public:
   typedef D disk_t;
   typedef typename D::file_t file_t;
+
+  typedef typename HID::key_hash_t key_hash_t;
+  typedef typename HID::hash_bucket_t hash_bucket_t;
 
   InternalHashTable()
     : size_{ 0 }
@@ -53,10 +56,10 @@ class InternalHashTable {
       if(buckets_) {
         aligned_free(buckets_);
       }
-      buckets_ = reinterpret_cast<HashBucket*>(core::aligned_alloc(alignment,
-                 size_ * sizeof(HashBucket)));
+      buckets_ = reinterpret_cast<hash_bucket_t*>(core::aligned_alloc(alignment,
+                 size_ * sizeof(hash_bucket_t)));
     }
-    std::memset(buckets_, 0, size_ * sizeof(HashBucket));
+    std::memset(buckets_, 0, size_ * sizeof(hash_bucket_t));
 
     // No checkpointing is in progress
     assert(pending_checkpoint_writes_ == 0);
@@ -84,20 +87,22 @@ class InternalHashTable {
   }
 
   /// Get the bucket specified by the hash.
-  inline const HashBucket& bucket(KeyHash hash) const {
-    return buckets_[hash.idx(size_)];
+  inline const hash_bucket_t& bucket(key_hash_t hash) const {
+    size_t index = hash.hash_table_index(size_);
+    return buckets_[index];
   }
-  inline HashBucket& bucket(KeyHash hash) {
-    return buckets_[hash.idx(size_)];
+  inline hash_bucket_t& bucket(key_hash_t hash) {
+    size_t index = hash.hash_table_index(size_);
+    return buckets_[index];
   }
 
   /// Get the bucket specified by the index. (Used by checkpoint/recovery.)
-  inline const HashBucket& bucket(uint64_t idx) const {
+  inline const hash_bucket_t& bucket(uint64_t idx) const {
     assert(idx < size_);
     return buckets_[idx];
   }
   /// (Used by GC and called by unit tests.)
-  inline HashBucket& bucket(uint64_t idx) {
+  inline hash_bucket_t& bucket(uint64_t idx) {
     assert(idx < size_);
     return buckets_[idx];
   }
@@ -112,8 +117,6 @@ class InternalHashTable {
 
   Status Recover(disk_t& disk, file_t&& file, uint64_t checkpoint_size);
   inline Status RecoverComplete(bool wait);
-
-  void DumpDistribution(MallocFixedPageSize<HashBucket, disk_t>& overflow_buckets_allocator);
 
  private:
   // Checkpointing and recovery.
@@ -135,7 +138,7 @@ class InternalHashTable {
   };
 
  private:
-  HashBucket* buckets_;
+  hash_bucket_t* buckets_;
   uint64_t size_;
 
   /// State for ongoing checkpoint/recovery.
@@ -150,8 +153,8 @@ class InternalHashTable {
 };
 
 /// Implementations.
-template <class D>
-Status InternalHashTable<D>::Checkpoint(disk_t& disk, file_t&& file, uint64_t& checkpoint_size) {
+template <class D, class HID>
+Status InternalHashTable<D, HID>::Checkpoint(disk_t& disk, file_t&& file, uint64_t& checkpoint_size) {
   auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
     CallbackContext<AsyncIoContext> context{ ctxt };
     if(result != Status::Ok) {
@@ -173,7 +176,7 @@ Status InternalHashTable<D>::Checkpoint(disk_t& disk, file_t&& file, uint64_t& c
   checkpoint_size = 0;
   checkpoint_failed_ = false;
   uint32_t chunk_size = static_cast<uint32_t>(size_ / Constants::kNumMergeChunks);
-  uint32_t write_size = static_cast<uint32_t>(chunk_size * sizeof(HashBucket));
+  uint32_t write_size = static_cast<uint32_t>(chunk_size * sizeof(hash_bucket_t));
   assert(write_size % file_.alignment() == 0);
   assert(!checkpoint_pending_);
   assert(pending_checkpoint_writes_ == 0);
@@ -184,12 +187,12 @@ Status InternalHashTable<D>::Checkpoint(disk_t& disk, file_t&& file, uint64_t& c
     RETURN_NOT_OK(file_.WriteAsync(&bucket(idx * chunk_size), idx * write_size, write_size,
                                    callback, context));
   }
-  checkpoint_size = size_ * sizeof(HashBucket);
+  checkpoint_size = size_ * sizeof(hash_bucket_t);
   return Status::Ok;
 }
 
-template <class D>
-inline Status InternalHashTable<D>::CheckpointComplete(bool wait) {
+template <class D, class HID>
+inline Status InternalHashTable<D, HID>::CheckpointComplete(bool wait) {
   disk_->TryComplete();
   bool complete = !checkpoint_pending_.load();
   while(wait && !complete) {
@@ -204,8 +207,8 @@ inline Status InternalHashTable<D>::CheckpointComplete(bool wait) {
   }
 }
 
-template <class D>
-Status InternalHashTable<D>::Recover(disk_t& disk, file_t&& file, uint64_t checkpoint_size) {
+template <class D, class HID>
+Status InternalHashTable<D, HID>::Recover(disk_t& disk, file_t&& file, uint64_t checkpoint_size) {
   auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
     CallbackContext<AsyncIoContext> context{ ctxt };
     if(result != Status::Ok) {
@@ -221,17 +224,17 @@ Status InternalHashTable<D>::Recover(disk_t& disk, file_t&& file, uint64_t check
   };
 
   assert(checkpoint_size > 0);
-  assert(checkpoint_size % sizeof(HashBucket) == 0);
+  assert(checkpoint_size % sizeof(hash_bucket_t) == 0);
   assert(checkpoint_size % Constants::kNumMergeChunks == 0);
   disk_ = &disk;
   file_ = std::move(file);
 
   recover_failed_ = false;
   uint32_t read_size = static_cast<uint32_t>(checkpoint_size / Constants::kNumMergeChunks);
-  uint32_t chunk_size = static_cast<uint32_t>(read_size / sizeof(HashBucket));
+  uint32_t chunk_size = static_cast<uint32_t>(read_size / sizeof(hash_bucket_t));
   assert(read_size % file_.alignment() == 0);
 
-  Initialize(checkpoint_size / sizeof(HashBucket), file_.alignment());
+  Initialize(checkpoint_size / sizeof(hash_bucket_t), file_.alignment());
   assert(!recover_pending_);
   assert(pending_recover_reads_.load() == 0);
   recover_pending_ = true;
@@ -244,8 +247,8 @@ Status InternalHashTable<D>::Recover(disk_t& disk, file_t&& file, uint64_t check
   return Status::Ok;
 }
 
-template <class D>
-inline Status InternalHashTable<D>::RecoverComplete(bool wait) {
+template <class D, class HID>
+inline Status InternalHashTable<D, HID>::RecoverComplete(bool wait) {
   disk_->TryComplete();
   bool complete = !recover_pending_.load();
   while(wait && !complete) {
@@ -258,45 +261,6 @@ inline Status InternalHashTable<D>::RecoverComplete(bool wait) {
   } else {
     return recover_failed_ ? Status::IOError : Status::Ok;
   }
-}
-
-template <class D>
-inline void InternalHashTable<D>::DumpDistribution(
-  MallocFixedPageSize<HashBucket, disk_t>& overflow_buckets_allocator) {
-  uint64_t table_size = size();
-  uint64_t total_record_count = 0;
-  uint64_t histogram[16] = { 0 };
-  for(uint64_t bucket_idx = 0; bucket_idx < table_size; ++bucket_idx) {
-    const HashBucket* bucket = &buckets_[bucket_idx];
-    uint64_t count = 0;
-    while(bucket) {
-      for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-        if(!bucket->entries[entry_idx].load().unused()) {
-          ++count;
-          ++total_record_count;
-        }
-      }
-      HashBucketOverflowEntry overflow_entry = bucket->overflow_entry.load();
-      if(overflow_entry.unused()) {
-        bucket = nullptr;
-      } else {
-        bucket = &overflow_buckets_allocator.Get(overflow_entry.address());
-      }
-    }
-    if(count < 15) {
-      ++histogram[count];
-    } else {
-      ++histogram[15];
-    }
-  }
-
-  printf("number of hash buckets: %" PRIu64 "\n", table_size);
-  printf("total record count: %" PRIu64 "\n", total_record_count);
-  printf("histogram:\n");
-  for(uint8_t idx = 0; idx < 15; ++idx) {
-    printf("%2u : %" PRIu64 "\n", idx, histogram[idx]);
-  }
-  printf("15+: %" PRIu64 "\n", histogram[15]);
 }
 
 }
