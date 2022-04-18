@@ -15,8 +15,13 @@ using FASTER::test::SimpleAtomicValue;
 typedef FASTER::device::FileSystemDisk<handler_t, 33554432L> disk_t;
 typedef FASTER::device::FileSystemFile<handler_t> file_t;
 
+// TODO: run this test twice (one for HotLog, one for ColdLog)
+typedef FASTER::index::HotLogHashIndexDefinition hash_index_definition_t;
+typedef hash_index_definition_t::hash_bucket_t hash_bucket_t;
+typedef hash_index_definition_t::key_hash_t key_hash_t;
+
 TEST(CLASS, MallocFixedPageSize) {
-  typedef MallocFixedPageSize<HashBucket, disk_t> alloc_t;
+  typedef MallocFixedPageSize<hash_bucket_t, disk_t> alloc_t;
 
   // Test copied from C#, RecoveryTest.cs.
   std::random_device rd{};
@@ -30,7 +35,7 @@ TEST(CLASS, MallocFixedPageSize) {
   alloc_t allocator{};
   allocator.Initialize(512, epoch);
 
-  size_t num_buckets_to_add = 2 * FixedPage<HashBucket>::kPageSize + 5;
+  size_t num_buckets_to_add = 2 * FixedPage<hash_bucket_t>::kPageSize + 5;
 
   FixedPageAddress* buckets = new FixedPageAddress[num_buckets_to_add];
 
@@ -43,8 +48,8 @@ TEST(CLASS, MallocFixedPageSize) {
     //do something
     for(size_t bucket_idx = 0; bucket_idx < num_buckets_to_add; ++bucket_idx) {
       buckets[bucket_idx] = allocator.Allocate();
-      HashBucket& bucket = allocator.Get(buckets[bucket_idx]);
-      for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
+      hash_bucket_t& bucket = allocator.Get(buckets[bucket_idx]);
+      for(size_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
         HashBucketEntry expected{ 0 };
         uint64_t random_num = rng();
         bool success = bucket.entries[entry_idx].compare_exchange_strong(expected, random_num);
@@ -59,7 +64,7 @@ TEST(CLASS, MallocFixedPageSize) {
     result = allocator.Checkpoint(checkpoint_disk, std::move(checkpoint_file), num_bytes_written);
     ASSERT_EQ(Status::Ok, result);
     // (All the bucket we allocated, + the null page.)
-    ASSERT_EQ((num_buckets_to_add + 1) * sizeof(HashBucket), num_bytes_written);
+    ASSERT_EQ((num_buckets_to_add + 1) * sizeof(hash_bucket_t), num_bytes_written);
     //wait until complete
     result = allocator.CheckpointComplete(true);
     ASSERT_EQ(Status::Ok, result);
@@ -84,8 +89,8 @@ TEST(CLASS, MallocFixedPageSize) {
   //verify that something
   std::mt19937_64 rng2{ seed };
   for(size_t bucket_idx = 0; bucket_idx < num_buckets_to_add; ++bucket_idx) {
-    HashBucket& bucket = allocator.Get(buckets[bucket_idx]);
-    for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
+    hash_bucket_t& bucket = allocator.Get(buckets[bucket_idx]);
+    for(size_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
       uint64_t random_num = rng2();
       ASSERT_EQ(random_num, bucket.entries[entry_idx].load().control_);
     }
@@ -115,12 +120,12 @@ TEST(CLASS, InternalHashTable) {
     Status result = checkpoint_file.Open(&checkpoint_disk.handler());
     ASSERT_EQ(Status::Ok, result);
 
-    InternalHashTable<disk_t> table{};
+    InternalHashTable<disk_t, hash_index_definition_t> table{};
     table.Initialize(kNumBuckets, checkpoint_file.alignment());
 
     //do something
     for(size_t bucket_idx = 0; bucket_idx < kNumBuckets; ++bucket_idx) {
-      for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
+      for(size_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
         HashBucketEntry expected{ 0 };
         bool success = table.bucket(bucket_idx).entries[entry_idx].compare_exchange_strong(
                          expected, rng());
@@ -136,7 +141,7 @@ TEST(CLASS, InternalHashTable) {
     result = table.Checkpoint(checkpoint_disk, std::move(checkpoint_file), num_bytes_written);
     ASSERT_EQ(Status::Ok, result);
     // (All the bucket we allocated, + the null page.)
-    ASSERT_EQ(kNumBuckets * sizeof(HashBucket), num_bytes_written);
+    ASSERT_EQ(kNumBuckets * sizeof(hash_bucket_t), num_bytes_written);
     //wait until complete
     result = table.CheckpointComplete(true);
     ASSERT_EQ(Status::Ok, result);
@@ -148,7 +153,7 @@ TEST(CLASS, InternalHashTable) {
   Status result = recover_file.Open(&recover_disk.handler());
   ASSERT_EQ(Status::Ok, result);
 
-  InternalHashTable<disk_t> recover_table{};
+  InternalHashTable<disk_t, hash_index_definition_t> recover_table{};
   //issue call to recover
   result = recover_table.Recover(recover_disk, std::move(recover_file), num_bytes_written);
   ASSERT_EQ(Status::Ok, result);
@@ -159,7 +164,7 @@ TEST(CLASS, InternalHashTable) {
   //verify that something
   std::mt19937_64 rng2{ seed };
   for(size_t bucket_idx = 0; bucket_idx < kNumBuckets; ++bucket_idx) {
-    for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
+    for(size_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
       uint64_t random_num = rng2();
       ASSERT_EQ(random_num, recover_table.bucket(bucket_idx).entries[entry_idx].load().control_);
     }
@@ -1496,12 +1501,12 @@ TEST(CLASS, Concurrent_Insert_Small) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;
@@ -1860,12 +1865,12 @@ TEST(CLASS, Concurrent_Insert_Large) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;
@@ -2237,12 +2242,12 @@ TEST(CLASS, Concurrent_Update_Small) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;
@@ -2637,12 +2642,12 @@ TEST(CLASS, Concurrent_Update_Large) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;
@@ -3025,12 +3030,12 @@ TEST(CLASS, Concurrent_Rmw_Small) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;
@@ -3441,12 +3446,12 @@ TEST(CLASS, Concurrent_Rmw_Large) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;

@@ -10,6 +10,7 @@
 #include "gtest/gtest.h"
 #include "core/faster.h"
 #include "device/file_system_disk.h"
+#include "index/index.h"
 
 using namespace FASTER::core;
 
