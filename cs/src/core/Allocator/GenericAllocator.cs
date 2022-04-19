@@ -417,9 +417,9 @@ namespace FASTER.core
             }
 
 
+            long endPosition = 0;
             for (int i=start/recordSize; i<end/recordSize; i++)
             {
-                long endPosition = 0;
                 if (!src[i].info.Invalid)
                 {
                     if (KeyHasObjects())
@@ -449,26 +449,29 @@ namespace FASTER.core
                 {
                     var memoryStreamActualLength = ms.Position;
                     var memoryStreamTotalLength = (int)endPosition;
+                    endPosition = 0;
 
-                    var _objBuffer = bufferPool.Get(memoryStreamTotalLength);
-
-                    var _alignedLength = (memoryStreamTotalLength + (sectorSize - 1)) & ~(sectorSize - 1);
-
-                    var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
 
                     if (KeyHasObjects())
                         keySerializer.EndSerialize();
                     if (ValueHasObjects())
                         valueSerializer.EndSerialize();
-
                     ms.Close();
 
-                    fixed (void* src_ = ms.GetBuffer())
-                        Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamTotalLength, memoryStreamActualLength);
+                    SectorAlignedMemory _objBuffer = null;
+                    var _alignedLength = (memoryStreamTotalLength + (sectorSize - 1)) & ~(sectorSize - 1);
+                    var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
+
+                    if (memoryStreamTotalLength > 0)
+                    {
+                        _objBuffer = bufferPool.Get(memoryStreamTotalLength);
+
+                        fixed (void* src_ = ms.GetBuffer())
+                            Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamTotalLength, memoryStreamActualLength);
+                    }
 
                     foreach (var address in addr)
                         ((AddressInfo*)address)->Address += _objAddr;
-
 
                     if (i < (end / recordSize) - 1)
                     {
@@ -483,6 +486,8 @@ namespace FASTER.core
 
                         asyncResult.done = new AutoResetEvent(false);
 
+                        Debug.Assert(memoryStreamTotalLength > 0);
+
                         objlogDevice.WriteAsync(
                             (IntPtr)_objBuffer.aligned_pointer,
                             (int)(alignedDestinationAddress >> LogSegmentSizeBits),
@@ -494,14 +499,17 @@ namespace FASTER.core
                     }
                     else
                     {
-                        // need to write both page and object cache
-                        Interlocked.Increment(ref asyncResult.count);
+                        if (memoryStreamTotalLength > 0)
+                        {
+                            // need to write both page and object cache
+                            Interlocked.Increment(ref asyncResult.count);
 
-                        asyncResult.freeBuffer2 = _objBuffer;
-                        objlogDevice.WriteAsync(
-                            (IntPtr)_objBuffer.aligned_pointer,
-                            (int)(alignedDestinationAddress >> LogSegmentSizeBits),
-                            (ulong)_objAddr, (uint)_alignedLength, callback, asyncResult);
+                            asyncResult.freeBuffer2 = _objBuffer;
+                            objlogDevice.WriteAsync(
+                                (IntPtr)_objBuffer.aligned_pointer,
+                                (int)(alignedDestinationAddress >> LogSegmentSizeBits),
+                                (ulong)_objAddr, (uint)_alignedLength, callback, asyncResult);
+                        }
                     }
                 }
             }
