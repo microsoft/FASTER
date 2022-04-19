@@ -187,10 +187,10 @@ union ColdLogIndexBucketEntryDef {
   }
 
   struct {
-    uint64_t address : 48;   // corresponds to logical address
-    uint64_t tag : 3;        // used to distinguish among different entries in same hash table position
+    uint64_t address : 48;  // corresponds to logical address
+    uint64_t tag : 3;       // used to distinguish among different entries in same hash table position
     uint64_t reserved : 12;  // not used
-    uint64_t tentative : 1;  // used (internally) to handle concurrent updates to the hash table
+    uint64_t tentative : 1; // used (internally) to handle concurrent updates to the hash table
   };
   uint64_t control;
 };
@@ -302,6 +302,14 @@ struct alignas(Constants::kCacheLineBytes) ColdLogIndexHashBucket {
 };
 static_assert(sizeof(ColdLogIndexHashBucket) == Constants::kCacheLineBytes,
               "sizeof(ColdHashBucket) != Constants::kCacheLineBytes");
+
+
+// Taken from: https://fekir.info/post/detect-member-variables/
+template <typename T, typename = void>
+struct has_overflow_entry : std::false_type{};
+
+template <typename T>
+struct has_overflow_entry<T, decltype((void)T::overflow_entry, void())> : std::true_type {};
 
 }
 } // namespace FASTER::index

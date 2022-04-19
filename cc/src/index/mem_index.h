@@ -34,6 +34,10 @@ class ColdLogHashIndexDefinition {
   typedef ColdLogIndexHashBucketEntry hash_bucket_entry_t;
 };
 
+// Forward Declaration
+template <class D, class HID, bool HasOverflowBucket>
+struct HashBucketOverflowEntryHelper;
+
 template<class D, class HID = HotLogHashIndexDefinition>
 class HashIndex : public IHashIndex<D> {
  public:
@@ -48,6 +52,9 @@ class HashIndex : public IHashIndex<D> {
 
   typedef GcStateWithIndex gc_state_t;
   typedef GrowState<hlog_t> grow_state_t;
+
+  static constexpr bool HasOverflowBucket = has_overflow_entry<typeof(hash_bucket_t)>::value;
+  friend struct HashBucketOverflowEntryHelper<D, HID, HasOverflowBucket>;
 
   HashIndex(disk_t& disk, LightEpoch& epoch, gc_state_t& gc_state, grow_state_t& grow_state)
     : disk_{ disk }
@@ -135,6 +142,23 @@ class HashIndex : public IHashIndex<D> {
     std::atomic<bool>* completed;
   };
 
+  bool GetNextBucket(hash_bucket_t*& current, uint8_t version) {
+    return HashBucketOverflowEntryHelper<D, HID, HasOverflowBucket>::GetNextBucket(
+      overflow_buckets_allocator_[version], current);
+  }
+  bool GetNextBucket(const hash_bucket_t*& current, uint8_t version) const {
+    return HashBucketOverflowEntryHelper<D, HID, HasOverflowBucket>::GetNextBucket(
+      overflow_buckets_allocator_[version], current);
+  }
+  bool TryAllocateNextBucket(hash_bucket_t*& current, uint8_t version) {
+    return HashBucketOverflowEntryHelper<D, HID, HasOverflowBucket>::TryAllocateNextBucket(
+      overflow_buckets_allocator_[version], current);
+  }
+  bool AllocateNextBucket(hash_bucket_t*& current, uint8_t version) {
+    return HashBucketOverflowEntryHelper<D, HID, HasOverflowBucket>::AllocateNextBucket(
+      overflow_buckets_allocator_[version], current);
+  }
+
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
   // return an unused bucket entry.
   AtomicHashBucketEntry* FindTentativeEntry(key_hash_t hash, hash_bucket_t* bucket, uint8_t version,
@@ -144,11 +168,12 @@ class HashIndex : public IHashIndex<D> {
                             const AtomicHashBucketEntry* atomic_entry) const;
 
   // Helper functions needed for Grow
-  void AddHashEntry(hash_bucket_t*& bucket, uint32_t& next_idx, uint8_t version, hash_bucket_entry_t entry);
+  void AddHashEntry(hash_bucket_t*& bucket, uint32_t& next_idx,
+                    uint8_t version, hash_bucket_entry_t entry);
 
   template <class R>
-  Address TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size,
-                                      Address from_address, Address min_address, uint8_t side);
+  Address TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size, Address from_address,
+                                      Address min_address, uint8_t side);
 
   // Remove tantative entries from the index
   void ClearTentativeEntries();
@@ -169,19 +194,19 @@ template <class D, class HID>
 template <class C>
 inline Status HashIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
                                           C& pending_context) const {
-  // TODO: add static asserts for typename C
-  key_hash_t hash{ pending_context.get_key_hash() };
+  //static_assert(std::is_base_of<PendingContext<typename C::key_t>, C>::value,
+  //              "PendingClass is not the base class of pending_context argument");
 
-  // Truncate the hash to get a bucket page_index < table[version].size.
+  key_hash_t hash{ pending_context.get_key_hash() };
   uint32_t version = this->resize_info.version;
   assert(version == 0 || version == 1);
 
+  // Truncate the hash to get a bucket page_index < table[version].size.
   const hash_bucket_t* bucket = &table_[version].bucket(hash);
   assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
 
   while(true) {
-    // Search through the bucket looking for our key. Last entry is reserved
-    // for the overflow pointer.
+    // Search through the bucket looking for our key.
     for(uint32_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
       hash_bucket_entry_t entry{ bucket->entries[entry_idx].load() };
       if(entry.unused()) {
@@ -189,27 +214,21 @@ inline Status HashIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
       }
       if(hash.tag() == entry.tag()) {
         // Found a matching tag.
-        // (So, the input hash matches the entry on 14 tag bits + log_2(table size) address bits.)
         if(!entry.tentative()) {
-          // If (final key, return immediately)
+          // If final key, return immediately
           pending_context.set_index_entry(entry,
               const_cast<AtomicHashBucketEntry*>(&bucket->entries[entry_idx]));
           return Status::Ok;
         }
       }
     }
-
-    // Go to next bucket in the chain
-    HashBucketOverflowEntry entry = bucket->overflow_entry.load();
-    if(entry.unused()) {
+    // Go to next bucket in the chain (if any)
+    if (!GetNextBucket(bucket, version)) {
       // No more buckets in the chain.
       pending_context.set_index_entry(HashBucketEntry::kInvalidEntry, nullptr);
       return Status::NotFound;
     }
-    bucket = &overflow_buckets_allocator_[version].Get(entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
   }
-
   assert(false);
   return Status::Corruption; // NOT REACHED
 }
@@ -218,15 +237,13 @@ template <class D, class HID>
 template<class C>
 inline Status HashIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_context,
                                                   C& pending_context) {
-  //typedef C pending_context_t;
-  //static_assert(std::is_base_of<PendingContext, typename pending_context_t>::value,
-  //              "value_t is not a base class of read_context_t::value_t");
+  //static_assert(std::is_base_of<PendingContext<typename C::key_t>, C>::value,
+  //              "PendingClass is not the base class of pending_context argument");
 
-  key_hash_t hash{ pending_context.get_key_hash() };
   HashBucketEntry expected_entry;
   AtomicHashBucketEntry* atomic_entry;
 
-  // Truncate the hash to get a bucket page_index < table[version].size.
+  key_hash_t hash{ pending_context.get_key_hash() };
   const uint32_t version = this->resize_info.version;
   assert(version == 0 || version == 1);
 
@@ -290,6 +307,109 @@ inline Status HashIndex<D, HID>::UpdateEntry(ExecutionContext& context, C& pendi
   return Status::Ok;
 }
 
+template <class D, class HID, bool HasOverflowEntry>
+struct HashBucketOverflowEntryHelper {
+  typedef D disk_t;
+
+  typedef HID hash_index_definition_t;
+  typedef HashIndex<disk_t, hash_index_definition_t> hash_index_t;
+  typedef typename HID::hash_bucket_t hash_bucket_t;
+
+  typedef MallocFixedPageSize<hash_bucket_t, disk_t> overflow_buckets_allocator_t;
+
+  static bool GetNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                          hash_bucket_t*& current) {
+    HashBucketOverflowEntry overflow_entry = current->overflow_entry.load();
+    if(overflow_entry.unused()) {
+      // No more buckets in the chain.
+      return false;
+    }
+    current = &overflow_buckets_allocator_.Get(overflow_entry.address());
+    assert(reinterpret_cast<size_t>(current) % Constants::kCacheLineBytes == 0);
+    return true;
+  }
+
+  static bool GetNextBucket(const overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                            const hash_bucket_t*& current) {
+    HashBucketOverflowEntry overflow_entry = current->overflow_entry.load();
+    if(overflow_entry.unused()) {
+      // No more buckets in the chain.
+      return false;
+    }
+    current = &overflow_buckets_allocator_.Get(overflow_entry.address());
+    assert(reinterpret_cast<size_t>(current) % Constants::kCacheLineBytes == 0);
+    return true;
+  }
+
+  static bool TryAllocateNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                                  hash_bucket_t*& current) {
+    // Allocate new bucket
+    FixedPageAddress new_bucket_addr = overflow_buckets_allocator_.Allocate();
+    HashBucketOverflowEntry new_bucket_entry{ new_bucket_addr };
+
+    // Try updating overflow entry to point to new bucket
+    HashBucketOverflowEntry overflow_entry = current->overflow_entry.load();
+    bool success;
+    do {
+      success = current->overflow_entry.compare_exchange_strong(overflow_entry, new_bucket_entry);
+    } while(!success && overflow_entry.unused());
+
+    if(!success) {
+      // Install failed, undo allocation
+      overflow_buckets_allocator_.FreeAtEpoch(new_bucket_addr, 0);
+      // Use the winner's entry
+      current = &overflow_buckets_allocator_.Get(
+                      current->overflow_entry.load().address());
+    } else {
+      // Install succeeded; we have a new bucket on the chain. Return its first slot.
+      current = &overflow_buckets_allocator_.Get(new_bucket_addr);
+    }
+    return success;
+  }
+
+  static bool AllocateNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                                hash_bucket_t*& current) {
+    // Allocate new bucket
+    FixedPageAddress new_bucket_addr = overflow_buckets_allocator_.Allocate();
+    HashBucketOverflowEntry new_bucket_entry{ new_bucket_addr };
+    // Update entry
+    current->overflow_entry.store(new_bucket_entry);
+    current = &overflow_buckets_allocator_.Get(new_bucket_addr);
+    return true;
+  }
+};
+
+template <class D, class HID>
+struct HashBucketOverflowEntryHelper<D, HID, false> {
+  typedef D disk_t;
+
+  typedef HID hash_index_definition_t;
+  typedef HashIndex<disk_t, hash_index_definition_t> hash_index_t;
+  typedef typename HID::hash_bucket_t hash_bucket_t;
+
+  typedef MallocFixedPageSize<hash_bucket_t, disk_t> overflow_buckets_allocator_t;
+
+  static bool GetNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                          hash_bucket_t*& current) {
+    return false; // No overflow buckets
+  }
+
+  static bool GetNextBucket(const overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                            const hash_bucket_t*& current) {
+    return false;
+  }
+
+  static bool TryAllocateNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                                  hash_bucket_t*& current) {
+    return false;
+  }
+
+  static bool AllocateNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                                hash_bucket_t*& current) {
+    return false;
+  }
+};
+
 template <class D, class HID>
 inline AtomicHashBucketEntry* HashIndex<D, HID>::FindTentativeEntry(key_hash_t hash, hash_bucket_t* bucket,
                                                         uint8_t version, HashBucketEntry& expected_entry) {
@@ -316,36 +436,25 @@ inline AtomicHashBucketEntry* HashIndex<D, HID>::FindTentativeEntry(key_hash_t h
         return &bucket->entries[entry_idx];
       }
     }
+
     // Go to next bucket in the chain
-    HashBucketOverflowEntry overflow_entry = bucket->overflow_entry.load();
-    if(overflow_entry.unused()) {
+    if (!GetNextBucket(bucket, version)) {
       // No more buckets in the chain.
       if(atomic_entry) {
         // We found a free slot earlier (possibly inside an earlier bucket).
         assert(expected_entry == HashBucketEntry::kInvalidEntry);
         return atomic_entry;
       }
+
       // We didn't find any free slots, so allocate new bucket.
-      FixedPageAddress new_bucket_addr = overflow_buckets_allocator_[version].Allocate();
-      bool success;
-      do {
-        HashBucketOverflowEntry new_bucket_entry{ new_bucket_addr };
-        success = bucket->overflow_entry.compare_exchange_strong(overflow_entry,
-                  new_bucket_entry);
-      } while(!success && overflow_entry.unused());
-      if(!success) {
-        // Install failed, undo allocation; use the winner's entry
-        overflow_buckets_allocator_[version].FreeAtEpoch(new_bucket_addr, 0);
-      } else {
-        // Install succeeded; we have a new bucket on the chain. Return its first slot.
-        bucket = &overflow_buckets_allocator_[version].Get(new_bucket_addr);
+      assert(HasOverflowBucket);
+      if (TryAllocateNextBucket(bucket, version)) {
         assert(expected_entry == HashBucketEntry::kInvalidEntry);
         return &bucket->entries[0];
       }
+      // Someone else managed to allocate a new bucket first
+      assert(bucket != nullptr);
     }
-    // Go to the next bucket.
-    bucket = &overflow_buckets_allocator_[version].Get(overflow_entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
   }
   assert(false);
   return nullptr; // NOT REACHED
@@ -368,14 +477,10 @@ inline bool HashIndex<D, HID>::HasConflictingEntry(key_hash_t hash, const hash_b
       }
     }
     // Go to next bucket in the chain
-    HashBucketOverflowEntry entry = bucket->overflow_entry.load();
-    if(entry.unused()) {
+    if (!GetNextBucket(bucket, version)) {
       // Reached the end of the bucket chain; no conflicts found.
       return false;
     }
-    // Go to the next bucket.
-    bucket = &overflow_buckets_allocator_[version].Get(entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
   }
 }
 
@@ -419,12 +524,10 @@ inline bool HashIndex<D, HID>::GarbageCollect() {
         }
       }
       // Go to next bucket in the chain.
-      HashBucketOverflowEntry overflow_entry = bucket->overflow_entry.load();
-      if(overflow_entry.unused()) {
+      if (!GetNextBucket(bucket, version)) {
         // No more buckets in the chain.
         break;
       }
-      bucket = &overflow_buckets_allocator_[version].Get(overflow_entry.address());
     }
   }
   // Done with this chunk--did some work.
@@ -449,6 +552,8 @@ template <class D, class HID>
 template <class R>
 inline void HashIndex<D, HID>::Grow() {
   typedef R record_t;
+  // FIXME: Not yet supported for ColdIndex -- AddHashEntry is the main reason..
+  assert(HasOverflowBucket);
 
   // This thread won't exit until all hash table buckets have been split.
   Address head_address = grow_state_->hlog->head_address.load();
@@ -525,12 +630,10 @@ inline void HashIndex<D, HID>::Grow() {
           }
         }
         // Go to next bucket in the chain.
-        HashBucketOverflowEntry overflow_entry = old_bucket->overflow_entry.load();
-        if(overflow_entry.unused()) {
+        if (!GetNextBucket(old_bucket, old_version)) {
           // No more buckets in the chain.
           break;
         }
-        old_bucket = &overflow_buckets_allocator_[old_version].Get(overflow_entry.address());
       }
     }
     // Done with this chunk.
@@ -547,11 +650,10 @@ template <class D, class HID>
 inline void HashIndex<D, HID>::AddHashEntry(hash_bucket_t*& bucket, uint32_t& next_idx,
                                           uint8_t version, hash_bucket_entry_t entry) {
   if(next_idx == hash_bucket_t::kNumEntries) {
+    assert(HasOverflowBucket);
     // Need to allocate a new bucket, first.
-    FixedPageAddress new_bucket_addr = overflow_buckets_allocator_[version].Allocate();
-    HashBucketOverflowEntry new_bucket_entry{ new_bucket_addr };
-    bucket->overflow_entry.store(new_bucket_entry);
-    bucket = &overflow_buckets_allocator_[version].Get(new_bucket_addr);
+    bool success = AllocateNextBucket(bucket, version);
+    assert(success);
     next_idx = 0;
   }
   bucket->entries[next_idx].store(entry);
@@ -745,13 +847,10 @@ inline void HashIndex<D, HID>::ClearTentativeEntries() {
         }
       }
       // Go to next bucket in the chain
-      HashBucketOverflowEntry entry = bucket->overflow_entry.load();
-      if(entry.unused()) {
-        // No more buckets in the chain.
+      if (!GetNextBucket(bucket, version)) {
+         // No more buckets in the chain.
         break;
       }
-      bucket = &overflow_buckets_allocator_[version].Get(entry.address());
-      assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
     }
   }
 }
@@ -775,13 +874,10 @@ inline void HashIndex<D, HID>::DumpDistribution() {
           ++total_record_count;
         }
       }
-      // Go to the next bucket in the chain
-      HashBucketOverflowEntry overflow_entry = bucket->overflow_entry.load();
-      if(overflow_entry.unused()) {
+      if (!GetNextBucket(bucket, version)) {
+        // No more buckets in the chain.
         break;
       }
-      bucket = &overflow_buckets_allocator_[version].Get(overflow_entry.address());
-      assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
     }
     if(count < 15) {
       ++histogram[count];
