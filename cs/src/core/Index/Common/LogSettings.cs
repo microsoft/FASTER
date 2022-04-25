@@ -74,6 +74,11 @@ namespace FASTER.core
         /// Whether to preallocate the entire log (pages) in memory
         /// </summary>
         public bool PreallocateLog = false;
+
+        /// <summary>
+        /// Whether we aggressively auto-shift read-only address (and flush) after enqueues
+        /// </summary>
+        public bool AggressiveShiftReadOnlyAddress = false;
     }
 
     /// <summary>

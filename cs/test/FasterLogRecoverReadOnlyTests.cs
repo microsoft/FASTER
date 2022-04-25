@@ -64,7 +64,6 @@ namespace FASTER.test.recovery
             for (var i = 0L; i < NumElements; ++i)
             {
                 log.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
-                log.RefreshUncommitted();
                 await Task.Delay(TimeSpan.FromMilliseconds(ProducerPauseMs));
             }
             // Ensure the reader had time to see all data

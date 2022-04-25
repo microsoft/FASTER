@@ -537,7 +537,7 @@ namespace FASTER.test
         public async ValueTask TruncateUntil2([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
+            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false, AutoRefreshSafeTailAddress = true };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             byte[] data1 = new byte[1000];
@@ -547,7 +547,6 @@ namespace FASTER.test
             {
                 log.Enqueue(data1);
             }
-            log.RefreshUncommitted();
             Assert.AreEqual(log.TailAddress, log.SafeTailAddress);
 
             Assert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
@@ -592,9 +591,6 @@ namespace FASTER.test
             if (!IsAsync(iteratorType))
                 Assert.IsFalse(iter.GetNext(out _, out _, out _));
 
-            // Make the data visible
-            log.RefreshUncommitted();
-
             await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
 
             log.Dispose();
@@ -605,7 +601,7 @@ namespace FASTER.test
         public async ValueTask TruncateUntilPageStart([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
             device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogChecksum = logChecksum, LogCommitManager = manager, AutoRefreshSafeTailAddress = true });
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
@@ -613,7 +609,6 @@ namespace FASTER.test
             {
                 log.Enqueue(data1);
             }
-            log.RefreshUncommitted();
             Assert.AreEqual(log.TailAddress, log.SafeTailAddress);
 
             Assert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
@@ -658,9 +653,6 @@ namespace FASTER.test
                 // Do this only for sync; MoveNextAsync() would hang here waiting for more entries.
                 if (!IsAsync(iteratorType))
                     Assert.IsFalse(iter.GetNext(out _, out _, out _));
-
-                // Make the data visible
-                log.RefreshUncommitted();
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
@@ -796,7 +788,7 @@ namespace FASTER.test
             string filename = path + "RefreshUncommittedAsyncTest" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
 
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogCommitManager = manager, SegmentSizeBits = 22 });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 20, PageSizeBits = 14, LogCommitManager = manager, SegmentSizeBits = 22, AutoRefreshSafeTailAddress = true });
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
@@ -804,9 +796,6 @@ namespace FASTER.test
             {
                 log.Enqueue(data1);
             }
-
-            // Actual tess is here 
-            await log.RefreshUncommittedAsync();
 
             Assert.AreEqual(log.TailAddress, log.SafeTailAddress);
             Assert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
@@ -851,9 +840,6 @@ namespace FASTER.test
                 // Do this only for sync; MoveNextAsync() would hang here waiting for more entries.
                 if (!IsAsync(iteratorType))
                     Assert.IsFalse(iter.GetNext(out _, out _, out _));
-
-                // Actual test is here 
-                await log.RefreshUncommittedAsync(token);
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }

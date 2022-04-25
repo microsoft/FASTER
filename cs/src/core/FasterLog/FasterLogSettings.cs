@@ -130,6 +130,17 @@ namespace FASTER.core
         /// </summary>
         public bool TryRecoverLatest = true;
 
+
+        /// <summary>
+        /// Whether we refresh safe tail address as records are inserted
+        /// </summary>
+        public bool AutoRefreshSafeTailAddress = false;
+
+        /// <summary>
+        /// Whether we aggressively shift read-only address (and flush) after enqueues
+        /// </summary>
+        public bool AggressiveShiftReadOnlyAddress = false;
+
         /// <summary>
         /// Create default configuration settings for FasterLog. You need to create and specify LogDevice 
         /// explicitly with this API.
@@ -198,7 +209,8 @@ namespace FASTER.core
                 ReadFlags = ReadFlags.None,
                 MutableFraction = MutableFraction,
                 ObjectLogDevice = null,
-                ReadCacheSettings = null
+                ReadCacheSettings = null,
+                AggressiveShiftReadOnlyAddress = AggressiveShiftReadOnlyAddress,
             };
         }
     }

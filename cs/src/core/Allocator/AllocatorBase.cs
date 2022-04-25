@@ -252,6 +252,16 @@ namespace FASTER.core
         /// </summary>
         internal CompletionEvent FlushEvent;
 
+        /// <summary>
+        /// Whether we aggressively shift read-only as records are inserted
+        /// </summary>
+        readonly bool AggressiveShiftReadOnly;
+
+        /// <summary>
+        /// Whether there is an ongoing auto shift read-only
+        /// </summary>
+        int _ongoingAggressiveShiftReadOnly = 0;
+
         #region Abstract methods
         /// <summary>
         /// Initialize
@@ -705,6 +715,7 @@ namespace FASTER.core
         /// <param name="flushCallback"></param>
         public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback)
         {
+            AggressiveShiftReadOnly = settings.AggressiveShiftReadOnlyAddress;
             if (settings.LogDevice == null)
             {
                 throw new FasterException("LogSettings.LogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
@@ -1029,7 +1040,8 @@ namespace FASTER.core
 
                 // All overflow threads try to shift addresses
                 long shiftAddress = ((long)pageIndex) << LogPageSizeBits;
-                PageAlignedShiftReadOnlyAddress(shiftAddress);
+                if (AggressiveShiftReadOnly) DoAggressiveShiftReadOnly();
+                else PageAlignedShiftReadOnlyAddress(shiftAddress);
                 PageAlignedShiftHeadAddress(shiftAddress);
 
                 if (offset > PageSize)
@@ -1072,6 +1084,7 @@ namespace FASTER.core
             }
             #endregion
 
+            if (AggressiveShiftReadOnly) DoAggressiveShiftReadOnly();
             return (((long)page) << LogPageSizeBits) | ((long)offset);
         }
 
@@ -1257,6 +1270,62 @@ namespace FASTER.core
                 }
                 AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
             }
+        }
+
+        private void DoAggressiveShiftReadOnly()
+        {
+            if (_ongoingAggressiveShiftReadOnly == 0 && Interlocked.CompareExchange(ref _ongoingAggressiveShiftReadOnly, 1, 0) == 0)
+                AggressiveShiftReadOnlyRunner(false);
+        }
+
+        private void EpochProtectAggressiveShiftReadOnlyRunner()
+        {
+            try
+            {
+                epoch.Resume();
+                AggressiveShiftReadOnlyRunner(false);
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
+        }
+
+        private void AggressiveShiftReadOnlyRunner(bool recurse)
+        {
+            do
+            {
+                if (GetTailAddress() > ReadOnlyAddress)
+                {
+                    if (recurse)
+                    {
+                        Task.Run(EpochProtectAggressiveShiftReadOnlyRunner);
+                        return;
+                    }
+                    else
+                    {
+                        if (AggressiveFlushShiftReadOnlyBump()) return;
+                    }
+                }
+                _ongoingAggressiveShiftReadOnly = 0;
+            } while (GetTailAddress() > ReadOnlyAddress && _ongoingAggressiveShiftReadOnly == 0 && Interlocked.CompareExchange(ref _ongoingAggressiveShiftReadOnly, 1, 0) == 0);
+        }
+
+        private bool AggressiveFlushShiftReadOnlyBump()
+        {
+            long newReadOnlyAddress = GetTailAddress() - ReadOnlyLagAddress;
+            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, out long oldReadOnly))
+            {
+                epoch.BumpCurrentEpoch(() => AggressiveFlushShiftReadOnlyBumpCallback(newReadOnlyAddress));
+                return true;
+            }
+            return false;
+        }
+
+        private void AggressiveFlushShiftReadOnlyBumpCallback(long newSafeReadOnlyAddress)
+        {
+            OnPagesMarkedReadOnly(newSafeReadOnlyAddress);
+            AggressiveShiftReadOnlyRunner(true);
         }
 
         /// <summary>

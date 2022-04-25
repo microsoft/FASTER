@@ -35,7 +35,7 @@ namespace FASTER.core
         internal readonly bool tolerateDeviceFailure;
 
         TaskCompletionSource<LinkedCommitInfo> commitTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource<Empty> refreshUncommittedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource<Empty> refreshUncommittedTcs;
 
         // Offsets for all currently unprocessed commit records
         readonly Queue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
@@ -99,11 +99,6 @@ namespace FASTER.core
         internal CompletionEvent FlushEvent => allocator.FlushEvent;
 
         /// <summary>
-        /// Task notifying refresh uncommitted
-        /// </summary>
-        internal Task<Empty> RefreshUncommittedTask => refreshUncommittedTcs.Task;
-
-        /// <summary>
         /// Table of persisted iterators
         /// </summary>
         internal readonly ConcurrentDictionary<string, FasterLogScanIterator> PersistedIterators = new();
@@ -122,6 +117,16 @@ namespace FASTER.core
         internal int logRefCount = 1;
 
         /// <summary>
+        /// Whether we refresh safe tail as records are inserted
+        /// </summary>
+        readonly bool AutoRefreshSafeTailAddress;
+
+        /// <summary>
+        /// Whether there is an ongoing auto refresh safe tail
+        /// </summary>
+        int _ongoingAutoRefreshSafeTailAddress = 0;
+
+        /// <summary>
         /// Create new log instance
         /// </summary>
         /// <param name="logSettings">Log settings</param>
@@ -136,6 +141,7 @@ namespace FASTER.core
         /// <param name="syncRecover">Recover synchronously</param>
         private FasterLog(FasterLogSettings logSettings, bool syncRecover)
         {
+            AutoRefreshSafeTailAddress = logSettings.AutoRefreshSafeTailAddress;
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
                 (new LocalStorageNamedDeviceFactory(),
@@ -372,6 +378,7 @@ namespace FASTER.core
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             entry.SerializeTo(new Span<byte>((void *) (headerSize + physicalAddress), length));
             SetHeader(length, (byte*)physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
             return true;
         }
@@ -416,7 +423,7 @@ namespace FASTER.core
                 SetHeader(length, (byte*)physicalAddress);
                 physicalAddress += Align(length) + headerSize;
             }
-
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
             return true;
         }
@@ -452,6 +459,7 @@ namespace FASTER.core
             fixed (byte* bp = entry)
                 Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
             SetHeader(length, (byte*)physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
             return true;
         }
@@ -486,6 +494,7 @@ namespace FASTER.core
             fixed (byte* bp = &entry.GetPinnableReference())
                 Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
             SetHeader(length, (byte*)physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
             return true;
         }
@@ -522,6 +531,7 @@ namespace FASTER.core
             item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
             item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
             SetHeader(length, physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
             return true;
         }
@@ -560,6 +570,7 @@ namespace FASTER.core
             item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
             item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
             SetHeader(length, physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
             return true;
         }
@@ -593,6 +604,7 @@ namespace FASTER.core
             *physicalAddress = userHeader;
             item.CopyTo(physicalAddress + sizeof(byte));
             SetHeader(length, physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
             return true;
         }
@@ -965,35 +977,6 @@ namespace FASTER.core
 
             return (true, commitTail, actualCommitNum);
         }
-
-        /// <summary>
-        /// Trigger a refresh of information about uncommitted part of log (tail address) to ensure visibility 
-        /// to uncommitted scan iterators. Will cause SafeTailAddress to reflect the current tail address.
-        /// </summary>
-        public void RefreshUncommitted(bool spinWait = false)
-        {
-            RefreshUncommittedInternal(spinWait);
-        }
-
-        /// <summary>
-        /// Trigger a refresh of information about uncommitted part of log (tail address) to ensure visibility 
-        /// to uncommitted scan iterators. Will cause SafeTailAddress to reflect the current tail address.
-        /// Async method completes only when we complete the refresh.
-        /// </summary>
-        /// <returns></returns>
-        public async ValueTask RefreshUncommittedAsync(CancellationToken token = default)
-        {
-            token.ThrowIfCancellationRequested();
-            var task = RefreshUncommittedTask;
-            var tailAddress = RefreshUncommittedInternal();
-
-            while (SafeTailAddress < tailAddress)
-            {
-                await task.WithCancellationAsync(token).ConfigureAwait(false);
-                task = RefreshUncommittedTask;
-            }
-        }
-
         #endregion
 
         #region EnqueueAndWaitForCommit
@@ -1497,6 +1480,56 @@ namespace FASTER.core
             return GetRecordLengthAndFree(ctx.record);
         }
 
+        /// <summary>
+        /// Initiate auto refresh safe tail address, called with epoch protection
+        /// </summary>
+        private void DoAutoRefreshSafeTailAddress()
+        {
+            if (_ongoingAutoRefreshSafeTailAddress == 0 && Interlocked.CompareExchange(ref _ongoingAutoRefreshSafeTailAddress, 1, 0) == 0)
+                AutoRefreshSafeTailAddressRunner(false);
+        }
+
+        private void EpochProtectAutoRefreshSafeTailAddressRunner()
+        {
+            try
+            {
+                epoch.Resume();
+                AutoRefreshSafeTailAddressRunner(false);
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
+        }
+
+        private void AutoRefreshSafeTailAddressRunner(bool recurse)
+        {
+            do
+            {
+                if (TailAddress > SafeTailAddress)
+                {
+                    if (recurse)
+                        Task.Run(EpochProtectAutoRefreshSafeTailAddressRunner);
+                    else
+                        epoch.BumpCurrentEpoch(() => AutoRefreshSafeTailAddressBumpCallback(TailAddress));
+                    return;
+                }
+                _ongoingAutoRefreshSafeTailAddress = 0;
+            } while (TailAddress > SafeTailAddress && _ongoingAutoRefreshSafeTailAddress == 0 && Interlocked.CompareExchange(ref _ongoingAutoRefreshSafeTailAddress, 1, 0) == 0);
+        }
+
+        private void AutoRefreshSafeTailAddressBumpCallback(long tailAddress)
+        {
+            if (Utility.MonotonicUpdate(ref SafeTailAddress, tailAddress, out _))
+            {
+                var tcs = refreshUncommittedTcs;
+                if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
+                    tcs.SetResult(Empty.Default);
+            }
+            AutoRefreshSafeTailAddressRunner(true);
+        }
+
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int Align(int length)
         {
@@ -1688,25 +1721,6 @@ namespace FASTER.core
             return false;
         }
 
-        /// <summary>
-        /// Read-only callback
-        /// </summary>
-        private void UpdateTailCallback(long tailAddress)
-        {
-            lock (this)
-            {
-                if (tailAddress > SafeTailAddress)
-                {
-                    SafeTailAddress = tailAddress;
-
-                    var _refreshUncommittedTcs = refreshUncommittedTcs;
-                    refreshUncommittedTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    _refreshUncommittedTcs.SetResult(Empty.Default);
-                }
-            }
-        }
-
-        
         /// <summary>
         /// Synchronously recover instance to FasterLog's latest valid commit, when being used as a readonly log iterator
         /// </summary>
@@ -2047,7 +2061,7 @@ namespace FASTER.core
                 SetHeader(entryLength, (byte*)physicalAddress);
                 physicalAddress += Align(entryLength) + headerSize;
             }
-
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
             return true;
         }
@@ -2282,24 +2296,6 @@ namespace FASTER.core
                 epoch.Suspend();
             }
             return true;
-        }
-
-        private long RefreshUncommittedInternal(bool spinWait = false)
-        {
-            epoch.Resume();
-            var localTail = allocator.GetTailAddress();
-            if (SafeTailAddress < localTail)
-                epoch.BumpCurrentEpoch(() => UpdateTailCallback(localTail));
-            if (spinWait)
-            {
-                while (SafeTailAddress < localTail)
-                {
-                    epoch.ProtectAndDrain();
-                    Thread.Yield();
-                }
-            }
-            epoch.Suspend();
-            return localTail;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
