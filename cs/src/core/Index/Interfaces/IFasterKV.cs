@@ -220,11 +220,6 @@ namespace FASTER.core
         long IndexSize { get; }
 
         /// <summary>
-        /// Get comparer used by this instance of FASTER
-        /// </summary>
-        IFasterEqualityComparer<Key> Comparer { get; }
-
-        /// <summary>
         /// Dump distribution of #entries in hash table
         /// </summary>
         string DumpDistribution();

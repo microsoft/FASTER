@@ -96,6 +96,59 @@ namespace FASTER.core
         #endregion Input-independent Variable length Values
     }
 
+    internal class VariableLengthKeyRedirector<Key, Value, StoreFunctions> : IVariableLengthStruct<Key>
+        where StoreFunctions : IStoreFunctions<Key, Value>
+    {
+        StoreFunctions storeFunctions;
+
+        internal VariableLengthKeyRedirector(StoreFunctions storeFunctions) => this.storeFunctions = storeFunctions;
+
+        /// <summary> Indicates whether <typeparamref name="Key"/> is a variable-length struct</summary>
+        public bool IsVariableLength => storeFunctions.IsVariableLengthKey;
+
+        /// <summary>Default implementation should not be called</summary>
+        public int GetLength(ref Key key) => storeFunctions.GetKeyLength(ref key);
+
+        /// <summary>Default implementation should not be called</summary>
+        public int GetInitialLength() => storeFunctions.GetInitialKeyLength();
+
+        /// <summary>Default implementation should not be called</summary>
+        public unsafe void Serialize(ref Key source, void* destination) => storeFunctions.SerializeKey(ref source, destination);
+
+        /// <summary>Default implementation should not be called</summary>
+        public unsafe ref Key AsRef(void* source) => ref storeFunctions.KeyAsRef(source);
+
+        /// <summary>Default implementation should not be called</summary>
+        public unsafe void Initialize(void* source, void* end) => storeFunctions.InitializeKey(source, end);
+    }
+
+    internal class VariableLengthValueRedirector<Key, Value, StoreFunctions> : IVariableLengthStruct<Value>
+        where StoreFunctions : IStoreFunctions<Key, Value>
+    {
+        StoreFunctions storeFunctions;
+
+        internal VariableLengthValueRedirector(StoreFunctions storeFunctions) => this.storeFunctions = storeFunctions;
+
+        /// <summary> Indicates whether <typeparamref name="Value"/> is a variable-length struct</summary>
+        public bool IsVariableLength => storeFunctions.IsVariableLengthValue;
+
+        /// <summary>Default implementation should not be called</summary>
+        public int GetLength(ref Value value) => storeFunctions.GetValueLength(ref value);
+
+        /// <summary>Default implementation should not be called</summary>
+        public int GetInitialLength() => storeFunctions.GetInitialValueLength();
+
+        /// <summary>Default implementation should not be called</summary>
+        public unsafe void Serialize(ref Value source, void* destination) => storeFunctions.SerializeValue(ref source, destination);
+
+        /// <summary>Default implementation should not be called</summary>
+        public unsafe ref Value AsRef(void* source) => ref storeFunctions.ValueAsRef(source);
+
+        /// <summary>Default implementation should not be called</summary>
+        public unsafe void Initialize(void* source, void* end) => storeFunctions.InitializeValue(source, end);
+    }
+
+
     /// <summary>
     /// Store functions for specific Key and Value
     /// </summary>

@@ -8,6 +8,24 @@ using System.IO;
 namespace FASTER.core
 {
     /// <summary>
+    /// Identifies which of Keys and Values are variable-length
+    /// </summary>
+    [Flags]
+    public enum HasVariableLengthData
+    {
+        /// <summary>Neither Keys nor Values are variable-length structures</summary>
+        None = 0x0,
+
+        /// <summary>Keys are variable-length structures</summary>
+        Keys = 0x1,
+
+        /// <summary>Values are variable-length structures</summary>
+        Values = 0x2,
+
+        /// <summary>Both Keys and Values are variable-length structures</summary>
+        Both = 0x3
+    }
+    /// <summary>
     /// Configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
     /// </summary>
     public sealed class FasterKVSettings<Key, Value> : IDisposable
@@ -78,21 +96,6 @@ namespace FASTER.core
         public Func<IObjectSerializer<Value>> ValueSerializer;
 
         /// <summary>
-        /// Equality comparer for key
-        /// </summary>
-        public IFasterEqualityComparer<Key> EqualityComparer;
-
-        /// <summary>
-        /// Info for variable-length keys
-        /// </summary>
-        public IVariableLengthStruct<Key> KeyLength;
-
-        /// <summary>
-        /// Info for variable-length values
-        /// </summary>
-        public IVariableLengthStruct<Value> ValueLength;
-
-        /// <summary>
         /// Whether read cache is enabled
         /// </summary>
         public bool ReadCacheEnabled = false;
@@ -149,16 +152,17 @@ namespace FASTER.core
         /// Default index size is 64MB.
         /// </summary>
         /// <param name="baseDir">Base directory (without trailing path separator)</param>
+        /// <param name="hasVariableLengthData"><typeparamref name="Key"/> or <typeparamref name="Value"/> is a variable-length struct</param>
         /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose. This option prevents later recovery.</param>
-        public FasterKVSettings(string baseDir, bool deleteDirOnDispose = false)
+        public FasterKVSettings(string baseDir, HasVariableLengthData hasVariableLengthData = HasVariableLengthData.None, bool deleteDirOnDispose = false)
         {
             disposeDevices = true;
             this.deleteDirOnDispose = deleteDirOnDispose;
             this.baseDir = baseDir;
 
             LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.log", deleteOnClose: deleteDirOnDispose);
-            if ((!Utility.IsBlittable<Key>() && KeyLength == null) ||
-                (!Utility.IsBlittable<Value>() && ValueLength == null))
+            if ((!Utility.IsBlittable<Key>() && ((hasVariableLengthData & HasVariableLengthData.Keys) == 0)) ||
+                (!Utility.IsBlittable<Value>() && ((hasVariableLengthData & HasVariableLengthData.Values) == 0)))
             {
                 ObjectLogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.obj.log", deleteOnClose: deleteDirOnDispose);
             }
@@ -257,18 +261,5 @@ namespace FASTER.core
                 RemoveOutdated = RemoveOutdatedCheckpoints
             };
         }
-
-        internal VariableLengthStructSettings<Key, Value> GetVariableLengthStructSettings()
-        {
-            if (KeyLength == null && ValueLength == null)
-                return null;
-
-            return new VariableLengthStructSettings<Key, Value>
-            {
-                keyLength = KeyLength,
-                valueLength = ValueLength
-            };
-        }
-
     }
 }

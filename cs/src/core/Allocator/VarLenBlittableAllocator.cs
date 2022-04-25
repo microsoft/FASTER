@@ -25,15 +25,10 @@ namespace FASTER.core
         private readonly GCHandle ptrHandle;
 #endif
         private readonly long* nativePointers;
-        private readonly bool fixedSizeKey;
-        private readonly bool fixedSizeValue;
-
-        internal readonly IVariableLengthStruct<Key> KeyLength;
-        internal readonly IVariableLengthStruct<Value> ValueLength;
 
         private readonly OverflowPool<PageUnit> overflowPagePool;
 
-        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, StoreFunctions storeFunctions, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
+        public VariableLengthBlittableAllocator(LogSettings settings, StoreFunctions storeFunctions, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
             : base(settings, storeFunctions, evictCallback, epoch, flushCallback)
         {
             overflowPagePool = new OverflowPool<PageUnit>(4, p =>
@@ -58,21 +53,6 @@ namespace FASTER.core
                 nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
 #endif
             }
-
-            KeyLength = vlSettings.keyLength;
-            ValueLength = vlSettings.valueLength;
-
-            if (KeyLength == null)
-            {
-                fixedSizeKey = true;
-                KeyLength = new FixedLengthStruct<Key>();
-            }
-
-            if (ValueLength == null)
-            {
-                fixedSizeValue = true;
-                ValueLength = new FixedLengthStruct<Value>();
-            }
         }
 
         internal override int OverflowPageCount => overflowPagePool.Count;
@@ -96,19 +76,19 @@ namespace FASTER.core
 
         public override ref Key GetKey(long physicalAddress)
         {
-            return ref KeyLength.AsRef((byte*)physicalAddress + RecordInfo.GetLength());
+            return ref storeFunctions.KeyAsRef((byte*)physicalAddress + RecordInfo.GetLength());
         }
 
         public override ref Value GetValue(long physicalAddress)
         {
-            return ref ValueLength.AsRef((byte*)ValueOffset(physicalAddress));
+            return ref storeFunctions.ValueAsRef((byte*)ValueOffset(physicalAddress));
         }
 
         public override ref Value GetValue(long physicalAddress, long endAddress)
         {
             var src = (byte*)ValueOffset(physicalAddress);
-            ValueLength.Initialize(src, (void*)endAddress);
-            return ref ValueLength.AsRef(src);
+            storeFunctions.InitializeValue(src, (void*)endAddress);
+            return ref storeFunctions.ValueAsRef(src);
         }
 
         private long ValueOffset(long physicalAddress)
@@ -116,18 +96,18 @@ namespace FASTER.core
 
         private int AlignedKeySize(long physicalAddress)
         {
-            int len = KeyLength.GetLength(ref GetKey(physicalAddress));
+            int len = storeFunctions.GetKeyLength(ref GetKey(physicalAddress));
             return (len + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
         }
 
         private int KeySize(long physicalAddress)
         {
-            return KeyLength.GetLength(ref GetKey(physicalAddress));
+            return storeFunctions.GetKeyLength(ref GetKey(physicalAddress));
         }
 
         private int ValueSize(long physicalAddress)
         {
-            return ValueLength.GetLength(ref GetValue(physicalAddress));
+            return storeFunctions.GetValueLength(ref GetValue(physicalAddress));
         }
 
         public override (int, int) GetRecordSize(long physicalAddress)
@@ -166,7 +146,7 @@ namespace FASTER.core
             }
 
             // We need at least [record size] + [actual key size] + [average value size]
-            reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + ValueLength.GetInitialLength();
+            reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + storeFunctions.GetInitialValueLength();
             if (availableBytes < reqBytes)
             {
                 return reqBytes;
@@ -181,21 +161,21 @@ namespace FASTER.core
         public override int GetAverageRecordSize()
         {
             return RecordInfo.GetLength() +
-                ((KeyLength.GetInitialLength() + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
-                ((ValueLength.GetInitialLength() + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
+                ((storeFunctions.GetInitialKeyLength() + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
+                ((storeFunctions.GetInitialValueLength() + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
         public override int GetFixedRecordSize()
         {
             return RecordInfo.GetLength()
-                + (fixedSizeKey ? KeyLength.GetInitialLength() : 0)
-                + (fixedSizeValue ? ValueLength.GetInitialLength() : 0);
+                + (storeFunctions.IsVariableLengthKey ? storeFunctions.GetInitialKeyLength() : 0)
+                + (storeFunctions.IsVariableLengthValue ? storeFunctions.GetInitialValueLength() : 0);
         }
 
         public override (int, int) GetInitialRecordSize<TInput, FasterSession>(ref Key key, ref TInput input, FasterSession fasterSession)
         {
             var actualSize = RecordInfo.GetLength() +
-                ((KeyLength.GetLength(ref key) + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
+                ((storeFunctions.GetKeyLength(ref key) + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
                 fasterSession.GetInitialLength(ref input);
 
             return (actualSize, (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
@@ -204,20 +184,20 @@ namespace FASTER.core
         public override (int, int) GetRecordSize(ref Key key, ref Value value)
         {
             var actualSize = RecordInfo.GetLength() +
-                ((KeyLength.GetLength(ref key) + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
-                ValueLength.GetLength(ref value);
+                ((storeFunctions.GetKeyLength(ref key) + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
+                storeFunctions.GetValueLength(ref value);
 
             return (actualSize, (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
         public override void Serialize(ref Key src, long physicalAddress)
         {
-            KeyLength.Serialize(ref src, (byte*)physicalAddress + RecordInfo.GetLength());
+            storeFunctions.SerializeKey(ref src, (byte*)physicalAddress + RecordInfo.GetLength());
         }
 
         public override void Serialize(ref Value src, long physicalAddress)
         {
-            ValueLength.Serialize(ref src, (byte*)ValueOffset(physicalAddress));
+            storeFunctions.SerializeValue(ref src, (byte*)ValueOffset(physicalAddress));
         }
 
         /// <summary>
@@ -440,14 +420,14 @@ namespace FASTER.core
 
         public override IHeapContainer<Key> GetKeyContainer(ref Key key)
         {
-            if (fixedSizeKey) return new StandardHeapContainer<Key>(ref key);
-            else return new VarLenHeapContainer<Key>(ref key, KeyLength, bufferPool);
+            if (storeFunctions.IsVariableLengthKey) return new StandardHeapContainer<Key>(ref key);
+            else return new VarLenHeapContainer<Key>(ref key, new VariableLengthKeyRedirector<Key, Value, StoreFunctions>(storeFunctions), bufferPool);
         }
 
         public override IHeapContainer<Value> GetValueContainer(ref Value value)
         {
-            if (fixedSizeValue) return new StandardHeapContainer<Value>(ref value);
-            else return new VarLenHeapContainer<Value>(ref value, ValueLength, bufferPool);
+            if (storeFunctions.IsVariableLengthValue) return new StandardHeapContainer<Value>(ref value);
+            else return new VarLenHeapContainer<Value>(ref value, new VariableLengthValueRedirector<Key, Value, StoreFunctions>(storeFunctions), bufferPool);
         }
 
         /// <summary>

@@ -13,9 +13,7 @@ namespace FASTER.core
         /// <summary>Default implementation should not be called</summary>
         public static readonly DefaultVariableLengthStruct<T> Default = new();
 
-        /// <summary>
-        /// Indicates whether T is a variable-length struct
-        /// </summary>
+        /// <summary> Indicates whether <typeparamref name="T"/> is a variable-length struct</summary>
         public bool IsVariableLength => false;
 
         /// <summary>Default implementation should not be called</summary>

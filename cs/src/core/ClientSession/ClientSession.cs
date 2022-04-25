@@ -774,12 +774,10 @@ namespace FASTER.core
         internal readonly struct InternalFasterSession : IFasterSession<Key, Value, Input, Output, Context, Allocator>
         {
             private readonly ClientSession<Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator> _clientSession;
-            internal readonly Allocator allocator;
 
             public InternalFasterSession(ClientSession<Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator> clientSession)
             {
                 _clientSession = clientSession;
-                this.allocator = clientSession.fht.hlog;
             }
 
             #region IFunctions - Optional features supported

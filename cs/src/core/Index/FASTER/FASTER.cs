@@ -20,11 +20,6 @@ namespace FASTER.core
         internal readonly Allocator hlog;
         internal readonly Allocator readcache;
 
-        /// <summary>
-        /// Compares two keys
-        /// </summary>
-        internal readonly IFasterEqualityComparer<Key> comparer;
-
         internal readonly bool UseReadCache;
         private readonly ReadFlags ReadFlags;
         internal readonly int sectorSize;
@@ -46,11 +41,6 @@ namespace FASTER.core
         public long OverflowBucketCount => overflowBucketsAllocator.GetMaxValidAddress();
 
         /// <summary>
-        /// Comparer used by FASTER
-        /// </summary>
-        public IFasterEqualityComparer<Key> Comparer => comparer;
-
-        /// <summary>
         /// Hybrid log used by this FASTER instance
         /// </summary>
         public LogAccessor<Key, Value, StoreFunctions, Allocator> Log { get; }
@@ -65,7 +55,7 @@ namespace FASTER.core
         int maxSessionID;
 
         internal readonly bool DisableLocking;
-        internal readonly LockTable<Key> LockTable;
+        internal readonly LockTable<Key, Value, StoreFunctions> LockTable;
 
         internal readonly StoreFunctions storeFunctions;
 
@@ -85,7 +75,6 @@ namespace FASTER.core
         public FasterKV(FasterKVSettings<Key, Value> fasterKVSettings, StoreFunctions storeFunctions) :
             this(fasterKVSettings.IndexSizeToCacheLines(), fasterKVSettings.GetLogSettings(), storeFunctions,
                 fasterKVSettings.GetCheckpointSettings(), fasterKVSettings.GetSerializerSettings(),
-                fasterKVSettings.EqualityComparer, fasterKVSettings.GetVariableLengthStructSettings(),
                 fasterKVSettings.TryRecoverLatest, fasterKVSettings.DisableLocking)
 #pragma warning restore CS0618 // Type or member is obsolete
         { }
@@ -98,39 +87,15 @@ namespace FASTER.core
         /// <param name="storeFunctions">Store functions implementation</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
         /// <param name="serializerSettings">Serializer settings</param>
-        /// <param name="comparer">FASTER equality comparer for key</param>
-        /// <param name="variableLengthStructSettings"></param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
         /// <param name="disableLocking">Whether FASTER takes read and write locks on records</param>
         public FasterKV(long size, LogSettings logSettings, StoreFunctions storeFunctions,    // TODO replace with use of FasterKVSettings directly
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
-            IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableLocking = false)
+            bool tryRecoverLatest = false, bool disableLocking = false)
         {
             if (storeFunctions is null)
                 throw new FasterException("StoreFunctions is required");
             this.storeFunctions = storeFunctions;
-
-            if (comparer != null)
-                this.comparer = comparer;
-            else
-            {
-                if (typeof(IFasterEqualityComparer<Key>).IsAssignableFrom(typeof(Key)))
-                {
-                    if (default(Key) is not null)
-                    {
-                        this.comparer = default(Key) as IFasterEqualityComparer<Key>;
-                    }
-                    else if (typeof(Key).GetConstructor(Type.EmptyTypes) != null)
-                    {
-                        this.comparer = Activator.CreateInstance(typeof(Key)) as IFasterEqualityComparer<Key>;
-                    }
-                }
-                else
-                {
-                    this.comparer = FasterEqualityComparer.Get<Key>();
-                }
-            }
 
             this.DisableLocking = disableLocking;
 
@@ -152,12 +117,8 @@ namespace FASTER.core
             this.ReadFlags = logSettings.ReadFlags;
             UseReadCache = logSettings.ReadCacheSettings is not null;
 
-            UpdateVarLen(ref variableLengthStructSettings);
-
-            IVariableLengthStruct<Key> keyLen = null;
-
-            if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength is null) ||
-                (!Utility.IsBlittable<Value>() && variableLengthStructSettings?.valueLength is null))
+            if ((!Utility.IsBlittable<Key>() && !storeFunctions.IsVariableLengthKey) ||
+                (!Utility.IsBlittable<Value>() && !storeFunctions.IsVariableLengthValue))
             {
                 WriteDefaultOnDelete = true;
 
@@ -179,11 +140,9 @@ namespace FASTER.core
                     ReadCache = new LogAccessor<Key, Value, StoreFunctions, Allocator>(this, readcache);
                 }
             }
-            else if (variableLengthStructSettings != null)
+            else if (storeFunctions.IsVariableLengthKey || storeFunctions.IsVariableLengthValue)
             {
-                keyLen = variableLengthStructSettings.keyLength;
-                hlog = new VariableLengthBlittableAllocator<Key, Value, StoreFunctions>(logSettings, variableLengthStructSettings,
-                    this.storeFunctions, null, epoch) as Allocator;
+                hlog = new VariableLengthBlittableAllocator<Key, Value, StoreFunctions>(logSettings, this.storeFunctions, null, epoch) as Allocator;
                 Log = new LogAccessor<Key, Value, StoreFunctions, Allocator>(this, hlog);
                 if (UseReadCache)
                 {
@@ -195,7 +154,7 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, variableLengthStructSettings, this.storeFunctions, ReadCacheEvict, epoch) as Allocator;
+                        }, this.storeFunctions, ReadCacheEvict, epoch) as Allocator;
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value, StoreFunctions, Allocator>(this, readcache);
                 }
@@ -233,7 +192,7 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            this.LockTable = new LockTable<Key>(keyLen, this.comparer, keyLen is null ? null : hlog.bufferPool);
+            this.LockTable = new LockTable<Key, Value, StoreFunctions>(storeFunctions, storeFunctions.IsVariableLengthKey ? hlog.bufferPool : null);
 
             systemState = SystemState.Make(Phase.REST, 1);
 
@@ -246,6 +205,15 @@ namespace FASTER.core
                 catch { }
             }
         }
+
+        internal HasVariableLengthData GetHasVariableLengthData()
+            => (storeFunctions.IsVariableLengthKey, storeFunctions.IsVariableLengthValue) switch
+                {
+                    (true, false) => HasVariableLengthData.Keys,
+                    (false, true) => HasVariableLengthData.Values,
+                    (true, true) => HasVariableLengthData.Both,
+                    _ => HasVariableLengthData.None
+                };
 
         /// <summary>
         /// Initiate full checkpoint

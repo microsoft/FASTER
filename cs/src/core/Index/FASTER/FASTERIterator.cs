@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Data.SqlTypes;
 
 namespace FASTER.core
 {
@@ -68,25 +69,12 @@ namespace FASTER.core
             this.fht = fht;
             enumerationPhase = 0;
 
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null;
-            if (fht.hlog is VariableLengthBlittableAllocator<Key, Value, StoreFunctions> varLen)
-            {
-                variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-            }
-
-            FasterKVSettings<Key, Value> fkvSettings = new()
+            FasterKVSettings<Key, Value> fkvSettings = new(null, fht.GetHasVariableLengthData())
             {
                 IndexSize = FasterKVSettings<Key, Value>.IndexSizeFromCacheLines(fht.IndexSize),
                 LogDevice = new NullDevice(),
                 ObjectLogDevice = new NullDevice(),
-                MutableFraction = 1,
-                EqualityComparer = fht.Comparer,
-                KeyLength = variableLengthStructSettings?.keyLength,
-                ValueLength = variableLengthStructSettings?.valueLength
+                MutableFraction = 1
             };
 
             tempKv = new FasterKV<Key, Value, StoreFunctions, Allocator>(fkvSettings, fht.storeFunctions);
@@ -131,7 +119,7 @@ namespace FASTER.core
                         var bucket = default(HashBucket*);
                         var slot = default(int);
                         var entry = default(HashBucketEntry);
-                        var hash = fht.Comparer.GetHashCode64(ref key);
+                        var hash = fht.storeFunctions.GetKeyHashCode64(ref key);
                         var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
                         if (fht.FindTag(hash, tag, ref bucket, ref slot, ref entry) && entry.Address == iter1.CurrentAddress)
                         {

@@ -43,22 +43,23 @@ namespace FASTER.core
     //      Non-Varlen: a specialized LockTableEntry that just uses Key directly
     //      Varlen: a shared heap container abstraction that shares a single buffer pool allocator and allocates, frees into it, returning a struct wrapper.
 
-    internal class LockTable<TKey>
+    internal class LockTable<TKey, TValue, TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
     {
         class KeyComparer : IEqualityComparer<IHeapContainer<TKey>>
         {
-            readonly internal IFasterEqualityComparer<TKey> comparer;
+            private readonly TStoreFunctions storeFunctions;
 
-            internal KeyComparer(IFasterEqualityComparer<TKey> comparer) => this.comparer = comparer;
+            internal KeyComparer(TStoreFunctions storeFunctions) => this.storeFunctions = storeFunctions;
 
-            public bool Equals(IHeapContainer<TKey> k1, IHeapContainer<TKey> k2) => comparer.Equals(ref k1.Get(), ref k2.Get());
+            public bool Equals(IHeapContainer<TKey> k1, IHeapContainer<TKey> k2) => storeFunctions.KeyEquals(ref k1.Get(), ref k2.Get());
 
-            public int GetHashCode(IHeapContainer<TKey> k) => (int)comparer.GetHashCode64(ref k.Get());
+            public int GetHashCode(IHeapContainer<TKey> k) => (int)storeFunctions.GetKeyHashCode64(ref k.Get());
         }
 
+        readonly internal TStoreFunctions storeFunctions;
+        private readonly KeyComparer keyComparer;
         readonly internal SafeConcurrentDictionary<IHeapContainer<TKey>, LockTableEntry<TKey>> dict;
-        readonly IVariableLengthStruct<TKey> keyLen;
-        readonly KeyComparer keyComparer;
         readonly SectorAlignedBufferPool bufferPool;
 
         // dict.Empty takes locks on all tables ("snapshot semantics"), which is too much of a perf hit. So we track this
@@ -66,10 +67,10 @@ namespace FASTER.core
         // we add or remove items, respectively, we achieve the desired goal of IsActive.
         long approxNumItems = 0;
 
-        internal LockTable(IVariableLengthStruct<TKey> keyLen, IFasterEqualityComparer<TKey> comparer, SectorAlignedBufferPool bufferPool)
+        internal LockTable(TStoreFunctions storeFunctions, SectorAlignedBufferPool bufferPool)
         {
-            this.keyLen = keyLen;
-            this.keyComparer = new(comparer);
+            this.storeFunctions = storeFunctions;
+            this.keyComparer = new(storeFunctions);
             this.bufferPool = bufferPool;
             this.dict = new(this.keyComparer);
         }
@@ -77,7 +78,7 @@ namespace FASTER.core
         internal bool IsActive => this.approxNumItems > 0;
 
         IHeapContainer<TKey> GetKeyContainer(ref TKey key) 
-            => bufferPool is null ? new StandardHeapContainer<TKey>(ref key) : new VarLenHeapContainer<TKey>(ref key, keyLen, bufferPool);
+            => bufferPool is null ? new StandardHeapContainer<TKey>(ref key) : new VarLenHeapContainer<TKey>(ref key, new VariableLengthKeyRedirector<TKey, TValue, TStoreFunctions>(storeFunctions), bufferPool);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool Unlock(ref TKey key, LockType lockType, out bool exists)

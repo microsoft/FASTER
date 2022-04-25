@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
 
 namespace FASTER.core
 {
@@ -107,24 +108,11 @@ namespace FASTER.core
             var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
             using var fhtSession = For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>();
 
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null;
-            if (hlog is VariableLengthBlittableAllocator<Key, Value, StoreFunctions> varLen)
-            {
-                variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-            }
-
-            FasterKVSettings<Key, Value> fkvSettings = new()
+            FasterKVSettings<Key, Value> fkvSettings = new(null, GetHasVariableLengthData())
             {
                 IndexSize = FasterKVSettings<Key, Value>.IndexSizeFromCacheLines(IndexSize),
                 LogDevice = new NullDevice(),
-                ObjectLogDevice = new NullDevice(),
-                EqualityComparer = Comparer,
-                KeyLength = variableLengthStructSettings?.keyLength,
-                ValueLength = variableLengthStructSettings?.valueLength
+                ObjectLogDevice = new NullDevice()
             };
 
             using (var tempKv = new FasterKV<Key, Value, StoreFunctions, Allocator>(fkvSettings, this.storeFunctions))

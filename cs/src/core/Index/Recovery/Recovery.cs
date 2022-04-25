@@ -819,7 +819,7 @@ namespace FASTER.core
 
                 if (!info.Invalid)
                 {
-                    hash = comparer.GetHashCode64(ref hlog.GetKey(recordStart));
+                    hash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(recordStart));
                     tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                     entry = default;
