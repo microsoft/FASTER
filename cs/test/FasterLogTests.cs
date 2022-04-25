@@ -584,12 +584,8 @@ namespace FASTER.test
                     break;
             }
 
-            // Enqueue data but do not make it visible
+            // Enqueue data, becomes auto-visible
             log.Enqueue(data1);
-
-            // Do this only for sync; MoveNextAsync() would hang here waiting for more entries.
-            if (!IsAsync(iteratorType))
-                Assert.IsFalse(iter.GetNext(out _, out _, out _));
 
             await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
 
@@ -647,12 +643,8 @@ namespace FASTER.test
                         break;
                 }
 
-                // Enqueue data but do not make it visible
+                // Enqueue data, becomes auto-visible
                 log.Enqueue(data1);
-
-                // Do this only for sync; MoveNextAsync() would hang here waiting for more entries.
-                if (!IsAsync(iteratorType))
-                    Assert.IsFalse(iter.GetNext(out _, out _, out _));
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
@@ -834,12 +826,8 @@ namespace FASTER.test
                         break;
                 }
 
-                // Enqueue data but do not make it visible
+                // Enqueue additional data item, becomes auto-visible
                 log.Enqueue(data1);
-
-                // Do this only for sync; MoveNextAsync() would hang here waiting for more entries.
-                if (!IsAsync(iteratorType))
-                    Assert.IsFalse(iter.GetNext(out _, out _, out _));
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
