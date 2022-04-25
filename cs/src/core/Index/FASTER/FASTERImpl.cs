@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public unsafe partial class FasterKV<Key, Value, StoreFunctions>
+    public unsafe partial class FasterKV<Key, Value, StoreFunctions, Allocator>
     {
         /// <summary>
         /// This is a wrapper for checking the record's version instead of just peeking at the latest record at the tail of the bucket.
@@ -94,7 +94,7 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRead<Input, Output, Context, Allocator, FasterSession>(
+        internal OperationStatus InternalRead<Input, Output, Context, FasterSession>(
                                     ref Key key,
                                     ref Input input,
                                     ref Output output,
@@ -264,9 +264,8 @@ namespace FASTER.core
                     {
                         var container = hlog.GetValueContainer(ref hlog.GetValue(physicalAddress));
                         do
-                            status = InternalTryCopyToTail<Input, Output, Context, Allocator, FasterSession>(
-                                                            sessionCtx, ref pendingContext, ref key, ref input, ref container.Get(), ref output, logicalAddress, fasterSession, sessionCtx, WriteReason.CopyToTail,
-                                                            expired: readInfo.Action == ReadAction.Expire);
+                            status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref container.Get(), ref output, logicalAddress, fasterSession, sessionCtx, WriteReason.CopyToTail,
+                                                           expired: readInfo.Action == ReadAction.Expire);
                         while (status == OperationStatus.RETRY_NOW);
                         container.Dispose();
 
@@ -385,7 +384,7 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalUpsert<Input, Output, Context, Allocator, FasterSession>(
+        internal OperationStatus InternalUpsert<Input, Output, Context, FasterSession>(
                             ref Key key, ref Input input, ref Value value, ref Output output,
                             ref Context userContext,
                             ref PendingContext<Input, Output, Context> pendingContext,
@@ -561,8 +560,7 @@ namespace FASTER.core
             if (latchDestination != LatchDestination.CreatePendingContext)
             {
                 // Immutable region or new record
-                status = CreateNewRecordUpsert<Input, Output, Context, Allocator, FasterSession>(
-                                               ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, tag, entry,
+                status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, tag, entry,
                                                latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress);
                 if (!OperationStatusUtils.IsAppend(status))
                 {
@@ -704,7 +702,7 @@ namespace FASTER.core
         /// <param name="unsealLogicalAddress">The logical address of a record that ConcurrentWriter returned false for; we seal it so another operation cannot IPU it,
         ///     transfer locks from it on success, and unseal it on failure</param>
         /// <param name="unsealPhysicalAddress">The physical address of <paramref name="unsealLogicalAddress"/>; passed to avoid needing a virtual GetPhysicalAddress call</param>
-        private OperationStatus CreateNewRecordUpsert<Input, Output, Context, Allocator, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
+        private OperationStatus CreateNewRecordUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                              FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, ushort tag, HashBucketEntry entry,
                                                                                              long latestLogicalAddress, long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealLogicalAddress, long unsealPhysicalAddress) 
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context, Allocator>
@@ -787,7 +785,7 @@ namespace FASTER.core
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
 
             recordInfo.SetInvalid();
-            storeFunctions.Dispose(ref insertedKey, ref insertedValue, DisposeReason.SingleWriterCASFailed);
+            storeFunctions.DisposeRecord(ref insertedKey, ref insertedValue, DisposeReason.SingleWriterCASFailed);
             if (WriteDefaultOnDelete)
             {
                 insertedKey = default;
@@ -800,7 +798,7 @@ namespace FASTER.core
 
         #region RMW Operation
 
-        internal bool ReinitializeExpiredRecord<Input, Output, Context, Allocator, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo,
+        internal bool ReinitializeExpiredRecord<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo,
                                                                                        long logicalAddress, FasterExecutionContext<Input, Output, Context> sessionCtx, FasterSession fasterSession,
                                                                                        bool isIpu, out OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context, Allocator>
@@ -901,7 +899,7 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRMW<Input, Output, Context, Allocator, FasterSession>(
+        internal OperationStatus InternalRMW<Input, Output, Context, FasterSession>(
                                    ref Key key, ref Input input, ref Output output,
                                    ref Context userContext,
                                    ref PendingContext<Input, Output, Context> pendingContext,
@@ -995,7 +993,7 @@ namespace FASTER.core
 #region Entry latch operation
             if (sessionCtx.phase != Phase.REST)
             {
-                latchDestination = AcquireLatchRMW(pendingContext, sessionCtx, bucket, ref status, ref latchOperation, ref entry, logicalAddress);
+                latchDestination = AcquireLatchRMW(sessionCtx, bucket, ref status, ref latchOperation, ref entry, logicalAddress);
             }
 #endregion
 
@@ -1085,16 +1083,14 @@ namespace FASTER.core
                 bool doingCU = logicalAddress >= hlog.HeadAddress && !hlog.GetInfo(physicalAddress).Tombstone;
                 if (doingCU)
                 {
-                    status = CreateNewRecordRMW<Input, Output, Context, Allocator, FasterSession>(
-                                                ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
+                    status = CreateNewRecordRMW(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
                                                 latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress,
                                                 doingCU, false);
                 }
                 else
                 {
                     Value _temp = default;
-                    status = CreateNewRecordRMW<Input, Output, Context, Allocator, FasterSession>(
-                                                ref key, ref input, ref _temp, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
+                    status = CreateNewRecordRMW(ref key, ref input, ref _temp, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress, tag, entry,
                                                 latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress,
                                                 doingCU, false);
                 }
@@ -1156,7 +1152,7 @@ namespace FASTER.core
             return status;
         }
 
-        private LatchDestination AcquireLatchRMW<Input, Output, Context>(PendingContext<Input, Output, Context> pendingContext, FasterExecutionContext<Input, Output, Context> sessionCtx,
+        private LatchDestination AcquireLatchRMW<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> sessionCtx,
                                                                          HashBucket* bucket, ref OperationStatus status, ref LatchOperation latchOperation, ref HashBucketEntry entry, long logicalAddress)
         {
             switch (sessionCtx.phase)
@@ -1217,11 +1213,6 @@ namespace FASTER.core
         /// <summary>
         /// Create a new record for RMW
         /// </summary>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="FasterSession"></typeparam>
-        /// <typeparam name="Allocator"></typeparam>
         /// <param name="key">The record Key</param>
         /// <param name="input">Input to the operation</param>
         /// <param name="value">Old value</param>
@@ -1244,7 +1235,7 @@ namespace FASTER.core
         /// <param name="doingCU">Whether we expect to be doing a CopyUpdate</param>
         /// <param name="fromPending">Whether we are being called from pending path</param>
         /// <returns></returns>
-        private OperationStatus CreateNewRecordRMW<Input, Output, Context, Allocator, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
+        private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                           FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, long logicalAddress, 
                                                                                           long physicalAddress, ushort tag, HashBucketEntry entry, long latestLogicalAddress,
                                                                                           long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealLogicalAddress, long unsealPhysicalAddress, bool doingCU, bool fromPending)
@@ -1359,9 +1350,8 @@ namespace FASTER.core
                         // 'false' means an update in place was not done. If so:
                         //     if canceled, return status
                         //     else, invalidate CU and retry
-                        if (!ReinitializeExpiredRecord<Input, Output, Context, Allocator, FasterSession>(
-                                                ref key, ref input, ref newRecordValue, ref output, ref recordInfo, ref rmwInfo,
-                                                newLogicalAddress, sessionCtx, fasterSession, isIpu: false, out status))
+                        if (!ReinitializeExpiredRecord(ref key, ref input, ref newRecordValue, ref output, ref recordInfo, ref rmwInfo,
+                                                       newLogicalAddress, sessionCtx, fasterSession, isIpu: false, out status))
                         {
                             if (status == OperationStatus.CANCELED)
                                 return status;
@@ -1444,7 +1434,7 @@ namespace FASTER.core
                 hlog.GetInfo(newPhysicalAddress).SetInvalid();
                 ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
                 ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
-                storeFunctions.Dispose(ref insertedKey, ref insertedValue, doingCU ? DisposeReason.CopyUpdaterCASFailed : DisposeReason.InitialUpdaterCASFailed);
+                storeFunctions.DisposeRecord(ref insertedKey, ref insertedValue, doingCU ? DisposeReason.CopyUpdaterCASFailed : DisposeReason.InitialUpdaterCASFailed);
 
                 status = OperationStatus.RETRY_NOW;
                 return status;
@@ -1486,7 +1476,7 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalDelete<Input, Output, Context, Allocator, FasterSession>(
+        internal OperationStatus InternalDelete<Input, Output, Context, FasterSession>(
                             ref Key key,
                             ref Context userContext,
                             ref PendingContext<Input, Output, Context> pendingContext,
@@ -1772,7 +1762,7 @@ namespace FASTER.core
 
                     ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
                     ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
-                    storeFunctions.Dispose(ref insertedKey, ref insertedValue, DisposeReason.SingleDeleterCASFailed);
+                    storeFunctions.DisposeRecord(ref insertedKey, ref insertedValue, DisposeReason.SingleDeleterCASFailed);
 
                     status = OperationStatus.RETRY_NOW;
 
@@ -2035,7 +2025,7 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingRead<Input, Output, Context, Allocator, FasterSession>(
+        internal OperationStatus InternalContinuePendingRead<Input, Output, Context, FasterSession>(
                             FasterExecutionContext<Input, Output, Context> ctx,
                             AsyncIOContext<Key, Value> request,
                             ref PendingContext<Input, Output, Context> pendingContext,
@@ -2081,8 +2071,7 @@ namespace FASTER.core
                     || pendingContext.CopyReadsToTail
                     || (UseReadCache && !pendingContext.DisableReadCacheUpdates)
                     || readInfo.Action == ReadAction.Expire)
-                    return InternalContinuePendingReadCopyToTail<Input, Output, Context, Allocator, FasterSession>(
-                                ctx, request, ref pendingContext, fasterSession, currentCtx, expired: readInfo.Action == ReadAction.Expire);
+                    return InternalContinuePendingReadCopyToTail(ctx, request, ref pendingContext, fasterSession, currentCtx, expired: readInfo.Action == ReadAction.Expire);
 
                 pendingContext.recordInfo = recordInfo;
                 return OperationStatus.SUCCESS;
@@ -2113,7 +2102,7 @@ namespace FASTER.core
         /// <param name="fasterSession">Callback functions.</param>
         /// <param name="currentCtx"></param>
         /// <param name="expired">If true, SingleReader returned an expiration for this record, so we're appending a tombstoned record to the log</param>
-        internal OperationStatus InternalContinuePendingReadCopyToTail<Input, Output, Context, Allocator, FasterSession>(
+        internal OperationStatus InternalContinuePendingReadCopyToTail<Input, Output, Context, FasterSession>(
                                     FasterExecutionContext<Input, Output, Context> opCtx,
                                     AsyncIOContext<Key, Value> request,
                                     ref PendingContext<Input, Output, Context> pendingContext,
@@ -2127,10 +2116,9 @@ namespace FASTER.core
 
             OperationStatus status;
             do
-                status = InternalTryCopyToTail<Input, Output, Context, Allocator, FasterSession>(
-                                opCtx, ref pendingContext, ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request),
-                                ref pendingContext.output, logicalAddress, fasterSession, currentCtx,
-                                (expired || pendingContext.CopyReadsToTail) ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
+                status = InternalTryCopyToTail(opCtx, ref pendingContext, ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request),
+                                    ref pendingContext.output, logicalAddress, fasterSession, currentCtx,
+                                    (expired || pendingContext.CopyReadsToTail) ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
             while (status == OperationStatus.RETRY_NOW);
 
             // No copy to tail
@@ -2172,7 +2160,7 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingRMW<Input, Output, Context, Allocator, FasterSession>(
+        internal OperationStatus InternalContinuePendingRMW<Input, Output, Context, FasterSession>(
                                     FasterExecutionContext<Input, Output, Context> opCtx,
                                     AsyncIOContext<Key, Value> request,
                                     ref PendingContext<Input, Output, Context> pendingContext,
@@ -2232,19 +2220,17 @@ namespace FASTER.core
                 if (logicalAddress > previousFirstRecordAddress) break;
 
                 status =
-                    CreateNewRecordRMW<Input, Output, Context, Allocator, FasterSession>(
-                        ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
-                        ref pendingContext, fasterSession, sessionCtx, bucket, slot, request.logicalAddress, (long)request.record.GetValidPointer(), tag, entry, latestLogicalAddress,
-                        prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, Constants.kInvalidAddress, Constants.kInvalidAddress,
-                        (request.logicalAddress >= hlog.BeginAddress) && !hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone, true);
+                    CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
+                                       ref pendingContext, fasterSession, sessionCtx, bucket, slot, request.logicalAddress, (long)request.record.GetValidPointer(), tag, entry, latestLogicalAddress,
+                                       prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, Constants.kInvalidAddress, Constants.kInvalidAddress,
+                                       (request.logicalAddress >= hlog.BeginAddress) && !hlog.GetInfoFromBytePointer(request.record.GetValidPointer()).Tombstone, true);
 
                 if (status != OperationStatus.RETRY_NOW)
                     return status;
             }
 
             do
-                status = InternalRMW<Input, Output, Context, Allocator, FasterSession>(
-                        ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, opCtx, pendingContext.serialNum);
+                status = InternalRMW(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, opCtx, pendingContext.serialNum);
             while (status == OperationStatus.RETRY_NOW);
             return status;
         }
@@ -2264,7 +2250,7 @@ namespace FASTER.core
         /// <param name="asyncOp">When operation issued via async call</param>
         /// <param name="request">IO request, if operation went pending</param>
         /// <returns>Operation status</returns>
-        internal Status HandleOperationStatus<Input, Output, Context, Allocator, FasterSession>(
+        internal Status HandleOperationStatus<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> opCtx,
             FasterExecutionContext<Input, Output, Context> currentCtx,
             ref PendingContext<Input, Output, Context> pendingContext,
@@ -2289,8 +2275,7 @@ namespace FASTER.core
                     switch (pendingContext.type)
                     {
                         case OperationType.READ:
-                            internalStatus = InternalRead<Input, Output, Context, Allocator, FasterSession>(
-                                                            ref pendingContext.key.Get(),
+                            internalStatus = InternalRead(ref pendingContext.key.Get(),
                                                             ref pendingContext.input.Get(),
                                                             ref pendingContext.output,
                                                             pendingContext.recordInfo.PreviousAddress,
@@ -2298,8 +2283,7 @@ namespace FASTER.core
                                                             ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                             break;
                         case OperationType.UPSERT:
-                            internalStatus = InternalUpsert<Input, Output, Context, Allocator, FasterSession>(
-                                                            ref pendingContext.key.Get(),
+                            internalStatus = InternalUpsert(ref pendingContext.key.Get(),
                                                             ref pendingContext.input.Get(),
                                                             ref pendingContext.value.Get(),
                                                             ref pendingContext.output,
@@ -2307,14 +2291,12 @@ namespace FASTER.core
                                                             ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                             break;
                         case OperationType.DELETE:
-                            internalStatus = InternalDelete<Input, Output, Context, Allocator, FasterSession>(
-                                                            ref pendingContext.key.Get(),
+                            internalStatus = InternalDelete(ref pendingContext.key.Get(),
                                                             ref pendingContext.userContext,
                                                             ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                             break;
                         case OperationType.RMW:
-                            internalStatus = InternalRMW<Input, Output, Context, Allocator, FasterSession>(
-                                                            ref pendingContext.key.Get(),
+                            internalStatus = InternalRMW(ref pendingContext.key.Get(),
                                                             ref pendingContext.input.Get(),
                                                             ref pendingContext.output,
                                                             ref pendingContext.userContext,
@@ -2453,7 +2435,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SpinBlockAllocate<Input, Output, Context, FasterSession>(
-                AllocatorBase<Key, Value> allocator,
+                Allocator allocator,
                 int recordSize,
                 out long logicalAddress,
                 FasterExecutionContext<Input, Output, Context> ctx,
@@ -2520,7 +2502,7 @@ namespace FASTER.core
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalCopyToTail<Input, Output, Context, Allocator, FasterSession>(
+        internal OperationStatus InternalCopyToTail<Input, Output, Context, FasterSession>(
                                             ref Key key, ref Input input, ref Value value, ref Output output,
                                             long expectedLogicalAddress,
                                             FasterSession fasterSession,
@@ -2531,16 +2513,15 @@ namespace FASTER.core
             OperationStatus internalStatus;
             PendingContext<Input, Output, Context>  pendingContext = default;
             do
-                internalStatus = InternalTryCopyToTail<Input, Output, Context, Allocator, FasterSession>(
-                            currentCtx, ref pendingContext, ref key, ref input, ref value, ref output, expectedLogicalAddress, fasterSession, currentCtx, reason);
+                internalStatus = InternalTryCopyToTail(currentCtx, ref pendingContext, ref key, ref input, ref value, ref output, expectedLogicalAddress, fasterSession, currentCtx, reason);
             while (internalStatus == OperationStatus.RETRY_NOW);
             return internalStatus;
         }
 
         /// <summary>
         /// Helper function for trying to copy existing immutable records (at foundLogicalAddress) to the tail,
-        /// used in <see cref="InternalRead{Input, Output, Context, Allocator, FasterSession}(ref Key, ref Input, ref Output, long, ref Context, ref PendingContext{Input, Output, Context}, FasterSession, FasterExecutionContext{Input, Output, Context}, long)"/>
-        /// <see cref="InternalContinuePendingReadCopyToTail{Input, Output, Context, Allocator, FasterSession}(FasterExecutionContext{Input, Output, Context}, AsyncIOContext{Key, Value}, ref PendingContext{Input, Output, Context}, FasterSession, FasterExecutionContext{Input, Output, Context}, bool)"/>,
+        /// used in <see cref="InternalRead{Input, Output, Context, FasterSession}(ref Key, ref Input, ref Output, long, ref Context, ref PendingContext{Input, Output, Context}, FasterSession, FasterExecutionContext{Input, Output, Context}, long)"/>
+        /// <see cref="InternalContinuePendingReadCopyToTail{Input, Output, Context, FasterSession}(FasterExecutionContext{Input, Output, Context}, AsyncIOContext{Key, Value}, ref PendingContext{Input, Output, Context}, FasterSession, FasterExecutionContext{Input, Output, Context}, bool)"/>,
         /// and <see cref="ClientSession{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}.CompactionCopyToTail(ref Key, ref Input, ref Value, ref Output, long)"/>
         /// 
         /// Succeed only if the record for the same key hasn't changed.
@@ -2567,7 +2548,7 @@ namespace FASTER.core
         /// NOTFOUND: record was found in memory beyond expectedLogicalAddress, so no copy done
         /// SUCCESS: no record found beyond expectedLogicalAddress, so copy was done
         /// </returns>
-        internal OperationStatus InternalTryCopyToTail<Input, Output, Context, Allocator, FasterSession>(
+        internal OperationStatus InternalTryCopyToTail<Input, Output, Context, FasterSession>(
                                         FasterExecutionContext<Input, Output, Context> opCtx, ref PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value recordValue, ref Output output,
                                         long expectedLogicalAddress,
@@ -2780,7 +2761,7 @@ namespace FASTER.core
             {
                 log.GetInfo(newPhysicalAddress).SetInvalid();
 
-                storeFunctions.Dispose(ref log.GetKey(newPhysicalAddress), ref log.GetValue(newPhysicalAddress), DisposeReason.SingleWriterCASFailed);
+                storeFunctions.DisposeRecord(ref log.GetKey(newPhysicalAddress), ref log.GetValue(newPhysicalAddress), DisposeReason.SingleWriterCASFailed);
                 return OperationStatus.RETRY_NOW;
             }
             else

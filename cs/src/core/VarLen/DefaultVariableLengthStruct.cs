@@ -1,29 +1,36 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
+
 namespace FASTER.core
 {
-    internal readonly struct DefaultVariableLengthStruct<T, Input> : IVariableLengthStruct<T, Input>
+    /// <summary>
+    /// Default no-op implementation of <see cref="IVariableLengthStruct{T}"/>, for use with non-variable length <typeparamref name="T"/>.
+    /// </summary>
+    public class DefaultVariableLengthStruct<T> : IVariableLengthStruct<T>
     {
-        private readonly IVariableLengthStruct<T> variableLengthStruct;
+        /// <summary>Default implementation should not be called</summary>
+        public static readonly DefaultVariableLengthStruct<T> Default = new();
 
         /// <summary>
-        /// Default instance of object
+        /// Indicates whether T is a variable-length struct
         /// </summary>
-        /// <param name="variableLengthStruct"></param>
-        public DefaultVariableLengthStruct(IVariableLengthStruct<T> variableLengthStruct)
-        {
-            this.variableLengthStruct = variableLengthStruct;
-        }
+        public bool IsVariableLength => false;
 
-        public int GetInitialLength(ref Input input)
-        {
-            return variableLengthStruct.GetInitialLength();
-        }
+        /// <summary>Default implementation should not be called</summary>
+        public int GetLength(ref T t) => throw new NotImplementedException();
 
-        public int GetLength(ref T t, ref Input input)
-        {
-            return variableLengthStruct.GetLength(ref t);
-        }
+        /// <summary>Default implementation should not be called</summary>
+        public int GetInitialLength() => throw new NotImplementedException();
+
+        /// <summary>Default implementation should not be called</summary>
+        public unsafe void Serialize(ref T source, void* destination) => throw new NotImplementedException();
+
+        /// <summary>Default implementation should not be called</summary>
+        public unsafe ref T AsRef(void* source) => throw new NotImplementedException();
+
+        /// <summary>Default implementation should not be called</summary>
+        public unsafe void Initialize(void* source, void* end) => throw new NotImplementedException();
     }
 }

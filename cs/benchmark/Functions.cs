@@ -89,5 +89,21 @@ namespace FASTER.benchmark
         public void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo) { }
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+
+        public bool IsVariableLengthInput => false;
+
+        public int GetInputLength(ref Input input) => throw new System.NotImplementedException();
+
+        public int GetInitialInputLength() => throw new System.NotImplementedException();
+
+        public unsafe void SerializeInput(ref Input source, void* destination) => throw new System.NotImplementedException();
+
+        public unsafe ref Input InputAsRef(void* source) => throw new System.NotImplementedException();
+
+        public unsafe void InitializeInput(void* source, void* end) => throw new System.NotImplementedException();
+
+        public int GetLength(ref Value value, ref Input input) => throw new System.NotImplementedException();
+
+        public int GetInitialInputLength(ref Input input) => throw new System.NotImplementedException();
     }
 }

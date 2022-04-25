@@ -7,8 +7,14 @@ using System.Diagnostics;
 
 namespace FASTER.core
 {
-    internal static class FasterEqualityComparer
+    /// <summary>
+    /// Static class to get an implementation of an <see cref="IFasterEqualityComparer{Key}"/>
+    /// </summary>
+    public static class FasterEqualityComparer
     {
+        /// <summary>
+        /// Get an implementation of an <see cref="IFasterEqualityComparer{Key}"/>
+        /// </summary>
         public static IFasterEqualityComparer<T> Get<T>()
         {
             var t = typeof(T);
@@ -50,6 +56,11 @@ namespace FASTER.core
     public sealed class StringFasterEqualityComparer : IFasterEqualityComparer<string>
     {
         /// <summary>
+        /// Default instance
+        /// </summary>
+        public static readonly StringFasterEqualityComparer Default = new();
+
+        /// <summary>
         /// Equals
         /// </summary>
         /// <param name="k1"></param>
@@ -77,6 +88,11 @@ namespace FASTER.core
     public sealed class LongFasterEqualityComparer : IFasterEqualityComparer<long>
     {
         /// <summary>
+        /// Default instance
+        /// </summary>
+        public static readonly LongFasterEqualityComparer Default = new();
+
+        /// <summary>
         /// Equals
         /// </summary>
         /// <param name="k1"></param>
@@ -98,6 +114,11 @@ namespace FASTER.core
     public sealed class IntFasterEqualityComparer : IFasterEqualityComparer<int>
     {
         /// <summary>
+        /// Default instance
+        /// </summary>
+        public static readonly IntFasterEqualityComparer Default = new();
+
+        /// <summary>
         /// Equals
         /// </summary>
         /// <param name="k1"></param>
@@ -118,6 +139,11 @@ namespace FASTER.core
     /// </summary>
     public sealed class GuidFasterEqualityComparer : IFasterEqualityComparer<Guid>
     {
+        /// <summary>
+        /// Default instance
+        /// </summary>
+        public static readonly GuidFasterEqualityComparer Default = new();
+
         /// <summary>
         /// Equals
         /// </summary>
@@ -144,6 +170,11 @@ namespace FASTER.core
     /// </summary>
     public sealed class ByteArrayFasterEqualityComparer : IFasterEqualityComparer<byte[]>
     {
+        /// <summary>
+        /// Default instance
+        /// </summary>
+        public static readonly ByteArrayFasterEqualityComparer Default = new();
+
         /// <summary>
         /// Equals
         /// </summary>
@@ -180,17 +211,22 @@ namespace FASTER.core
     /// Low-performance FASTER equality comparer wrapper around EqualityComparer.Default
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    internal sealed class DefaultFasterEqualityComparer<T> : IFasterEqualityComparer<T>
+    public sealed class DefaultFasterEqualityComparer<T> : IFasterEqualityComparer<T>
     {
-        public static readonly DefaultFasterEqualityComparer<T> Default = new DefaultFasterEqualityComparer<T>();
+        /// <summary>
+        /// Default instance
+        /// </summary>
+        public static readonly DefaultFasterEqualityComparer<T> Default = new();
 
         private static readonly EqualityComparer<T> DefaultEC = EqualityComparer<T>.Default;
-
+        
+        /// <inheritdoc/>
         public bool Equals(ref T k1, ref T k2)
         {
             return DefaultEC.Equals(k1, k2);
         }
 
+        /// <inheritdoc/>
         public long GetHashCode64(ref T k)
         {
             return Utility.GetHashCode(DefaultEC.GetHashCode(k));

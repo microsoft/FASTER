@@ -6,11 +6,6 @@ namespace FASTER.core
     /// <summary>
     /// Callback functions to FASTER
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="Input"></typeparam>
-    /// <typeparam name="Output"></typeparam>
-    /// <typeparam name="Context"></typeparam>
     public interface IFunctions<Key, Value, Input, Output, Context>
     {
         #region Reads
@@ -223,18 +218,61 @@ namespace FASTER.core
         void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint);
         #endregion Checkpointing
 
-        #region Input-dependent Variable Length 
+        #region VarLen Input
+
+        // Same methods (renamed for clarity) as IVariableLengthlInputStruct<Value, Input>
+        // Note: these won't be inlined in the HeapContainer as it is an interface call, but this is used only at pending-operation time.
+
+        #region IVariableLengthStruct<Input>
+
         /// <summary>
-        /// Initial expected length of Input, when populated by RMW using given input
+        /// Indicates whether T is a variable-length struct
+        /// </summary>
+        bool IsVariableLengthInput { get; }
+
+        /// <summary>
+        /// Actual length of given object, when serialized on log
+        /// </summary>
+        int GetInputLength(ref Input input);
+
+        /// <summary>
+        /// Initial expected length of objects when serialized on log, make sure this at least includes 
+        /// the object header needed to compute the actual object length
+        /// </summary>
+        int GetInitialInputLength();
+
+        /// <summary>
+        /// Serialize object to given memory location
+        /// </summary>
+        unsafe void SerializeInput(ref Input source, void* destination);
+
+        /// <summary>
+        /// Return serialized data at given address, as a reference to object of type T
+        /// </summary>
+        /// <param name="source"></param>
+        /// <returns></returns>
+        unsafe ref Input InputAsRef(void* source);
+
+        /// <summary>
+        /// Initialize given address range [source, end) as a serialized object of type T
+        /// </summary>
+        unsafe void InitializeInput(void* source, void* end);
+
+        #endregion IVariableLengthStruct<Input>
+
+        #region IVariableLengthInputStruct<Value, Input>
+
+        /// <inheritdoc/>
+        int GetLength(ref Value value, ref Input input);
+
+        /// <summary>
+        /// Initial expected length of object, when populated by operation using given input
         /// </summary>
         int GetInitialInputLength(ref Input input);
 
-        /// <summary>
-        /// Length of resulting Value when performing RMW with given input
-        /// </summary>
-        int GetKeyLength(ref Value value, ref Input input);
+        #endregion IVariableLengthInputStruct<Value, Input>
 
-        #endregion Input-dependent Variable Length 
+        #endregion VarLen Input
     }
 
     /// <summary>

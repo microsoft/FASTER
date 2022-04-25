@@ -21,7 +21,8 @@ namespace FASTER.core
         public Value value;
     }
 
-    public unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
+    public unsafe sealed class GenericAllocator<Key, Value, StoreFunctions> : AllocatorBase<Key, Value, StoreFunctions>
+        where StoreFunctions: IStoreFunctions<Key, Value>
     {
         // Circular buffer definition
         internal Record<Key, Value>[][] values;
@@ -40,8 +41,8 @@ namespace FASTER.core
 
         private readonly OverflowPool<Record<Key, Value>[]> overflowPagePool;
 
-        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
-            : base(settings, comparer, evictCallback, epoch, flushCallback)
+        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, StoreFunctions storeFunctions, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
+            : base(settings, storeFunctions, evictCallback, epoch, flushCallback)
         {
             overflowPagePool = new OverflowPool<Record<Key, Value>[]>(4);
 
@@ -1033,7 +1034,7 @@ namespace FASTER.core
         /// <returns></returns>
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
-            return new GenericScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
+            return new GenericScanIterator<Key, Value, StoreFunctions>(this, beginAddress, endAddress, scanBufferingMode, epoch);
         }
 
         /// <inheritdoc />

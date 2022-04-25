@@ -80,7 +80,7 @@ namespace FASTER.core
         }
     }
 
-    public partial class FasterKV<Key, Value, StoreFunctions>
+    public partial class FasterKV<Key, Value, StoreFunctions, Allocator>
     {
         internal struct PendingContext<Input, Output, Context>
         {
@@ -544,49 +544,47 @@ namespace FASTER.core
         /// </summary>
         public byte[] ToByteArray()
         {
-            using (MemoryStream ms = new())
+            using MemoryStream ms = new();
+            using (StreamWriter writer = new(ms))
             {
-                using (StreamWriter writer = new(ms))
+                writer.WriteLine(CheckpointVersion); // checkpoint version
+                writer.WriteLine(Checksum(checkpointTokens.Count)); // checksum
+
+                writer.WriteLine(guid);
+                writer.WriteLine(useSnapshotFile);
+                writer.WriteLine(version);
+                writer.WriteLine(nextVersion);
+                writer.WriteLine(flushedLogicalAddress);
+                writer.WriteLine(startLogicalAddress);
+                writer.WriteLine(finalLogicalAddress);
+                writer.WriteLine(snapshotFinalLogicalAddress);
+                writer.WriteLine(headAddress);
+                writer.WriteLine(beginAddress);
+                writer.WriteLine(deltaTailAddress);
+                writer.WriteLine(manualLockingActive);
+
+                writer.WriteLine(checkpointTokens.Count);
+                foreach (var kvp in checkpointTokens)
                 {
-                    writer.WriteLine(CheckpointVersion); // checkpoint version
-                    writer.WriteLine(Checksum(checkpointTokens.Count)); // checksum
+                    writer.WriteLine(kvp.Key);
+                    writer.WriteLine(kvp.Value.Item1);
+                    writer.WriteLine(kvp.Value.Item2.UntilSerialNo);
+                    writer.WriteLine(kvp.Value.Item2.ExcludedSerialNos.Count);
+                    foreach (long item in kvp.Value.Item2.ExcludedSerialNos)
+                        writer.WriteLine(item);
+                }
 
-                    writer.WriteLine(guid);
-                    writer.WriteLine(useSnapshotFile);
-                    writer.WriteLine(version);
-                    writer.WriteLine(nextVersion);
-                    writer.WriteLine(flushedLogicalAddress);
-                    writer.WriteLine(startLogicalAddress);
-                    writer.WriteLine(finalLogicalAddress);
-                    writer.WriteLine(snapshotFinalLogicalAddress);
-                    writer.WriteLine(headAddress);
-                    writer.WriteLine(beginAddress);
-                    writer.WriteLine(deltaTailAddress);
-                    writer.WriteLine(manualLockingActive);
-
-                    writer.WriteLine(checkpointTokens.Count);
-                    foreach (var kvp in checkpointTokens)
+                // Write object log segment offsets
+                writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
+                if (objectLogSegmentOffsets != null)
+                {
+                    for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
                     {
-                        writer.WriteLine(kvp.Key);
-                        writer.WriteLine(kvp.Value.Item1);
-                        writer.WriteLine(kvp.Value.Item2.UntilSerialNo);
-                        writer.WriteLine(kvp.Value.Item2.ExcludedSerialNos.Count);
-                        foreach (long item in kvp.Value.Item2.ExcludedSerialNos)
-                            writer.WriteLine(item);
-                    }
-
-                    // Write object log segment offsets
-                    writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
-                    if (objectLogSegmentOffsets != null)
-                    {
-                        for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
-                        {
-                            writer.WriteLine(objectLogSegmentOffsets[i]);
-                        }
+                        writer.WriteLine(objectLogSegmentOffsets[i]);
                     }
                 }
-                return ms.ToArray();
             }
+            return ms.ToArray();
         }
 
         private readonly long Checksum(int checkpointTokensCount)
@@ -769,29 +767,27 @@ namespace FASTER.core
             var metadata = checkpointManager.GetIndexCheckpointMetadata(guid);
             if (metadata == null)
                 throw new FasterException("Invalid index commit metadata for ID " + guid.ToString());
-            using (StreamReader s = new(new MemoryStream(metadata)))
-                Initialize(s);
+            using StreamReader s = new(new MemoryStream(metadata));
+            Initialize(s);
         }
 
         public readonly byte[] ToByteArray()
         {
-            using (MemoryStream ms = new())
+            using MemoryStream ms = new();
+            using (StreamWriter writer = new(ms))
             {
-                using (StreamWriter writer = new(ms))
-                {
-                    writer.WriteLine(CheckpointVersion); // checkpoint version
-                    writer.WriteLine(Checksum()); // checksum
+                writer.WriteLine(CheckpointVersion); // checkpoint version
+                writer.WriteLine(Checksum()); // checksum
 
-                    writer.WriteLine(token);
-                    writer.WriteLine(table_size);
-                    writer.WriteLine(num_ht_bytes);
-                    writer.WriteLine(num_ofb_bytes);
-                    writer.WriteLine(num_buckets);
-                    writer.WriteLine(startLogicalAddress);
-                    writer.WriteLine(finalLogicalAddress);
-                }
-                return ms.ToArray();
+                writer.WriteLine(token);
+                writer.WriteLine(table_size);
+                writer.WriteLine(num_ht_bytes);
+                writer.WriteLine(num_ofb_bytes);
+                writer.WriteLine(num_buckets);
+                writer.WriteLine(startLogicalAddress);
+                writer.WriteLine(finalLogicalAddress);
             }
+            return ms.ToArray();
         }
 
         private readonly long Checksum()

@@ -9,6 +9,9 @@ namespace FASTER.core
     /// </summary>
     public class ReadOnlyMemoryVarLenStruct<T> : IVariableLengthStruct<ReadOnlyMemory<T>> where T : unmanaged
     {
+        /// <inheritdoc/>
+        public bool IsVariableLength => true;
+
         ///<inheritdoc/>
         public int GetInitialLength() => sizeof(int);
 
@@ -51,4 +54,22 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// Input-specific IVariableLengthStruct implementation for Memory{T} where T is unmanaged, for Memory{T} as input
+    /// </summary>
+    public class MemoryVarLenStructForReadOnlyMemoryInput<T> : ReadOnlyMemoryVarLenStruct<T>, IVariableLengthStruct<Memory<T>, ReadOnlyMemory<T>> where T : unmanaged
+    {
+        /// <inheritdoc/>
+        public bool IsVariableLengthInput => true;
+
+        /// <inheritdoc/>
+        public unsafe int GetInitialLength(ref ReadOnlyMemory<T> input) => sizeof(int) + input.Length * sizeof(T);
+
+        /// <summary>
+        /// Length of resulting object when doing RMW with given value and input. Here we set the length
+        /// to the max of input and old value lengths. You can provide a custom implementation for other cases.
+        /// </summary>
+        public unsafe int GetLength(ref Memory<T> t, ref ReadOnlyMemory<T> input)
+            => sizeof(int) + (input.Length > t.Length ? input.Length : t.Length) * sizeof(T);
+    }
 }

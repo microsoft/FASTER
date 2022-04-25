@@ -9,9 +9,10 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class GenericScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>
+    public sealed class GenericScanIterator<Key, Value, StoreFunctions> : ScanIteratorBase, IFasterScanIterator<Key, Value>
+        where StoreFunctions : IStoreFunctions<Key, Value>
     {
-        private readonly GenericAllocator<Key, Value> hlog;
+        private readonly GenericAllocator<Key, Value, StoreFunctions> hlog;
         private readonly GenericFrame<Key, Value> frame;
         private readonly int recordSize;
 
@@ -26,7 +27,7 @@ namespace FASTER.core
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
-        public GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
+        public GenericScanIterator(GenericAllocator<Key, Value, StoreFunctions> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits)
         {
             this.hlog = hlog;

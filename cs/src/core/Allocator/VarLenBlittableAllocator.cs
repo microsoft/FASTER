@@ -3,14 +3,17 @@
 
 using System;
 using System.Runtime.CompilerServices;
+#if !NET5_0_OR_GREATER
 using System.Runtime.InteropServices;
+#endif
 using System.Threading;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 namespace FASTER.core
 {
-    public unsafe sealed class VariableLengthBlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
+    public unsafe sealed class VariableLengthBlittableAllocator<Key, Value, StoreFunctions> : AllocatorBase<Key, Value, StoreFunctions>
+        where StoreFunctions : IStoreFunctions<Key, Value>
     {
         public const int kRecordAlignment = 8; // RecordInfo has a long field, so it should be aligned to 8-bytes
 
@@ -30,8 +33,8 @@ namespace FASTER.core
 
         private readonly OverflowPool<PageUnit> overflowPagePool;
 
-        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
-            : base(settings, comparer, evictCallback, epoch, flushCallback)
+        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, StoreFunctions storeFunctions, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
+            : base(settings, storeFunctions, evictCallback, epoch, flushCallback)
         {
             overflowPagePool = new OverflowPool<PageUnit>(4, p =>
 #if NET5_0_OR_GREATER
@@ -73,6 +76,8 @@ namespace FASTER.core
         }
 
         internal override int OverflowPageCount => overflowPagePool.Count;
+
+        internal override bool IsVarLen => true;
 
         public override void Initialize()
         {
@@ -483,13 +488,13 @@ namespace FASTER.core
         /// <returns></returns>
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
-            return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
+            return new VariableLengthBlittableScanIterator<Key, Value, StoreFunctions>(this, beginAddress, endAddress, scanBufferingMode, epoch);
         }
 
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
-            using var iter = new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
+            using var iter = new VariableLengthBlittableScanIterator<Key, Value, StoreFunctions>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
             observer?.OnNext(iter);
         }
 

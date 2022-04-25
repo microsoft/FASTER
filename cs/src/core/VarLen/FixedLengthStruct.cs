@@ -14,6 +14,9 @@ namespace FASTER.core
     {
         private static readonly int size = Utility.GetSize(default(T));
 
+        /// <inheritdoc/>
+        public bool IsVariableLength => false;
+
         /// <summary>
         /// Get average length
         /// </summary>

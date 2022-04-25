@@ -3,6 +3,7 @@
 
 namespace FASTER.core
 {
+#if false // TODO remove
     /// <summary>
     /// Session-specific settings for variable length structs
     /// </summary>
@@ -11,13 +12,14 @@ namespace FASTER.core
     public class SessionVariableLengthStructSettings<Value, Input>
     {
         /// <summary>
-        /// Key length
+        /// Value length, given input
         /// </summary>
         public IVariableLengthStruct<Value, Input> valueLength;
 
         /// <summary>
-        /// Value length
+        /// Input length
         /// </summary>
         public IVariableLengthStruct<Input> inputLength;
     }
+#endif
 }

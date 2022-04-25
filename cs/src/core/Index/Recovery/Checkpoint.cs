@@ -29,9 +29,8 @@ namespace FASTER.core
         public const int CheckpointCompletionCallback = 4;
     }
 
-    public partial class FasterKV<Key, Value, StoreFunctions>
+    public partial class FasterKV<Key, Value, StoreFunctions, Allocator>
     {
-        
         internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
             
         internal Guid _indexCheckpointToken;
@@ -87,7 +86,7 @@ namespace FASTER.core
             _hybridLogCheckpoint.info.manualLockingActive = this.hlog.NumActiveLockingSessions > 0;
         }
 
-        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(IFunctions<Key, Value, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, object> sessionVariableLengthStructSettings) where CompactionFunctions : ICompactionFunctions<Key, Value>
+        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(IFunctions<Key, Value, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType) where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             throw new NotImplementedException();
         }

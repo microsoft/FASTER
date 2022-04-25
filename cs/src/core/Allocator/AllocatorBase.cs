@@ -40,20 +40,21 @@ namespace FASTER.core
     /// <summary>
     /// Base class for hybrid log memory allocator
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    public abstract partial class AllocatorBase<Key, Value> : IDisposable
+    public abstract partial class AllocatorBase<Key, Value, StoreFunctions> : IDisposable
+        where StoreFunctions : IStoreFunctions<Key, Value>
     {
         /// <summary>
         /// Epoch information
         /// </summary>
         protected readonly LightEpoch epoch;
         private readonly bool ownedEpoch;
-        
+
         /// <summary>
-        /// Comparer
+        /// StoreFunctions
         /// </summary>
-        protected readonly IFasterEqualityComparer<Key> comparer;
+        protected readonly StoreFunctions storeFunctions;
+
+        internal virtual bool IsVarLen => false;
 
         #region Protected size definitions
         /// <summary>
@@ -115,7 +116,7 @@ namespace FASTER.core
         internal long HeadOffsetLagAddress;
 
         /// <summary>
-        /// Number of <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions, StoreFunctions}"/> instances active.
+        /// Number of <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> instances active.
         /// </summary>
         internal long NumActiveLockingSessions = 0;
 
@@ -704,11 +705,11 @@ namespace FASTER.core
         /// Instantiate base allocator
         /// </summary>
         /// <param name="settings"></param>
-        /// <param name="comparer"></param>
+        /// <param name="storeFunctions"></param>
         /// <param name="evictCallback"></param>
         /// <param name="epoch"></param>
         /// <param name="flushCallback"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback)
+        public AllocatorBase(LogSettings settings, StoreFunctions storeFunctions, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback)
         {
             if (settings.LogDevice == null)
             {
@@ -726,7 +727,7 @@ namespace FASTER.core
             if (settings.LogDevice is NullDevice)
                 IsNullDevice = true;
 
-            this.comparer = comparer;
+            this.storeFunctions = storeFunctions;
             if (epoch == null)
             {
                 this.epoch = new LightEpoch();
@@ -1891,7 +1892,7 @@ namespace FASTER.core
                     if (RetrievedFullRecord(record, ref ctx))
                     {
                         // ReadAtAddress does not have a request key, so it is an implicit match.
-                        if (ctx.request_key is null || comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
+                        if (ctx.request_key is null || storeFunctions.KeyEquals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
                         {
                             // The keys are same, so I/O is complete
                             // ctx.record = result.record;

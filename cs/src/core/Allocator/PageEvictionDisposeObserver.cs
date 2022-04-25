@@ -11,7 +11,7 @@ namespace FASTER.core
         private readonly StoreFunctions storeFunctions;
 
         /// <summary>
-        /// Class to call <see cref="IStoreFunctions{Key, Value}.Dispose(ref Key, ref Value, DisposeReason)"/> on page evictions.
+        /// Class to call <see cref="IRecordDisposer{Key, Value}.DisposeRecord(ref Key, ref Value, DisposeReason)"/> on page evictions.
         /// </summary>
         /// <param name="storeFunctions">FASTER store functions</param>
         public PageEvictionDisposeObserver(StoreFunctions storeFunctions) => this.storeFunctions = storeFunctions;
@@ -23,7 +23,7 @@ namespace FASTER.core
         public void OnNext(IFasterScanIterator<Key, Value> iter)
         {
             while (iter.GetNext(out RecordInfo info, out Key key, out Value value))
-                storeFunctions.Dispose(ref key, ref value, DisposeReason.PageEviction);
+                storeFunctions.DisposeRecord(ref key, ref value, DisposeReason.PageEviction);
         }
 
         /// <summary>

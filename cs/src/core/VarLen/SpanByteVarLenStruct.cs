@@ -10,6 +10,9 @@ namespace FASTER.core
     /// </summary>
     public struct SpanByteVarLenStruct : IVariableLengthStruct<SpanByte>
     {
+        /// <inheritdoc/>
+        public bool IsVariableLength => true;
+
         /// <inheritdoc />
         public int GetInitialLength() => sizeof(int);
 
@@ -31,6 +34,12 @@ namespace FASTER.core
     /// </summary>
     public struct SpanByteVarLenStructForSpanByteInput : IVariableLengthStruct<SpanByte, SpanByte>
     {
+        /// <inheritdoc/>
+        public bool IsVariableLength => true;
+
+        /// <inheritdoc />
+        public int GetInitialLength() => sizeof(int);
+
         /// <inheritdoc />
         public int GetInitialLength(ref SpanByte input) => sizeof(int) + input.Length;
 
@@ -40,5 +49,19 @@ namespace FASTER.core
         /// </summary>
         public int GetLength(ref SpanByte t, ref SpanByte input)
             => sizeof(int) + (t.Length > input.Length ? t.Length : input.Length);
+
+        /// <summary>
+        /// Length of given input.
+        /// </summary>
+        public int GetLength(ref SpanByte input) => input.TotalSize;
+
+        /// <inheritdoc />
+        public unsafe void Serialize(ref SpanByte source, void* destination) => source.CopyTo((byte*)destination);
+
+        /// <inheritdoc />
+        public unsafe ref SpanByte AsRef(void* source) => ref Unsafe.AsRef<SpanByte>(source);
+
+        /// <inheritdoc />
+        public unsafe void Initialize(void* source, void* dest) { *(int*)source = (int)((byte*)dest - (byte*)source) - sizeof(int); }
     }
 }

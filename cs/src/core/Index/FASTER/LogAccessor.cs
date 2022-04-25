@@ -9,21 +9,19 @@ namespace FASTER.core
     /// <summary>
     /// Wrapper to process log-related commands
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="StoreFunctions"></typeparam>
-    public sealed class LogAccessor<Key, Value, StoreFunctions> : IObservable<IFasterScanIterator<Key, Value>>
+    public sealed class LogAccessor<Key, Value, StoreFunctions, Allocator> : IObservable<IFasterScanIterator<Key, Value>>
         where StoreFunctions : IStoreFunctions<Key, Value>
+        where Allocator : AllocatorBase<Key, Value, StoreFunctions>
     {
-        private readonly FasterKV<Key, Value, StoreFunctions> fht;
-        private readonly AllocatorBase<Key, Value> allocator;
+        private readonly FasterKV<Key, Value, StoreFunctions, Allocator> fht;
+        private readonly Allocator allocator;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="fht"></param>
         /// <param name="allocator"></param>
-        public LogAccessor(FasterKV<Key, Value, StoreFunctions> fht, AllocatorBase<Key, Value> allocator)
+        public LogAccessor(FasterKV<Key, Value, StoreFunctions, Allocator> fht, Allocator allocator)
         {
             this.fht = fht;
             this.allocator = allocator;
@@ -200,10 +198,10 @@ namespace FASTER.core
         /// </summary>
         class LogSubscribeDisposable : IDisposable
         {
-            private readonly AllocatorBase<Key, Value> allocator;
+            private readonly Allocator allocator;
             private readonly bool readOnly;
 
-            public LogSubscribeDisposable(AllocatorBase<Key, Value> allocator, bool readOnly)
+            public LogSubscribeDisposable(Allocator allocator, bool readOnly)
             {
                 this.allocator = allocator;
                 this.readOnly = readOnly;
@@ -300,12 +298,11 @@ namespace FASTER.core
         /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<Input, Output, Context, Functions>(Functions functions, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
+        public long Compact<Input, Output, Context, Functions>(Functions functions, long untilAddress, CompactionType compactionType)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            return Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, compactionType, sessionVariableLengthStructSettings);
+            return Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, compactionType);
         }
 
         /// <summary>
@@ -317,11 +314,10 @@ namespace FASTER.core
         /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<Input, Output, Context, Functions>(Functions functions, ref Input input, ref Output output, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
+        public long Compact<Input, Output, Context, Functions>(Functions functions, ref Input input, ref Output output, long untilAddress, CompactionType compactionType)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
-            => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, ref input, ref output, untilAddress, compactionType, sessionVariableLengthStructSettings);
+            => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, ref input, ref output, untilAddress, compactionType);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
@@ -331,15 +327,14 @@ namespace FASTER.core
         /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>)</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
+        public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, CompactionType compactionType)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             Input input = default;
             Output output = default;
-            return Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType, sessionVariableLengthStructSettings);
+            return Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
         }
 
         /// <summary>
@@ -352,11 +347,10 @@ namespace FASTER.core
         /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
+        public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, CompactionType compactionType)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
-            => fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType, sessionVariableLengthStructSettings);
+            => fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
     }
 }

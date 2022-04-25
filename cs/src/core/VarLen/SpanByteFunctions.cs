@@ -8,8 +8,11 @@ namespace FASTER.core
     /// <summary>
     /// Callback functions for SpanByte key, value
     /// </summary>
-    public class SpanByteFunctions<Key, Output, Context> : FunctionsBase<Key, SpanByte, SpanByte, Output, Context>
+    public class SpanByteFunctions<Key, Output, Context> : FunctionsBase<Key, SpanByte, SpanByte, Output, Context, SpanByteVarLenStructForSpanByteInput>
     {
+        /// <summary>Constructor</summary>
+        public SpanByteFunctions() : base(new SpanByteVarLenStructForSpanByteInput()) { }
+
         /// <inheritdoc />
         public override bool SingleWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
@@ -71,7 +74,7 @@ namespace FASTER.core
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
-        public SpanByteFunctions(MemoryPool<byte> memoryPool = default)
+        public SpanByteFunctions(MemoryPool<byte> memoryPool = default) 
         {
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }

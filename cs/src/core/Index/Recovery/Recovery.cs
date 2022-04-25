@@ -124,7 +124,7 @@ namespace FASTER.core
         internal long tailAddress;
         internal bool undoNextVersion;
 
-        internal bool clearLocks => this.headAddress != Constants.kInvalidAddress;
+        internal bool ClearLocks => this.headAddress != Constants.kInvalidAddress;
 
         internal RecoveryOptions(bool clearLocks, long headAddress, long tailAddress, bool undoNextVer)
         {
@@ -134,7 +134,7 @@ namespace FASTER.core
         }
     }
 
-    public partial class FasterKV<Key, Value, StoreFunctions>
+    public partial class FasterKV<Key, Value, StoreFunctions, Allocator>
     {
         private void FindRecoveryInfo(long requestedVersion, out HybridLogCheckpointInfo recoveredHlcInfo,
             out IndexCheckpointInfo recoveredICInfo)
@@ -560,7 +560,7 @@ namespace FASTER.core
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
             var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
 
-            if (options.clearLocks)
+            if (options.ClearLocks)
             {
                 if (options.headAddress >= endLogicalAddress)
                     return false;
@@ -570,7 +570,7 @@ namespace FASTER.core
 
             var pageFromAddress = 0L;
             var pageUntilAddress = hlog.GetPageSize();
-            if (options.clearLocks)
+            if (options.ClearLocks)
             {
                 if (options.headAddress > startLogicalAddress)
                     pageFromAddress = hlog.GetOffsetInPage(options.headAddress);
@@ -588,7 +588,7 @@ namespace FASTER.core
             }
 
             var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
-            if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options.undoNextVersion, options.clearLocks))
+            if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options.undoNextVersion, options.ClearLocks))
             {
                 // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -695,7 +695,7 @@ namespace FASTER.core
 
                 var endLogicalAddress = hlog.GetStartLogicalAddress(p + 1);
                 if ((recoverFromAddress < endLogicalAddress && recoverFromAddress < untilAddress)
-                        || (options.clearLocks && options.headAddress < endLogicalAddress))
+                        || (options.ClearLocks && options.headAddress < endLogicalAddress))
                     ProcessReadSnapshotPage(scanFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
 
                 // Issue next read
@@ -751,7 +751,7 @@ namespace FASTER.core
             var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
 
             // Perform recovery if page in fuzzy portion of the log or clearing locks
-            if ((fromAddress < endLogicalAddress && fromAddress < untilAddress) || (options.clearLocks && options.headAddress < endLogicalAddress))
+            if ((fromAddress < endLogicalAddress && fromAddress < untilAddress) || (options.ClearLocks && options.headAddress < endLogicalAddress))
             {
                 /*
                  * Handling corner-cases:
@@ -765,7 +765,7 @@ namespace FASTER.core
 
                 var pageFromAddress = 0L;
                 var pageUntilAddress = hlog.GetPageSize();
-                if (options.clearLocks)
+                if (options.ClearLocks)
                 {
                     if (options.headAddress > startLogicalAddress && options.headAddress < endLogicalAddress)
                         pageFromAddress = hlog.GetOffsetInPage(options.headAddress);
@@ -782,7 +782,7 @@ namespace FASTER.core
 
                 var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
                 RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
-                                startLogicalAddress, physicalAddress, nextVersion, options.undoNextVersion, options.clearLocks);
+                                startLogicalAddress, physicalAddress, nextVersion, options.undoNextVersion, options.ClearLocks);
             }
 
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
@@ -922,7 +922,8 @@ namespace FASTER.core
         }
     }
 
-    public abstract partial class AllocatorBase<Key, Value> : IDisposable
+    public abstract partial class AllocatorBase<Key, Value, StoreFunctions> : IDisposable
+        where StoreFunctions : IStoreFunctions<Key, Value>
     {
         /// <summary>
         /// Restore log

@@ -3,29 +3,36 @@
 
 using System;
 using System.Runtime.CompilerServices;
-namespace FASTER.core
 
+namespace FASTER.core
 {
     /// <summary>
     /// The interface to define functions on the FasterKV store itself (rather than a session).
     /// </summary>
-    public interface IStoreFunctions<Key, Value>
+    public interface IStoreFunctions<Key, Value> : IRecordDisposer<Key, Value>
     {
-        #region Dispose
+        #region Key Comparison
         /// <summary>
-        /// If true, <see cref="Dispose(ref Key, ref Value, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
-        /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and
-        /// do any needed disposal there.
+        /// Get 64-bit hash code per <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/>
         /// </summary>
-        public bool DisposeOnPageEviction { get; }
+        /// <remarks>A default implementation may be available via <see cref="FasterEqualityComparer.Get{Key}"/></remarks>
+        long GetKeyHashCode64(ref Key key);
 
         /// <summary>
-        /// Dispose the Key and Value of a record, if necessary.
+        /// Equality comparison per <see cref="IFasterEqualityComparer{Key}.Equals(ref Key, ref Key)"/>
         /// </summary>
-        void Dispose(ref Key key, ref Value value, DisposeReason reason);
-        #endregion Dispose
+        /// <param name="key1">Left side</param>
+        /// <param name="key2">Right side</param>
+        /// <remarks>A default implementation may be available via <see cref="FasterEqualityComparer.Get{Key}"/></remarks>
+        bool KeyEquals(ref Key key1, ref Key key2);
+        #endregion Key Comparison
 
         #region Input-independent Variable length Keys
+        /// <summary>
+        /// Indicates whether the Key is a variable-length struct
+        /// </summary>
+        bool IsVariableLengthKey { get; }
+
         /// <summary>
         /// Actual length of given key, when serialized on log
         /// </summary>
@@ -73,6 +80,11 @@ namespace FASTER.core
 
         #region Input-independent Variable length Values
         /// <summary>
+        /// Indicates whether the Value is a variable-length struct
+        /// </summary>
+        bool IsVariableLengthValue { get; }
+
+        /// <summary>
         /// Actual length of given value, when serialized on log
         /// </summary>
         /// <returns></returns>
@@ -115,22 +127,6 @@ namespace FASTER.core
 #else
             ;
 #endif
-        #endregion Input-independent Variable length Values
-
-        #region Key Comparison
-        /// <summary>
-        /// Get 64-bit hash code
-        /// </summary>
-        /// <returns></returns>
-        long GetKeyHashCode64(ref Key key);
-
-        /// <summary>
-        /// Equality comparison
-        /// </summary>
-        /// <param name="key1">Left side</param>
-        /// <param name="key2">Right side</param>
-        /// <returns></returns>
-        bool KeyEquals(ref Key key1, ref Key key2);
-        #endregion Key Comparison
+#endregion Input-independent Variable length Values
     }
 }

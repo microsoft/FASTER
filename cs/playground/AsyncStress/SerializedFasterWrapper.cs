@@ -12,8 +12,8 @@ namespace AsyncStress
 {
     public partial class SerializedFasterWrapper<Key, Value> : IFasterWrapper<Key, Value>
     {
-        readonly FasterKV<SpanByte, SpanByte> _store;
-        readonly AsyncPool<ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions, DefaultStoreFunctions<SpanByte, SpanByte>>> _sessionPool;
+        readonly FasterKV<SpanByte, SpanByte, StoreFunctions_SpanByte_SpanByte, VariableLengthBlittableAllocator<SpanByte, SpanByte, StoreFunctions_SpanByte_SpanByte>> _store;
+        readonly AsyncPool<ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions, StoreFunctions_SpanByte_SpanByte, VariableLengthBlittableAllocator<SpanByte, SpanByte, StoreFunctions_SpanByte_SpanByte>>> _sessionPool;
         readonly UpsertUpdater upsertUpdater = new();
         readonly RmwUpdater rmwUpdater = new();
         readonly bool useOsReadBuffering;
@@ -48,8 +48,8 @@ namespace AsyncStress
             Console.WriteLine($"    SerializedFasterWrapper using {fkvSettings.LogDevice.GetType()} and {(useLargeLog ? "large" : "small")} memory log");
 
             this.useOsReadBuffering = useOsReadBuffering;
-            _store = new FasterKV<SpanByte, SpanByte>(fkvSettings);
-            _sessionPool = new AsyncPool<ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions, DefaultStoreFunctions<SpanByte, SpanByte>>>(
+            _store = new(fkvSettings);
+            _sessionPool = new(
                     fkvSettings.LogDevice.ThrottleLimit,
                     () => _store.For(new SpanByteFunctions()).NewSession<SpanByteFunctions>());
         }

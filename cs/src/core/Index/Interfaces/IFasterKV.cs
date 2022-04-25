@@ -10,8 +10,9 @@ namespace FASTER.core
     /// <summary>
     /// Interface to FASTER key-value store
     /// </summary>
-    public interface IFasterKV<Key, Value, StoreFunctions> : IDisposable
+    public interface IFasterKV<Key, Value, StoreFunctions, Allocator> : IDisposable
         where StoreFunctions : IStoreFunctions<Key, Value>
+        where Allocator : AllocatorBase<Key, Value, StoreFunctions>
     {
         #region New Session Operations
 
@@ -21,11 +22,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="functions">Callback functions.</param>
         /// <param name="sessionName">Name of session (optional)</param>
-        /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
         /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
-        ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>, StoreFunctions> NewSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions,
-                string sessionName = null, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default);
+        ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>, StoreFunctions, Allocator> NewSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions,
+                string sessionName = null, ReadFlags readFlags = ReadFlags.Default);
 
         /// <summary>
         /// Resume (continue) prior client session with FASTER, used during recovery from failure.
@@ -33,11 +33,10 @@ namespace FASTER.core
         /// <param name="functions">Callback functions.</param>
         /// <param name="sessionName">Name of previous session to resume</param>
         /// <param name="commitPoint">Prior commit point of durability for session</param>
-        /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
         /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
-        ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>, StoreFunctions> ResumeSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions,
-                string sessionName, out CommitPoint commitPoint, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default);
+        ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>, StoreFunctions, Allocator> ResumeSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions,
+                string sessionName, out CommitPoint commitPoint, ReadFlags readFlags = ReadFlags.Default);
 
         /// <summary>
         /// Resume (continue) prior client session with FASTER; used during recovery from failure.
@@ -45,11 +44,10 @@ namespace FASTER.core
         /// <param name="functions">Callback functions</param>
         /// <param name="sessionID">ID of previous session to resume</param>
         /// <param name="commitPoint">Prior commit point of durability for session</param>
-        /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
         /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
-        public ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>, StoreFunctions> ResumeSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions, int sessionID,
-                out CommitPoint commitPoint, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default);
+        public ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>, StoreFunctions, Allocator> ResumeSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions, int sessionID,
+                out CommitPoint commitPoint, ReadFlags readFlags = ReadFlags.Default);
         #endregion
 
         #region Growth and Recovery
@@ -234,12 +232,12 @@ namespace FASTER.core
         /// <summary>
         /// Get accessor for FASTER hybrid log
         /// </summary>
-        LogAccessor<Key, Value, StoreFunctions> Log { get; }
+        LogAccessor<Key, Value, StoreFunctions, Allocator> Log { get; }
 
         /// <summary>
         /// Get accessor for FASTER read cache
         /// </summary>
-        LogAccessor<Key, Value, StoreFunctions> ReadCache { get; }
+        LogAccessor<Key, Value, StoreFunctions, Allocator> ReadCache { get; }
 
         #endregion
     }

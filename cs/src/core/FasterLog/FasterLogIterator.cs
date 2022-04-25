@@ -12,6 +12,8 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    using StoreFunctions = DefaultStoreFunctions<Empty, byte>;
+
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
@@ -19,7 +21,7 @@ namespace FASTER.core
     {
         private readonly string name;
         private readonly FasterLog fasterLog;
-        private readonly BlittableAllocator<Empty, byte> allocator;
+        private readonly BlittableAllocator<Empty, byte, StoreFunctions> allocator;
         private readonly BlittableFrame frame;
         private readonly GetMemory getMemory;
         private readonly int headerSize;
@@ -51,7 +53,7 @@ namespace FASTER.core
         /// <param name="name"></param>
         /// <param name="getMemory"></param>
         /// <param name="scanUncommitted"></param>
-        internal unsafe FasterLogScanIterator(FasterLog fasterLog, BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false)
+        internal unsafe FasterLogScanIterator(FasterLog fasterLog, BlittableAllocator<Empty, byte, StoreFunctions> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits)
         {
             this.fasterLog = fasterLog;

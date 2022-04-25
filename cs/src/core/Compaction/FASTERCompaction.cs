@@ -5,7 +5,7 @@ namespace FASTER.core
     /// <summary>
     /// Compaction methods
     /// </summary>
-    public partial class FasterKV<Key, Value, StoreFunctions>
+    public partial class FasterKV<Key, Value, StoreFunctions, Allocator>
     {
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
@@ -17,21 +17,20 @@ namespace FASTER.core
         /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
         /// <returns>Address until which compaction was done</returns>
-        internal long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
+        internal long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, CompactionType compactionType)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             return compactionType switch
             {
-                CompactionType.Scan => CompactScan<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, sessionVariableLengthStructSettings),
-                CompactionType.Lookup => CompactLookup<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, sessionVariableLengthStructSettings),
+                CompactionType.Scan => CompactScan<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress),
+                CompactionType.Lookup => CompactLookup<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress),
                 _ => throw new FasterException("Invalid compaction type"),
             };
         }
 
-        private long CompactLookup<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings)
+        private long CompactLookup<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
@@ -39,7 +38,7 @@ namespace FASTER.core
                 throw new FasterException("Can compact only until Log.SafeReadOnlyAddress");
 
             var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
-            using var fhtSession = For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>(sessionVariableLengthStructSettings: sessionVariableLengthStructSettings);
+            using var fhtSession = For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>();
 
             using (var iter1 = Log.Scan(Log.BeginAddress, untilAddress))
             {
@@ -96,7 +95,7 @@ namespace FASTER.core
             return untilAddress;
         }
 
-        private long CompactScan<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings)
+        private long CompactScan<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
@@ -106,10 +105,10 @@ namespace FASTER.core
             var originalUntilAddress = untilAddress;
 
             var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
-            using var fhtSession = For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>(sessionVariableLengthStructSettings: sessionVariableLengthStructSettings);
+            using var fhtSession = For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>();
 
             VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null;
-            if (hlog is VariableLengthBlittableAllocator<Key, Value> varLen)
+            if (hlog is VariableLengthBlittableAllocator<Key, Value, StoreFunctions> varLen)
             {
                 variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
                 {
@@ -128,7 +127,7 @@ namespace FASTER.core
                 ValueLength = variableLengthStructSettings?.valueLength
             };
 
-            using (var tempKv = new FasterKV<Key, Value, StoreFunctions>(fkvSettings, this.storeFunctions))
+            using (var tempKv = new FasterKV<Key, Value, StoreFunctions, Allocator>(fkvSettings, this.storeFunctions))
             using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
             {
                 using (var iter1 = Log.Scan(hlog.BeginAddress, untilAddress))

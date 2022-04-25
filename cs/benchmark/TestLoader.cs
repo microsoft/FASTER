@@ -7,7 +7,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -331,7 +330,9 @@ namespace FASTER.benchmark
 
         internal string BackupPath => $"{DataPath}/{this.Distribution}_{(this.Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(this.Options.UseSmallData ? "2.5M_10M" : "250M_1000M")}";
 
-        internal bool MaybeRecoverStore<K, V>(FasterKV<K, V> store)
+        internal bool MaybeRecoverStore<K, V, SF, Alloc>(FasterKV<K, V, SF, Alloc> store)
+            where SF : IStoreFunctions<K, V>
+            where Alloc: AllocatorBase<K, V, SF>
         {
             // Recover database for fast benchmark repeat runs.
             if (RecoverMode)
@@ -360,7 +361,9 @@ namespace FASTER.benchmark
             return false;
         }
 
-        internal void MaybeCheckpointStore<K, V>(FasterKV<K, V> store)
+        internal void MaybeCheckpointStore<K, V, SF, Alloc>(FasterKV<K, V, SF, Alloc> store)
+            where SF : IStoreFunctions<K, V>
+            where Alloc : AllocatorBase<K, V, SF>
         {
             // Checkpoint database for fast benchmark repeat runs.
             if (RecoverMode)

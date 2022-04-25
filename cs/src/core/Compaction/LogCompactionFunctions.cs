@@ -65,5 +65,15 @@ namespace FASTER.core
             => _functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
 
         public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+
+        public bool IsVariableLengthInput => _functions.IsVariableLengthInput;
+
+        public int GetInputLength(ref Input input) => _functions.GetInputLength(ref input);
+        public int GetInitialInputLength() => _functions.GetInitialInputLength();
+        public int GetInitialInputLength(ref Input input) => _functions.GetInitialInputLength(ref input);
+        public unsafe void SerializeInput(ref Input source, void* destination) => _functions.SerializeInput(ref source, destination);
+        public unsafe ref Input InputAsRef(void* source) => ref _functions.InputAsRef(source);
+        public unsafe void InitializeInput(void* source, void* end) => _functions.InitializeInput(source, end);
+        public int GetLength(ref Value value, ref Input input) => _functions.GetLength(ref value, ref input);
     }
 }

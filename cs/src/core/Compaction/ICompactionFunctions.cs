@@ -9,7 +9,7 @@
     {
         /// <summary>
         /// Checks if record in the faster log is logically deleted.
-        /// If the record was deleted via <see cref="ClientSession{Key, Value, Input, Output, Context, Functions, StoreFunctions}.Delete(ref Key, Context, long)"/>
+        /// If the record was deleted via <see cref="ClientSession{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}.Delete(ref Key, Context, long)"/>
         /// then this function is not called for such a record.
         /// </summary>
         /// <remarks>

@@ -8,8 +8,8 @@ namespace FASTER.core
     /// <summary>
     /// A list of <see cref="CompletedOutputIterator{TKey, TValue, TInput, TOutput, TContext}"/> for completed outputs from a pending operation.
     /// </summary>
-    /// <typeparam name="TKey">The Key type of the <see cref="FasterKV{Key, Value}"/></typeparam>
-    /// <typeparam name="TValue">The Value type of the <see cref="FasterKV{Key, Value}"/></typeparam>
+    /// <typeparam name="TKey">The Key type of the <see cref="FasterKV{Key, Value, StoreFunctions, Allocator}"/></typeparam>
+    /// <typeparam name="TValue">The Value type of the <see cref="FasterKV{Key, Value, StoreFunctions, Allocator}"/></typeparam>
     /// <typeparam name="TInput">The session input type</typeparam>
     /// <typeparam name="TOutput">The session output type</typeparam>
     /// <typeparam name="TContext">The session context type</typeparam>
@@ -24,8 +24,9 @@ namespace FASTER.core
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void Add<StoreFunctions>(ref FasterKV<TKey, TValue, StoreFunctions>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void Add<StoreFunctions, Allocator>(ref FasterKV<TKey, TValue, StoreFunctions, Allocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
             where StoreFunctions : IStoreFunctions<TKey, TValue>
+            where Allocator : AllocatorBase<TKey, TValue, StoreFunctions>
         {
             // Note: vector is never null
             if (this.maxIndex >= vector.Length - 1)
@@ -70,8 +71,8 @@ namespace FASTER.core
     /// <summary>
     /// Structure to hold a key and its output for a pending operation.
     /// </summary>
-    /// <typeparam name="TKey">The Key type of the <see cref="FasterKV{Key, Value}"/></typeparam>
-    /// <typeparam name="TValue">The Value type of the <see cref="FasterKV{Key, Value}"/></typeparam>
+    /// <typeparam name="TKey">The Key type of the <see cref="FasterKV{Key, Value, StoreFunctions, Allocator}"/></typeparam>
+    /// <typeparam name="TValue">The Value type of the <see cref="FasterKV{Key, Value, StoreFunctions, Allocator}"/></typeparam>
     /// <typeparam name="TInput">The session input type</typeparam>
     /// <typeparam name="TOutput">The session output type</typeparam>
     /// <typeparam name="TContext">The session context type</typeparam>
@@ -113,8 +114,9 @@ namespace FASTER.core
         /// </summary>
         public Status Status;
 
-        internal void Set<StoreFunctions>(ref FasterKV<TKey, TValue, StoreFunctions>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void Set<StoreFunctions, Allocator>(ref FasterKV<TKey, TValue, StoreFunctions, Allocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
             where StoreFunctions : IStoreFunctions<TKey, TValue>
+            where Allocator : AllocatorBase<TKey, TValue, StoreFunctions>
         {
             this.keyContainer = pendingContext.key;
             this.inputContainer = pendingContext.input;

@@ -10,7 +10,7 @@ namespace FASTER.core
 {
     internal unsafe delegate void SkipReadCache(HashBucket* bucket);
 
-    public partial class FasterKV<Key, Value, StoreFunctions>
+    public partial class FasterKV<Key, Value, StoreFunctions, Allocator>
     {
         // Derived class facing persistence API
         internal IndexCheckpointInfo _indexCheckpoint;

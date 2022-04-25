@@ -4,7 +4,7 @@
 namespace FASTER.core
 {
     /// <summary>
-    /// The reason for a call to <see cref="IStoreFunctions{Key, Value}.Dispose(ref Key, ref Value, DisposeReason)"/>
+    /// The reason for a call to <see cref="IRecordDisposer{Key, Value}.DisposeRecord(ref Key, ref Value, DisposeReason)"/>
     /// </summary>
     public enum DisposeReason
     {

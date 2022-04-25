@@ -12,6 +12,8 @@ using System.Threading;
 
 namespace FASTER.benchmark
 {
+    using Allocator = VariableLengthBlittableAllocator<SpanByte, SpanByte, StoreFunctions_SpanByte_SpanByte>;
+
     internal class FasterSpanByteYcsbBenchmark
     {
         // Ensure sizes are aligned to chunk sizes
@@ -29,7 +31,7 @@ namespace FASTER.benchmark
         readonly KeySpanByte[] txn_keys_;
 
         readonly IDevice device;
-        readonly FasterKV<SpanByte, SpanByte> store;
+        readonly FasterKV<SpanByte, SpanByte, StoreFunctions_SpanByte_SpanByte, Allocator> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
@@ -79,7 +81,7 @@ namespace FASTER.benchmark
             if (testLoader.Options.UseSmallMemoryLog)
                 fkvSettings = new()
                 {
-                    IndexSize = testLoader.MaxKey << 5,
+                    IndexSize = (long)testLoader.MaxKey << 5,
                     LogDevice = device,
                     PreallocateLog = true,
                     PageSize = 1L << 22,
@@ -91,14 +93,14 @@ namespace FASTER.benchmark
             else
                 fkvSettings = new ()
                 {
-                    IndexSize = testLoader.MaxKey << 5,
+                    IndexSize = (long)testLoader.MaxKey << 5,
                     LogDevice = device,
                     PreallocateLog = true,
                     MemorySize = 1L << 35,
                     CheckpointDir = testLoader.BackupPath, 
                     DisableLocking = testLoader.LockImpl != LockImpl.Ephemeral
                 };
-            store = new FasterKV<SpanByte, SpanByte>(fkvSettings);
+            store = fkvSettings.CreateKV();
         }
 
         internal void Dispose()

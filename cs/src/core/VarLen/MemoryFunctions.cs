@@ -1,13 +1,16 @@
-﻿
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using System;
 using System.Buffers;
 
 namespace FASTER.core
 {
     /// <summary>
-    /// IFunctions base implementation for Memory&lt;T&gt; values, for blittable (unmanaged) type T
+    /// IFunctions base implementation for Memory{T} values, for blittable (unmanaged) type T 
     /// </summary>
-    public class MemoryFunctions<Key, T, Context> : FunctionsBase<Key, Memory<T>, Memory<T>, (IMemoryOwner<T>, int), Context>
+    /// <remarks>Can also use <see cref="ReadOnlyMemory{T}"/> for Input, with <see cref="MemoryVarLenStructForReadOnlyMemoryInput{ThisAssembly}"/> for the SessionVarLen type</remarks>
+    public class MemoryFunctions<Key, T, Context> : FunctionsBase<Key, Memory<T>, Memory<T>, (IMemoryOwner<T>, int), Context, MemoryVarLenStructForMemoryInput<T>>
         where T : unmanaged
     {
         readonly MemoryPool<T> memoryPool;
@@ -16,7 +19,7 @@ namespace FASTER.core
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
-        public MemoryFunctions(MemoryPool<T> memoryPool = default)
+        public MemoryFunctions(MemoryPool<T> memoryPool = default) : base(new MemoryVarLenStructForMemoryInput<T>())
         {
             this.memoryPool = memoryPool ?? MemoryPool<T>.Shared;
         }

@@ -10,11 +10,25 @@ namespace FASTER.core
     /// <summary>
     /// Default empty functions base class to make it easy for users to provide their own implementation of IFunctions
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="Input"></typeparam>
-    /// <typeparam name="Output"></typeparam>
-    /// <typeparam name="Context"></typeparam>
+    public abstract class FunctionsBase<Key, Value, Input, Output, Context, SessionVarLen> : FunctionsBase<Key, Value, Input, Output, Context>
+        where SessionVarLen : IVariableLengthStruct<Value, Input>
+    {
+        private readonly SessionVarLen sessionVarLen;
+
+        public FunctionsBase(SessionVarLen sessionVarLen) => this.sessionVarLen = sessionVarLen;
+
+        public override bool IsVariableLengthInput => sessionVarLen.IsVariableLength;
+        public override int GetInitialInputLength() => sessionVarLen.GetInitialLength();
+        public override int GetInitialInputLength(ref Input input) => sessionVarLen.GetInitialLength(ref input);
+        public override unsafe void SerializeInput(ref Input source, void* destination) => sessionVarLen.Serialize(ref source, destination);
+        public override unsafe ref Input InputAsRef(void* source) => ref sessionVarLen.AsRef(source);
+        public override unsafe void InitializeInput(void* source, void* end) => sessionVarLen.Initialize(source, end);
+        public override int GetLength(ref Value value, ref Input input) => sessionVarLen.GetLength(ref value, ref input);
+    }
+
+    /// <summary>
+    /// Default empty functions base class to make it easy for users to provide their own implementation of IFunctions
+    /// </summary>
     public abstract class FunctionsBase<Key, Value, Input, Output, Context> : IFunctions<Key, Value, Input, Output, Context>
     {
         /// <inheritdoc/>
@@ -55,6 +69,15 @@ namespace FASTER.core
         public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>
         public virtual void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint) { }
+
+        public virtual bool IsVariableLengthInput => false;
+        public virtual int GetInputLength(ref Input input) => throw new NotImplementedException();
+        public virtual int GetInitialInputLength() => throw new NotImplementedException();
+        public virtual int GetInitialInputLength(ref Input input) => throw new NotImplementedException();
+        public virtual unsafe void SerializeInput(ref Input source, void* destination) => throw new NotImplementedException();
+        public virtual unsafe ref Input InputAsRef(void* source) => throw new NotImplementedException();
+        public virtual unsafe void InitializeInput(void* source, void* end) => throw new NotImplementedException();
+        public virtual int GetLength(ref Value value, ref Input input) => throw new NotImplementedException();
     }
 
     /// <summary>

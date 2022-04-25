@@ -21,7 +21,7 @@ namespace FASTER.core
     {
         private Exception cannedException = null;
         
-        readonly BlittableAllocator<Empty, byte> allocator;
+        readonly BlittableAllocator<Empty, byte, DefaultStoreFunctions<Empty, byte>> allocator;
         readonly LightEpoch epoch;
         readonly ILogCommitManager logCommitManager;
         readonly bool disposeLogCommitManager;
@@ -156,8 +156,8 @@ namespace FASTER.core
             CommittedBeginAddress = Constants.kFirstValidAddress;
             SafeTailAddress = Constants.kFirstValidAddress;
             commitQueue = new WorkQueueLIFO<CommitInfo>(ci => SerialCommitCallbackWorker(ci));
-            allocator = new BlittableAllocator<Empty, byte>(
-                logSettings.GetLogSettings(), null,
+            allocator = new(
+                logSettings.GetLogSettings(), DefaultStoreFunctions<Empty, byte>.Default,
                 null, epoch, CommitCallback);
             allocator.Initialize();
             beginAddress = allocator.BeginAddress;

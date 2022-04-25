@@ -9,10 +9,7 @@ namespace FASTER.core
     /// <summary>
     /// The FASTER key-value store
     /// </summary>
-    /// <typeparam name="Key">Key</typeparam>
-    /// <typeparam name="Value">Value</typeparam>
-    /// <typeparam name="StoreFunctions"></typeparam>
-    public partial class FasterKV<Key, Value, StoreFunctions>
+    public partial class FasterKV<Key, Value, StoreFunctions, Allocator>
     {
         /// <summary>
         /// Check if at least one (sync) request is ready for CompletePending to operate on
@@ -31,7 +28,7 @@ namespace FASTER.core
         /// Async operations (e.g., ReadAsync) need to be completed individually
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompletePendingAsync<Input, Output, Context, Allocator, FasterSession>(FasterSession fasterSession,
+        internal async ValueTask CompletePendingAsync<Input, Output, Context, FasterSession>(FasterSession fasterSession,
                                       FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token,
                                       CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context, Allocator>
@@ -41,8 +38,8 @@ namespace FASTER.core
                 fasterSession.UnsafeResumeThread();
                 try
                 {
-                    InternalCompletePendingRequests<Input, Output, Context, Allocator, FasterSession>(currentCtx, currentCtx, fasterSession, completedOutputs);
-                    InternalCompleteRetryRequests<Input, Output, Context, Allocator, FasterSession>(currentCtx, currentCtx, fasterSession);
+                    InternalCompletePendingRequests<Input, Output, Context, FasterSession>(currentCtx, currentCtx, fasterSession, completedOutputs);
+                    InternalCompleteRetryRequests<Input, Output, Context, FasterSession>(currentCtx, currentCtx, fasterSession);
                 }
                 finally
                 {

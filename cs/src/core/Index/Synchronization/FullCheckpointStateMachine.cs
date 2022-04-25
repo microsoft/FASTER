@@ -15,10 +15,11 @@ namespace FASTER.core
     internal sealed class FullCheckpointOrchestrationTask : ISynchronizationTask
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value, StoreFunctions>(
+        public void GlobalBeforeEnteringState<Key, Value, StoreFunctions, Allocator>(
             SystemState next,
-            FasterKV<Key, Value, StoreFunctions> faster)
+            FasterKV<Key, Value, StoreFunctions, Allocator> faster)
             where StoreFunctions : IStoreFunctions<Key, Value>
+            where Allocator : AllocatorBase<Key, Value, StoreFunctions>
         {
             switch (next.Phase)
             {
@@ -43,24 +44,26 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value, StoreFunctions>(
+        public void GlobalAfterEnteringState<Key, Value, StoreFunctions, Allocator>(
             SystemState next,
-            FasterKV<Key, Value, StoreFunctions> faster)
+            FasterKV<Key, Value, StoreFunctions, Allocator> faster)
             where StoreFunctions : IStoreFunctions<Key, Value>
+            where Allocator : AllocatorBase<Key, Value, StoreFunctions>
         {
         }
 
         /// <inheritdoc />
-        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession, StoreFunctions>(
+        public void OnThreadState<Key, Value, Input, Output, Context, FasterSession, StoreFunctions, Allocator>(
             SystemState current,
             SystemState prev,
-            FasterKV<Key, Value, StoreFunctions> faster,
-            FasterKV<Key, Value, StoreFunctions>.FasterExecutionContext<Input, Output, Context> ctx,
+            FasterKV<Key, Value, StoreFunctions, Allocator> faster,
+            FasterKV<Key, Value, StoreFunctions, Allocator>.FasterExecutionContext<Input, Output, Context> ctx,
             FasterSession fasterSession,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
             where FasterSession : IFasterSession
             where StoreFunctions : IStoreFunctions<Key, Value>
+            where Allocator : AllocatorBase<Key, Value, StoreFunctions>
         {
         }
     }

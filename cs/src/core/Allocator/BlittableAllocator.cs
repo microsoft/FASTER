@@ -4,13 +4,16 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
+#if !NET5_0_OR_GREATER
 using System.Runtime.InteropServices;
+#endif
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 namespace FASTER.core
 {
-    public unsafe sealed class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
+    public unsafe sealed class BlittableAllocator<Key, Value, StoreFunctions> : AllocatorBase<Key, Value, StoreFunctions>
+        where StoreFunctions : IStoreFunctions<Key, Value>
     {
         // Circular buffer definition
         private readonly byte[][] values;
@@ -29,8 +32,8 @@ namespace FASTER.core
 
         private readonly OverflowPool<PageUnit> overflowPagePool;
         
-        public BlittableAllocator(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
-            : base(settings, comparer, evictCallback, epoch, flushCallback)
+        public BlittableAllocator(LogSettings settings, StoreFunctions storeFunctions, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
+            : base(settings, storeFunctions, evictCallback, epoch, flushCallback)
         {
             overflowPagePool = new OverflowPool<PageUnit>(4, p =>
 #if NET5_0_OR_GREATER
@@ -362,13 +365,13 @@ namespace FASTER.core
         /// <returns></returns>
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
-            return new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
+            return new BlittableScanIterator<Key, Value, StoreFunctions>(this, beginAddress, endAddress, scanBufferingMode, epoch);
         }
 
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
-            using var iter = new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
+            using var iter = new BlittableScanIterator<Key, Value, StoreFunctions>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
             observer?.OnNext(iter);
         }
 

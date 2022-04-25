@@ -10,9 +10,10 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class VariableLengthBlittableScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>
+    public sealed class VariableLengthBlittableScanIterator<Key, Value, StoreFunctions> : ScanIteratorBase, IFasterScanIterator<Key, Value>
+        where StoreFunctions : IStoreFunctions<Key, Value>
     {
-        private readonly VariableLengthBlittableAllocator<Key, Value> hlog;
+        private readonly VariableLengthBlittableAllocator<Key, Value, StoreFunctions> hlog;
         private readonly BlittableFrame frame;
 
         private SectorAlignedMemory memory;
@@ -29,7 +30,7 @@ namespace FASTER.core
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
-        public VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false)
+        public VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value, StoreFunctions> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits)
         {
             this.hlog = hlog;

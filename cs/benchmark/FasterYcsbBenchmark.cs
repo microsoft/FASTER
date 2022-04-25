@@ -12,6 +12,9 @@ using System.Threading;
 
 namespace FASTER.benchmark
 {
+    using YcsbStoreFunctions = StoreFunctions<Key, Value, Key, DefaultRecordDisposer<Key, Value>, DefaultVariableLengthStruct<Key>, DefaultVariableLengthStruct<Value>>;
+    using YcsbAllocator = BlittableAllocator<Key, Value, StoreFunctions<Key, Value, Key, DefaultRecordDisposer<Key, Value>, DefaultVariableLengthStruct<Key>, DefaultVariableLengthStruct<Value>>>;
+
     internal class FASTER_YcsbBenchmark
     {
         // Ensure sizes are aligned to chunk sizes
@@ -29,7 +32,7 @@ namespace FASTER.benchmark
         readonly Key[] txn_keys_;
 
         readonly IDevice device;
-        readonly FasterKV<Key, Value> store;
+        readonly FasterKV<Key, Value, YcsbStoreFunctions, YcsbAllocator> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
@@ -79,7 +82,7 @@ namespace FASTER.benchmark
             if (testLoader.Options.UseSmallMemoryLog)
                 fkvSettings = new()
                 {
-                    IndexSize = testLoader.MaxKey << 4,
+                    IndexSize = (long)testLoader.MaxKey << 4,
                     LogDevice = device,
                     PreallocateLog = true,
                     PageSize = 1L << 25,
@@ -91,13 +94,13 @@ namespace FASTER.benchmark
             else
                 fkvSettings = new()
                 {
-                    IndexSize = testLoader.MaxKey << 5,
+                    IndexSize = (long)testLoader.MaxKey << 5,
                     LogDevice = device,
                     PreallocateLog = true,
                     CheckpointDir = testLoader.BackupPath,
                     DisableLocking = testLoader.LockImpl != LockImpl.Ephemeral
                 };
-            store = new FasterKV<Key, Value>(fkvSettings);
+            store = fkvSettings.CreateKV(new Key());
         }
 
         internal void Dispose()
@@ -326,8 +329,8 @@ namespace FASTER.benchmark
             dash.Start();
 #endif
 
-            ClientSession<Key, Value, Input, Output, Empty, Functions, DefaultStoreFunctions<Key, Value>> session = default;
-            LockableUnsafeContext<Key, Value, Input, Output, Empty, Functions, DefaultStoreFunctions<Key, Value>> luContext = default;
+            ClientSession<Key, Value, Input, Output, Empty, Functions, YcsbStoreFunctions, YcsbAllocator> session = default;
+            LockableUnsafeContext<Key, Value, Input, Output, Empty, Functions, YcsbStoreFunctions, YcsbAllocator> luContext = default;
 
             (Key key, LockType kind) xlock = (new Key { value = long.MaxValue }, LockType.Exclusive);
             (Key key, LockType kind) slock = (new Key { value = long.MaxValue - 1 }, LockType.Shared);

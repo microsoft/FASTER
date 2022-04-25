@@ -1,14 +1,19 @@
-﻿
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using System;
 using System.Runtime.InteropServices;
 
 namespace FASTER.core
 {
     /// <summary>
-    /// IVariableLengthStruct implementation for Memory&lt;T&gt; where T is unmanaged
+    /// IVariableLengthStruct implementation for Memory{T} where T is unmanaged
     /// </summary>
     public class MemoryVarLenStruct<T> : IVariableLengthStruct<Memory<T>> where T : unmanaged
     {
+        /// <inheritdoc/>
+        public bool IsVariableLength => true;
+
         ///<inheritdoc/>
         public int GetInitialLength() => sizeof(int);
 
@@ -53,31 +58,21 @@ namespace FASTER.core
     }
 
     /// <summary>
-    /// Input-specific IVariableLengthStruct implementation for Memory&lt;T&gt; where T is unmanaged, for Memory&lt;T&gt; as input
+    /// Input-specific IVariableLengthStruct implementation for Memory{T} where T is unmanaged, for Memory{T} as input
     /// </summary>
-    public class MemoryVarLenStructForMemoryInput<T> : IVariableLengthStruct<Memory<T>, Memory<T>> where T : unmanaged
+    public class MemoryVarLenStructForMemoryInput<T> : MemoryVarLenStruct<T>, IVariableLengthStruct<Memory<T>, Memory<T>> where T : unmanaged
     {
+        /// <inheritdoc/>
+        public bool IsVariableLengthInput => true;
+
         /// <inheritdoc/>
         public unsafe int GetInitialLength(ref Memory<T> input) => sizeof(int) + input.Length * sizeof(T);
 
         /// <inheritdoc/>
-        public unsafe int GetLength(ref Memory<T> t, ref Memory<T> input)
-            => sizeof(int) + (input.Length > t.Length ? input.Length : t.Length) * sizeof(T);
-    }
+        public unsafe int GetLength(ref Memory<T> value, ref Memory<T> input)
+            => sizeof(int) + (input.Length > value.Length ? input.Length : value.Length) * sizeof(T);
 
-    /// <summary>
-    /// Input-specific IVariableLengthStruct implementation for Memory&lt;T&gt; where T is unmanaged, for Memory&lt;T&gt; as input
-    /// </summary>
-    public class MemoryVarLenStructForReadOnlyMemoryInput<T> : IVariableLengthStruct<Memory<T>, ReadOnlyMemory<T>> where T : unmanaged
-    {
         /// <inheritdoc/>
-        public unsafe int GetInitialLength(ref ReadOnlyMemory<T> input) => sizeof(int) + input.Length * sizeof(T);
-
-        /// <summary>
-        /// Length of resulting object when doing RMW with given value and input. Here we set the length
-        /// to the max of input and old value lengths. You can provide a custom implementation for other cases.
-        /// </summary>
-        public unsafe int GetLength(ref Memory<T> t, ref ReadOnlyMemory<T> input)
-            => sizeof(int) + (input.Length > t.Length ? input.Length : t.Length) * sizeof(T);
+        public unsafe int GetInputLength(ref Memory<T> input) => sizeof(int) + input.Length * sizeof(T);
     }
 }

@@ -15,7 +15,7 @@ namespace FASTER.core
     public sealed class UnsafeContext<Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator> : IFasterContext<Key, Value, Input, Output, Context, StoreFunctions, Allocator>, IDisposable
         where Functions : IFunctions<Key, Value, Input, Output, Context>
         where StoreFunctions : IStoreFunctions<Key, Value>
-        where Allocator : AllocatorBase<Key, Value>
+        where Allocator : AllocatorBase<Key, Value, StoreFunctions>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator> clientSession;
 
@@ -110,7 +110,7 @@ namespace FASTER.core
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextRead<Input, Output, Context, Allocator, InternalFasterSession>(ref key, ref input, ref output, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextRead(ref key, ref input, ref output, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
@@ -152,7 +152,7 @@ namespace FASTER.core
         public Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextRead<Input, Output, Context, Allocator, InternalFasterSession>(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
@@ -160,64 +160,64 @@ namespace FASTER.core
         public Status ReadAtAddress(ref Input input, ref Output output, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextReadAtAddress<Input, Output, Context, Allocator, InternalFasterSession>(ref input, ref output, ref readOptions, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextReadAtAddress(ref input, ref output, ref readOptions, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.ReadAsyncResult<Input, Output, Context, Allocator>> ReadAsync(ref Key key, ref Input input, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             ReadOptions readOptions = default;
-            return clientSession.fht.ReadAsync<Input, Output, Context, Allocator, InternalFasterSession>(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.ReadAsyncResult<Input, Output, Context, Allocator>> ReadAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             ReadOptions readOptions = default;
-            return clientSession.fht.ReadAsync<Input, Output, Context, Allocator, InternalFasterSession>(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, context, serialNo, token);
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, context, serialNo, token);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.ReadAsyncResult<Input, Output, Context, Allocator>> ReadAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-        {
-            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            Input input = default;
-            ReadOptions readOptions = default;
-            return clientSession.fht.ReadAsync<Input, Output, Context, Allocator, InternalFasterSession>(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.ReadAsyncResult<Input, Output, Context, Allocator>> ReadAsync(Key key, Context context = default, long serialNo = 0, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             Input input = default;
             ReadOptions readOptions = default;
-            return clientSession.fht.ReadAsync<Input, Output, Context, Allocator, InternalFasterSession>(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, context, serialNo, token);
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, token);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.ReadAsyncResult<Input, Output, Context, Allocator>> ReadAsync(ref Key key, ref Input input, ref ReadOptions readOptions,
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Context context = default, long serialNo = 0, CancellationToken token = default)
+        {
+            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
+            Input input = default;
+            ReadOptions readOptions = default;
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, context, serialNo, token);
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, ref ReadOptions readOptions,
                                                                                                  Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ReadAsync<Input, Output, Context, Allocator, InternalFasterSession>(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.ReadAsyncResult<Input, Output, Context, Allocator>> ReadAtAddressAsync(ref Input input, ref ReadOptions readOptions,
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(ref Input input, ref ReadOptions readOptions,
                                                                                                           Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             Key key = default;
-            return clientSession.fht.ReadAsync<Input, Output, Context, Allocator, InternalFasterSession>(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken, noKey: true);
+            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken, noKey: true);
         }
 
         /// <inheritdoc/>
@@ -235,7 +235,7 @@ namespace FASTER.core
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextUpsert<Input, Output, Context, Allocator, InternalFasterSession>(ref key, ref input, ref desiredValue, ref output, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
@@ -243,7 +243,7 @@ namespace FASTER.core
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextUpsert<Input, Output, Context, Allocator, InternalFasterSession>(ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
@@ -258,7 +258,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.UpsertAsyncResult<Input, Output, Context, Allocator>> UpsertAsync(ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
         {
             Input input = default;
             return UpsertAsync(ref key, ref input, ref desiredValue, userContext, serialNo, token);
@@ -266,20 +266,20 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.UpsertAsyncResult<Input, Output, Context, Allocator>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.UpsertAsync<Input, Output, Context, Allocator, InternalFasterSession>(FasterSession, clientSession.ctx, ref key, ref input, ref desiredValue, userContext, serialNo, token);
+            return clientSession.fht.UpsertAsync(FasterSession, clientSession.ctx, ref key, ref input, ref desiredValue, userContext, serialNo, token);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.UpsertAsyncResult<Input, Output, Context, Allocator>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => UpsertAsync(ref key, ref desiredValue, userContext, serialNo, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.UpsertAsyncResult<Input, Output, Context, Allocator>> UpsertAsync(Key key, Input input, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Input input, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => UpsertAsync(ref key, ref input, ref desiredValue, userContext, serialNo, token);
 
         /// <inheritdoc/>
@@ -292,7 +292,7 @@ namespace FASTER.core
         public Status RMW(ref Key key, ref Input input, ref Output output, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextRMW<Input, Output, Context, Allocator, InternalFasterSession>(ref key, ref input, ref output, out recordMetadata, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextRMW(ref key, ref input, ref output, out recordMetadata, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
@@ -321,15 +321,15 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.RmwAsyncResult<Input, Output, Context, Allocator>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.RmwAsync<Input, Output, Context, Allocator, InternalFasterSession>(FasterSession, clientSession.ctx, ref key, ref input, context, serialNo, token);
+            return clientSession.fht.RmwAsync(FasterSession, clientSession.ctx, ref key, ref input, context, serialNo, token);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.RmwAsyncResult<Input, Output, Context, Allocator>> RMWAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.RmwAsyncResult<Input, Output, Context>> RMWAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
             => RMWAsync(ref key, ref input, context, serialNo, token);
 
         /// <inheritdoc/>
@@ -337,7 +337,7 @@ namespace FASTER.core
         public Status Delete(ref Key key, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextDelete<Input, Output, Context, Allocator, InternalFasterSession>(ref key, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextDelete(ref key, userContext, FasterSession, serialNo, clientSession.ctx);
         }
 
         /// <inheritdoc/>
@@ -347,15 +347,15 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.DeleteAsyncResult<Input, Output, Context, Allocator>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.DeleteAsync<Input, Output, Context, Allocator, InternalFasterSession>(FasterSession, clientSession.ctx, ref key, userContext, serialNo, token);
+            return clientSession.fht.DeleteAsync(FasterSession, clientSession.ctx, ref key, userContext, serialNo, token);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value, StoreFunctions>.DeleteAsyncResult<Input, Output, Context, Allocator>> DeleteAsync(Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
+        public ValueTask<FasterKV<Key, Value, StoreFunctions, Allocator>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => DeleteAsync(ref key, userContext, serialNo, token);
 
         /// <inheritdoc/>
@@ -616,18 +616,23 @@ namespace FASTER.core
             }
             #endregion IFunctions - Checkpointing
 
+            #region IVariableLengthInputStruct<Value, Input>
+            public bool IsVariableLength => _clientSession.functions.IsVariableLengthInput;
+            public int GetLength(ref Input input) => _clientSession.functions.GetInputLength(ref input);
+            public int GetInitialLength() => _clientSession.functions.GetInitialInputLength();
+            public int GetInitialLength(ref Input input) => _clientSession.functions.GetInitialInputLength(ref input);
+            public unsafe void Serialize(ref Input source, void* destination) => _clientSession.functions.SerializeInput(ref source, destination);
+            public unsafe ref Input AsRef(void* source) => ref _clientSession.functions.InputAsRef(source);
+            public unsafe void Initialize(void* source, void* end) => _clientSession.functions.InitializeInput(source, end);
+            public int GetLength(ref Value value, ref Input input) => _clientSession.functions.GetLength(ref value, ref input);
+            #endregion IVariableLengthInputStruct<Value, Input>
+
             #region Internal utilities
-            public int GetInitialLength(ref Input input)
-                => _clientSession.variableLengthStruct.GetInitialLength(ref input);
-
-            public int GetLength(ref Value t, ref Input input)
-                => _clientSession.variableLengthStruct.GetLength(ref t, ref input);
-
             public IHeapContainer<Input> GetHeapContainer(ref Input input)
             {
-                if (_clientSession.inputVariableLengthStruct == default)
+                if (_clientSession.functions.IsVariableLengthInput)
                     return new StandardHeapContainer<Input>(ref input);
-                return new VarLenHeapContainer<Input>(ref input, _clientSession.inputVariableLengthStruct, _clientSession.fht.hlog.bufferPool);
+                return new VarLenHeapContainer<Input>(ref input, this, _clientSession.fht.hlog.bufferPool);
             }
 
             public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread();
