@@ -327,7 +327,7 @@ namespace FASTER.core
             }
         }
 
-        internal override void FreePage(long page)
+        protected override void FreePage(long page)
         {
             ClearPage(page, 0);
             if (EmptyPageCount > 0)
@@ -1038,7 +1038,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
+        protected override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
             long pageStartAddress = beginAddress & ~PageSizeMask;

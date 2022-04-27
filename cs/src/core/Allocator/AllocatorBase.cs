@@ -560,7 +560,8 @@ namespace FASTER.core
             Utility.MonotonicUpdate(ref PageStatusIndicator[offset].Dirty, version, out _);
         }
 
-        internal void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
+        /// <summary/>
+        protected void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
                 DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                 IDevice device)
         {
@@ -612,7 +613,8 @@ namespace FASTER.core
         /// <param name="offset">Offset to clear from (if partial clear)</param>
         internal abstract void ClearPage(long page, int offset = 0);
 
-        internal abstract void FreePage(long page);
+        /// <summary/>
+        protected abstract void FreePage(long page);
 
         /// <summary>
         /// Write page (async)
@@ -698,7 +700,7 @@ namespace FASTER.core
         /// <param name="beginAddress">Begin address</param>
         /// <param name="endAddress">End address</param>
         /// <param name="observer">Observer of scan</param>
-        internal abstract void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer);
+        protected abstract void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer);
         #endregion
 
         /// <summary>
@@ -1543,7 +1545,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// 
-        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context)
+        private unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
