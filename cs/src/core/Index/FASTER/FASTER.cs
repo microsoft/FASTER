@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -17,6 +18,9 @@ namespace FASTER.core
         where StoreFunctions : IStoreFunctions<Key, Value>
         where Allocator : AllocatorBase<Key, Value, StoreFunctions>
     {
+#if NET
+        [NotNull]
+#endif
         internal readonly Allocator hlog;
         internal readonly Allocator readcache;
 

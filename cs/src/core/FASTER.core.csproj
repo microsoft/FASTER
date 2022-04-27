@@ -22,6 +22,7 @@
     <DelaySign>false</DelaySign>
 	<EmbedUntrackedSources>true</EmbedUntrackedSources>
     <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
+    <DebugType>full</DebugType>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">

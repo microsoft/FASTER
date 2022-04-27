@@ -58,6 +58,7 @@ namespace FASTER.core
         [FieldOffset(0)]
         private long word;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void WriteInfo(ref RecordInfo info, bool inNewVersion, bool tombstone, bool dirty, long previousAddress)
         {
             info.word = default;
