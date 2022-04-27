@@ -14,7 +14,10 @@ namespace FASTER.server
     /// </summary>
     public abstract class FasterServerBase : IFasterServer
     {
-        readonly ConcurrentDictionary<IMessageConsumer, byte> activeSessions;
+        /// <summary>
+        /// Active sessions
+        /// </summary>
+        protected readonly ConcurrentDictionary<IMessageConsumer, byte> activeSessions;
         readonly ConcurrentDictionary<WireFormat, ISessionProvider> sessionProviders;
         int activeSessionCount;
 
