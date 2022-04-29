@@ -173,7 +173,7 @@ namespace FASTER.core
         public void GlobalAfterEnteringState<Key, Value, StoreFunctions, Allocator>(SystemState next,
             FasterKV<Key, Value, StoreFunctions, Allocator> faster)
             where StoreFunctions : IStoreFunctions<Key, Value>
-            where Allocator: AllocatorBase<Key, Value, StoreFunctions>
+            where Allocator : AllocatorBase<Key, Value, StoreFunctions>
         {
             foreach (var task in tasks)
                 task.GlobalAfterEnteringState(next, faster);
