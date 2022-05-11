@@ -14,42 +14,47 @@ namespace FASTER.server
     public class ServerOptions
     {
         /// <summary>
-        /// Port to run server on
+        /// Port to run server on.
         /// </summary>
         public int Port = 3278;
 
         /// <summary>
-        /// IP address to bind server to
+        /// IP address to bind server to.
         /// </summary>
         public string Address = "127.0.0.1";
 
         /// <summary>
-        /// Total log memory used in bytes (rounds down to power of 2)
+        /// Total log memory used in bytes (rounds down to power of 2).
         /// </summary>
         public string MemorySize = "16g";
 
         /// <summary>
-        /// Size of each page in bytes (rounds down to power of 2)
+        /// Size of each page in bytes (rounds down to power of 2).
         /// </summary>
         public string PageSize = "32m";
 
         /// <summary>
-        /// Size of each log segment in bytes on disk (rounds down to power of 2)
+        /// Size of each log segment in bytes on disk (rounds down to power of 2).
         /// </summary>
         public string SegmentSize = "1g";
 
         /// <summary>
-        /// Size of hash index in bytes (rounds down to power of 2)
+        /// Size of hash index in bytes (rounds down to power of 2).
         /// </summary>
         public string IndexSize = "8g";
 
         /// <summary>
-        /// Storage directory for data (hybrid log). Runs memory-only if unspecified.
+        /// Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use LogDir to specify storage directory.
+        /// </summary>
+        public bool EnableStorageTier = false;
+
+        /// <summary>
+        /// Storage directory for tiered records (hybrid log), if storage tiering (UseStorage) is enabled. Uses current directory if unspecified.
         /// </summary>
         public string LogDir = null;
 
         /// <summary>
-        /// Storage directory for checkpoints. Uses 'checkpoints' folder under logdir if unspecified.
+        /// Storage directory for checkpoints. Uses LogDir if unspecified.
         /// </summary>
         public string CheckpointDir = null;
 
@@ -59,9 +64,14 @@ namespace FASTER.server
         public bool Recover = false;
 
         /// <summary>
-        /// Enable pub/sub feature on server.
+        /// Disable pub/sub feature on server.
         /// </summary>
-        public bool EnablePubSub = true;
+        public bool DisablePubSub = false;
+
+        /// <summary>
+        /// Page size of log used for pub/sub (rounds down to power of 2).
+        /// </summary>
+        public string PubSubPageSize = "4k";
 
         /// <summary>
         /// Constructor
@@ -70,7 +80,11 @@ namespace FASTER.server
         {
         }
 
-        internal int MemorySizeBits()
+        /// <summary>
+        /// Get memory size
+        /// </summary>
+        /// <returns></returns>
+        public int MemorySizeBits()
         {
             long size = ParseSize(MemorySize);
             long adjustedSize = PreviousPowerOf2(size);
@@ -79,7 +93,11 @@ namespace FASTER.server
             return (int)Math.Log(adjustedSize, 2);
         }
 
-        internal int PageSizeBits()
+        /// <summary>
+        /// Get page size
+        /// </summary>
+        /// <returns></returns>
+        public int PageSizeBits()
         {
             long size = ParseSize(PageSize);
             long adjustedSize = PreviousPowerOf2(size);
@@ -88,7 +106,24 @@ namespace FASTER.server
             return (int)Math.Log(adjustedSize, 2);
         }
 
-        internal int SegmentSizeBits()
+        /// <summary>
+        /// Get pub/sub page size
+        /// </summary>
+        /// <returns></returns>
+        public long PubSubPageSizeBytes()
+        {
+            long size = ParseSize(PubSubPageSize);
+            long adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                Trace.WriteLine($"Warning: using lower pub/sub page size than specified (power of 2)");
+            return adjustedSize;
+        }
+
+        /// <summary>
+        /// Get segment size
+        /// </summary>
+        /// <returns></returns>
+        public int SegmentSizeBits()
         {
             long size = ParseSize(SegmentSize);
             long adjustedSize = PreviousPowerOf2(size);
@@ -97,7 +132,11 @@ namespace FASTER.server
             return (int)Math.Log(adjustedSize, 2);
         }
 
-        internal int IndexSizeCachelines()
+        /// <summary>
+        /// Get index size
+        /// </summary>
+        /// <returns></returns>
+        public int IndexSizeCachelines()
         {
             long size = ParseSize(IndexSize);
             long adjustedSize = PreviousPowerOf2(size);
@@ -107,7 +146,13 @@ namespace FASTER.server
             return (int)(adjustedSize / 64);
         }
 
-        internal void GetSettings(out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
+        /// <summary>
+        /// Get log settings
+        /// </summary>
+        /// <param name="logSettings"></param>
+        /// <param name="checkpointSettings"></param>
+        /// <param name="indexSize"></param>
+        public void GetSettings(out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
         {
             logSettings = new LogSettings { PreallocateLog = false };
 
@@ -125,50 +170,27 @@ namespace FASTER.server
             indexSize = IndexSizeCachelines();
             Trace.WriteLine($"[Store] Using hash index size of {PrettySize(indexSize * 64L)} ({PrettySize(indexSize)} cache lines)");
 
-            if (LogDir == null)
-                LogDir = Directory.GetCurrentDirectory();
+            if (EnableStorageTier)
+            {
+                if (LogDir is null or "")
+                    LogDir = Directory.GetCurrentDirectory();
+                logSettings.LogDevice = Devices.CreateLogDevice(LogDir + "/Store/hlog");
+            }
+            else
+            {
+                if (LogDir != null)
+                    throw new Exception("LogDir specified without enabling tiered storage (UseStorage)");
+                logSettings.LogDevice = new NullDevice();
+            }
 
-            var device = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "/Store/hlog");
-            logSettings.LogDevice = device;
+            if (CheckpointDir == null) CheckpointDir = LogDir;
+            
+            if (CheckpointDir is null or "")
+                CheckpointDir = Directory.GetCurrentDirectory();
 
             checkpointSettings = new CheckpointSettings
             {
-                CheckPointType = CheckpointType.Snapshot,
-                CheckpointDir = CheckpointDir ?? (LogDir + "/Store/checkpoints"),
-                RemoveOutdated = true,
-            };
-        }
-
-        internal void GetObjectStoreSettings(out LogSettings objLogSettings, out CheckpointSettings objCheckpointSettings, out int objIndexSize)
-        {
-            objLogSettings = new LogSettings { PreallocateLog = false };
-
-            objLogSettings.PageSizeBits = PageSizeBits();
-            Trace.WriteLine($"[Object Store] Using page size of {PrettySize((long)Math.Pow(2, objLogSettings.PageSizeBits))}");
-
-            objLogSettings.MemorySizeBits = MemorySizeBits();
-            Trace.WriteLine($"[Object Store] Using log memory size of {PrettySize((long)Math.Pow(2, objLogSettings.MemorySizeBits))}");
-
-            Trace.WriteLine($"[Object Store] There are {PrettySize(1 << (objLogSettings.MemorySizeBits - objLogSettings.PageSizeBits))} log pages in memory");
-
-            objLogSettings.SegmentSizeBits = SegmentSizeBits();
-            Trace.WriteLine($"[Object Store] Using disk segment size of {PrettySize((long)Math.Pow(2, objLogSettings.SegmentSizeBits))}");
-
-            objIndexSize = IndexSizeCachelines() / 64;
-            Trace.WriteLine($"[Object Store] Using hash index size of {PrettySize(objIndexSize * 64L)} ({PrettySize(objIndexSize)} cache lines)");
-
-            if (LogDir == null)
-                LogDir = Directory.GetCurrentDirectory();
-
-            var device = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "/ObjectStore/hlog");
-            objLogSettings.LogDevice = device;
-            var objdevice = LogDir == "" ? new NullDevice() : Devices.CreateLogDevice(LogDir + "/ObjectStore/hlog.obj");
-            objLogSettings.ObjectLogDevice = objdevice;
-
-            objCheckpointSettings = new CheckpointSettings
-            {
-                CheckPointType = CheckpointType.Snapshot,
-                CheckpointDir = CheckpointDir ?? (LogDir + "/ObjectStore/checkpoints"),
+                CheckpointDir = CheckpointDir + "/Store/checkpoints",
                 RemoveOutdated = true,
             };
         }
@@ -198,7 +220,12 @@ namespace FASTER.server
             return result;
         }
 
-        private static string PrettySize(long value)
+        /// <summary>
+        /// Pretty print value
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        protected static string PrettySize(long value)
         {
             char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
             double v = value;

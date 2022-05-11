@@ -12,15 +12,16 @@ namespace FASTER.server
     /// FASTER server for generic types
     /// </summary>
     public class GenericServer<Key, Value, Input, Output, Functions, ParameterSerializer> : IDisposable
-            where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
+            where Functions : IFunctions<Key, Value, Input, Output, long>
             where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly ServerOptions opts;
-        readonly FasterServer server;
+        readonly IFasterServer server;
         readonly FasterKV<Key, Value> store;
         readonly FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer> provider;
         readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> kvBroker;
         readonly SubscribeBroker<Key, Value, IKeySerializer<Key>> broker;
+        readonly LogSettings logSettings;
 
         /// <summary>
         /// Create server instance; use Start to start the server.
@@ -29,19 +30,20 @@ namespace FASTER.server
         /// <param name="functionsGen"></param>
         /// <param name="serializer"></param>
         /// <param name="keyInputSerializer"></param>
+        /// <param name="disableLocking"></param>
         /// <param name="maxSizeSettings"></param>
-        public GenericServer(ServerOptions opts, Func<WireFormat, Functions> functionsGen, ParameterSerializer serializer, IKeyInputSerializer<Key, Input> keyInputSerializer, MaxSizeSettings maxSizeSettings = default)
+        public GenericServer(ServerOptions opts, Func<Functions> functionsGen, ParameterSerializer serializer, IKeyInputSerializer<Key, Input> keyInputSerializer, 
+                             bool disableLocking, MaxSizeSettings maxSizeSettings = default)
         {
             this.opts = opts;
 
-            if (opts.LogDir != null && !Directory.Exists(opts.LogDir))
+            opts.GetSettings(out logSettings, out var checkpointSettings, out var indexSize);
+            if (opts.EnableStorageTier && !Directory.Exists(opts.LogDir))
                 Directory.CreateDirectory(opts.LogDir);
-
-            if (opts.CheckpointDir != null && !Directory.Exists(opts.CheckpointDir))
+            if (!Directory.Exists(opts.CheckpointDir))
                 Directory.CreateDirectory(opts.CheckpointDir);
 
-            opts.GetSettings(out var logSettings, out var checkpointSettings, out var indexSize);
-            store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
+            store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings, disableLocking: disableLocking);
 
             if (opts.Recover)
             {
@@ -52,16 +54,16 @@ namespace FASTER.server
                 catch { }
             }
 
-            if (opts.EnablePubSub)
+            if (!opts.DisablePubSub)
             {
-                kvBroker = new SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>>(keyInputSerializer, null, true);
-                broker = new SubscribeBroker<Key, Value, IKeySerializer<Key>>(keyInputSerializer, null, true);
+                kvBroker = new SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>>(keyInputSerializer, null, opts.PubSubPageSizeBytes(), true);
+                broker = new SubscribeBroker<Key, Value, IKeySerializer<Key>>(keyInputSerializer, null, opts.PubSubPageSizeBytes(), true);
             }
 
             // Create session provider for VarLen
-            provider = new FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer>(store, functionsGen, kvBroker, broker, serializer, maxSizeSettings);
+            provider = new FasterKVProvider<Key, Value, Input, Output, Functions, ParameterSerializer>(functionsGen, store, serializer, kvBroker, broker, opts.Recover, maxSizeSettings);
 
-            server = new FasterServer(opts.Address, opts.Port);
+            server = new FasterServerTcp(opts.Address, opts.Port);
             server.Register(WireFormat.DefaultFixedLenKV, provider);
         }
 
@@ -76,8 +78,11 @@ namespace FASTER.server
         public void Dispose()
         {
             InternalDispose();
-            DeleteDirectory(opts.LogDir);
-            DeleteDirectory(opts.CheckpointDir);
+
+            if (opts.EnableStorageTier && Directory.Exists(opts.LogDir))
+                DeleteDirectory(opts.LogDir);
+            if (Directory.Exists(opts.CheckpointDir))
+                DeleteDirectory(opts.CheckpointDir);
         }
 
         /// <summary>
@@ -87,16 +92,22 @@ namespace FASTER.server
         public void Dispose(bool deleteDir = true)
         {
             InternalDispose();
-            if (deleteDir) DeleteDirectory(opts.LogDir);
-            if (deleteDir) DeleteDirectory(opts.CheckpointDir);
+            if (deleteDir)
+            {
+                if (opts.EnableStorageTier && Directory.Exists(opts.LogDir))
+                    DeleteDirectory(opts.LogDir);
+                if (Directory.Exists(opts.CheckpointDir))
+                    DeleteDirectory(opts.CheckpointDir);
+            }
         }
-
         private void InternalDispose()
         {
             server.Dispose();
             broker?.Dispose();
             kvBroker?.Dispose();
             store.Dispose();
+            logSettings.LogDevice?.Dispose();
+            logSettings.ObjectLogDevice?.Dispose();
         }
 
         private static void DeleteDirectory(string path)

@@ -1,6 +1,7 @@
-﻿using System;
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -44,14 +45,11 @@ namespace FASTER.core
                     {
                         if (!ctx.markers[EpochPhaseIdx.Prepare])
                         {
-                            if (!faster.RelaxedCPR)
-                                faster.AcquireSharedLatchesForAllPendingRequests(ctx);
                             ctx.markers[EpochPhaseIdx.Prepare] = true;
                         }
-
-                        faster.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
                     }
 
+                    faster.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
                     if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version))
                         faster.GlobalStateMachineStep(current);
                     break;
@@ -67,34 +65,15 @@ namespace FASTER.core
                         if (!_ctx.markers[EpochPhaseIdx.InProgress])
                         {
                             faster.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version, tokens);
-                            faster.InitContext(ctx, ctx.prevCtx.guid, ctx.prevCtx.serialNum);
+                            faster.InitContext(ctx, ctx.prevCtx.sessionID, ctx.prevCtx.sessionName, ctx.prevCtx.serialNum);
 
                             // Has to be prevCtx, not ctx
                             ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;
                         }
-
-                        faster.epoch.Mark(EpochPhaseIdx.InProgress, current.Version);
                     }
 
-                    // Has to be prevCtx, not ctx
+                    faster.epoch.Mark(EpochPhaseIdx.InProgress, current.Version);
                     if (faster.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.Version))
-                        faster.GlobalStateMachineStep(current);
-                    break;
-                case Phase.WAIT_PENDING:
-                    if (ctx != null)
-                    {
-                        if (!faster.RelaxedCPR && !ctx.prevCtx.markers[EpochPhaseIdx.WaitPending])
-                        {
-                            if (ctx.prevCtx.HasNoPendingRequests)
-                                ctx.prevCtx.markers[EpochPhaseIdx.WaitPending] = true;
-                            else
-                                break;
-                        }
-
-                        faster.epoch.Mark(EpochPhaseIdx.WaitPending, current.Version);
-                    }
-
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitPending, current.Version))
                         faster.GlobalStateMachineStep(current);
                     break;
                 case Phase.REST:
@@ -144,7 +123,7 @@ namespace FASTER.core
     /// </summary>
     internal class VersionChangeStateMachine : SynchronizationStateMachineBase
     {
-        private long targetVersion;
+        private readonly long targetVersion;
 
         /// <summary>
         /// Construct a new VersionChangeStateMachine with the given tasks. Does not load any tasks by default.
@@ -173,22 +152,11 @@ namespace FASTER.core
                     break;
                 case Phase.PREPARE:
                     nextState.Phase = Phase.IN_PROGRESS;
-                    // 13 bits of 1s --- FASTER records only store 13 bits of version number, and we need to ensure that
-                    // the next version is distinguishable from the last in those 13 bits.
-                    var bitMask = (1L << 13) - 1;
-                    // If they are not distinguishable, simply increment target version to resolve this
-                    if (((targetVersion - start.Version) & bitMask) == 0)
-                        targetVersion++;
-
                     // TODO: Move to long for system state as well. 
                     SetToVersion(targetVersion == -1 ? start.Version + 1 : targetVersion);
                     nextState.Version = (int) ToVersion();
                     break;
                 case Phase.IN_PROGRESS:
-                    // This phase has no effect if using relaxed CPR model
-                    nextState.Phase = Phase.WAIT_PENDING;
-                    break;
-                case Phase.WAIT_PENDING:
                     nextState.Phase = Phase.REST;
                     break;
                 default:

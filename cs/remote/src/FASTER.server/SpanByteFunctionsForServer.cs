@@ -9,7 +9,7 @@ namespace FASTER.server
     /// <summary>
     /// Callback functions using SpanByteAndMemory output, for SpanByte key, value, input
     /// </summary>
-    public class SpanByteFunctionsForServer<Context> : SpanByteAdvancedFunctions<SpanByte, SpanByteAndMemory, Context>
+    public class SpanByteFunctionsForServer<Context> : SpanByteFunctions<SpanByte, SpanByteAndMemory, Context>
     {
         /// <summary>
         /// Memory pool
@@ -20,16 +20,16 @@ namespace FASTER.server
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
-        public SpanByteFunctionsForServer(MemoryPool<byte> memoryPool = default) : base(true)
+        public SpanByteFunctionsForServer(MemoryPool<byte> memoryPool = default)
         {
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
 
         /// <inheritdoc />
-        public override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, long address) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
+        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
 
         /// <inheritdoc />
-        public override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref RecordInfo recordInfo, long address) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
+        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
 
         /// <summary>
         /// Copy to given SpanByteAndMemory (header length and payload copied to actual span/memory)

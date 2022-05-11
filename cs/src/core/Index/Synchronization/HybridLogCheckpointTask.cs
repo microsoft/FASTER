@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -48,7 +51,7 @@ namespace FASTER.core
             }
         }
 
-        protected void CollectMetadata<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
+        protected static void CollectMetadata<Key, Value>(SystemState next, FasterKV<Key, Value> faster)
         {
             // Collect object log offsets only after flushes
             // are completed
@@ -62,9 +65,33 @@ namespace FASTER.core
             // Temporarily block new sessions from starting, which may add an entry to the table and resize the
             // dictionary. There should be minimal contention here.
             lock (faster._activeSessions)
+            {
+                List<int> toDelete = null;
+
                 // write dormant sessions to checkpoint
                 foreach (var kvp in faster._activeSessions)
-                    kvp.Value.AtomicSwitch(next.Version - 1);
+                {
+                    kvp.Value.session.AtomicSwitch(next.Version - 1);
+                    if (!kvp.Value.isActive)
+                    {
+                        toDelete ??= new();
+                        toDelete.Add(kvp.Key);
+                    }
+                }
+
+                // delete any sessions that ended during checkpoint cycle
+                if (toDelete != null)
+                {
+                    foreach (var key in toDelete)
+                        faster._activeSessions.Remove(key);
+                }
+            }
+
+            // Make sure previous recoverable sessions are re-checkpointed
+            foreach (var item in faster.RecoverableSessions)
+            {
+                faster._hybridLogCheckpoint.info.checkpointTokens.TryAdd(item.Item1, (item.Item2, item.Item3));
+            }
         }
 
         /// <inheritdoc />
@@ -92,10 +119,9 @@ namespace FASTER.core
                     faster.IssueCompletionCallback(ctx, fasterSession);
                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                 }
-
-                faster.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
             }
 
+            faster.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.Version))
                 faster.GlobalStateMachineStep(current);
         }
@@ -156,10 +182,8 @@ namespace FASTER.core
                 if (ctx != null)
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
-
-            if (ctx != null)
-                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-
+            
+            faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
         }
@@ -258,10 +282,8 @@ namespace FASTER.core
                 if (ctx != null)
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
-
-            if (ctx != null)
-                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-
+            
+            faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
         }
@@ -347,10 +369,8 @@ namespace FASTER.core
                 if (ctx != null)
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
-
-            if (ctx != null)
-                faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-
+            
+            faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
         }
@@ -384,7 +404,7 @@ namespace FASTER.core
             var result = SystemState.Copy(ref start);
             switch (start.Phase)
             {
-                case Phase.WAIT_PENDING:
+                case Phase.IN_PROGRESS:
                     result.Phase = Phase.WAIT_FLUSH;
                     break;
                 case Phase.WAIT_FLUSH:

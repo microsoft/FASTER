@@ -5,17 +5,18 @@ using FASTER.core;
 
 namespace FASTER.benchmark
 {
-    enum BenchmarkType : int
+    enum BenchmarkType : byte
     {
-        Ycsb,
+        Ycsb = 0,
         SpanByte,
         ConcurrentDictionaryYcsb
     };
 
-    enum LockImpl : int
+    enum LockImpl : byte
     {
-        None,
-        RecordInfo
+        None = 0,
+        Ephemeral = 1,
+        Manual = 2
     };
 
     enum AddressLineNum : int

@@ -7,13 +7,13 @@ namespace FASTER.remote.test
     [TestFixture]
     public class FixedLenBinaryPubSubTests
     {
-        FixedLenServer<long, long, long, long, AdvancedSimpleFunctions<long, long, long>> server;
+        FixedLenServer<long, long, long, long, SimpleFunctions<long, long, long>> server;
         FixedLenClient<long, long> client;
 
         [SetUp]
         public void Setup()
         {
-            server = TestUtils.CreateFixedLenServer(TestContext.CurrentContext.TestDirectory + "/FixedLenBinaryPubSubTests", (a, b) => a + b, enablePubSub: true);
+            server = TestUtils.CreateFixedLenServer(TestContext.CurrentContext.TestDirectory + "/FixedLenBinaryPubSubTests", (a, b) => a + b, disablePubSub: false);
             server.Start();
             client = new FixedLenClient<long, long>();
         }

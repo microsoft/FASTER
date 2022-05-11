@@ -20,10 +20,11 @@ namespace FASTER.core
             /// <summary>
             /// This creates an instance of the <typeparamref name="TAsyncResult"/>, for example <see cref="RmwAsyncResult{Input, Output, Context}"/>
             /// </summary>
-            /// <param name="status">The status code; for this variant of <typeparamref name="TAsyncResult"/> intantiation, this will not be <see cref="Status.PENDING"/></param>
+            /// <param name="status">The status code; for this variant of <typeparamref name="TAsyncResult"/> intantiation, this will not be pending</param>
             /// <param name="output">The completed output of the operation, if any</param>
+            /// <param name="recordMetadata">The record metadata from the operation (currently used by RMW only)</param>
             /// <returns></returns>
-            TAsyncResult CreateResult(Status status, Output output);
+            TAsyncResult CreateResult(Status status, Output output, RecordMetadata recordMetadata);
 
             /// <summary>
             /// This performs the low-level synchronous operation for the implementation class of <typeparamref name="TAsyncResult"/>; for example,
@@ -77,7 +78,7 @@ namespace FASTER.core
             readonly FasterKV<Key, Value> _fasterKV;
             readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
             readonly FasterExecutionContext<Input, Output, Context> _currentCtx;
-            readonly TAsyncOperation _asyncOperation;
+            TAsyncOperation _asyncOperation;
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 
@@ -96,8 +97,6 @@ namespace FASTER.core
 
             internal ValueTask<TAsyncResult> CompleteAsync(CancellationToken token = default)
             {
-                Debug.Assert(_fasterKV.RelaxedCPR);
-
                 // Note: We currently do not await anything here, and we must never do any post-await work inside CompleteAsync; this includes any code in
                 // a 'finally' block. All post-await work must be re-initiated by end user on the mono-threaded session.
 
@@ -113,14 +112,17 @@ namespace FASTER.core
             {
                 if (!TryCompleteAsyncState(asyncOp: false, out CompletionEvent flushEvent, out TAsyncResult asyncResult))
                 {
-                    if (_exception != default)
-                        _exception.Throw();
-                    if (!flushEvent.IsDefault())
-                        flushEvent.Wait();
-                    while (!this.TryCompleteSync(asyncOp: false, out flushEvent, out asyncResult))
-                    {
-                        if (!_asyncOperation.CompletePendingIO(_fasterSession))
+                    while (true) { 
+                        if (_exception != default)
+                            _exception.Throw();
+
+                        if (!flushEvent.IsDefault())
                             flushEvent.Wait();
+                        else if (_asyncOperation.CompletePendingIO(_fasterSession))
+                            break;
+
+                        if (this.TryCompleteSync(asyncOp: false, out flushEvent, out asyncResult))
+                            break;
                     }
                 }
                 return asyncResult;
@@ -136,10 +138,6 @@ namespace FASTER.core
                     {
                         if (_exception == default)
                             return TryCompleteSync(asyncOp, out flushEvent, out asyncResult);
-                    }
-                    catch (Exception e)
-                    {
-                        _exception = ExceptionDispatchInfo.Capture(e);
                     }
                     finally
                     {
@@ -159,12 +157,17 @@ namespace FASTER.core
                 {
                     Status status = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx, asyncOp, out flushEvent, out Output output);
 
-                    if (status != Status.PENDING)
+                    if (!status.IsPending)
                     {
                         _pendingContext.Dispose();
-                        asyncResult = _asyncOperation.CreateResult(status, output);
+                        asyncResult = _asyncOperation.CreateResult(status, output, new RecordMetadata(_pendingContext.recordInfo, _pendingContext.logicalAddress));
                         return true;
                     }
+                }
+                catch (Exception e)
+                {
+                    _exception = ExceptionDispatchInfo.Capture(e);
+                    flushEvent = default;
                 }
                 finally
                 {
@@ -179,10 +182,10 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static Status TranslateStatus(OperationStatus internalStatus)
         {
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-                return (Status)internalStatus;
+            if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
+                return status;
             Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
-            return Status.PENDING;
+            return new(StatusCode.Pending);
         }
 
         private static async ValueTask<ExceptionDispatchInfo> WaitForFlushCompletionAsync<Input, Output, Context>(FasterKV<Key, Value> @this, FasterExecutionContext<Input, Output, Context> currentCtx, CompletionEvent flushEvent, CancellationToken token)

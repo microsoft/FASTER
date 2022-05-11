@@ -38,13 +38,14 @@ namespace FASTER.server
         /// </summary>
         /// <param name="keyInputSerializer">Serializer for Prefix Match and serializing Key and Input</param>
         /// <param name="logDir">Directory where the log will be stored</param>
+        /// <param name="pageSize">Page size of log used for pub/sub</param>
         /// <param name="startFresh">start the log from scratch, do not continue</param>
-        public SubscribeKVBroker(IKeyInputSerializer<Key, Input> keyInputSerializer, string logDir, bool startFresh = true)
+        public SubscribeKVBroker(IKeyInputSerializer<Key, Input> keyInputSerializer, string logDir, long pageSize, bool startFresh = true)
         {
             this.keyInputSerializer = keyInputSerializer;
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4 });
             if (startFresh)
                 log.TruncateUntil(log.CommittedUntilAddress);
         }
@@ -54,7 +55,7 @@ namespace FASTER.server
         /// called during dispose of server session
         /// </summary>
         /// <param name="session">server session</param>
-        public void RemoveSubscription(IServerSession session)
+        public void RemoveSubscription(IMessageConsumer session)
         {
             if (subscriptions != null)
             {
@@ -158,7 +159,7 @@ namespace FASTER.server
                                                 fixed (byte* inputPtr = &sub.Value.Item2[0])
                                                 {
                                                     byte* inputBytePtr = inputPtr;
-                                                    serverSession.Publish(ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, 0, ref inputBytePtr, sub.Key);
+                                                    serverSession.PrefixPublish(subPrefixPtr, kvp.Key.Length, ref keyBytePtr, keyBytes.Length, ref nullBytrPtr, 0, ref inputBytePtr, sub.Key);
                                                 }
                                             }
                                         }

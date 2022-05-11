@@ -3,7 +3,6 @@
 
 using System.Threading.Tasks;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
 using System.Threading;
 using System.Text;
@@ -52,12 +51,12 @@ namespace FASTER.test.recovery
         public async Task RecoverReadOnlyCheck1([Values] bool isAsync)
         {
             using var device = Devices.CreateLogDevice(deviceName);
-            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 };
+            var logSettings = new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, TryRecoverLatest = false };
             using var log = isAsync ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
             await Task.WhenAll(ProducerAsync(log, cts),
                                CommitterAsync(log, cts.Token),
-                               ReadOnlyConsumerAsync(deviceName, cts.Token, isAsync));
+                               ReadOnlyConsumerAsync(deviceName, isAsync, cts.Token));
         }
 
         private async Task ProducerAsync(FasterLog log, CancellationTokenSource cts)
@@ -73,25 +72,25 @@ namespace FASTER.test.recovery
             cts.Cancel();
         }
 
-        private async Task CommitterAsync(FasterLog log, CancellationToken cancellationToken)
+        private static async Task CommitterAsync(FasterLog log, CancellationToken cancellationToken)
         {
             try
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(CommitPeriodMs), cancellationToken);
-                    await log.CommitAsync(cancellationToken);
+                    await log.CommitAsync(token: cancellationToken);
                 }
             } catch (OperationCanceledException) { }
         }
 
         // This creates a separate FasterLog over the same log file, using RecoverReadOnly to continuously update
         // to the primary FasterLog's commits.
-        private async Task ReadOnlyConsumerAsync(string deviceName, CancellationToken cancellationToken, bool isAsync)
+        private async Task ReadOnlyConsumerAsync(string deviceName, bool isAsync, CancellationToken cancellationToken)
         {
             using var device = Devices.CreateLogDevice(deviceName);
             var logSettings = new FasterLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 };
-            using var log = isAsync ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
+            using var log = isAsync ? await FasterLog.CreateAsync(logSettings, cancellationToken) : new FasterLog(logSettings);
 
             var _ = BeginRecoverAsyncLoop();
 
@@ -121,10 +120,26 @@ namespace FASTER.test.recovery
                     await Task.Delay(TimeSpan.FromMilliseconds(RestorePeriodMs), cancellationToken);
                     if (cancellationToken.IsCancellationRequested)
                         break;
-                    if (isAsync)
-                        await log.RecoverReadOnlyAsync();
-                    else
-                        log.RecoverReadOnly();
+                    long startTime = DateTimeOffset.UtcNow.Ticks;
+                    while (true)
+                    {
+                        try
+                        {
+                            if (isAsync)
+                            {
+                                await log.RecoverReadOnlyAsync(cancellationToken);
+                            }
+                            else
+                                log.RecoverReadOnly();
+                            break;
+                        }
+                        catch
+                        { }
+                        Thread.Yield();
+                        // retry until timeout
+                        if (DateTimeOffset.UtcNow.Ticks - startTime > TimeSpan.FromSeconds(5).Ticks)
+                            throw new Exception("Timed out retrying RecoverReadOnly");
+                    }
                 }
             }
         }

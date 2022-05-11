@@ -30,9 +30,9 @@ namespace StoreVarLenTypes
                 logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
 
             // Create session
-            var s = store.For(new CustomSpanByteFunctions(locking: false)).NewSession<CustomSpanByteFunctions>();
+            var s = store.For(new CustomSpanByteFunctions()).NewSession<CustomSpanByteFunctions>();
 
-            Random r = new Random(100);
+            Random r = new(100);
 
             // Here, stackalloc implies fixed, so it can be used directly with SpanByte
             // For Span<byte> over heap data (e.g., strings or byte[]), make sure to use
@@ -91,13 +91,13 @@ namespace StoreVarLenTypes
                 var expectedValue = valueMem.Slice(0, valLen);
                 expectedValue.Fill((byte)valLen);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
                     s.CompletePending(true);
                 }
                 else
                 {
-                    if ((status != Status.OK) || (!output.SequenceEqual(expectedValue.ToArray())))
+                    if (!status.Found || (!output.SequenceEqual(expectedValue.ToArray())))
                     {
                         success = false;
                         break;

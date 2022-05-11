@@ -13,8 +13,8 @@ namespace FASTER.server
     /// </summary>
     public sealed class VarLenServer : IDisposable
     {
-        readonly ServerOptions opts;
-        readonly FasterServer server;
+        readonly ServerOptions opts;        
+        readonly IFasterServer server;
         readonly FasterKV<SpanByte, SpanByte> store;
         readonly SpanByteFasterKVProvider provider;
         readonly SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
@@ -29,25 +29,24 @@ namespace FASTER.server
         {
             this.opts = opts;
 
-            if (opts.LogDir != null && !Directory.Exists(opts.LogDir))
+            opts.GetSettings(out logSettings, out var checkpointSettings, out var indexSize);
+            if (opts.EnableStorageTier && !Directory.Exists(opts.LogDir))
                 Directory.CreateDirectory(opts.LogDir);
-
-            if (opts.CheckpointDir != null && !Directory.Exists(opts.CheckpointDir))
+            if (!Directory.Exists(opts.CheckpointDir))
                 Directory.CreateDirectory(opts.CheckpointDir);
 
-            opts.GetSettings(out logSettings, out var checkpointSettings, out var indexSize);
-            store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings);
+            store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings, disableLocking: false );
 
-            if (opts.EnablePubSub)
+            if (!opts.DisablePubSub)
             {
-                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>>(new SpanByteKeySerializer(), null, true);
-                broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, true);
+                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), true);
+                broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), true);
             }
 
             // Create session provider for VarLen
             provider = new SpanByteFasterKVProvider(store, kvBroker, broker, opts.Recover);
 
-            server = new FasterServer(opts.Address, opts.Port);
+            server = new FasterServerTcp(opts.Address, opts.Port);
             server.Register(WireFormat.DefaultVarLenKV, provider);
             server.Register(WireFormat.WebSocket, provider);
         }
@@ -63,8 +62,10 @@ namespace FASTER.server
         public void Dispose()
         {
             InternalDispose();
-            DeleteDirectory(opts.LogDir);
-            DeleteDirectory(opts.CheckpointDir);
+            if (opts.EnableStorageTier && Directory.Exists(opts.LogDir))
+                DeleteDirectory(opts.LogDir);
+            if (Directory.Exists(opts.CheckpointDir))
+                DeleteDirectory(opts.CheckpointDir);
         }
 
         /// <summary>
@@ -74,8 +75,13 @@ namespace FASTER.server
         public void Dispose(bool deleteDir = true)
         {
             InternalDispose();
-            if (deleteDir) DeleteDirectory(opts.LogDir);
-            if (deleteDir) DeleteDirectory(opts.CheckpointDir);
+            if (deleteDir)
+            {
+                if (opts.EnableStorageTier && Directory.Exists(opts.LogDir))
+                    DeleteDirectory(opts.LogDir);
+                if (Directory.Exists(opts.CheckpointDir))
+                    DeleteDirectory(opts.CheckpointDir);
+            }
         }
 
         private void InternalDispose()
@@ -84,7 +90,8 @@ namespace FASTER.server
             broker?.Dispose();
             kvBroker?.Dispose();
             store.Dispose();
-            logSettings.LogDevice.Dispose();
+            logSettings.LogDevice?.Dispose();
+            logSettings.ObjectLogDevice?.Dispose();
         }
 
         private static void DeleteDirectory(string path)

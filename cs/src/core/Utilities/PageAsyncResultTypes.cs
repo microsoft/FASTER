@@ -50,6 +50,42 @@ namespace FASTER.core
     }
 
     /// <summary>
+    /// Shared flush completion tracker, when bulk-flushing many pages
+    /// </summary>
+    internal class FlushCompletionTracker
+    {
+        /// <summary>
+        /// Semaphore to set on flush completion
+        /// </summary>
+        readonly SemaphoreSlim completedSemaphore;
+
+        /// <summary>
+        /// Number of pages being flushed
+        /// </summary>
+        int count;
+
+        /// <summary>
+        /// Create a flush completion tracker
+        /// </summary>
+        /// <param name="completedSemaphore">Semaphpore to release when flush completed</param>
+        /// <param name="count">Number of pages to flush</param>
+        public FlushCompletionTracker(SemaphoreSlim completedSemaphore, int count)
+        {
+            this.completedSemaphore = completedSemaphore;
+            this.count = count;
+        }
+
+        /// <summary>
+        /// Complete flush of one page
+        /// </summary>
+        public void CompleteFlush()
+        {
+            if (Interlocked.Decrement(ref count) == 0)
+                completedSemaphore.Release();
+        }
+    }
+
+    /// <summary>
     /// Page async flush result
     /// </summary>
     /// <typeparam name="TContext"></typeparam>
@@ -74,7 +110,7 @@ namespace FASTER.core
         internal SectorAlignedMemory freeBuffer1;
         internal SectorAlignedMemory freeBuffer2;
         internal AutoResetEvent done;
-        internal SemaphoreSlim completedSemaphore;
+        internal FlushCompletionTracker flushCompletionTracker;
 
         /// <summary>
         /// Free
@@ -92,7 +128,7 @@ namespace FASTER.core
                 freeBuffer2 = null;
             }
 
-            completedSemaphore?.Release();
+            flushCompletionTracker?.CompleteFlush();
         }
     }
 }

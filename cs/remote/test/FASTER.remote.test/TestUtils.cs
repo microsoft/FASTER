@@ -22,31 +22,33 @@ namespace FASTER.remote.test
         /// <summary>
         /// Create VarLenServer
         /// </summary>
-        public static FixedLenServer<long, long, long, long, AdvancedSimpleFunctions<long, long, long>> CreateFixedLenServer(string logDir, Func<long, long, long> merger, bool enablePubSub = true, bool tryRecover = false)
+        public static FixedLenServer<long, long, long, long, SimpleFunctions<long, long, long>> CreateFixedLenServer(string logDir, Func<long, long, long> merger, bool disablePubSub = false, bool tryRecover = false)
         {
             ServerOptions opts = new()
             {
+                EnableStorageTier = logDir != null,
                 LogDir = logDir,
                 Address = Address,
                 Port = Port,
-                EnablePubSub = enablePubSub,
+                DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexSize = "1m",
             };
-            return new FixedLenServer<long, long, long, long, AdvancedSimpleFunctions<long, long, long>>(opts, e => new AdvancedSimpleFunctions<long, long, long>(merger));
+            return new FixedLenServer<long, long, long, long, SimpleFunctions<long, long, long>>(opts, () => new SimpleFunctions<long, long, long>(merger), disableLocking: true);
         }
 
         /// <summary>
         /// Create VarLenServer
         /// </summary>
-        public static VarLenServer CreateVarLenServer(string logDir, bool enablePubSub = true, bool tryRecover = false)
+        public static VarLenServer CreateVarLenServer(string logDir, bool disablePubSub = false, bool tryRecover = false)
         {
             ServerOptions opts = new()
             {
+                EnableStorageTier = logDir != null,
                 LogDir = logDir,
                 Address = Address,
                 Port = Port,
-                EnablePubSub = enablePubSub,
+                DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexSize = "1m",
             };

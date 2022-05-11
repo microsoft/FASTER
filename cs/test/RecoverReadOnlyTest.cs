@@ -89,7 +89,7 @@ namespace FASTER.test
             while (!cancellationToken.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(commitPeriodMs), cancellationToken);
-                await log.CommitAsync(cancellationToken);
+                await log.CommitAsync(token: cancellationToken);
             }
         }
 

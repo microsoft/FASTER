@@ -1,13 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace FASTER.core
 {
     // This structure uses a SemaphoreSlim as if it were a ManualResetEventSlim, because MRES does not support async waiting.
-    internal struct CompletionEvent
+    internal struct CompletionEvent : IDisposable
     {
         private SemaphoreSlim semaphore;
 
@@ -19,6 +20,7 @@ namespace FASTER.core
             while (true)
             {
                 var tempSemaphore = this.semaphore;
+                if (tempSemaphore == null) break;
                 if (Interlocked.CompareExchange(ref this.semaphore, newSemaphore, tempSemaphore) == tempSemaphore)
                 {
                     // Release all waiting threads
@@ -33,6 +35,13 @@ namespace FASTER.core
         internal void Wait(CancellationToken token = default) => this.semaphore.Wait(token);
 
         internal Task WaitAsync(CancellationToken token = default) => this.semaphore.WaitAsync(token);
+
+        /// <inheritdoc/>
+        public void Dispose()
+        {
+            this.semaphore?.Dispose();
+            this.semaphore = null;
+        }
     }
 }
 

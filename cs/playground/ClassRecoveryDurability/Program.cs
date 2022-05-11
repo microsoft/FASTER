@@ -4,18 +4,17 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using FASTER.core;
 
 namespace ClassRecoveryDurablity
 {
     class Program
     {
         static bool stop;
-        static int deleteWindow = 5;
-        static int indexAhead = 10000000;
-        static int startDeleteHeight = 20;
-        static int addCount = 100;
-        static int deletePosition = 20;
+        static readonly int deleteWindow = 5;
+        static readonly int indexAhead = 10000000;
+        static readonly int startDeleteHeight = 20;
+        static readonly int addCount = 100;
+        static readonly int deletePosition = 20;
 
         static void Main(string[] args)
         {
@@ -39,7 +38,7 @@ namespace ClassRecoveryDurablity
 
         static void Filldb(int stopAfterIteration = 5)
         {
-            Storedb store = new Storedb(@"C:\FasterTest\data");
+            Storedb store = new(@"C:\FasterTest\data");
 
             Console.WriteLine("call init db");
             var first = store.InitAndRecover();
@@ -52,7 +51,7 @@ namespace ClassRecoveryDurablity
                 var ss = store.db.For(new Types.StoreFunctions()).NewSession<Types.StoreFunctions>();
 
                 lastBlockvalue = new Types.StoreValue { value = BitConverter.GetBytes(0) };
-                Types.StoreContext context1 = new Types.StoreContext();
+                Types.StoreContext context1 = new();
                 ss.Upsert(ref lastblockKey, ref lastBlockvalue, context1, 1);
 
                 ss.CompletePending(true);
@@ -70,10 +69,10 @@ namespace ClassRecoveryDurablity
 
                 while (stop == false)
                 {
-                    Types.StoreInput input = new Types.StoreInput();
-                    Types.StoreOutput output = new Types.StoreOutput();
+                    Types.StoreInput input = new();
+                    Types.StoreOutput output = new();
                     lastblockKey = new Types.StoreKey { tableType = "L", key = new byte[1] { 0 } };
-                    Types.StoreContext context1 = new Types.StoreContext();
+                    Types.StoreContext context1 = new();
                     var blkStatus = session.Read(ref lastblockKey, ref input, ref output, context1, 1);
                     var blockHeight = BitConverter.ToUInt32(output.value.value);
                     blockHeight += 1;
@@ -86,12 +85,12 @@ namespace ClassRecoveryDurablity
 
                         var upsertKey = new Types.StoreKey { tableType = "C", key = data.key };
                         var upsertValue = new Types.StoreValue { value = data.data };
-                        Types.StoreContext context2 = new Types.StoreContext();
+                        Types.StoreContext context2 = new();
                         var addStatus = session.Upsert(ref upsertKey, ref upsertValue, context2, 1);
                         
                         // Console.WriteLine("add=" + i);
 
-                        if (addStatus != Status.OK)
+                        if (!addStatus.Record.InPlaceUpdated)
                             throw new Exception();
                     }
 
@@ -106,11 +105,11 @@ namespace ClassRecoveryDurablity
                                 var data = Generate(i);
 
                                 var deteletKey = new Types.StoreKey { tableType = "C", key = data.key };
-                                Types.StoreContext context2 = new Types.StoreContext();
+                                Types.StoreContext context2 = new();
                                 var deleteStatus = session.Delete(ref deteletKey, context2, 1);
                                 // Console.WriteLine("delete=" + i);
 
-                                if (deleteStatus != Status.OK)
+                                if (!deleteStatus.Record.InPlaceUpdated)
                                     throw new Exception();
                             }
                         }
@@ -120,7 +119,7 @@ namespace ClassRecoveryDurablity
 
                     lastBlockvalue = new Types.StoreValue { value = BitConverter.GetBytes(blockHeight) };
                     lastblockKey = new Types.StoreKey { tableType = "L", key = new byte[1] { 0 } };
-                    Types.StoreContext context = new Types.StoreContext();
+                    Types.StoreContext context = new();
                     session.Upsert(ref lastblockKey, ref lastBlockvalue, context, 1);
                     session.CompletePending(true);
 
@@ -164,10 +163,10 @@ namespace ClassRecoveryDurablity
                 var lastBlockvalue = new Types.StoreValue();
 
                 // test all data up to now.
-                Types.StoreInput input = new Types.StoreInput();
-                Types.StoreOutput output = new Types.StoreOutput();
+                Types.StoreInput input = new();
+                Types.StoreOutput output = new();
                 lastblockKey = new Types.StoreKey { tableType = "L", key = new byte[1] { 0 } };
-                Types.StoreContext context1 = new Types.StoreContext();
+                Types.StoreContext context1 = new();
                 var blkStatus = session.Read(ref lastblockKey, ref input, ref output, context1, 1);
                 var blockHeight = BitConverter.ToUInt32(output.value.value);
 
@@ -188,41 +187,41 @@ namespace ClassRecoveryDurablity
                         {
                             var data = Generate(j);
 
-                            Types.StoreInput input1 = new Types.StoreInput();
-                            Types.StoreOutput output1 = new Types.StoreOutput();
-                            Types.StoreContext context = new Types.StoreContext();
+                            Types.StoreInput input1 = new();
+                            Types.StoreOutput output1 = new();
+                            Types.StoreContext context = new();
                             var readKey = new Types.StoreKey { tableType = "C", key = data.key };
 
                             var deleteStatus = session.Read(ref readKey, ref input1, ref output1, context, 1);
                             //Console.WriteLine("test delete=" + i);
 
-                            if (deleteStatus == Status.PENDING)
+                            if (deleteStatus.IsPending)
                             {
                                 session.CompletePending(true);
                                 context.FinalizeRead(ref deleteStatus, ref output1);
                             }
 
-                            if (deleteStatus != Status.NOTFOUND)
+                            if (deleteStatus.Found)
                                 throw new Exception();
                         }
                         else
                         {
                             var data = Generate(i);
 
-                            Types.StoreInput input1 = new Types.StoreInput();
-                            Types.StoreOutput output1 = new Types.StoreOutput();
-                            Types.StoreContext context = new Types.StoreContext();
+                            Types.StoreInput input1 = new();
+                            Types.StoreOutput output1 = new();
+                            Types.StoreContext context = new();
                             var readKey = new Types.StoreKey { tableType = "C", key = data.key };
                             var addStatus = session.Read(ref readKey, ref input1, ref output1, context, 1);
                             //Console.WriteLine("test add=" + i);
 
-                            if (addStatus == Status.PENDING)
+                            if (addStatus.IsPending)
                             {
                                 session.CompletePending(true);
                                 context.FinalizeRead(ref addStatus, ref output1);
                             }
 
-                            if (addStatus != Status.OK)
+                            if (!addStatus.Found)
                                 throw new Exception();
 
                             if (output1.value.value.SequenceEqual(data.data) == false)

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -43,6 +44,101 @@ namespace FASTER.core
             var mi = typeof(Utility).GetMethod("IsBlittable", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.InvokeMethod);
             var fooRef = mi.MakeGenericMethod(t);
             return (bool)fooRef.Invoke(null, null);
+        }
+
+        /// <summary>
+        /// Parse size in string notation into long.
+        /// Examples: 4k, 4K, 4KB, 4 KB, 8m, 8MB, 12g, 12 GB, 16t, 16 TB, 32p, 32 PB.
+        /// </summary>
+        /// <param name="value">String version of number</param>
+        /// <returns>The number</returns>
+        public static long ParseSize(string value)
+        {
+            char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
+            long result = 0;
+            foreach (char c in value)
+            {
+                if (char.IsDigit(c))
+                {
+                    result = result * 10 + (byte)c - '0';
+                }
+                else
+                {
+                    for (int i = 0; i < suffix.Length; i++)
+                    {
+                        if (char.ToLower(c) == suffix[i])
+                        {
+                            result *= (long)Math.Pow(1024, i + 1);
+                            return result;
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Num bits in the previous power of 2 for specified number
+        /// </summary>
+        /// <param name="v"></param>
+        /// <returns></returns>
+        internal static int NumBitsPreviousPowerOf2(long v)
+        {
+            long adjustedSize = PreviousPowerOf2(v);
+            if (v != adjustedSize)
+                Trace.TraceInformation($"Warning: using lower value {adjustedSize} instead of specified value {v}");
+            return (int)Math.Log(adjustedSize, 2);
+        }
+
+
+        /// <summary>
+        /// Previous power of 2
+        /// </summary>
+        /// <param name="v"></param>
+        /// <returns></returns>
+        internal static long PreviousPowerOf2(long v)
+        {
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            return v - (v >> 1);
+        }
+
+        /// <summary>
+        /// Pretty print value
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        internal static string PrettySize(long value)
+        {
+            char[] suffix = new char[] { 'K', 'M', 'G', 'T', 'P' };
+            double v = value;
+            int exp = 0;
+            while (v - Math.Floor(v) > 0)
+            {
+                if (exp >= 18)
+                    break;
+                exp += 3;
+                v *= 1024;
+                v = Math.Round(v, 12);
+            }
+
+            while (Math.Floor(v).ToString().Length > 3)
+            {
+                if (exp <= -18)
+                    break;
+                exp -= 3;
+                v /= 1024;
+                v = Math.Round(v, 12);
+            }
+            if (exp > 0)
+                return v.ToString() + suffix[exp / 3 - 1] + "B";
+            else if (exp < 0)
+                return v.ToString() + suffix[-exp / 3 - 1] + "B";
+            return v.ToString() + "B";
         }
 
         /// <summary>

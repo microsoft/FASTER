@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.common;
@@ -38,13 +37,14 @@ namespace FASTER.server
         /// </summary>
         /// <param name="keySerializer">Serializer for Prefix Match and serializing Key</param>
         /// <param name="logDir">Directory where the log will be stored</param>
+        /// <param name="pageSize">Page size of log used for pub/sub</param>
         /// <param name="startFresh">start the log from scratch, do not continue</param>
-        public SubscribeBroker(IKeySerializer<Key> keySerializer, string logDir, bool startFresh = true)
+        public SubscribeBroker(IKeySerializer<Key> keySerializer, string logDir, long pageSize, bool startFresh = true)
         {
             this.keySerializer = keySerializer;
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4 });
             if (startFresh)
                 log.TruncateUntil(log.CommittedUntilAddress);
         }
@@ -54,7 +54,7 @@ namespace FASTER.server
         /// called during dispose of server session
         /// </summary>
         /// <param name="session">server session</param>
-        public unsafe void RemoveSubscription(IServerSession session)
+        public unsafe void RemoveSubscription(IMessageConsumer session)
         {
             if (subscriptions != null)
             {

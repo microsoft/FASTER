@@ -5,13 +5,11 @@ using FASTER.core;
 
 namespace FASTER.server
 {
-    internal struct ServerKVFunctions<Key, Value, Input, Output, Functions> : IAdvancedFunctions<Key, Value, Input, Output, long>
-        where Functions : IAdvancedFunctions<Key, Value, Input, Output, long>
+    internal struct ServerKVFunctions<Key, Value, Input, Output, Functions> : IFunctions<Key, Value, Input, Output, long>
+        where Functions : IFunctions<Key, Value, Input, Output, long>
     {
         private readonly Functions functions;
         private readonly FasterKVServerSessionBase<Output> serverNetworkSession;
-
-        public bool SupportsLocking => functions.SupportsLocking;
 
         public ServerKVFunctions(Functions functions, FasterKVServerSessionBase<Output> serverNetworkSession)
         {
@@ -19,58 +17,76 @@ namespace FASTER.server
             this.serverNetworkSession = serverNetworkSession;
         }
 
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-            => functions.CheckpointCompletionCallback(sessionId, commitPoint);
+        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
+            => functions.CheckpointCompletionCallback(sessionID, sessionName, commitPoint);
 
-        public void ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, long address)
-            => functions.ConcurrentDeleter(ref key, ref value, ref recordInfo, address);
+        public bool SingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo)
+            => functions.SingleDeleter(ref key, ref value, ref deleteInfo);
 
-        public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, long address)
-            => functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref recordInfo, address);
+        public void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo) { }
 
-        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst, ref RecordInfo recordInfo, long address)
-            => functions.ConcurrentWriter(ref key, ref src, ref dst, ref recordInfo, address);
+        public bool ConcurrentDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo)
+            => functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo);
 
-        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output)
-            => functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output);
+        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo)
+            => functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output)
-            => functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output);
+        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo)
+            => functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
 
-        public void DeleteCompletionCallback(ref Key key, long ctx)
-            => functions.DeleteCompletionCallback(ref key, ctx);
+        public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref RMWInfo rmwInfo)
+            => functions.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo);
 
-        public void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
-            => functions.InitialUpdater(ref key, ref input, ref value, ref output);
+        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref RMWInfo rmwInfo)
+            => functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output, ref rmwInfo);
 
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, long address)
-            => functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, address);
+        public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
+            => functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status, RecordInfo recordInfo)
+        public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
+            => functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+
+        public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
+            => functions.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
+            => functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+
+        public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
+
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status, RecordMetadata recordMetadata)
         {
             serverNetworkSession.CompleteRead(ref output, ctx, status);
-            functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordInfo);
+            functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
         }
 
-        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status)
+        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, long ctx, Status status, RecordMetadata recordMetadata)
         {
             serverNetworkSession.CompleteRMW(ref output, ctx, status);
-            functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status);
+            functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
         }
 
-        public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, long address)
-            => functions.SingleReader(ref key, ref input, ref value, ref dst, address);
+        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo)
+            => functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
-        public void SingleWriter(ref Key key, ref Value src, ref Value dst)
-            => functions.SingleWriter(ref key, ref src, ref dst);
+        public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) 
+            => functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
 
-        public void UpsertCompletionCallback(ref Key key, ref Value value, long ctx)
-            => functions.UpsertCompletionCallback(ref key, ref value, ctx);
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
-        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
-            => functions.Lock(ref recordInfo, ref key, ref value, lockType, ref lockContext);
+        public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => functions.DisposeSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
 
-        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
-            => functions.Unlock(ref recordInfo, ref key, ref value, lockType, lockContext);
+        public void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
+            => functions.DisposeCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+
+        public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
+            => DisposeInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+
+        public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo)
+            => functions.DisposeSingleDeleter(ref key, ref value, ref deleteInfo);
+
+        public void DisposeDeserializedFromDisk(ref Key key, ref Value value)
+            => functions.DisposeDeserializedFromDisk(ref key, ref value);
     }
 }

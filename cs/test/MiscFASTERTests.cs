@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -22,7 +23,6 @@ namespace FASTER.test
             fht = new FasterKV<int, MyValue>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 },
-                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
                 serializerSettings: new SerializerSettings<int, MyValue> { valueSerializer = () => new MyValueSerializer() }
                 );
         }
@@ -48,7 +48,7 @@ namespace FASTER.test
 
             int key = 8999998;
             var input1 = new MyInput { value = 23 };
-            MyOutput output = new MyOutput();
+            MyOutput output = new();
 
             session.RMW(ref key, ref input1, Empty.Default, 0);
 
@@ -76,32 +76,28 @@ namespace FASTER.test
             }
 
             var key2 = 23;
-            var input = new MyInput();
-            MyOutput g1 = new MyOutput();
+            MyInput input = new();
+            MyOutput g1 = new();
             var status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
-                session.CompletePending(true);
+                session.CompletePendingWithOutputs(out var outputs, wait:true);
+                (status, _) = GetSinglePendingResult(outputs);
             }
-            else
-            {
-                Assert.AreEqual(Status.OK, status);
-            }
+            Assert.IsTrue(status.Found);
 
             Assert.AreEqual(23, g1.value.value);
 
             key2 = 99999;
             status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
 
-            if (status == Status.PENDING)
+            if (status.IsPending)
             {
-                session.CompletePending(true);
+                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                (status, _) = GetSinglePendingResult(outputs);
             }
-            else
-            {
-                Assert.AreEqual(Status.NOTFOUND, status);
-            }
+            Assert.IsFalse(status.Found);
         }
 
         [Test]
@@ -121,26 +117,34 @@ namespace FASTER.test
 
                 var key = default(KeyStruct);
                 var value = default(ValueStruct);
+                var input = default(InputStruct);
+                var output = default(OutputStruct);
 
                 key = new KeyStruct() { kfield1 = 1, kfield2 = 2 };
                 value = new ValueStruct() { vfield1 = 1000, vfield2 = 2000 };
 
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                var status = session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata1);
+                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
+                // ConcurrentWriter returns false, so we create a new record (and leave the old one sealed).
                 value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                status = session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata2);
+                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+
+                Assert.Greater(recordMetadata2.Address, recordMetadata1.Address);
 
                 var recordCount = 0;
                 using (var iterator = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
                 {
+                    // We seal before copying and leave it sealed after copying, so we only get one record.
                     while (iterator.GetNext(out var info))
                     {
                         recordCount++;
                     }
                 }
 
-                Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount, 2);
-                Assert.AreEqual(2, recordCount);
+                Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount);
+                Assert.AreEqual(1, recordCount);
             }
             finally
             {

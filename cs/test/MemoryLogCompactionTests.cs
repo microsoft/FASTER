@@ -39,7 +39,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
-        public void MemoryLogCompactionTest1([Values] TestUtils.DeviceType deviceType)
+        public void MemoryLogCompactionTest1([Values] TestUtils.DeviceType deviceType, [Values] CompactionType compactionType)
         {
 
             string filename = path + "MemoryLogCompactionTests1" + deviceType.ToString() + ".log";
@@ -73,7 +73,8 @@ namespace FASTER.test
 
             // Compact log
             var compactUntil = fht.Log.BeginAddress + (fht.Log.TailAddress - fht.Log.BeginAddress) / 5;
-            compactUntil = session.Compact(compactUntil, true);
+            compactUntil = session.Compact(compactUntil, compactionType);
+            fht.Log.Truncate();
 
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
@@ -83,20 +84,19 @@ namespace FASTER.test
                 key.Span.Fill(i);
 
                 var (status, output) = session.Read(key, userContext: i < 10 ? 1 : 0); 
-                if (status == Status.PENDING)
-                    session.CompletePending(true);
-                else
+                if (status.IsCompleted)
                 {
                     if (i < 10)
-                        Assert.AreEqual(Status.NOTFOUND, status);
+                        Assert.IsFalse(status.Found);
                     else
                     {
-                        Assert.AreEqual(Status.OK, status);
+                        Assert.IsTrue(status.Found);
                         Assert.IsTrue(output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(key.Span));
                         output.Item1.Dispose();
                     }
                 }
             }
+            session.CompletePending(true);
 
             // Test iteration of distinct live keys
             using (var iter = session.Iterate())
@@ -129,28 +129,30 @@ namespace FASTER.test
 
     public class MemoryCompaction : MemoryFunctions<ReadOnlyMemory<int>, int, int>
     {
-        public override void RMWCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status)
+        public override void RMWCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.AreEqual(Status.OK, status);
+            Assert.IsTrue(status.Found);
+            Assert.IsTrue(status.Record.CopyUpdated);
         }
 
-        public override void ReadCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status)
+        public override void ReadCompletionCallback(ref ReadOnlyMemory<int> key, ref Memory<int> input, ref (IMemoryOwner<int>, int) output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             try
             {
                 if (ctx == 0)
                 {
-                    Assert.AreEqual(Status.OK, status);
+                    Assert.IsTrue(status.Found);
                     Assert.IsTrue(output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(key.Span));
                 }
                 else
                 {
-                    Assert.AreEqual(Status.NOTFOUND, status);
+                    Assert.IsFalse(status.Found);
                 }
             }
             finally
             {
-                if (status == Status.OK) output.Item1.Dispose();
+                if (status.Found)
+                    output.Item1.Dispose();
             }
         }
     }

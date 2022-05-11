@@ -15,7 +15,7 @@ namespace FASTER.core
     /// <summary>
     /// Local storage device
     /// </summary>
-#if NET5_0
+#if NET5_0_OR_GREATER
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 #endif
     public unsafe class LocalStorageDevice : StorageDeviceBase
@@ -101,12 +101,11 @@ namespace FASTER.core
                                       bool useIoCompletionPort = true)
                 : base(filename, GetSectorSize(filename), capacity)
         {
-#if NETSTANDARD || NET
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 throw new FasterException("Cannot use LocalStorageDevice from non-Windows OS platform, use ManagedLocalStorageDevice instead.");
             }
-#endif
+
             ThrottleLimit = 120;
             this.useIoCompletionPort = useIoCompletionPort;
             this._disposed = false;
@@ -312,10 +311,8 @@ namespace FASTER.core
         public override void RemoveSegment(int segment)
         {
             if (logHandles.TryRemove(segment, out SafeFileHandle logHandle))
-            {
                 logHandle.Dispose();
-                Native32.DeleteFileW(GetSegmentName(segment));
-            }
+            Native32.DeleteFileW(GetSegmentName(segment));
         }
 
         /// <summary>
@@ -538,7 +535,7 @@ namespace FASTER.core
         public bool IsCompleted => throw new NotImplementedException();
     }
 
-#if NET5_0
+#if NET5_0_OR_GREATER
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 #endif
     unsafe sealed class LocalStorageDeviceCompletionWorker

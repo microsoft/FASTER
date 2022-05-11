@@ -305,10 +305,9 @@ namespace FASTER.core
         /// <returns></returns>
         public static bool EnableProcessPrivileges()
         {
-#if NETSTANDARD || NET
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 return false;
-#endif
+
             if (processPrivilegeEnabled.HasValue) return processPrivilegeEnabled.Value;
 
             TOKEN_PRIVILEGES token_privileges = default(TOKEN_PRIVILEGES);
@@ -351,10 +350,9 @@ namespace FASTER.core
 
         internal static bool EnableVolumePrivileges(string filename, SafeFileHandle handle)
         {
-#if NETSTANDARD || NET
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 return false;
-#endif
+
             if (processPrivilegeEnabled == false)
                 return false;
 
@@ -391,10 +389,8 @@ namespace FASTER.core
         /// <returns></returns>
         public static bool SetFileSize(SafeFileHandle file_handle, long file_size)
         {
-#if NETSTANDARD || NET
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 return false;
-#endif
 
             if (!SetFilePointerEx(file_handle, file_size, out long newFilePtr, 0))
             {

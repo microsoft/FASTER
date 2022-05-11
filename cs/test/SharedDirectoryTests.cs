@@ -57,7 +57,7 @@ namespace FASTER.test.recovery.sumstore
             Populate(this.original.Faster);
 
             // Take checkpoint from original to start the clone from
-            Assert.IsTrue(this.original.Faster.TakeFullCheckpoint(out var checkpointGuid));
+            Assert.IsTrue(this.original.Faster.TryInitiateFullCheckpoint(out var checkpointGuid, CheckpointType.FoldOver));
             this.original.Faster.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
             // Sanity check against original
@@ -83,9 +83,7 @@ namespace FASTER.test.recovery.sumstore
             // Dispose original, files should not be deleted on Windows
             this.original.TearDown();
 
-#if NETCOREAPP || NET
             if (RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
-#endif
             {
                 // Clone should still work on Windows
                 Assert.IsFalse(IsDirectoryEmpty(this.sharedLogDirectory));
@@ -107,10 +105,9 @@ namespace FASTER.test.recovery.sumstore
 
             public void Initialize(string checkpointDirectory, string logDirectory, bool populateLogHandles = false)
             {
-#if NETCOREAPP || NET
                 if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                     populateLogHandles = false;
-#endif
+
                 this.CheckpointDirectory = checkpointDirectory;
                 this.LogDirectory = logDirectory;
 
@@ -136,13 +133,11 @@ namespace FASTER.test.recovery.sumstore
                     }
                 }
 
-#if NETCOREAPP || NET
                 if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                 {
                     this.LogDevice = new ManagedLocalStorageDevice(deviceFileName, deleteOnClose: true);
                 }
                 else
-#endif
                 {
                     this.LogDevice = new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
                 }
@@ -150,7 +145,7 @@ namespace FASTER.test.recovery.sumstore
                 this.Faster = new FasterKV<AdId, NumClicks>(
                     keySpace,
                     new LogSettings { LogDevice = this.LogDevice },
-                    new CheckpointSettings { CheckpointDir = this.CheckpointDirectory, CheckPointType = CheckpointType.FoldOver });
+                    new CheckpointSettings { CheckpointDir = this.CheckpointDirectory });
             }
 
             public void TearDown()
@@ -214,19 +209,18 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < numUniqueKeys; i++)
             {
                 var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.Found);
                 inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests
             session.CompletePending(true);
 
-
             // Compute expected array
             long[] expected = new long[numUniqueKeys];
             foreach (var guid in checkpointInfo.continueTokens.Keys)
             {
-                var sno = checkpointInfo.continueTokens[guid].UntilSerialNo;
+                var sno = checkpointInfo.continueTokens[guid].Item2.UntilSerialNo;
                 for (long i = 0; i <= sno; i++)
                 {
                     var id = i % numUniqueKeys;

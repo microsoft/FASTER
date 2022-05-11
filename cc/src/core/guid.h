@@ -66,7 +66,7 @@ class Guid {
     GUID guid;
     auto result = ::UuidFromString(reinterpret_cast<uint8_t*>(const_cast<char*>(str.c_str())),
                                    &guid);
-    assert(result = RPC_S_OK);
+    assert(result == RPC_S_OK);
     return guid;
 #else
     uuid_t uuid;

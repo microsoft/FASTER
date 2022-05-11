@@ -2,9 +2,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using FASTER.core;
 
@@ -125,7 +122,7 @@ namespace SumStore
             else
             {
                 // Register thread with FASTER
-                session = fht.For(new Functions()).NewSession<Functions>(threadId.ToString(), true);
+                session = fht.For(new Functions()).NewSession<Functions>(threadId.ToString());
             }
 
             GenerateClicks(session, sno);
@@ -166,9 +163,8 @@ namespace SumStore
             {
                 Thread.Sleep(checkpointInterval);
 
-                fht.TakeFullCheckpoint(out Guid token);
-
-                fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                fht.TryInitiateFullCheckpoint(out Guid token, CheckpointType.Snapshot);
+                fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
                 Console.WriteLine("Completed checkpoint {0}", token);
             }
@@ -176,7 +172,7 @@ namespace SumStore
 
         private void Test()
         {
-            List<long> sno = new List<long>();
+            List<long> sno = new();
 
             for (int i = 0; i < threadCount; i++)
             {
@@ -191,7 +187,7 @@ namespace SumStore
             Input[] inputArray = new Input[numUniqueKeys];
             for (int i = 0; i < numUniqueKeys; i++)
             {
-                inputArray[i].adId.adId = (i % numUniqueKeys);
+                inputArray[i].adId.adId = i % numUniqueKeys;
                 inputArray[i].numClicks.numClicks = 0;
             }
 
@@ -203,7 +199,7 @@ namespace SumStore
             {
                 Output output = default;
                 var status = session.Read(ref inputArray[i].adId, ref inputArray[i], ref output, Empty.Default, i);
-                Debug.Assert(status == Status.OK || status == Status.NOTFOUND);
+                Debug.Assert(status.IsCompletedSuccessfully);
                 inputArray[i].numClicks.numClicks = output.value.numClicks;
             }
 

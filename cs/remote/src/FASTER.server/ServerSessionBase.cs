@@ -4,103 +4,38 @@
 using System;
 using System.Net.Sockets;
 using FASTER.common;
+using FASTER.core;
+using System.Runtime.CompilerServices;
 
 namespace FASTER.server
 {
     /// <summary>
     /// Abstract base class for server session provider
     /// </summary>
-    public abstract class ServerSessionBase : IServerSession
-    {
-        /// <summary>
-        /// Socket
-        /// </summary>
-        protected readonly Socket socket;
-
-        /// <summary>
-        /// Max size settings
-        /// </summary>
-        protected readonly MaxSizeSettings maxSizeSettings;
-
-        /// <summary>
-        /// Response object
-        /// </summary>
-        protected SeaaBuffer responseObject;
-
+    public abstract class ServerSessionBase : IMessageConsumer
+    {      
         /// <summary>
         /// Bytes read
         /// </summary>
-        protected int bytesRead;
+        protected int bytesRead;           
 
         /// <summary>
-        /// Message manager
+        /// NetworkSender instance
         /// </summary>
-        protected readonly NetworkSender messageManager;
-
-        private readonly int serverBufferSize;
-
+        protected readonly INetworkSender networkSender;
 
         /// <summary>
-        /// Create new instance
+        ///  Create instance of session backed by given networkSender
         /// </summary>
-        /// <param name="socket"></param>
-        /// <param name="maxSizeSettings"></param>
-        public ServerSessionBase(Socket socket, MaxSizeSettings maxSizeSettings)
+        /// <param name="networkSender"></param>
+        public ServerSessionBase(INetworkSender networkSender)
         {
-            this.socket = socket;
-            this.maxSizeSettings = maxSizeSettings;
-            serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
-            messageManager = new NetworkSender(serverBufferSize);
+            this.networkSender = networkSender;
             bytesRead = 0;
         }
 
         /// <inheritdoc />
-        public abstract int TryConsumeMessages(byte[] buf);
-
-        /// <inheritdoc />
-        public void AddBytesRead(int bytesRead) => this.bytesRead += bytesRead;
-
-        /// <summary>
-        /// Get response object
-        /// </summary>
-        protected void GetResponseObject() { if (responseObject == null) responseObject = messageManager.GetReusableSeaaBuffer(); }
-
-        /// <summary>
-        /// Send response
-        /// </summary>
-        /// <param name="size"></param>
-        protected void SendResponse(int size)
-        {
-            var _r = responseObject;
-            responseObject = null;
-            try
-            {
-                messageManager.Send(socket, _r, 0, size);
-            }
-            catch
-            {
-                messageManager.Return(_r);
-            }
-        }
-
-        /// <summary>
-        /// Send response
-        /// </summary>
-        /// <param name="offset"></param>
-        /// <param name="size"></param>
-        protected void SendResponse(int offset, int size)
-        {
-            var _r = responseObject;
-            responseObject = null;
-            try
-            {
-                messageManager.Send(socket, _r, offset, size);
-            }
-            catch
-            {
-                messageManager.Return(_r);
-            }
-        }
+        public abstract unsafe int TryConsumeMessages(byte* req_buf, int bytesRead);
 
         /// <summary>
         /// Publish an update to a key to all the subscribers of the key
@@ -129,24 +64,6 @@ namespace FASTER.server
         /// <summary>
         /// Dispose
         /// </summary>
-        public virtual void Dispose()
-        {
-            socket.Dispose();
-            var _r = responseObject;
-            if (_r != null)
-                messageManager.Return(_r);
-            messageManager.Dispose();
-        }
-
-        /// <summary>
-        /// Wait for ongoing outgoing calls to complete
-        /// </summary>
-        public virtual void CompleteSends()
-        {
-            var _r = responseObject;
-            if (_r != null)
-                messageManager.Return(_r);
-            messageManager.Dispose();
-        }
+        public virtual void Dispose() => networkSender.Dispose();
     }
 }
