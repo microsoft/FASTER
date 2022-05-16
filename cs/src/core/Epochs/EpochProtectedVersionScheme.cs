@@ -12,6 +12,9 @@ namespace FASTER.core
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct VersionSchemeState
     {
+        /// <summary>
+        /// Special value denoting that the version state machine is at rest in stable state
+        /// </summary>
         public const byte REST = 0;
         const int kTotalSizeInBytes = 8;
         const int kTotalBits = kTotalSizeInBytes * 8;
@@ -31,6 +34,9 @@ namespace FASTER.core
 
         [FieldOffset(0)] internal long Word;
 
+        /// <summary>
+        /// Custom phase marker denoting where in a state machine EPVS is in right now
+        /// </summary>
         public byte Phase
         {
             get { return (byte) ((Word >> kPhaseShiftInWord) & kPhaseMaskInInteger); }
@@ -41,8 +47,13 @@ namespace FASTER.core
             }
         }
 
+        /// <summary></summary>
+        /// <returns>whether EPVS is in intermediate state now (transitioning between two states)</returns>
         public bool IsIntermediate() => (Phase & kIntermediateMask) != 0;
 
+        /// <summary>
+        /// Version number of the current state
+        /// </summary>
         public long Version
         {
             get { return Word & kVersionMaskInWord; }
@@ -136,6 +147,9 @@ namespace FASTER.core
     public abstract class VersionSchemeStateMachine
     {
         private long toVersion;
+        /// <summary>
+        /// The actual version this state machine is advancing to, or -1 if not yet determined
+        /// </summary>
         protected internal long actualToVersion = -1;
 
         /// <summary>
