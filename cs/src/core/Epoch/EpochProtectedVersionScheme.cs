@@ -72,6 +72,12 @@ namespace FASTER.core
             return info;
         }
 
+        /// <summary>
+        /// Make a state with the given phase and version
+        /// </summary>
+        /// <param name="phase"></param>
+        /// <param name="version"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static VersionSchemeState Make(byte phase, long version)
         {
@@ -216,9 +222,23 @@ namespace FASTER.core
         public override void AfterEnteringState(VersionSchemeState state) {}
     }
 
+    /// <summary>
+    /// Status for state machine execution
+    /// </summary>
     public enum StateMachineExecutionStatus
     {
-        OK, RETRY, FAIL
+        /// <summary>
+        /// execution successful
+        /// </summary>
+        OK,
+        /// <summary>
+        /// execution unsuccessful but may be retried
+        /// </summary>
+        RETRY,
+        /// <summary>
+        /// execution failed and should not be retried
+        /// </summary>
+        FAIL
     }
 
     /// <summary>

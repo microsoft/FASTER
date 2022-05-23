@@ -8,7 +8,6 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\core\FASTER.core.csproj" />
-      <ProjectReference Include="..\..\src\libepoch\FASTER.libepoch.csproj" />
     </ItemGroup>
 
     <ItemGroup>
