@@ -51,8 +51,4 @@
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="6.0.0" />
     <PackageReference Include="System.Interactive.Async" Version="6.0.1" />
   </ItemGroup>
-  
-  <ItemGroup>
-    <ProjectReference Include="..\libepoch\FASTER.libepoch.csproj" />
-  </ItemGroup>
 </Project>
