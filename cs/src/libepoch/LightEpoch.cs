@@ -14,6 +14,7 @@ namespace FASTER.core
     /// </summary>
     public unsafe sealed class LightEpoch
     {
+        private const int kCacheLineBytes = 64;
         /// <summary>
         /// Default invalid index entry.
         /// </summary>
@@ -105,7 +106,7 @@ namespace FASTER.core
             p = (long)threadIndexHandle.AddrOfPinnedObject();
 #endif
             // Force the pointer to align to 64-byte boundaries
-            long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
+            long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
             threadIndexAligned = (Entry*)p2;
         }
 
@@ -126,7 +127,7 @@ namespace FASTER.core
             p = (long)tableHandle.AddrOfPinnedObject();
 #endif
             // Force the pointer to align to 64-byte boundaries
-            long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
+            long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
             tableAligned = (Entry*)p2;
 
             CurrentEpoch = 1;
@@ -480,7 +481,23 @@ namespace FASTER.core
                 }
             }
         }
-
+        
+        /// <summary>
+        /// A 32-bit murmur3 implementation.
+        /// </summary>
+        /// <param name="h"></param>
+        /// <returns></returns>
+        internal static int Murmur3(int h)
+        {
+            uint a = (uint)h;
+            a ^= a >> 16;
+            a *= 0x85ebca6b;
+            a ^= a >> 13;
+            a *= 0xc2b2ae35;
+            a ^= a >> 16;
+            return (int)a;
+        }
+        
         /// <summary>
         /// Allocate a new entry in epoch table. This is called 
         /// once for a thread.
@@ -491,7 +508,7 @@ namespace FASTER.core
             if (threadId == 0) // run once per thread for performance
             {
                 threadId = Environment.CurrentManagedThreadId;
-                uint code = (uint)Utility.Murmur3(threadId);
+                uint code = (uint)Murmur3(threadId);
                 startOffset1 = (ushort)(1 + (code % kTableSize));
                 startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }
@@ -501,7 +518,7 @@ namespace FASTER.core
         /// <summary>
         /// Epoch table entry (cache line size).
         /// </summary>
-        [StructLayout(LayoutKind.Explicit, Size = Constants.kCacheLineBytes)]
+        [StructLayout(LayoutKind.Explicit, Size = kCacheLineBytes)]
         struct Entry
         {
             /// <summary>

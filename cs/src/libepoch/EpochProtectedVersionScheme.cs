@@ -73,7 +73,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static VersionSchemeState Make(byte phase, long version)
+        public static VersionSchemeState Make(byte phase, long version)
         {
             var info = default(VersionSchemeState);
             info.Phase = phase;
@@ -410,7 +410,7 @@ namespace FASTER.core
         public bool ExecuteStateMachine(VersionSchemeStateMachine stateMachine, bool spin = false)
         {
             if (epoch.ThisInstanceProtected())
-                throw new FasterException("unsafe to execute a state machine blockingly when under protection"); 
+                throw new InvalidOperationException("unsafe to execute a state machine blockingly when under protection"); 
             StateMachineExecutionStatus status;
             do
             {
