@@ -12,7 +12,7 @@ namespace FASTER.common
     /// Object pool
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    internal class SimpleObjectPool<T> : IDisposable where T : class, IDisposable
+    public class SimpleObjectPool<T> : IDisposable where T : class, IDisposable
     {
         private readonly Func<T> factory;
         private readonly LightConcurrentStack<T> stack;
@@ -30,6 +30,9 @@ namespace FASTER.common
             allocatedObjects = 0;
         }
 
+        /// <summary>
+        /// Dispose
+        /// </summary>
         public void Dispose()
         {
             while (allocatedObjects > 0)
@@ -43,6 +46,10 @@ namespace FASTER.common
             }
         }
 
+        /// <summary>
+        /// Checkout item
+        /// </summary>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public T Checkout()
         {
@@ -54,6 +61,10 @@ namespace FASTER.common
             return obj;
         }
 
+        /// <summary>
+        /// Return item
+        /// </summary>
+        /// <param name="obj"></param>
         public void Return(T obj)
         {
             if (!stack.TryPush(obj))

@@ -14,7 +14,7 @@ namespace FASTER.common
         /// 
         /// </summary>
         /// <returns></returns>
-        MaxSizeSettings GetMaxSizeSettings { get; }        
+        MaxSizeSettings GetMaxSizeSettings { get; }
 
         /// <summary>
         /// Allocate a new response object
@@ -45,6 +45,16 @@ namespace FASTER.common
         /// <param name="size">Number of bytes to send, starting from offset</param>
         /// <returns>Whether the send succeeded</returns>
         bool SendResponse(int offset, int size);
+
+        /// <summary>
+        /// Send response (caller owns buffer space)
+        /// </summary>
+        void SendResponse(byte[] buffer, int offset, int count, object context);
+
+        /// <summary>
+        /// Send response (caller owns buffer space)
+        /// </summary>
+        void SendCallback(object context);
 
         /// <summary>
         /// Dispose, optionally waiting for ongoing outgoing calls to complete

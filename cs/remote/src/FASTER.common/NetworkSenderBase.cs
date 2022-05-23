@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -28,7 +29,7 @@ namespace FASTER.common
         public NetworkSenderBase(MaxSizeSettings maxSizeSettings)
         {
             this.maxSizeSettings = maxSizeSettings;
-            this.serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);         
+            this.serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
         }
 
         /// <summary>
@@ -36,8 +37,8 @@ namespace FASTER.common
         /// </summary>
         /// <param name="serverBufferSize"></param>        
         public NetworkSenderBase(int serverBufferSize)
-        {            
-            this.serverBufferSize = serverBufferSize;            
+        {
+            this.serverBufferSize = serverBufferSize;
         }
 
         /// <summary>
@@ -60,6 +61,12 @@ namespace FASTER.common
 
         /// <inheritdoc />
         public abstract bool SendResponse(int offset, int size);
+
+        /// <inheritdoc />
+        public abstract void SendResponse(byte[] buffer, int offset, int count, object context);
+
+        /// <inheritdoc />
+        public abstract void SendCallback(object context);
 
         /// <inheritdoc />
         public abstract void Dispose();
