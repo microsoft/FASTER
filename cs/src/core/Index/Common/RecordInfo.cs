@@ -46,6 +46,9 @@ namespace FASTER.core
         const int kDirtyBitOffset = kSealedBitOffset + 1;
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
+        // If these become used, start with the highest number
+        internal const int kUnusedBit2Offset = kInNewVersionBitOffset + 1;
+        internal const int kUnusedBit1Offset = kUnusedBit2Offset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
@@ -54,6 +57,8 @@ namespace FASTER.core
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
         const long kFillerBitMask = 1L << kFillerBitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
+        internal const long kUnused2BitMask = 1L << kUnusedBit2Offset;
+        internal const long kUnused1BitMask = 1L << kUnusedBit1Offset;
 
         [FieldOffset(0)]
         private long word;
@@ -418,6 +423,9 @@ namespace FASTER.core
         {
             return kTotalSizeInBytes;
         }
+
+        internal bool Unused1 { get => (word & kUnused1BitMask) != 0; set => word = value ? word | kUnused1BitMask : word & ~kUnused1BitMask; }
+        internal bool Unused2 { get => (word & kUnused2BitMask) != 0; set => word = value ? word | kUnused2BitMask : word & ~kUnused2BitMask; }
 
         public override string ToString() => word.ToString();
     }

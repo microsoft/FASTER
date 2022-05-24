@@ -6,6 +6,7 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
 
 namespace FASTER.test.ReadCacheTests
@@ -615,6 +616,372 @@ namespace FASTER.test.ReadCacheTests
 
             Assert.IsFalse(fht.LockTable.IsActive);
             Assert.AreEqual(0, fht.LockTable.dict.Count);
+        }
+    }
+
+    class LongStressChainTests
+    {
+        private FasterKV<long, long> fht;
+        private IDevice log;
+        const long valueAdd = 1_000_000_000;
+
+        const long numKeys = 2_000;
+
+        struct LongComparerModulo : IFasterEqualityComparer<long>
+        {
+            readonly ModuloRange modRange;
+
+            internal LongComparerModulo(ModuloRange mod) => this.modRange = mod;
+
+            public bool Equals(ref long k1, ref long k2) => k1 == k2;
+
+            // Force collisions to create a chain
+            public long GetHashCode64(ref long k)
+            {
+                long value = Utility.GetHashCode(k);
+                return this.modRange != ModuloRange.None ? value % (long)modRange : value;
+            }
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            DeleteDirectory(MethodTestDir, wait: true);
+
+            // Make this small enough that we force the readcache
+            var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
+            log = Devices.CreateLogDevice(MethodTestDir + $"/{this.GetType().Name}.log", deleteOnClose: true);
+            var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
+
+            ModuloRange modRange = ModuloRange.None;
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is ModuloRange cr)
+                {
+                    modRange = cr;
+                    continue;
+                }
+            }
+
+            fht = new FasterKV<long, long>(1L << 10, logSettings, comparer: new LongComparerModulo(modRange));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            fht?.Dispose();
+            fht = null;
+            log?.Dispose();
+            log = null;
+            DeleteDirectory(MethodTestDir);
+        }
+
+        internal class RmwLongFunctions : SimpleFunctions<long, long, Empty>
+        {
+            /// <inheritdoc/>
+            public override bool CopyUpdater(ref long key, ref long input, ref long oldValue, ref long newValue, ref long output, ref RMWInfo rmwInfo)
+            {
+                newValue = output = input;
+                return true;
+            }
+
+            /// <inheritdoc/>
+            public override bool InPlaceUpdater(ref long key, ref long input, ref long value, ref long output, ref RMWInfo rmwInfo)
+            {
+                value = output = input;
+                return true;
+            }
+        }
+
+        public enum ModuloRange { Hundred = 100, Thousand = 1000, None = int.MaxValue }
+
+        unsafe void PopulateAndEvict()
+        {
+            using var session = fht.NewSession(new SimpleFunctions<long, long, Empty>());
+
+            for (long ii = 0; ii < numKeys; ii++)
+            {
+                long key = ii, input = ii, output = 0;
+                var status = session.Upsert(ref key, ref input, ref input, ref output);
+                Assert.IsFalse(status.IsPending);
+                Assert.IsTrue(status.Record.Created, status.ToString());
+            }
+            session.CompletePending(true);
+            fht.Log.FlushAndEvict(true);
+        }
+
+        static void ClearCountsOnError(LockableUnsafeContext<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> luContext)
+        {
+            // If we already have an exception, clear these counts so "Run" will not report them spuriously.
+            luContext.sharedLockCount = 0;
+            luContext.exclusiveLockCount = 0;
+        }
+
+        [Test]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        public void MultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
+        {
+            if (numReadThreads == 0 && numWriteThreads == 0)
+                Assert.Ignore();
+            PopulateAndEvict();
+
+            const int numIterations = 1;
+            unsafe void runReadThread(int tid)
+            {
+                using var session = fht.NewSession(new SimpleFunctions<long, long, Empty>());
+
+                Random rng = new(tid * 101);
+                for (var iteration = 0; iteration < numIterations; ++iteration)
+                {
+                    for (var ii = 0; ii < numKeys; ++ii)
+                    {
+                        long key = ii, output = 0;
+                        var status = session.Read(ref key, ref output);
+                        if (status.IsPending)
+                        {
+                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
+                            Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
+                        }
+                        Assert.IsTrue(status.Found, status.ToString());
+
+                        Assert.IsTrue((output % valueAdd) == ii);
+                    }
+                }
+            }
+
+            unsafe void runUpdateThread(int tid)
+            {
+                using var session = fht.NewSession(new RmwLongFunctions());
+
+                Random rng = new(tid * 101);
+                for (var iteration = 0; iteration < numIterations; ++iteration)
+                {
+                    for (var ii = 0; ii < numKeys; ++ii)
+                    {
+                        long key = ii, input = ii + valueAdd * tid, output = 0;
+                        var status = session.RMW(ref key, ref input, ref output);
+                        if (status.IsPending)
+                        {
+                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            (status, output) = GetSinglePendingResult(completedOutputs);
+                            
+                            // Record may have been updated in-place
+                            // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
+                        }
+                        Assert.IsTrue(status.Found, status.ToString());
+
+                        Assert.AreEqual(ii + valueAdd * tid, output);
+                    }
+                }
+            }
+
+            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            for (int t = 1; t <= numReadThreads + numWriteThreads; t++)
+            {
+                var tid = t;
+                if (t <= numReadThreads)
+                    tasks.Add(Task.Factory.StartNew(() => runReadThread(tid)));
+                else
+                    tasks.Add(Task.Factory.StartNew(() => runUpdateThread(tid)));
+            }
+            Task.WaitAll(tasks.ToArray());
+        }
+    }
+
+    class SpanByteStressChainTests
+    {
+        private FasterKV<SpanByte, SpanByte> fht;
+        private IDevice log;
+        const long valueAdd = 1_000_000_000;
+
+        const long numKeys = 2_000;
+
+        struct SpanByteComparerModulo : IFasterEqualityComparer<SpanByte>
+        {
+            readonly ModuloRange modRange;
+
+            internal SpanByteComparerModulo(ModuloRange mod) => this.modRange = mod;
+
+            public bool Equals(ref SpanByte k1, ref SpanByte k2) => SpanByteComparer.StaticEquals(ref k1, ref k2);
+
+            // Force collisions to create a chain
+            public long GetHashCode64(ref SpanByte k)
+            {
+                var value = SpanByteComparer.StaticGetHashCode64(ref k);
+                return this.modRange != ModuloRange.None ? value % (long)modRange : value;
+            }
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            DeleteDirectory(MethodTestDir, wait: true);
+
+            // Make this small enough that we force the readcache
+            var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
+            log = Devices.CreateLogDevice(MethodTestDir + $"/{this.GetType().Name}.log", deleteOnClose: true);
+            var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
+
+            ModuloRange modRange = ModuloRange.None;
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is ModuloRange cr)
+                {
+                    modRange = cr;
+                    continue;
+                }
+            }
+
+            fht = new FasterKV<SpanByte, SpanByte>(1L << 10, logSettings, comparer: new SpanByteComparerModulo(modRange));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            fht?.Dispose();
+            fht = null;
+            log?.Dispose();
+            log = null;
+            DeleteDirectory(MethodTestDir);
+        }
+
+        internal class RmwSpanByteFunctions : SpanByteFunctions<Empty>
+        {
+            /// <inheritdoc/>
+            public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            {
+                input.CopyTo(ref newValue);
+                output = SpanByteAndMemory.FromFixedSpan(newValue.AsSpan());
+                return true;
+            }
+
+            /// <inheritdoc/>
+            public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            {
+                // The default implementation of IPU simply writes input to destination, if there is space
+                base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+                output = SpanByteAndMemory.FromFixedSpan(value.AsSpan());
+                return true;
+            }
+        }
+
+        public enum ModuloRange { Hundred = 100, Thousand = 1000, None = int.MaxValue }
+
+        unsafe void PopulateAndEvict()
+        {
+            using var session = fht.NewSession(new SpanByteFunctions<Empty>());
+
+            Span<byte> keyVec = stackalloc byte[sizeof(long)];
+            var key = SpanByte.FromFixedSpan(keyVec);
+            Span<byte> inputVec = stackalloc byte[sizeof(long)];
+            var input = SpanByte.FromFixedSpan(keyVec);
+            Span<byte> outputVec = stackalloc byte[sizeof(long)];
+            var output = SpanByteAndMemory.FromFixedSpan(outputVec);
+
+            for (long ii = 0; ii < numKeys; ii++)
+            {
+                Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                var status = session.Upsert(ref key, ref input, ref input, ref output);
+                Assert.IsTrue(status.Record.Created, status.ToString());
+            }
+            session.CompletePending(true);
+            fht.Log.FlushAndEvict(true);
+        }
+
+        static void ClearCountsOnError(LockableUnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, IFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty>> luContext)
+        {
+            // If we already have an exception, clear these counts so "Run" will not report them spuriously.
+            luContext.sharedLockCount = 0;
+            luContext.exclusiveLockCount = 0;
+        }
+
+        [Test]
+        [Category(FasterKVTestCategory)]
+        [Category(ReadCacheTestCategory)]
+        public void MultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
+        {
+            if (numReadThreads == 0 && numWriteThreads == 0)
+                Assert.Ignore();
+            PopulateAndEvict();
+
+            const int numIterations = 1;
+            unsafe void runReadThread(int tid)
+            {
+                using var session = fht.NewSession(new SpanByteFunctions<Empty>());
+
+                Span<byte> keyVec = stackalloc byte[sizeof(long)];
+                var key = SpanByte.FromFixedSpan(keyVec);
+                Span<byte> outputVec = stackalloc byte[sizeof(long)];
+                var output = SpanByteAndMemory.FromFixedSpan(outputVec);
+
+                Random rng = new(tid * 101);
+                for (var iteration = 0; iteration < numIterations; ++iteration)
+                {
+                    for (var ii = 0; ii < numKeys; ++ii)
+                    {
+                        Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                        var status = session.Read(ref key, ref output);
+                        if (status.IsPending)
+                        {
+                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
+                            Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
+                        }
+                        Assert.IsTrue(status.Found, status.ToString());
+
+                        long value = BitConverter.ToInt64(output.SpanByte.AsReadOnlySpan());
+                        Assert.IsTrue((value % valueAdd) == ii);
+                    }
+                }
+            }
+
+            unsafe void runUpdateThread(int tid)
+            {
+                using var session = fht.NewSession(new RmwSpanByteFunctions());
+
+                Span<byte> keyVec = stackalloc byte[sizeof(long)];
+                var key = SpanByte.FromFixedSpan(keyVec);
+                Span<byte> inputVec = stackalloc byte[sizeof(long)];
+                var input = SpanByte.FromFixedSpan(inputVec);
+                Span<byte> outputVec = stackalloc byte[sizeof(long)];
+                var output = SpanByteAndMemory.FromFixedSpan(outputVec);
+
+                Random rng = new(tid * 101);
+                for (var iteration = 0; iteration < numIterations; ++iteration)
+                {
+                    for (var ii = 0; ii < numKeys; ++ii)
+                    {
+                        Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                        Assert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + valueAdd));
+                        var status = session.RMW(ref key, ref input, ref output);
+                        if (status.IsPending)
+                        {
+                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            (status, output) = GetSinglePendingResult(completedOutputs);
+
+                            // Record may have been updated in-place
+                            // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
+                        }
+                        Assert.IsTrue(status.Found, status.ToString());
+
+                        long value = BitConverter.ToInt64(output.SpanByte.AsReadOnlySpan());
+                        Assert.AreEqual(ii + valueAdd, value);
+                    }
+                }
+            }
+
+            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            for (int t = 1; t <= numReadThreads + numWriteThreads; t++)
+            {
+                var tid = t;
+                if (t <= numReadThreads)
+                    tasks.Add(Task.Factory.StartNew(() => runReadThread(tid)));
+                else
+                    tasks.Add(Task.Factory.StartNew(() => runUpdateThread(tid)));
+            }
+            Task.WaitAll(tasks.ToArray());
         }
     }
 }
