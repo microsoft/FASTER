@@ -3228,13 +3228,11 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
                 if (comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
-                    if (recordInfo.IsIntermediate(out internalStatus) || !recordInfo.LockExclusive())
+                    if (!recordInfo.TrySetInvalidAtomic())
                     {
                         internalStatus = OperationStatus.RETRY_NOW;
                         return false;
                     }
-                    recordInfo.SetInvalid();
-                    recordInfo.UnlockExclusive();
                 }
 
                 lowestReadCachePhysicalAddress = physicalAddress;
