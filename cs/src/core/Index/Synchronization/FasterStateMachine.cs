@@ -45,6 +45,11 @@ namespace FASTER.core
         public long LastCheckpointedVersion => lastVersion;
 
         /// <summary>
+        /// Size (tail address) of current incremental snapshot delta log
+        /// </summary>
+        public long IncrementalSnapshotTailAddress => _lastSnapshotCheckpoint.deltaLog?.TailAddress ?? 0;
+
+        /// <summary>
         /// Recovered version number (1 if started from clean slate)
         /// </summary>
         public long RecoveredVersion => systemState.Version;
