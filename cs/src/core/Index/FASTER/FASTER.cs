@@ -510,7 +510,7 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask CompleteCheckpointAsync(CancellationToken token = default)
         {
-            if (LightEpoch.AnyInstanceProtected())
+            if (epoch.ThisInstanceProtected())
                 throw new FasterException("Cannot use CompleteCheckpointAsync when using non-async sessions");
 
             token.ThrowIfCancellationRequested();
@@ -739,7 +739,7 @@ namespace FASTER.core
         /// <returns>Whether the grow completed</returns>
         public bool GrowIndex()
         {
-            if (LightEpoch.AnyInstanceProtected())
+            if (epoch.ThisInstanceProtected())
                 throw new FasterException("Cannot use GrowIndex when using non-async sessions");
 
             if (!StartStateMachine(new IndexResizeStateMachine())) return false;
