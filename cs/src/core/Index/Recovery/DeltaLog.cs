@@ -71,15 +71,12 @@ namespace FASTER.core
         /// </summary>
         public long TailAddress => tailAddress;
 
-        readonly ILogger logger;
-
         /// <summary>
         /// Constructor
         /// </summary>
         public DeltaLog(IDevice deltaLogDevice, int logPageSizeBits, long tailAddress, ILogger logger = null)
-            : base(0, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), ScanBufferingMode.SinglePageBuffering, default, logPageSizeBits, false)
+            : base(0, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), ScanBufferingMode.SinglePageBuffering, default, logPageSizeBits, false, logger: logger)
         {
-            this.logger = logger;
             LogPageSizeBits = logPageSizeBits;
             PageSize = 1 << LogPageSizeBits;
             PageSizeMask = PageSize - 1;
@@ -171,7 +168,7 @@ namespace FASTER.core
 
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("AsyncReadPagesCallback error: {0}", errorCode);
+                    logger?.LogError($"AsyncReadPagesCallback error: {errorCode}");
                     result.cts?.Cancel();
                 }
                 Debug.Assert(result.freeBuffer1 == null);

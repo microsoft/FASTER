@@ -42,6 +42,7 @@ namespace FASTER.core
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
         readonly ILoggerFactory loggerFactory;
+        readonly ILogger logger;
 
         internal ClientSession(
             FasterKV<Key, Value> fht,
@@ -51,6 +52,7 @@ namespace FASTER.core
             ILoggerFactory loggerFactory = null)
         {
             this.loggerFactory = loggerFactory;
+            this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode().ToString("X8")}");
             this.fht = fht;
             this.ctx = ctx;
             this.functions = functions;
@@ -64,14 +66,14 @@ namespace FASTER.core
 
                 if ((this.variableLengthStruct == default) && (fht.hlog is VariableLengthBlittableAllocator<Key, Value> allocator))
                 {
-                    Debug.WriteLine("Warning: Session did not specify Input-specific functions for variable-length values via IVariableLengthStruct<Value, Input>");
+                    logger?.LogWarning("Warning: Session did not specify Input-specific functions for variable-length values via IVariableLengthStruct<Value, Input>");
                     this.variableLengthStruct = new DefaultVariableLengthStruct<Value, Input>(allocator.ValueLength);
                 }
             }
             else
             {
                 if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
-                    Debug.WriteLine("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
+                    logger?.LogWarning("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
             }
 
             this.inputVariableLengthStruct = sessionVariableLengthStructSettings?.inputLength;

@@ -484,13 +484,13 @@ namespace FASTER.core
         /// <returns></returns>
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
-            return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
+            return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch, logger:logger);
         }
 
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
-            using var iter = new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
+            using var iter = new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true, logger: logger);
             observer?.OnNext(iter);
         }
 

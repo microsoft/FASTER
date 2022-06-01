@@ -37,7 +37,7 @@ namespace FasterVarLenServer
                 builder.SetMinimumLevel(LogLevel.Error);
             });
 
-            using var server = new VarLenServer(opts.GetServerOptions());
+            using var server = new VarLenServer(opts.GetServerOptions(loggerFactory.CreateLogger("")));
             server.Start();
             Console.WriteLine("Started server");
 

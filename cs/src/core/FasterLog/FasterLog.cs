@@ -131,7 +131,7 @@ namespace FASTER.core
         /// <param name="logSettings">Log settings</param>
         /// <param name="logger">Log settings</param>
         public FasterLog(FasterLogSettings logSettings, ILogger logger = null)
-            : this(logSettings, logSettings.TryRecoverLatest)
+            : this(logSettings, logSettings.TryRecoverLatest, logger)
         { }
 
         /// <summary>

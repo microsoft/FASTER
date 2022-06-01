@@ -19,9 +19,7 @@ namespace FASTER.core
 
         private Key currentKey;
         private Value currentValue;
-        private long currentPhysicalAddress;
-
-        readonly ILogger logger;
+        private long currentPhysicalAddress;        
 
         /// <summary>
         /// Constructor
@@ -32,10 +30,10 @@ namespace FASTER.core
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
+        /// <param name="logger"></param>
         public BlittableScanIterator(BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits, logger: logger)
         {
-            this.logger = logger;
             this.hlog = hlog;
             this.forceInMemory = forceInMemory;
 

@@ -45,6 +45,7 @@ namespace FASTER.core
         /// <param name="logger">Remote older FASTER log commits</param>
         public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, ILogger logger = null)
         {
+            this.logger = logger;
             this.deviceFactory = deviceFactory;
             this.checkpointNamingScheme = checkpointNamingScheme;
 
