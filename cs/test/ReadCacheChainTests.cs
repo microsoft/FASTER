@@ -5,6 +5,7 @@ using FASTER.core;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
@@ -701,8 +702,8 @@ namespace FASTER.test.ReadCacheTests
 
             for (long ii = 0; ii < numKeys; ii++)
             {
-                long key = ii, input = ii, output = 0;
-                var status = session.Upsert(ref key, ref input, ref input, ref output);
+                long key = ii;
+                var status = session.Upsert(ref key, ref key);
                 Assert.IsFalse(status.IsPending);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
@@ -853,7 +854,7 @@ namespace FASTER.test.ReadCacheTests
             public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 input.CopyTo(ref newValue);
-                output = SpanByteAndMemory.FromFixedSpan(newValue.AsSpan());
+                input.CopyTo(ref output, base.memoryPool);
                 return true;
             }
 
@@ -862,7 +863,7 @@ namespace FASTER.test.ReadCacheTests
             {
                 // The default implementation of IPU simply writes input to destination, if there is space
                 base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
-                output = SpanByteAndMemory.FromFixedSpan(value.AsSpan());
+                input.CopyTo(ref output, base.memoryPool);
                 return true;
             }
         }
@@ -875,15 +876,11 @@ namespace FASTER.test.ReadCacheTests
 
             Span<byte> keyVec = stackalloc byte[sizeof(long)];
             var key = SpanByte.FromFixedSpan(keyVec);
-            Span<byte> inputVec = stackalloc byte[sizeof(long)];
-            var input = SpanByte.FromFixedSpan(keyVec);
-            Span<byte> outputVec = stackalloc byte[sizeof(long)];
-            var output = SpanByteAndMemory.FromFixedSpan(outputVec);
 
             for (long ii = 0; ii < numKeys; ii++)
             {
                 Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                var status = session.Upsert(ref key, ref input, ref input, ref output);
+                var status = session.Upsert(ref key, ref key);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
             session.CompletePending(true);
@@ -900,8 +897,11 @@ namespace FASTER.test.ReadCacheTests
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
+        //[Repeat(1000)]
         public void MultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
         {
+            //Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+            
             if (numReadThreads == 0 && numWriteThreads == 0)
                 Assert.Ignore();
             PopulateAndEvict();
@@ -913,26 +913,32 @@ namespace FASTER.test.ReadCacheTests
 
                 Span<byte> keyVec = stackalloc byte[sizeof(long)];
                 var key = SpanByte.FromFixedSpan(keyVec);
-                Span<byte> outputVec = stackalloc byte[sizeof(long)];
-                var output = SpanByteAndMemory.FromFixedSpan(outputVec);
+                SpanByteAndMemory output = default;
 
                 Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
-                        Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                        var status = session.Read(ref key, ref output);
-                        if (status.IsPending)
+                        try
                         {
-                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                            (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                            Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
-                        }
-                        Assert.IsTrue(status.Found, status.ToString());
+                            Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                            var status = session.Read(ref key, ref output);
+                            if (status.IsPending)
+                            {
+                                session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                                (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
+                                Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
+                                Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
+                            }
+                            Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
-                        long value = BitConverter.ToInt64(output.SpanByte.AsReadOnlySpan());
-                        Assert.IsTrue((value % valueAdd) == ii);
+                            long value = BitConverter.ToInt64(SpanByte.FromFixedSpan(output.Memory.Memory.Span).AsReadOnlySpan());
+                            Assert.AreEqual(ii, value % valueAdd, $"tid {tid}, key {ii}");
+                        } finally
+                        {
+                            output.Memory.Dispose();
+                        }
                     }
                 }
             }
@@ -945,29 +951,36 @@ namespace FASTER.test.ReadCacheTests
                 var key = SpanByte.FromFixedSpan(keyVec);
                 Span<byte> inputVec = stackalloc byte[sizeof(long)];
                 var input = SpanByte.FromFixedSpan(inputVec);
-                Span<byte> outputVec = stackalloc byte[sizeof(long)];
-                var output = SpanByteAndMemory.FromFixedSpan(outputVec);
+                SpanByteAndMemory output = default;
 
                 Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
-                        Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                        Assert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + valueAdd));
-                        var status = session.RMW(ref key, ref input, ref output);
-                        if (status.IsPending)
+                        try
                         {
-                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                            (status, output) = GetSinglePendingResult(completedOutputs);
+                            Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                            Assert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + valueAdd));
+                            var status = session.RMW(ref key, ref input, ref output);
+                            if (status.IsPending)
+                            {
+                                session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                                (status, output) = GetSinglePendingResult(completedOutputs);
+                                Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
-                            // Record may have been updated in-place
-                            // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
+                                // Record may have been updated in-place
+                                // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
+                            }
+                            Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
+
+                            long value = BitConverter.ToInt64(SpanByte.FromFixedSpan(output.Memory.Memory.Span).AsReadOnlySpan());
+                            Assert.AreEqual(ii + valueAdd, value, $"tid {tid}, key {ii}");
                         }
-                        Assert.IsTrue(status.Found, status.ToString());
-
-                        long value = BitConverter.ToInt64(output.SpanByte.AsReadOnlySpan());
-                        Assert.AreEqual(ii + valueAdd, value);
+                        finally
+                        {
+                            output.Memory.Dispose();
+                        }
                     }
                 }
             }

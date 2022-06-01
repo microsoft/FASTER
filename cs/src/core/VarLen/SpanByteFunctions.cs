@@ -65,7 +65,7 @@ namespace FASTER.core
     /// </summary>
     public class SpanByteFunctions<Context> : SpanByteFunctions<SpanByte, SpanByteAndMemory, Context>
     {
-        readonly MemoryPool<byte> memoryPool;
+        private protected readonly MemoryPool<byte> memoryPool;
 
         /// <summary>
         /// Constructor

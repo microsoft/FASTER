@@ -440,7 +440,7 @@ namespace FASTER.core
             Debug.Assert((*(tableAligned + threadEntryIndex)).localCurrentEpoch == 0,
                 "Trying to acquire protected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
-            // This corresponds to AnyInstanceProtected(). We do not mark "ThisInstancProtected" until ProtectAndDrain().
+            // This corresponds to AnyInstanceProtected(). We do not mark "ThisInstanceProtected" until ProtectAndDrain().
             threadEntryIndexCount++;
         }
 

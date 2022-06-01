@@ -274,10 +274,11 @@ namespace FASTER.core
                 var status = InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
-                    // Transfer things from pendingContext before we dispose it.
+                    // Transfer things to outputs from pendingContext before we dispose it.
                     completedOutputs.TransferTo(ref pendingContext, status);
                 }
-                pendingContext.Dispose();
+                if (!status.IsPending)
+                    pendingContext.Dispose();
             }
         }
 

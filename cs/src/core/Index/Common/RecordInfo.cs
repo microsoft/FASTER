@@ -405,16 +405,16 @@ namespace FASTER.core
         public void SetInvalid() => word &= ~(kValidBitMask | kTentativeBitMask);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetInvalidAtomic()
+        public bool TrySetInvalidAtomic(bool forTentative = false)
         {
             while (!this.Invalid)
             {
                 long expected_word = word;
 
-                // Bail if tentative or sealed
-                if ((expected_word & (kSealedBitMask | kTentativeBitMask)) != 0)
+                // Bail if sealed, or tentative when we are not specifically clearing the Tentative flag.
+                if ((expected_word & (kSealedBitMask | (forTentative ? 0 : kTentativeBitMask))) != 0)
                     return false;
-                long new_word = word & ~(kValidBitMask | kTentativeBitMask);
+                long new_word = expected_word & ~(kValidBitMask | kTentativeBitMask);
                 long current_word = Interlocked.CompareExchange(ref word, new_word, expected_word);
                 if (expected_word == current_word)
                     return true;

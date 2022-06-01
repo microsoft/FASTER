@@ -145,6 +145,7 @@ namespace FASTER.core
                 Address = Constants.kInvalidAddress
             };
 
+            long latestLogicalAddress = entry.Address;
             if (tagExists)
             {
                 logicalAddress = entry.Address;
@@ -176,6 +177,7 @@ namespace FASTER.core
                 }
                 if (prevHighestKeyHashAddress < logicalAddress)
                     prevHighestKeyHashAddress = logicalAddress;
+                latestLogicalAddress = logicalAddress;
 
                 if (logicalAddress >= hlog.HeadAddress)
                 {
@@ -328,7 +330,7 @@ namespace FASTER.core
                     heapConvertible.ConvertToHeap();
 
                 pendingContext.userContext = userContext;
-                pendingContext.entry.word = entry.word;
+                pendingContext.entry.word = latestLogicalAddress;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
@@ -596,7 +598,7 @@ namespace FASTER.core
                     heapConvertible.ConvertToHeap();
 
                 pendingContext.userContext = userContext;
-                pendingContext.entry.word = entry.word;
+                pendingContext.entry.word = latestLogicalAddress;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
@@ -763,8 +765,13 @@ namespace FASTER.core
                 {
                     // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
                     entry.word = bucket->bucket_entries[slot];
-                    if (!InvalidateUpdatedRecordInReadCache(entry.Address, newLogicalAddress, ref key, prevHighestReadCacheLogicalAddress))
+                    if (!InvalidateUpdatedRecordInReadCacheAndVerifyNewRecordFound(entry.Address, newLogicalAddress, ref key, prevHighestReadCacheLogicalAddress))
+                    {
+                        // This record has been CAS'd into the chain, but the sub-chain containing it is "detached" so it is not found.
+                        // Mark it as Invalid so any thread waiting on the Tentative will be able to continue and see it as Invalid.
+                        recordInfo.TrySetInvalidAtomic(forTentative: true);
                         return OperationStatus.RETRY_NOW;
+                    }
                 }
             }
 
@@ -1129,7 +1136,7 @@ namespace FASTER.core
                     heapConvertible.ConvertToHeap();
 
                 pendingContext.userContext = userContext;
-                pendingContext.entry.word = entry.word;
+                pendingContext.entry.word = latestLogicalAddress;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
@@ -1375,7 +1382,7 @@ namespace FASTER.core
                 }
             }
 
-            bool success = true;
+            bool success = false;
             if (lowestReadCachePhysicalAddress == Constants.kInvalidAddress)
             {
                 // Insert as the first record in the hash chain.
@@ -1402,8 +1409,13 @@ namespace FASTER.core
                 {
                     // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
                     entry.word = bucket->bucket_entries[slot];
-                    if (!InvalidateUpdatedRecordInReadCache(entry.Address, newLogicalAddress, ref key, prevHighestReadCacheLogicalAddress))
+                    if (!InvalidateUpdatedRecordInReadCacheAndVerifyNewRecordFound(entry.Address, newLogicalAddress, ref key, prevHighestReadCacheLogicalAddress))
+                    {
+                        // This record has been CAS'd into the chain, but the sub-chain containing it is "detached" so it is not found.
+                        // Mark it as Invalid so any thread waiting on the Tentative will be able to continue and see it as Invalid.
+                        recordInfo.TrySetInvalidAtomic(forTentative: true);
                         return OperationStatus.RETRY_NOW;
+                    }
                 }
             }
 
@@ -1418,19 +1430,14 @@ namespace FASTER.core
                 if (!doingCU)
                 {
                     Debug.Assert(OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status));
-                    fasterSession.PostInitialUpdater(ref key,
-                            ref input, ref hlog.GetValue(newPhysicalAddress),
-                            ref output, ref recordInfo, ref rmwInfo);
+                    fasterSession.PostInitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress), ref output, ref recordInfo, ref rmwInfo);
                     pendingContext.recordInfo = recordInfo;
                     pendingContext.logicalAddress = newLogicalAddress;
                 }
                 else
                 {
                     // Else it was a CopyUpdater so call PCU
-                    fasterSession.PostCopyUpdater(ref key,
-                                ref input, ref value,
-                                ref hlog.GetValue(newPhysicalAddress),
-                                ref output, ref recordInfo, ref rmwInfo);
+                    fasterSession.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref recordInfo, ref rmwInfo);
                     pendingContext.recordInfo = recordInfo;
                     pendingContext.logicalAddress = newLogicalAddress;
                 }
@@ -1438,24 +1445,22 @@ namespace FASTER.core
 
                 return status;
             }
+
+            // CAS failed
+            hlog.GetInfo(newPhysicalAddress).SetInvalid();
+            ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
+            ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
+            if (!doingCU)
+            {
+                fasterSession.DisposeInitialUpdater(ref insertedKey, ref input, ref insertedValue, ref output, ref recordInfo, ref rmwInfo);
+            }
             else
             {
-                // CAS failed
-                hlog.GetInfo(newPhysicalAddress).SetInvalid();
-                ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
-                ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
-                if (!doingCU)
-                {
-                    fasterSession.DisposeInitialUpdater(ref insertedKey, ref input, ref insertedValue, ref output, ref recordInfo, ref rmwInfo);
-                }
-                else
-                {
-                    fasterSession.DisposeCopyUpdater(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref recordInfo, ref rmwInfo);
-                }
-
-                status = OperationStatus.RETRY_NOW;
-                return status;
+                fasterSession.DisposeCopyUpdater(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref recordInfo, ref rmwInfo);
             }
+
+            status = OperationStatus.RETRY_NOW;
+            return status;
         }
 
 #endregion
@@ -1753,8 +1758,13 @@ namespace FASTER.core
                     {
                         // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
                         entry.word = bucket->bucket_entries[slot];
-                        if (!InvalidateUpdatedRecordInReadCache(entry.Address, newLogicalAddress, ref key, prevHighestReadCacheLogicalAddress))
+                        if (!InvalidateUpdatedRecordInReadCacheAndVerifyNewRecordFound(entry.Address, newLogicalAddress, ref key, prevHighestReadCacheLogicalAddress))
+                        {
+                            // This record has been CAS'd into the chain, but the sub-chain containing it is "detached" so it is not found.
+                            // Mark it as Invalid so any thread waiting on the Tentative will be able to continue and see it as Invalid.
+                            recordInfo.TrySetInvalidAtomic(forTentative: true);
                             return OperationStatus.RETRY_NOW;
+                        }
                     }
                 }
 
@@ -1800,7 +1810,7 @@ namespace FASTER.core
                 pendingContext.type = OperationType.DELETE;
                 if (pendingContext.key == default) pendingContext.key = hlog.GetKeyContainer(ref key);
                 pendingContext.userContext = userContext;
-                pendingContext.entry.word = entry.word;
+                pendingContext.entry.word = latestLogicalAddress;
                 pendingContext.logicalAddress = logicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
@@ -2130,12 +2140,12 @@ namespace FASTER.core
         {
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
             ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
-            long logicalAddress = pendingContext.entry.Address;
+            long previousLatestLogicalAddress = pendingContext.entry.Address;
 
             OperationStatus status;
             do
                 status = InternalTryCopyToTail(opCtx, ref pendingContext, ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request),
-                                 ref pendingContext.output, logicalAddress, fasterSession, currentCtx,
+                                 ref pendingContext.output, previousLatestLogicalAddress, fasterSession, currentCtx,
                                  (expired || pendingContext.CopyReadsToTail) ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
             while (status == OperationStatus.RETRY_NOW);
 
@@ -2192,13 +2202,16 @@ namespace FASTER.core
             var hash = comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
-            long lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
-            long prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
+            long lowestReadCachePhysicalAddress;
+            long prevHighestReadCacheLogicalAddress;
 
             SpinWaitUntilClosed(request.logicalAddress);
 
             while (true)
             {
+                lowestReadCachePhysicalAddress = Constants.kInvalidAddress;
+                prevHighestReadCacheLogicalAddress = Constants.kInvalidAddress;
+
 #region Trace Back for Record on In-Memory HybridLog
                 var bucket = default(HashBucket*);
                 var slot = default(int);
@@ -2232,8 +2245,8 @@ namespace FASTER.core
                 }
 #endregion
 
-                var previousFirstRecordAddress = pendingContext.entry.Address;
-                if (logicalAddress > previousFirstRecordAddress) break;
+                var previousLatestLogicalAddress = pendingContext.entry.Address;
+                if (logicalAddress > previousLatestLogicalAddress) break;
 
                 status = CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
                         ref pendingContext, fasterSession, sessionCtx, bucket, slot, request.logicalAddress, (long)request.record.GetValidPointer(), tag, entry, latestLogicalAddress,
@@ -2320,7 +2333,6 @@ namespace FASTER.core
                     }
                     Debug.Assert(internalStatus != OperationStatus.CPR_SHIFT_DETECTED);
                 } while (internalStatus == OperationStatus.RETRY_NOW || (asyncOp && internalStatus == OperationStatus.RETRY_LATER));
-                // Note that we spin in case of { async op + strict CPR } which is fine as this combination is rare/discouraged
 
                 operationStatus = internalStatus;
 #endregion
@@ -2345,10 +2357,8 @@ namespace FASTER.core
                     request.asyncOperation = new TaskCompletionSource<AsyncIOContext<Key, Value>>(TaskCreationOptions.RunContinuationsAsynchronously);
                 else
                     request.callbackQueue = opCtx.readyResponses;
-                
-                hlog.AsyncGetFromDisk(pendingContext.logicalAddress,
-                                 hlog.GetAverageRecordSize(),
-                                 request);
+
+                hlog.AsyncGetFromDisk(pendingContext.logicalAddress, hlog.GetAverageRecordSize(), request);
 
                 return new(StatusCode.Pending);
             }
@@ -2501,6 +2511,7 @@ namespace FASTER.core
             while (foundLogicalAddress >= minOffset)
             {
                 foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
+                Debug.Assert(!hlog.GetInfo(foundPhysicalAddress).Invalid, "Encountered Invalid record in traceback");
                 if (comparer.Equals(ref key, ref hlog.GetKey(foundPhysicalAddress)))
                 {
                     return true;
@@ -2766,8 +2777,13 @@ namespace FASTER.core
                     {
                         // Now see if we have added a readcache entry from a pending read while we were inserting; if so it is obsolete and must be Invalidated.
                         entry.word = bucket->bucket_entries[slot];
-                        if (!InvalidateUpdatedRecordInReadCache(entry.Address, newLogicalAddress, ref key, prevHighestReadCacheLogicalAddress))
+                        if (!InvalidateUpdatedRecordInReadCacheAndVerifyNewRecordFound(entry.Address, newLogicalAddress, ref key, prevHighestReadCacheLogicalAddress))
+                        {
+                            // This record has been CAS'd into the chain, but the sub-chain containing it is "detached" so it is not found.
+                            // Mark it as Invalid so any thread waiting on the Tentative will be able to continue and see it as Invalid.
+                            hlog.GetInfo(newPhysicalAddress).TrySetInvalidAtomic(forTentative: true);
                             return OperationStatus.RETRY_NOW;
+                        }
                     }
                 }
             }
@@ -3173,7 +3189,7 @@ namespace FASTER.core
 
         // Skip over all readcache records in this key's chain (advancing logicalAddress to the first non-readcache record we encounter).
         // Invalidate each record we skip over that matches the key.
-        private bool InvalidateUpdatedRecordInReadCache(long logicalAddress, long splicedLogicalAddress, ref Key key, long untilAddress)
+        private bool InvalidateUpdatedRecordInReadCacheAndVerifyNewRecordFound(long logicalAddress, long splicedLogicalAddress, ref Key key, long untilAddress)
         {
             HashBucketEntry entry = new() { word = logicalAddress };
 
@@ -3186,10 +3202,9 @@ namespace FASTER.core
                 // so instead of waiting just invalidate and return.
                 ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
                 if (comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
-                    recordInfo.SetInvalid();
+                    recordInfo.TrySetInvalidAtomic();
 
-                logicalAddress = recordInfo.PreviousAddress;
-                entry.word = logicalAddress;
+                entry.word = logicalAddress = recordInfo.PreviousAddress;
             }
 
             // 2. Skip over any remaining readcache records.

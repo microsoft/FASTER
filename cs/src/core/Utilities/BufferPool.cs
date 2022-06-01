@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#define CHECK_FREE      // disabled by default due to overhead
 // #define CHECK_FOR_LEAKS // disabled by default due to overhead
 
 using System;
@@ -17,6 +18,9 @@ namespace FASTER.core
     /// </summary>
     public unsafe sealed class SectorAlignedMemory
     {
+        // Byte #31 is used to denote free (1) or in-use (0) page
+        const int kFreeBitMask = 1 << 31;
+
         /// <summary>
         /// Actual buffer
         /// </summary>
@@ -52,13 +56,45 @@ namespace FASTER.core
         /// </summary>
         public int available_bytes;
 
-        internal int level;
+        private int level;
+        internal int Level => this.level
+#if CHECK_FREE
+            & ~kFreeBitMask
+#endif
+            ;
+
         internal SectorAlignedBufferPool pool;
+
+#if CHECK_FREE
+        internal bool Free
+        {
+            get => (level & kFreeBitMask) != 0;
+            set 
+            {
+                if (value)
+                {
+                    if (Free)
+                        throw new FasterException("Attempting to return an already-free block");
+                    this.level |= kFreeBitMask;
+                }
+                else
+                {
+                    if (!Free)
+                        throw new FasterException("Attempting to allocate an already-allocated block");
+                    this.level &= ~kFreeBitMask;
+                }
+            }
+        }
+#endif // CHECK_FREE
 
         /// <summary>
         /// Default constructor
         /// </summary>
-        public SectorAlignedMemory() { }
+        public SectorAlignedMemory(int level = default)
+        {
+            this.level = level;
+            // Assume ctor is called for allocation and leave Free unset
+        }
 
         /// <summary>
         /// Create new instance of SectorAlignedMemory
@@ -79,6 +115,7 @@ namespace FASTER.core
             long bufferAddr = (long)Unsafe.AsPointer(ref buffer[0]);
             aligned_pointer = (byte*)((bufferAddr + (sectorSize - 1)) & ~((long)sectorSize - 1));
             offset = (int)((long)aligned_pointer - bufferAddr);
+            // Assume ctor is called for allocation and leave Free unset
         }
 
         /// <summary>
@@ -90,6 +127,9 @@ namespace FASTER.core
             handle.Free();
 #endif
             buffer = null;
+#if CHECK_FREE
+            this.Free = true;
+#endif
         }
 
         /// <summary>
@@ -117,7 +157,7 @@ namespace FASTER.core
         /// <returns></returns>
         public override string ToString()
         {
-            return string.Format("{0} {1} {2} {3} {4}", (long)aligned_pointer, offset, valid_offset, required_bytes, available_bytes);
+            return string.Format("{0} {1} {2} {3} {4} {5}", (long)aligned_pointer, offset, valid_offset, required_bytes, available_bytes, this.Free);
         }
     }
 
@@ -173,7 +213,11 @@ namespace FASTER.core
             Interlocked.Increment(ref totalReturns);
 #endif
 
-            Debug.Assert(queue[page.level] != null);
+#if CHECK_FREE
+            page.Free = true;
+#endif // CHECK_FREE
+
+            Debug.Assert(queue[page.Level] != null);
             page.available_bytes = 0;
             page.required_bytes = 0;
             page.valid_offset = 0;
@@ -185,7 +229,7 @@ namespace FASTER.core
                     page.handle.Free();
                     page.handle = default;
                 }
-                queue[page.level].Enqueue(page);
+                queue[page.Level].Enqueue(page);
             }
             else
             {
@@ -237,6 +281,9 @@ namespace FASTER.core
 
             if (!Disabled && queue[index].TryDequeue(out SectorAlignedMemory page))
             {
+#if CHECK_FREE
+                page.Free = false;
+#endif // CHECK_FREE
                 if (UnpinOnReturn)
                 {
                     page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
@@ -246,7 +293,7 @@ namespace FASTER.core
                 return page;
             }
 
-            page = new SectorAlignedMemory { level = index };
+            page = new SectorAlignedMemory(level: index);
 
 #if NET5_0_OR_GREATER
             page.buffer = GC.AllocateArray<byte>(sectorSize * (1 << index), !UnpinOnReturn);

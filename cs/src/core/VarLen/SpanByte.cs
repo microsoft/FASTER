@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace FASTER.core
 {
@@ -455,6 +456,19 @@ namespace FASTER.core
                 *(int*)destination = length & ~kUnserializedBitMask;
                 Buffer.MemoryCopy((void*)payload, destination + sizeof(int), Length, Length);
             }
+        }
+
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            var bytes = AsSpan();
+            var len = Math.Min(this.Length, 8);
+            StringBuilder sb = new();
+            for (var ii = 0; ii < len; ++ii)
+                sb.Append(bytes[ii].ToString("x2"));
+            if (bytes.Length > len)
+                sb.Append("...");
+            return sb.ToString();
         }
     }
 }
