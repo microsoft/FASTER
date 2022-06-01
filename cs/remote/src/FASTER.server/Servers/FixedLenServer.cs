@@ -4,6 +4,7 @@
 using System;
 using FASTER.core;
 using FASTER.common;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.server
 {
@@ -24,8 +25,9 @@ namespace FASTER.server
         /// <param name="functionsGen"></param>
         /// <param name="disableLocking"></param>
         /// <param name="maxSizeSettings"></param>
-        public FixedLenServer(ServerOptions opts, Func<Functions> functionsGen, bool disableLocking, MaxSizeSettings maxSizeSettings = default)
-            : base(opts, functionsGen, new FixedLenSerializer<Key, Value, Input, Output>(), new FixedLenKeySerializer<Key, Input>(), disableLocking, maxSizeSettings)
+        /// <param name="loggerFactory"></param>
+        public FixedLenServer(ServerOptions opts, Func<Functions> functionsGen, bool disableLocking, MaxSizeSettings maxSizeSettings = default, ILoggerFactory loggerFactory = null)
+            : base(opts, functionsGen, new FixedLenSerializer<Key, Value, Input, Output>(), new FixedLenKeySerializer<Key, Input>(), disableLocking, maxSizeSettings, loggerFactory)
         {
         }
     }

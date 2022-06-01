@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using FASTER.core;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.server
 {
@@ -74,10 +75,16 @@ namespace FASTER.server
         public string PubSubPageSize = "4k";
 
         /// <summary>
+        /// Logger
+        /// </summary>
+        public ILogger logger;
+
+        /// <summary>
         /// Constructor
         /// </summary>
-        public ServerOptions()
+        public ServerOptions(ILogger logger = null)
         {
+            this.logger = logger;
         }
 
         /// <summary>
@@ -89,7 +96,7 @@ namespace FASTER.server
             long size = ParseSize(MemorySize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                Trace.WriteLine($"Warning: using lower log memory size than specified (power of 2)");
+                logger?.LogInformation($"Warning: using lower log memory size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -102,7 +109,7 @@ namespace FASTER.server
             long size = ParseSize(PageSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                Trace.WriteLine($"Warning: using lower page size than specified (power of 2)");
+                logger?.LogInformation($"Warning: using lower page size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -115,7 +122,7 @@ namespace FASTER.server
             long size = ParseSize(PubSubPageSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                Trace.WriteLine($"Warning: using lower pub/sub page size than specified (power of 2)");
+                logger?.LogInformation($"Warning: using lower pub/sub page size than specified (power of 2)");
             return adjustedSize;
         }
 
@@ -128,7 +135,7 @@ namespace FASTER.server
             long size = ParseSize(SegmentSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                Trace.WriteLine($"Warning: using lower disk segment size than specified (power of 2)");
+                logger?.LogInformation($"Warning: using lower disk segment size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -142,7 +149,7 @@ namespace FASTER.server
             long adjustedSize = PreviousPowerOf2(size);
             if (adjustedSize < 64 || adjustedSize > (1L << 37)) throw new Exception("Invalid index size");
             if (size != adjustedSize)
-                Trace.WriteLine($"Warning: using lower hash index size than specified (power of 2)");
+                logger?.LogInformation($"Warning: using lower hash index size than specified (power of 2)");
             return (int)(adjustedSize / 64);
         }
 
@@ -157,18 +164,18 @@ namespace FASTER.server
             logSettings = new LogSettings { PreallocateLog = false };
 
             logSettings.PageSizeBits = PageSizeBits();
-            Trace.WriteLine($"[Store] Using page size of {PrettySize((long)Math.Pow(2, logSettings.PageSizeBits))}");
+            logger?.LogInformation($"[Store] Using page size of {PrettySize((long)Math.Pow(2, logSettings.PageSizeBits))}");
 
             logSettings.MemorySizeBits = MemorySizeBits();
-            Trace.WriteLine($"[Store] Using log memory size of {PrettySize((long)Math.Pow(2, logSettings.MemorySizeBits))}");
+            logger?.LogInformation($"[Store] Using log memory size of {PrettySize((long)Math.Pow(2, logSettings.MemorySizeBits))}");
 
-            Trace.WriteLine($"[Store] There are {PrettySize(1 << (logSettings.MemorySizeBits - logSettings.PageSizeBits))} log pages in memory");
+            logger?.LogInformation($"[Store] There are {PrettySize(1 << (logSettings.MemorySizeBits - logSettings.PageSizeBits))} log pages in memory");
 
             logSettings.SegmentSizeBits = SegmentSizeBits();
-            Trace.WriteLine($"[Store] Using disk segment size of {PrettySize((long)Math.Pow(2, logSettings.SegmentSizeBits))}");
+            logger?.LogInformation($"[Store] Using disk segment size of {PrettySize((long)Math.Pow(2, logSettings.SegmentSizeBits))}");
 
             indexSize = IndexSizeCachelines();
-            Trace.WriteLine($"[Store] Using hash index size of {PrettySize(indexSize * 64L)} ({PrettySize(indexSize)} cache lines)");
+            logger?.LogInformation($"[Store] Using hash index size of {PrettySize(indexSize * 64L)} ({PrettySize(indexSize)} cache lines)");
 
             if (EnableStorageTier)
             {

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -70,12 +71,15 @@ namespace FASTER.core
         /// </summary>
         public long TailAddress => tailAddress;
 
+        readonly ILogger logger;
+
         /// <summary>
         /// Constructor
         /// </summary>
-        public DeltaLog(IDevice deltaLogDevice, int logPageSizeBits, long tailAddress)
+        public DeltaLog(IDevice deltaLogDevice, int logPageSizeBits, long tailAddress, ILogger logger = null)
             : base(0, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), ScanBufferingMode.SinglePageBuffering, default, logPageSizeBits, false)
         {
+            this.logger = logger;
             LogPageSizeBits = logPageSizeBits;
             PageSize = 1 << LogPageSizeBits;
             PageSizeMask = PageSize - 1;
@@ -392,7 +396,7 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
+                    logger?.LogError($"AsyncFlushPageToDeviceCallback error: {errorCode}");
                 }
 
                 PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)context;

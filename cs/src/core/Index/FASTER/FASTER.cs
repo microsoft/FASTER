@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -59,6 +60,8 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value> ReadCache { get; }
 
+        readonly ILoggerFactory loggerFactory;
+
         ConcurrentDictionary<int, (string, CommitPoint)> _recoveredSessions;
         ConcurrentDictionary<string, int> _recoveredSessionNameMap;
         int maxSessionID;
@@ -96,11 +99,13 @@ namespace FASTER.core
         /// <param name="variableLengthStructSettings"></param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
         /// <param name="disableLocking">Whether FASTER takes read and write locks on records</param>
+        /// <param name="loggerFactory">Whether FASTER takes read and write locks on records</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableLocking = false)
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableLocking = false, ILoggerFactory loggerFactory = null)
         {
+            this.loggerFactory = loggerFactory;
             if (comparer != null)
                 this.comparer = comparer;
             else
@@ -151,7 +156,7 @@ namespace FASTER.core
             {
                 WriteDefaultOnDelete = true;
 
-                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch);
+                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch, logger: loggerFactory?.CreateLogger("GenericAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)
                 {
@@ -164,7 +169,7 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch);
+                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch, logger: loggerFactory?.CreateLogger("GenericAllocator ReadCache"));
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }
@@ -173,7 +178,7 @@ namespace FASTER.core
             {
                 keyLen = variableLengthStructSettings.keyLength;
                 hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings,
-                    this.comparer, null, epoch);
+                    this.comparer, null, epoch, logger: loggerFactory?.CreateLogger("VariableLengthAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)
                 {
@@ -185,14 +190,14 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch);
+                        }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch, logger: loggerFactory?.CreateLogger("VariableLengthAllocator ReadCache"));
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }
             }
             else
             {
-                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch);
+                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch, logger: loggerFactory?.CreateLogger("BlittableAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)
                 {
@@ -204,7 +209,7 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, this.comparer, ReadCacheEvict, epoch);
+                        }, this.comparer, ReadCacheEvict, epoch, logger: loggerFactory?.CreateLogger("VariableLengthAllocator ReadCache"));
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }

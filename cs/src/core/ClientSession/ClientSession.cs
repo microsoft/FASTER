@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -40,12 +41,16 @@ namespace FASTER.core
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
+        readonly ILoggerFactory loggerFactory;
+
         internal ClientSession(
             FasterKV<Key, Value> fht,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             Functions functions,
-            SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings)
+            SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings,
+            ILoggerFactory loggerFactory = null)
         {
+            this.loggerFactory = loggerFactory;
             this.fht = fht;
             this.ctx = ctx;
             this.functions = functions;
@@ -758,7 +763,7 @@ namespace FASTER.core
             if (untilAddress == -1)
                 untilAddress = fht.Log.TailAddress;
 
-            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress);
+            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress, loggerFactory: loggerFactory);
         }
 
         /// <summary>
