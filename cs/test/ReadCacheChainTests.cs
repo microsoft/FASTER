@@ -897,7 +897,7 @@ namespace FASTER.test.ReadCacheTests
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
-        //[Repeat(1000)]
+        // [Repeat(1000)]
         public void MultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
         {
             //Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
@@ -913,32 +913,31 @@ namespace FASTER.test.ReadCacheTests
 
                 Span<byte> keyVec = stackalloc byte[sizeof(long)];
                 var key = SpanByte.FromFixedSpan(keyVec);
-                SpanByteAndMemory output = default;
 
                 Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
-                        try
+                        SpanByteAndMemory output = default;
+
+                        Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                        var status = session.Read(ref key, ref output);
+                        bool wasPending = status.IsPending;
+                        if (status.IsPending)
                         {
-                            Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                            var status = session.Read(ref key, ref output);
-                            if (status.IsPending)
-                            {
-                                session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                                (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                                Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
-                                Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
-                            }
+                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
+                            Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
+                            Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
+                        }
+                        else
                             Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
-                            long value = BitConverter.ToInt64(SpanByte.FromFixedSpan(output.Memory.Memory.Span).AsReadOnlySpan());
-                            Assert.AreEqual(ii, value % valueAdd, $"tid {tid}, key {ii}");
-                        } finally
-                        {
-                            output.Memory.Dispose();
-                        }
+                        long value = BitConverter.ToInt64(output.Memory.Memory.Span);
+                        Assert.AreEqual(ii, value % valueAdd, $"tid {tid}, key {ii}, wasPending {wasPending}");
+
+                        output.Memory.Dispose();
                     }
                 }
             }
@@ -951,36 +950,34 @@ namespace FASTER.test.ReadCacheTests
                 var key = SpanByte.FromFixedSpan(keyVec);
                 Span<byte> inputVec = stackalloc byte[sizeof(long)];
                 var input = SpanByte.FromFixedSpan(inputVec);
-                SpanByteAndMemory output = default;
 
                 Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
-                        try
-                        {
-                            Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                            Assert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + valueAdd));
-                            var status = session.RMW(ref key, ref input, ref output);
-                            if (status.IsPending)
-                            {
-                                session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                                (status, output) = GetSinglePendingResult(completedOutputs);
-                                Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
+                        SpanByteAndMemory output = default;
 
-                                // Record may have been updated in-place
-                                // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
-                            }
+                        Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                        Assert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + valueAdd));
+                        var status = session.RMW(ref key, ref input, ref output);
+                        bool wasPending = status.IsPending;
+                        if (status.IsPending)
+                        {
+                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            (status, output) = GetSinglePendingResult(completedOutputs);
                             Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
-                            long value = BitConverter.ToInt64(SpanByte.FromFixedSpan(output.Memory.Memory.Span).AsReadOnlySpan());
-                            Assert.AreEqual(ii + valueAdd, value, $"tid {tid}, key {ii}");
+                            // Record may have been updated in-place
+                            // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
                         }
-                        finally
-                        {
-                            output.Memory.Dispose();
-                        }
+                        else
+                            Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
+
+                        long value = BitConverter.ToInt64(output.Memory.Memory.Span);
+                        Assert.AreEqual(ii + valueAdd, value, $"tid {tid}, key {ii}, wasPending {wasPending}");
+
+                        output.Memory.Dispose();
                     }
                 }
             }
