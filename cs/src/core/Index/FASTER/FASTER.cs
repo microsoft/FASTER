@@ -60,8 +60,6 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value> ReadCache { get; }
 
-        readonly ILoggerFactory loggerFactory;
-
         ConcurrentDictionary<int, (string, CommitPoint)> _recoveredSessions;
         ConcurrentDictionary<string, int> _recoveredSessionNameMap;
         int maxSessionID;
@@ -106,6 +104,7 @@ namespace FASTER.core
             VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableLocking = false, ILoggerFactory loggerFactory = null)
         {
             this.loggerFactory = loggerFactory;
+            this.logger = this.loggerFactory?.CreateLogger("FasterKV Constructor");
             if (comparer != null)
                 this.comparer = comparer;
             else
@@ -133,7 +132,7 @@ namespace FASTER.core
                 checkpointSettings = new CheckpointSettings();
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
-                Trace.TraceInformation("CheckpointManager and CheckpointDir specified, ignoring CheckpointDir");
+                logger?.LogInformation("CheckpointManager and CheckpointDir specified, ignoring CheckpointDir");
 
             checkpointManager = checkpointSettings.CheckpointManager ??
                 new DeviceLogCommitCheckpointManager

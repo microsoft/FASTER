@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
 using System.Threading;
@@ -138,7 +139,7 @@ namespace FASTER.core
 
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncPageFlushCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncPageFlushCallback error: {errorCode}");
             }
             if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
             {

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -143,7 +144,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncPageReadCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncPageReadCallback error: {errorCode}");
             }
             recoveryCountdown.Decrement();
         }

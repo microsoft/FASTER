@@ -533,7 +533,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncReadPageCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncReadPageCallback error: {errorCode}");
             }
 
             // Set the page status to flushed
@@ -580,7 +580,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-               Trace.TraceError("AsyncFlushPartialObjectLogCallback error: {0}", errorCode);
+               logger?.LogError($"AsyncFlushPartialObjectLogCallback error: {errorCode}");
             }
 
             // Set the page status to flushed
@@ -592,7 +592,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncReadPageWithObjectsCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncReadPageWithObjectsCallback error: {errorCode}");
             }
 
             PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)context;

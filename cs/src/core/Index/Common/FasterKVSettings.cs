@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -142,6 +143,8 @@ namespace FASTER.core
         /// </summary>
         public FasterKVSettings() { }
 
+        readonly ILogger logger;
+
         /// <summary>
         /// Create default configuration backed by local storage at given base directory.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
@@ -149,8 +152,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="baseDir">Base directory (without trailing path separator)</param>
         /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose. This option prevents later recovery.</param>
-        public FasterKVSettings(string baseDir, bool deleteDirOnDispose = false)
+        /// <param name="logger"></param>
+        public FasterKVSettings(string baseDir, bool deleteDirOnDispose = false, ILogger logger = null)
         {
+            this.logger = logger;
             disposeDevices = true;
             this.deleteDirOnDispose = deleteDirOnDispose;
             this.baseDir = baseDir;
@@ -198,7 +203,7 @@ namespace FASTER.core
             if (adjustedSize < 64)
                 throw new FasterException($"{nameof(IndexSize)} should be at least of size one cache line (64 bytes)");
             if (IndexSize != adjustedSize)
-                Trace.TraceInformation($"Warning: using lower value {adjustedSize} instead of specified {IndexSize} for {nameof(IndexSize)}");
+                logger?.LogInformation($"Warning: using lower value {adjustedSize} instead of specified {IndexSize} for {nameof(IndexSize)}");
             return adjustedSize / 64;
         }
 
