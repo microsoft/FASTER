@@ -1089,45 +1089,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Async wrapper for TryAllocate
-        /// </summary>
-        /// <param name="numSlots">Number of slots to allocate</param>
-        /// <param name="token">Cancellation token</param>
-        /// <returns>The allocated logical address</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public async ValueTask<long> AllocateAsync(int numSlots = 1, CancellationToken token = default)
-        {
-            var spins = 0;
-            while (true)
-            {
-                var flushEvent = this.FlushEvent;
-                var logicalAddress = this.TryAllocate(numSlots);
-                if (logicalAddress > 0)
-                    return logicalAddress;
-                if (logicalAddress == 0)
-                {
-                    if (spins++ < Constants.kFlushSpinCount)
-                    {
-                        Thread.Yield();
-                        continue;
-                    }
-                    try
-                    {
-                        epoch.Suspend();
-                        await flushEvent.WaitAsync(token).ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        epoch.Resume();
-                    }
-                }
-                this.TryComplete();
-                epoch.ProtectAndDrain();
-                Thread.Yield();
-            }
-        }
-
-        /// <summary>
         /// Try allocate, spin for RETRY_NOW case
         /// </summary>
         /// <param name="numSlots">Number of slots to allocate</param>

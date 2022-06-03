@@ -122,6 +122,11 @@ namespace FASTER.core
         readonly bool AutoRefreshSafeTailAddress;
 
         /// <summary>
+        /// Whether we automatically commit as records are inserted
+        /// </summary>
+        readonly bool AutoCommit;
+
+        /// <summary>
         /// Whether there is an ongoing auto refresh safe tail
         /// </summary>
         int _ongoingAutoRefreshSafeTailAddress = 0;
@@ -142,6 +147,7 @@ namespace FASTER.core
         private FasterLog(FasterLogSettings logSettings, bool syncRecover)
         {
             AutoRefreshSafeTailAddress = logSettings.AutoRefreshSafeTailAddress;
+            AutoCommit = logSettings.AutoCommit;
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
                 (new LocalStorageNamedDeviceFactory(),
@@ -424,6 +430,7 @@ namespace FASTER.core
                 physicalAddress += Align(length) + headerSize;
             }
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            if (AutoCommit) Commit();
             epoch.Suspend();
             return true;
         }
@@ -2220,9 +2227,9 @@ namespace FASTER.core
                 Callback = callback,
             };
             info.SnapshotIterators(PersistedIterators);
-            var metadataChanged = ShouldCommmitMetadata(ref info);
+            var commitRequired = ShouldCommmitMetadata(ref info) || (commitCoveredAddress < TailAddress);
             // Only apply commit policy if not a strong commit
-            if (fastForwardAllowed && !commitPolicy.AdmitCommit(TailAddress, metadataChanged))
+            if (fastForwardAllowed && !commitPolicy.AdmitCommit(TailAddress, commitRequired))
                 return false;
 
             // This critical section serializes commit record creation / commit content generation and ensures that the
@@ -2230,7 +2237,7 @@ namespace FASTER.core
             // commit code path
             lock (ongoingCommitRequests)
             {
-                if (commitCoveredAddress == TailAddress && !metadataChanged)
+                if (commitCoveredAddress == TailAddress && !commitRequired)
                     // Nothing to commit if no metadata update and no new entries
                     return false;
                 if (commitNum == long.MaxValue)

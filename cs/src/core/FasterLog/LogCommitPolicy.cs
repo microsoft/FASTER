@@ -24,10 +24,10 @@ namespace FASTER.core
         /// one commit operation. It is the implementer's responsibility to log and retry any filtered Commit() when
         /// necessary (e.g., when there will not be any future Commit() invocations, but the last Commit() was filtered)
         /// </summary>
-        /// <param name="currentTail"> if successful, this request will commit at least up to this tail</param>
-        /// <param name="metadataChanged"> whether commit metadata (e.g., iterators) has changed </param>
+        /// <param name="currentTail">If successful, this request will commit at least up to this tail</param>
+        /// <param name="commitRequired">Whether commit may be required, i.e., tail address is higher than last covered commit request or metadata (e.g., iterators) changed </param>
         /// <returns></returns>
-        public abstract bool AdmitCommit(long currentTail, bool metadataChanged);
+        public abstract bool AdmitCommit(long currentTail, bool commitRequired);
 
         /// <summary>
         /// Invoked when a commit is successfully created
@@ -79,7 +79,7 @@ namespace FASTER.core
         public override void OnAttached(FasterLog log) {}
 
         /// <inheritdoc/>
-        public override bool AdmitCommit(long currentTail, bool metadataChanged) => true;
+        public override bool AdmitCommit(long currentTail, bool commitRequired) => commitRequired;
 
         /// <inheritdoc/>
         public override void OnCommitCreated(FasterLogRecoveryInfo info) { }
@@ -105,14 +105,14 @@ namespace FASTER.core
         public override void OnAttached(FasterLog log) => this.log = log;
         
         /// <inheritdoc/>
-        public override bool AdmitCommit(long currentTail, bool metadataChanged)
+        public override bool AdmitCommit(long currentTail, bool commitRequired)
         {
             while (true)
             {
                 var cip = commitInProgress;
                 if (cip == maxCommitInProgress)
                 {
-                    shouldRetry = true;
+                    shouldRetry = commitRequired;
                     return false;
                 }
 
@@ -158,7 +158,7 @@ namespace FASTER.core
         public override void OnAttached(FasterLog log) => this.log = log;
         
         /// <inheritdoc/>
-        public override bool AdmitCommit(long currentTail, bool metadataChanged)
+        public override bool AdmitCommit(long currentTail, bool commitRequired)
         {
             var now = stopwatch.ElapsedMilliseconds;
             while (true)

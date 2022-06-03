@@ -137,6 +137,11 @@ namespace FASTER.core
         public bool AutoRefreshSafeTailAddress = false;
 
         /// <summary>
+        /// Whether we automatically commit the log as records are inserted
+        /// </summary>
+        public bool AutoCommit = false;
+
+        /// <summary>
         /// Whether we aggressively shift read-only address (and flush) after enqueues
         /// </summary>
         public bool AggressiveShiftReadOnlyAddress = false;
