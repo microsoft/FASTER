@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#define CHECK_FREE      // disabled by default due to overhead
+#if DEBUG
+#define CHECK_FREE      // disabled by default in Release due to overhead
+#endif
 // #define CHECK_FOR_LEAKS // disabled by default due to overhead
 
 using System;
@@ -157,7 +159,11 @@ namespace FASTER.core
         /// <returns></returns>
         public override string ToString()
         {
-            return string.Format("{0} {1} {2} {3} {4} {5}", (long)aligned_pointer, offset, valid_offset, required_bytes, available_bytes, this.Free);
+            return string.Format($"{(long)aligned_pointer} {offset} {valid_offset} {required_bytes} {available_bytes}"
+#if CHECK_FREE
+                + $" {this.Free}"
+#endif
+                );
         }
     }
 
