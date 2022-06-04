@@ -49,7 +49,7 @@ namespace FASTER.core
         /// </summary>
         protected readonly LightEpoch epoch;
         private readonly bool ownedEpoch;
-        
+
         /// <summary>
         /// Comparer
         /// </summary>
@@ -226,7 +226,7 @@ namespace FASTER.core
         /// Whether to preallocate log on initialization
         /// </summary>
         private readonly bool PreallocateLog = false;
-        
+
         /// <summary>
         /// Error handling
         /// </summary>
@@ -466,6 +466,11 @@ namespace FASTER.core
                             deltaLog.Allocate(out entryLength, out destPhysicalAddress);
                             destOffset = 0;
                             if (destOffset + size > entryLength)
+                            {
+                                deltaLog.Seal(0);
+                                deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                            }
+                            if (destOffset + size > entryLength)
                                 throw new FasterException("Insufficient page size to write delta");
                         }
                         *(long*)(destPhysicalAddress + destOffset) = logicalAddress;
@@ -521,7 +526,7 @@ namespace FASTER.core
                             unsafe
                             {
                                 fixed (byte* m = metadata)
-                                    Buffer.MemoryCopy((void*) physicalAddress, m, entryLength, entryLength);
+                                    Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
                             }
 
                             HybridLogRecoveryInfo recoveryInfo = new();
@@ -534,7 +539,7 @@ namespace FASTER.core
                         break;
                     default:
                         throw new FasterException("Unexpected entry type");
-                        
+
                 }
             }
         }
@@ -1284,7 +1289,7 @@ namespace FASTER.core
                     if (this.NumActiveLockingSessions > 0 && OnLockEvictionObserver is not null)
                         MemoryPageScan(start, end, OnLockEvictionObserver);
 
-                    if (OnEvictionObserver is not null) 
+                    if (OnEvictionObserver is not null)
                         MemoryPageScan(start, end, OnEvictionObserver);
 
                     int closePage = (int)(closePageAddress >> LogPageSizeBits);
@@ -1429,7 +1434,7 @@ namespace FASTER.core
                     }
                 }
             }
-            
+
             if (!errorList.Empty)
             {
                 var info = errorList.GetEarliestError();
@@ -1952,7 +1957,7 @@ namespace FASTER.core
                     {
                         // Note down error details and trigger handling only when we are certain this is the earliest
                         // error among currently issued flushes
-                        errorList.Add(new CommitInfo { FromAddress =  result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode } );
+                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode });
                     }
                     else
                     {
@@ -1994,7 +1999,7 @@ namespace FASTER.core
             catch when (disposed) { }
 
         }
-        
+
         /// <summary>
         /// IOCompletion callback for page flush
         /// </summary>

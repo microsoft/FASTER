@@ -346,7 +346,7 @@ namespace FASTER.core
                 backend = new FoldOverCheckpointTask();
             else if (checkpointType == CheckpointType.Snapshot)
             {
-                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlog.FlushedUntilAddress)
+                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlog.FlushedUntilAddress && (hlog is not GenericAllocator<Key, Value>))
                     backend = new IncrementalSnapshotCheckpointTask();
                 else
                     backend = new SnapshotCheckpointTask();
@@ -510,7 +510,7 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask CompleteCheckpointAsync(CancellationToken token = default)
         {
-            if (LightEpoch.AnyInstanceProtected())
+            if (epoch.ThisInstanceProtected())
                 throw new FasterException("Cannot use CompleteCheckpointAsync when using non-async sessions");
 
             token.ThrowIfCancellationRequested();
@@ -739,7 +739,7 @@ namespace FASTER.core
         /// <returns>Whether the grow completed</returns>
         public bool GrowIndex()
         {
-            if (LightEpoch.AnyInstanceProtected())
+            if (epoch.ThisInstanceProtected())
                 throw new FasterException("Cannot use GrowIndex when using non-async sessions");
 
             if (!StartStateMachine(new IndexResizeStateMachine())) return false;

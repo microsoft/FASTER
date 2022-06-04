@@ -32,11 +32,11 @@ namespace FASTER.common
         /// <param name="socket"></param>
         /// <param name="maxSizeSettings"></param>
         public TcpNetworkSender(
-            Socket socket, 
-            MaxSizeSettings maxSizeSettings) 
+            Socket socket,
+            MaxSizeSettings maxSizeSettings)
             : base(maxSizeSettings)
         {
-            this.socket = socket;            
+            this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize));
             this.responseObject = null;
         }
@@ -61,14 +61,14 @@ namespace FASTER.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override void GetResponseObject()
         {
-            if (responseObject == null)                
+            if (responseObject == null)
                 this.responseObject = reusableSeaaBuffer.Checkout();
         }
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override void ReturnResponseObject()
-        {            
+        {
             reusableSeaaBuffer.Return(responseObject);
             responseObject = null;
         }
@@ -108,6 +108,18 @@ namespace FASTER.common
                 return false;
             }
             return true;
+        }
+
+        /// <inheritdoc />
+        public override void SendResponse(byte[] buffer, int offset, int count, object context)
+        {
+            throw new System.NotImplementedException();
+        }
+
+        /// <inheritdoc />
+        public override void SendCallback(object context)
+        {
+            throw new System.NotImplementedException();
         }
 
         /// <inheritdoc />

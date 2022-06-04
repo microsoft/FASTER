@@ -32,7 +32,7 @@ class RecoveryStatus {
   }
 
   ~RecoveryStatus() {
-      delete page_status_;
+      delete[] page_status_;
   }
 
   const std::atomic<PageRecoveryStatus>& page_status(uint32_t page) const {
