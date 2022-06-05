@@ -3,6 +3,7 @@
 
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace FASTER.common
 {
@@ -25,6 +26,21 @@ namespace FASTER.common
         /// Reusable SeaaBuffer
         /// </summary>
         readonly SimpleObjectPool<SeaaBuffer> reusableSeaaBuffer;
+
+        /// <summary>
+        /// Throttle
+        /// </summary>
+        readonly protected SemaphoreSlim throttle = new(0);
+
+        /// <summary>
+        /// Count of sends for throttling
+        /// </summary>
+        protected int throttleCount;
+
+        /// <summary>
+        /// Max concurrent sends for throttling
+        /// </summary>
+        protected const int ThrottleMax = 2;
 
         /// <summary>
         /// 
@@ -105,6 +121,8 @@ namespace FASTER.common
             catch
             {
                 reusableSeaaBuffer.Return(_r);
+                if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+                    throttle.Release();
                 return false;
             }
             return true;
@@ -135,7 +153,7 @@ namespace FASTER.common
             if (_r != null)
                 reusableSeaaBuffer.Return(_r);
             reusableSeaaBuffer.Dispose();
-
+            throttle.Dispose();
             if (waitForSendCompletion)
                 socket.Dispose();
         }
@@ -143,6 +161,9 @@ namespace FASTER.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe void Send(Socket socket, SeaaBuffer sendObject, int offset, int size)
         {
+            if (Interlocked.Increment(ref throttleCount) > ThrottleMax)
+                throttle.Wait();
+
             // Reset send buffer
             sendObject.socketEventAsyncArgs.SetBuffer(offset, size);
             // Set user context to reusable object handle for disposal when send is done
@@ -154,7 +175,9 @@ namespace FASTER.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SeaaBuffer_Completed(object sender, SocketAsyncEventArgs e)
         {
-            reusableSeaaBuffer.Return((SeaaBuffer)e.UserToken);
+           reusableSeaaBuffer.Return((SeaaBuffer)e.UserToken);
+           if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+                throttle.Release();
         }
     }
 }
