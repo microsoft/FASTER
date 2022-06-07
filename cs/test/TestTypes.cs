@@ -75,12 +75,14 @@ namespace FASTER.test
         // Read functions
         public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
         {
+            Assert.IsFalse(readInfo.RecordInfo.IsNull());
             dst.value = value;
             return true;
         }
 
         public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
         {
+            Assert.IsFalse(readInfo.RecordInfo.IsNull());
             dst.value = value;
             return true;
         }
@@ -88,6 +90,7 @@ namespace FASTER.test
         // RMW functions
         public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
+            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
             output.value = value;
@@ -96,16 +99,22 @@ namespace FASTER.test
 
         public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
+            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
             output.value = value;
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo) => true;
+        public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo)
+        {
+            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            return true;
+        }
 
         public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
+            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
             output.value = newValue;
@@ -196,22 +205,30 @@ namespace FASTER.test
 
         // Read functions
         public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
-        { 
+        {
+            Assert.IsFalse(readInfo.RecordInfo.IsNull());
             dst.value = value;
             return true;
         }
 
         public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
         {
+            Assert.IsFalse(readInfo.RecordInfo.IsNull());
             dst.value = value;
             return true;
         }
 
         // Upsert functions
-        public override bool SingleWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref UpsertInfo upsertInfo, WriteReason reason) { dst = src; return true; }
+        public override bool SingleWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref UpsertInfo upsertInfo, WriteReason reason)
+        {
+            Assert.IsFalse(upsertInfo.RecordInfo.IsNull());
+            dst = src;
+            return true;
+        }
 
         public override bool ConcurrentWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref UpsertInfo upsertInfo)
         {
+            Assert.IsFalse(upsertInfo.RecordInfo.IsNull());
             Interlocked.Increment(ref _concurrentWriterCallCount);
             return false;
         }
@@ -219,6 +236,7 @@ namespace FASTER.test
         // RMW functions
         public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
+            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
             return true;
@@ -226,14 +244,20 @@ namespace FASTER.test
 
         public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
+            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
             Interlocked.Increment(ref _inPlaceUpdaterCallCount);
             return false;
         }
 
-        public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo) => true;
+        public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo)
+        {
+            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            return true;
+        }
 
         public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
+            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
             return true;
