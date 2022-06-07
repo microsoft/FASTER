@@ -1880,7 +1880,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncGetFromDiskCallback error: {errorCode}");
             }
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)context;
