@@ -16,11 +16,16 @@ namespace FASTER.core
 
         internal void Set()
         {
+            // If we have an existing semaphore, replace with a new one (to which any subequent waits will apply) and signal any waits on the existing one.
             var newSemaphore = new SemaphoreSlim(0);
             while (true)
             {
                 var tempSemaphore = this.semaphore;
-                if (tempSemaphore == null) break;
+                if (tempSemaphore == null)
+                {
+                    newSemaphore.Dispose();
+                    break;
+                }
                 if (Interlocked.CompareExchange(ref this.semaphore, newSemaphore, tempSemaphore) == tempSemaphore)
                 {
                     // Release all waiting threads
