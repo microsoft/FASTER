@@ -26,8 +26,8 @@ namespace FASTER.core
             while (recordInfo.Tentative)
                 Thread.Yield();
 
-            // We don't want to jump out on Sealed and restart if we are traversing the "read by address" chain
-            if (recordInfo.Sealed && !isReadingAtAddress)
+            // We don't want to jump out on Sealed/Invalid and restart if we are traversing the "read by address" chain
+            if ((recordInfo.Sealed || recordInfo.Invalid) && !isReadingAtAddress)
             {
                 Thread.Yield();
                 internalStatus = OperationStatus.RETRY_NOW;

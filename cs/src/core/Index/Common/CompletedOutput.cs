@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 
 namespace FASTER.core
 {
@@ -24,13 +25,13 @@ namespace FASTER.core
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void Add(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void TransferTo(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
         {
             // Note: vector is never null
             if (this.maxIndex >= vector.Length - 1)
                 Array.Resize(ref this.vector, this.vector.Length * kReallocMultuple);
             ++maxIndex;
-            this.vector[maxIndex].Set(ref pendingContext, status);
+            this.vector[maxIndex].TransferTo(ref pendingContext, status);
         }
 
         /// <summary>
@@ -112,10 +113,14 @@ namespace FASTER.core
         /// </summary>
         public Status Status;
 
-        internal void Set(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void TransferTo(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
         {
+            // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
             this.keyContainer = pendingContext.key;
+            pendingContext.key = null;
             this.inputContainer = pendingContext.input;
+            pendingContext.input = null;
+
             this.Output = pendingContext.output;
             this.Context = pendingContext.userContext;
             this.RecordMetadata = new(pendingContext.recordInfo, pendingContext.logicalAddress);
