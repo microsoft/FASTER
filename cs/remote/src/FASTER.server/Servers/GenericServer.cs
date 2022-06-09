@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using FASTER.core;
 using FASTER.common;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.server
 {
@@ -32,8 +33,9 @@ namespace FASTER.server
         /// <param name="keyInputSerializer"></param>
         /// <param name="disableLocking"></param>
         /// <param name="maxSizeSettings"></param>
+        /// <param name="loggerFactory"></param>
         public GenericServer(ServerOptions opts, Func<Functions> functionsGen, ParameterSerializer serializer, IKeyInputSerializer<Key, Input> keyInputSerializer, 
-                             bool disableLocking, MaxSizeSettings maxSizeSettings = default)
+                             bool disableLocking, MaxSizeSettings maxSizeSettings = default, ILoggerFactory loggerFactory = null)
         {
             this.opts = opts;
 
@@ -43,7 +45,7 @@ namespace FASTER.server
             if (!Directory.Exists(opts.CheckpointDir))
                 Directory.CreateDirectory(opts.CheckpointDir);
 
-            store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings, disableLocking: disableLocking);
+            store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings, disableLocking: disableLocking, loggerFactory: loggerFactory);
 
             if (opts.Recover)
             {

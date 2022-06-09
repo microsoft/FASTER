@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -40,12 +41,18 @@ namespace FASTER.core
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
+        readonly ILoggerFactory loggerFactory;
+        readonly ILogger logger;
+
         internal ClientSession(
             FasterKV<Key, Value> fht,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             Functions functions,
-            SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings)
+            SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings,
+            ILoggerFactory loggerFactory = null)
         {
+            this.loggerFactory = loggerFactory;
+            this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode().ToString("X8")}");
             this.fht = fht;
             this.ctx = ctx;
             this.functions = functions;
@@ -59,14 +66,14 @@ namespace FASTER.core
 
                 if ((this.variableLengthStruct == default) && (fht.hlog is VariableLengthBlittableAllocator<Key, Value> allocator))
                 {
-                    Debug.WriteLine("Warning: Session did not specify Input-specific functions for variable-length values via IVariableLengthStruct<Value, Input>");
+                    logger?.LogWarning("Warning: Session did not specify Input-specific functions for variable-length values via IVariableLengthStruct<Value, Input>");
                     this.variableLengthStruct = new DefaultVariableLengthStruct<Value, Input>(allocator.ValueLength);
                 }
             }
             else
             {
                 if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
-                    Debug.WriteLine("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
+                    logger?.LogWarning("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
             }
 
             this.inputVariableLengthStruct = sessionVariableLengthStructSettings?.inputLength;
@@ -758,7 +765,7 @@ namespace FASTER.core
             if (untilAddress == -1)
                 untilAddress = fht.Log.TailAddress;
 
-            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress);
+            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress, loggerFactory: loggerFactory);
         }
 
         /// <summary>

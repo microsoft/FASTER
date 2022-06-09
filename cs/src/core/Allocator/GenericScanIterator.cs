@@ -3,6 +3,7 @@
 
 using System.Threading;
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
 {
@@ -26,8 +27,9 @@ namespace FASTER.core
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
-        public GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits)
+        /// <param name="logger"></param>
+        public GenericScanIterator(GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.hlog = hlog;
             recordSize = hlog.GetRecordSize(0).Item2;
@@ -180,7 +182,7 @@ namespace FASTER.core
 
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncReadPagesCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncReadPagesCallback error: {errorCode}");
                 result.cts?.Cancel();
             }
 

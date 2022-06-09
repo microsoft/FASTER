@@ -273,8 +273,11 @@ namespace FASTER.core
                 opCtx.ioPendingRequests.Remove(request.id);
                 var status = InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
-                    completedOutputs.Add(ref pendingContext, status);
-                else
+                {
+                    // Transfer things to outputs from pendingContext before we dispose it.
+                    completedOutputs.TransferTo(ref pendingContext, status);
+                }
+                if (!status.IsPending)
                     pendingContext.Dispose();
             }
         }

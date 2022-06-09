@@ -169,6 +169,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool ContainsKey(ref TKey key)
         {
+            if (!IsActive)
+                return false;
             using var lookupKey = GetKeyContainer(ref key);
             return dict.ContainsKey(lookupKey);
         }
@@ -176,11 +178,14 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool Get(ref TKey key, out RecordInfo recordInfo)
         {
-            using var lookupKey = GetKeyContainer(ref key);
-            if (dict.TryGetValue(lookupKey, out var lte))
+            if (IsActive)
             {
-                recordInfo = lte.logRecordInfo;
-                return !lte.lockRecordInfo.Invalid;
+                using var lookupKey = GetKeyContainer(ref key);
+                if (dict.TryGetValue(lookupKey, out var lte))
+                {
+                    recordInfo = lte.logRecordInfo;
+                    return !lte.lockRecordInfo.Invalid;
+                }
             }
             recordInfo = default;
             return false;
@@ -189,6 +194,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool ClearTentative(ref TKey key)
         {
+            if (!IsActive)
+                return false;
             using var lookupKey = GetKeyContainer(ref key);
 
             // False is legit, as other operations may have removed it.
@@ -208,17 +215,20 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnlockOrRemoveTentative(ref TKey key, LockType lockType, bool wasTentative)
         {
-            using var lookupKey = GetKeyContainer(ref key);
-            if (dict.TryGetValue(lookupKey, out var lte))
+            if (IsActive)
             {
-                Debug.Assert(wasTentative == lte.lockRecordInfo.Tentative, "lockRecordInfo.Tentative was not as expected");
+                using var lookupKey = GetKeyContainer(ref key);
+                if (dict.TryGetValue(lookupKey, out var lte))
+                {
+                    Debug.Assert(wasTentative == lte.lockRecordInfo.Tentative, "lockRecordInfo.Tentative was not as expected");
 
-                // We assume that we own the lock or placed the Tentative record, and a Tentative record may have legitimately been removed.
-                if (lte.lockRecordInfo.Tentative)
-                    RemoveIfTentative(lookupKey, lte);
-                else
-                    Unlock(lookupKey, lte, lockType);
-                return;
+                    // We assume that we own the lock or placed the Tentative record, and a Tentative record may have legitimately been removed.
+                    if (lte.lockRecordInfo.Tentative)
+                        RemoveIfTentative(lookupKey, lte);
+                    else
+                        Unlock(lookupKey, lte, lockType);
+                    return;
+                }
             }
 
             // A tentative record may have been removed by the other side of the 2-phase process.

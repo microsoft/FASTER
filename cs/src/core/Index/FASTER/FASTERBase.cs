@@ -5,6 +5,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
 {
@@ -264,6 +265,16 @@ namespace FASTER.core
         internal LightEpoch epoch;
 
         internal ResizeInfo resizeInfo;
+
+        /// <summary>
+        /// LoggerFactory
+        /// </summary>
+        protected ILoggerFactory loggerFactory;
+
+        /// <summary>
+        /// Logger
+        /// </summary>
+        protected ILogger logger;
 
         /// <summary>
         /// Constructor
