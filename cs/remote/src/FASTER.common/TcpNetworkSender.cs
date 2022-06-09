@@ -38,9 +38,9 @@ namespace FASTER.common
         protected int throttleCount;
 
         /// <summary>
-        /// Max concurrent sends for throttling
+        /// Max concurrent sends (per session) for throttling
         /// </summary>
-        protected const int ThrottleMax = 2;
+        protected const int ThrottleMax = 8;
 
         /// <summary>
         /// 
