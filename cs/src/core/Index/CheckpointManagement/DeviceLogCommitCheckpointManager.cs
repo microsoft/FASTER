@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -33,14 +34,18 @@ namespace FASTER.core
         private readonly long[] flogCommitHistory;
         private byte indexTokenHistoryOffset, logTokenHistoryOffset, flogCommitHistoryOffset;
 
+        readonly ILogger logger;
+
         /// <summary>
         /// Create new instance of log commit manager
         /// </summary>
         /// <param name="deviceFactory">Factory for getting devices</param>
         /// <param name="checkpointNamingScheme">Checkpoint naming helper</param>
         /// <param name="removeOutdated">Remote older FASTER log commits</param>
-        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true)
+        /// <param name="logger">Remote older FASTER log commits</param>
+        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, ILogger logger = null)
         {
+            this.logger = logger;
             this.deviceFactory = deviceFactory;
             this.checkpointNamingScheme = checkpointNamingScheme;
 
@@ -80,9 +85,12 @@ namespace FASTER.core
         /// <param name="deviceFactory">Factory for getting devices</param>
         /// <param name="baseName">Overall location specifier (e.g., local path or cloud container name)</param>
         /// <param name="removeOutdated">Remote older FASTER log commits</param>
-        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, string baseName, bool removeOutdated = false)
+        /// <param name="logger">Remote older FASTER log commits</param>
+        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, string baseName, bool removeOutdated = false, ILogger logger = null)
             : this(deviceFactory, new DefaultCheckpointNamingScheme(baseName), removeOutdated)
-        { }
+        {
+            this.logger = logger;
+        }
 
         #region ILogCommitManager
 
@@ -399,7 +407,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                logger?.LogError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
             semaphore.Release();
         }

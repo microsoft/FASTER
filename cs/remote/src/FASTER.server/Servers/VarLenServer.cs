@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using FASTER.core;
 using FASTER.common;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.server
 {
@@ -25,7 +26,8 @@ namespace FASTER.server
         /// Create server instance; use Start to start the server.
         /// </summary>
         /// <param name="opts"></param>
-        public VarLenServer(ServerOptions opts)
+        /// <param name="loggerFactory"></param>
+        public VarLenServer(ServerOptions opts, ILoggerFactory loggerFactory = null)
         {
             this.opts = opts;
 
@@ -35,7 +37,7 @@ namespace FASTER.server
             if (!Directory.Exists(opts.CheckpointDir))
                 Directory.CreateDirectory(opts.CheckpointDir);
 
-            store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings, disableLocking: false );
+            store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings, disableLocking: false, loggerFactory: loggerFactory);
 
             if (!opts.DisablePubSub)
             {

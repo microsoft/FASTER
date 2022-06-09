@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -40,8 +41,8 @@ namespace FASTER.core
 
         private readonly OverflowPool<Record<Key, Value>[]> overflowPagePool;
 
-        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
-            : base(settings, comparer, evictCallback, epoch, flushCallback)
+        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null, ILogger logger = null)
+            : base(settings, comparer, evictCallback, epoch, flushCallback, logger)
         {
             overflowPagePool = new OverflowPool<Record<Key, Value>[]>(4);
 
@@ -532,7 +533,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncReadPageCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncReadPageCallback error: {errorCode}");
             }
 
             // Set the page status to flushed
@@ -579,7 +580,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-               Trace.TraceError("AsyncFlushPartialObjectLogCallback error: {0}", errorCode);
+               logger?.LogError($"AsyncFlushPartialObjectLogCallback error: {errorCode}");
             }
 
             // Set the page status to flushed
@@ -591,7 +592,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncReadPageWithObjectsCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncReadPageWithObjectsCallback error: {errorCode}");
             }
 
             PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)context;
