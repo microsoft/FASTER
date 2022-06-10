@@ -507,7 +507,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="h"></param>
         /// <returns></returns>
-        internal static int Murmur3(int h)
+        private static int Murmur3(int h)
         {
             uint a = (uint)h;
             a ^= a >> 16;
