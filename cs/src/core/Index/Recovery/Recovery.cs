@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -863,7 +864,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncFlushPageCallbackForRecovery error: {0}", errorCode);
+                logger?.LogError($"AsyncFlushPageCallbackForRecovery error: {errorCode}");
             }
 
             // Set the page status to flushed
@@ -1019,7 +1020,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncReadPagesCallbackForRecovery error: {0}", errorCode);
+                logger?.LogError($"AsyncReadPagesCallbackForRecovery error: {errorCode}");
             }
 
             // Set the page status to "read done"

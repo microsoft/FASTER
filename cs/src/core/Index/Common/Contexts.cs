@@ -32,21 +32,19 @@ namespace FASTER.core
         RETRY_NOW,
         RETRY_LATER,
         RECORD_ON_DISK,
-        SUCCESS_UNMARK,
         CPR_SHIFT_DETECTED,
-        CPR_PENDING_DETECTED,
         ALLOCATE_FAILED,
         BASIC_MASK = 0xFF,      // Leave plenty of space for future expansion
 
         ADVANCED_MASK = 0x700,  // Coordinate any changes with OperationStatusUtils.OpStatusToStatusCodeShif
-        CREATED_RECORD = (int)StatusCode.CreatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        INPLACE_UPDATED_RECORD = (int)StatusCode.InPlaceUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPY_UPDATED_RECORD = (int)StatusCode.CopyUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPIED_RECORD = (int)StatusCode.CopiedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPIED_RECORD_TO_READ_CACHE = (int)StatusCode.CopiedRecordToReadCache << OperationStatusUtils.OpStatusToStatusCodeShift,
-        // unused,
-        // unused,
-        EXPIRED = (int)StatusCode.Expired << OperationStatusUtils.OpStatusToStatusCodeShift
+        CREATED_RECORD = StatusCode.CreatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        INPLACE_UPDATED_RECORD = StatusCode.InPlaceUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPY_UPDATED_RECORD = StatusCode.CopyUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPIED_RECORD = StatusCode.CopiedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPIED_RECORD_TO_READ_CACHE = StatusCode.CopiedRecordToReadCache << OperationStatusUtils.OpStatusToStatusCodeShift,
+        // unused (StatusCode)0x60,
+        // unused (StatusCode)0x70,
+        EXPIRED = StatusCode.Expired << OperationStatusUtils.OpStatusToStatusCodeShift
     }
 
     internal static class OperationStatusUtils
@@ -207,8 +205,11 @@ namespace FASTER.core
             public void Dispose()
             {
                 key?.Dispose();
+                key = default;
                 value?.Dispose();
+                value = default;
                 input?.Dispose();
+                input = default;
             }
         }
 

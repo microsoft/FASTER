@@ -5,6 +5,7 @@
 
 #define CALLOC
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -89,11 +90,14 @@ namespace FASTER.core
 
         private ConcurrentQueue<long> freeList;
 
+        readonly ILogger logger;
+
         /// <summary>
         /// Create new instance
         /// </summary>
-        public unsafe MallocFixedPageSize()
+        public unsafe MallocFixedPageSize(ILogger logger = null)
         {
+            this.logger = logger;
             freeList = new ConcurrentQueue<long>();
             if (ForceUnpinnedAllocation)
                 IsPinned = false;
@@ -544,7 +548,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncFlushCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncFlushCallback error: {errorCode}");
             }
 
             var mem = ((OverflowPagesFlushAsyncResult)context).mem;
@@ -659,7 +663,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                System.Diagnostics.Trace.TraceError("AsyncPageReadCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncPageReadCallback error: {errorCode}");
             }
             this.recoveryCountdown.Decrement();
         }

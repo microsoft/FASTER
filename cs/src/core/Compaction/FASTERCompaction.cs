@@ -118,7 +118,7 @@ namespace FASTER.core
                 };
             }
 
-            using (var tempKv = new FasterKV<Key, Value>(IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: Comparer, variableLengthStructSettings: variableLengthStructSettings))
+            using (var tempKv = new FasterKV<Key, Value>(IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: Comparer, variableLengthStructSettings: variableLengthStructSettings, loggerFactory: loggerFactory))
             using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
             {
                 using (var iter1 = Log.Scan(hlog.BeginAddress, untilAddress))

@@ -12,8 +12,13 @@ namespace FASTER.core
     public struct SpanByteComparer : IFasterEqualityComparer<SpanByte>
     {
         /// <inheritdoc />
+        public unsafe long GetHashCode64(ref SpanByte spanByte) => StaticGetHashCode64(ref spanByte);
+
+        /// <summary>
+        /// Get 64-bit hash code
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe long GetHashCode64(ref SpanByte spanByte)
+        public static unsafe long StaticGetHashCode64(ref SpanByte spanByte)
         {
             if (spanByte.Serialized)
             {
@@ -27,9 +32,14 @@ namespace FASTER.core
             }
         }
 
-            /// <inheritdoc />
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool Equals(ref SpanByte k1, ref SpanByte k2)
+        /// <inheritdoc />
+        public unsafe bool Equals(ref SpanByte k1, ref SpanByte k2) => StaticEquals(ref k1, ref k2);
+
+        /// <summary>
+        /// Equality comparison
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe bool StaticEquals(ref SpanByte k1, ref SpanByte k2)
         {
             return k1.AsReadOnlySpanWithMetadata().SequenceEqual(k2.AsReadOnlySpanWithMetadata())
                 && (k1.MetadataSize == k2.MetadataSize);

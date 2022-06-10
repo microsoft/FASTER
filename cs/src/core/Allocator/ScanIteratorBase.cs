@@ -3,6 +3,7 @@
 
 using System.Threading;
 using System;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
 {
@@ -63,6 +64,11 @@ namespace FASTER.core
         public long EndAddress => endAddress;
 
         /// <summary>
+        /// Logger instance
+        /// </summary>
+        protected ILogger logger;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="beginAddress"></param>
@@ -71,8 +77,10 @@ namespace FASTER.core
         /// <param name="epoch"></param>
         /// <param name="logPageSizeBits"></param>
         /// <param name="initForReads"></param>
-        public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int logPageSizeBits, bool initForReads = true)
+        /// <param name="logger"></param>
+        public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int logPageSizeBits, bool initForReads = true, ILogger logger = null)
         {
+            this.logger = logger;
             // If we are protected when creating the iterator, we do not need per-GetNext protection
             if (epoch != null && !epoch.ThisInstanceProtected())
                 this.epoch = epoch;

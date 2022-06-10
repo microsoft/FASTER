@@ -7,6 +7,7 @@ using CommandLine;
 using FasterServerOptions;
 using FASTER.server;
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace FasterVarLenServer
 {
@@ -26,7 +27,17 @@ namespace FasterVarLenServer
             if (result.Tag == ParserResultType.NotParsed) return;
             var opts = result.MapResult(o => o, xs => new Options());
 
-            using var server = new VarLenServer(opts.GetServerOptions());
+            ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
+            {
+                builder.AddSimpleConsole(options =>
+                {
+                    options.SingleLine = true;
+                    options.TimestampFormat = "hh::mm::ss ";
+                });
+                builder.SetMinimumLevel(LogLevel.Error);
+            });
+
+            using var server = new VarLenServer(opts.GetServerOptions(loggerFactory.CreateLogger("")));
             server.Start();
             Console.WriteLine("Started server");
 

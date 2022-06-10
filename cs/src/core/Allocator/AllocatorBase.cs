@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
 {
@@ -701,6 +702,11 @@ namespace FASTER.core
         #endregion
 
         /// <summary>
+        /// Allocator base 
+        /// </summary>
+        protected readonly ILogger logger;
+
+        /// <summary>
         /// Instantiate base allocator
         /// </summary>
         /// <param name="settings"></param>
@@ -708,8 +714,10 @@ namespace FASTER.core
         /// <param name="evictCallback"></param>
         /// <param name="epoch"></param>
         /// <param name="flushCallback"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback)
+        /// <param name="logger"></param>
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null)
         {
+            this.logger = logger;
             if (settings.LogDevice == null)
             {
                 throw new FasterException("LogSettings.LogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
@@ -1872,7 +1880,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncGetFromDiskCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncGetFromDiskCallback error: {errorCode}");
             }
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)context;
@@ -1945,7 +1953,7 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("AsyncFlushPageCallback error: {0}", errorCode);
+                    logger?.LogError("AsyncFlushPageCallback error: {0}", errorCode);
                 }
 
                 // Set the page status to flushed
@@ -2012,7 +2020,7 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
+                    logger?.LogError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
                 }
 
                 PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)context;
