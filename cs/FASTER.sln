@@ -90,8 +90,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{C60F148B-2
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TstRunner", "playground\TstRunner\TstRunner.csproj", "{A265D9D2-3FEA-48BB-B1CC-273ECFEA0611}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EpvsSample", "samples\EpvsSample\EpvsSample.csproj", "{580E4D8A-8FDD-4B3A-8C6E-8F51E270BDB2}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -291,14 +289,6 @@ Global
 		{A265D9D2-3FEA-48BB-B1CC-273ECFEA0611}.Release|Any CPU.ActiveCfg = Release|x64
 		{A265D9D2-3FEA-48BB-B1CC-273ECFEA0611}.Release|x64.ActiveCfg = Release|x64
 		{A265D9D2-3FEA-48BB-B1CC-273ECFEA0611}.Release|x64.Build.0 = Release|x64
-		{580E4D8A-8FDD-4B3A-8C6E-8F51E270BDB2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{580E4D8A-8FDD-4B3A-8C6E-8F51E270BDB2}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{580E4D8A-8FDD-4B3A-8C6E-8F51E270BDB2}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{580E4D8A-8FDD-4B3A-8C6E-8F51E270BDB2}.Debug|x64.Build.0 = Debug|Any CPU
-		{580E4D8A-8FDD-4B3A-8C6E-8F51E270BDB2}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{580E4D8A-8FDD-4B3A-8C6E-8F51E270BDB2}.Release|Any CPU.Build.0 = Release|Any CPU
-		{580E4D8A-8FDD-4B3A-8C6E-8F51E270BDB2}.Release|x64.ActiveCfg = Release|Any CPU
-		{580E4D8A-8FDD-4B3A-8C6E-8F51E270BDB2}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -330,7 +320,6 @@ Global
 		{9EFCF8C5-320B-473C-83DE-3815981D465B} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{E8C7FB0F-38B8-468A-B1CA-8793DF8F2693} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{A265D9D2-3FEA-48BB-B1CC-273ECFEA0611} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
-		{580E4D8A-8FDD-4B3A-8C6E-8F51E270BDB2} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}

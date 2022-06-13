@@ -339,7 +339,24 @@ namespace FASTER.core
         {
             return ((ulong)x < 4294967295ul);
         }
-        
+
+
+        /// <summary>
+        /// A 32-bit murmur3 implementation.
+        /// </summary>
+        /// <param name="h"></param>
+        /// <returns></returns>
+        internal static int Murmur3(int h)
+        {
+            uint a = (uint)h;
+            a ^= a >> 16;
+            a *= 0x85ebca6b;
+            a ^= a >> 13;
+            a *= 0xc2b2ae35;
+            a ^= a >> 16;
+            return (int)a;
+        }
+
         /// <summary>
         /// Updates the variable to newValue only if the current value is smaller than the new value.
         /// </summary>
