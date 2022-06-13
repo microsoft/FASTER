@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.29102.190
+# Visual Studio Version 17
+VisualStudioVersion = 17.2.32408.312
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FASTER.benchmark", "benchmark\FASTER.benchmark.csproj", "{33A732D1-2B58-4FEE-9696-B9483496229F}"
 EndProject
@@ -83,12 +83,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{C60F148B-2
 		..\docs\_docs\90-td-introduction.md = ..\docs\_docs\90-td-introduction.md
 		..\docs\_docs\95-research-papers.md = ..\docs\_docs\95-research-papers.md
 		..\docs\_docs\96-slides-videos.md = ..\docs\_docs\96-slides-videos.md
-		..\docs\_config.yml = ..\docs\_config.yml
 		..\docs\_pages\home.md = ..\docs\_pages\home.md
 		..\docs\_data\navigation.yml = ..\docs\_data\navigation.yml
+		..\docs\_config.yml = ..\docs\_config.yml
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TstRunner", "playground\TstRunner\TstRunner.csproj", "{A265D9D2-3FEA-48BB-B1CC-273ECFEA0611}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EpvsSample", "samples\EpvsSample\EpvsSample.csproj", "{DC3E0640-9A36-43D0-AA37-A1B61B0BFBC9}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -289,6 +291,14 @@ Global
 		{A265D9D2-3FEA-48BB-B1CC-273ECFEA0611}.Release|Any CPU.ActiveCfg = Release|x64
 		{A265D9D2-3FEA-48BB-B1CC-273ECFEA0611}.Release|x64.ActiveCfg = Release|x64
 		{A265D9D2-3FEA-48BB-B1CC-273ECFEA0611}.Release|x64.Build.0 = Release|x64
+		{DC3E0640-9A36-43D0-AA37-A1B61B0BFBC9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DC3E0640-9A36-43D0-AA37-A1B61B0BFBC9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DC3E0640-9A36-43D0-AA37-A1B61B0BFBC9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{DC3E0640-9A36-43D0-AA37-A1B61B0BFBC9}.Debug|x64.Build.0 = Debug|Any CPU
+		{DC3E0640-9A36-43D0-AA37-A1B61B0BFBC9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DC3E0640-9A36-43D0-AA37-A1B61B0BFBC9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DC3E0640-9A36-43D0-AA37-A1B61B0BFBC9}.Release|x64.ActiveCfg = Release|Any CPU
+		{DC3E0640-9A36-43D0-AA37-A1B61B0BFBC9}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -320,6 +330,7 @@ Global
 		{9EFCF8C5-320B-473C-83DE-3815981D465B} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{E8C7FB0F-38B8-468A-B1CA-8793DF8F2693} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
 		{A265D9D2-3FEA-48BB-B1CC-273ECFEA0611} = {E6026D6A-01C5-4582-B2C1-64751490DABE}
+		{DC3E0640-9A36-43D0-AA37-A1B61B0BFBC9} = {62BC1134-B6E1-476A-B894-7CA278A8B6DE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0750637-2CCB-4139-B25E-F2CE740DCFAC}

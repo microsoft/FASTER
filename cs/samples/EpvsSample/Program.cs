@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using CommandLine;
 
 namespace EpvsSample
@@ -41,6 +43,7 @@ namespace EpvsSample
         static void Main(string[] args)
         {
             var options = Parser.Default.ParseArguments<Options>(args).Value;
+            if (options == null) return;
             var bench = new EpvsBench();
             bench.RunExperiment(options);
         }
