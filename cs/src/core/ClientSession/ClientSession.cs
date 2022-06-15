@@ -567,19 +567,11 @@ namespace FASTER.core
             return result;
         }
 
-        /// <summary>
-        /// Complete all pending synchronous FASTER operations.
-        /// Async operations must be completed individually.
-        /// </summary>
-        /// <returns></returns>
+        /// <inheritdoc/>
         public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
             => CompletePendingAsync(false, waitForCommit, token);
 
-        /// <summary>
-        /// Complete all pending synchronous FASTER operations, returning outputs for the completed operations.
-        /// Async operations must be completed individually.
-        /// </summary>
-        /// <returns>Outputs completed by this operation</returns>
+        /// <inheritdoc/>
         public async ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
         {
             InitializeCompletedOutputs();

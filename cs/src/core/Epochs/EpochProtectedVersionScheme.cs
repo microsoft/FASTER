@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -39,11 +42,11 @@ namespace FASTER.core
         /// </summary>
         public byte Phase
         {
-            get { return (byte) ((Word >> kPhaseShiftInWord) & kPhaseMaskInInteger); }
+            get { return (byte)((Word >> kPhaseShiftInWord) & kPhaseMaskInInteger); }
             set
             {
                 Word &= ~kPhaseMaskInWord;
-                Word |= (((long) value) & kPhaseMaskInInteger) << kPhaseShiftInWord;
+                Word |= (((long)value) & kPhaseMaskInInteger) << kPhaseShiftInWord;
             }
         }
 
@@ -89,12 +92,12 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static VersionSchemeState MakeIntermediate(VersionSchemeState state)
-            => Make((byte) (state.Phase | kIntermediateMask), state.Version);
+            => Make((byte)(state.Phase | kIntermediateMask), state.Version);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void RemoveIntermediate(ref VersionSchemeState state)
         {
-            state.Phase = (byte) (state.Phase & ~kIntermediateMask);
+            state.Phase = (byte)(state.Phase & ~kIntermediateMask);
         }
 
         internal static bool Equal(VersionSchemeState s1, VersionSchemeState s2)
@@ -167,11 +170,11 @@ namespace FASTER.core
             this.toVersion = toVersion;
             actualToVersion = toVersion;
         }
-        
+
         /// <summary></summary>
         /// <returns> version to transition to, or -1 if unconditionally transitioning to an unspecified next version</returns>
         public long ToVersion() => toVersion;
-        
+
         /// <summary>
         /// Given the current state, compute the next state the version scheme should enter, if any.
         /// </summary>
@@ -179,7 +182,7 @@ namespace FASTER.core
         /// <param name="nextState"> the next state, if any</param>
         /// <returns>whether a state transition is possible at this moment</returns>
         public abstract bool GetNextStep(VersionSchemeState currentState, out VersionSchemeState nextState);
-        
+
         /// <summary>
         /// Code block to execute before entering a state. Guaranteed to execute in a critical section with mutual
         /// exclusion with other transitions or EPVS-protected code regions 
@@ -196,7 +199,7 @@ namespace FASTER.core
         /// <param name="state"> the current state </param>
         public abstract void AfterEnteringState(VersionSchemeState state);
     }
-    
+
     internal class SimpleVersionSchemeStateMachine : VersionSchemeStateMachine
     {
         private Action<long, long> criticalSection;
@@ -205,7 +208,7 @@ namespace FASTER.core
         {
             this.criticalSection = criticalSection;
         }
-        
+
         public override bool GetNextStep(VersionSchemeState currentState, out VersionSchemeState nextState)
         {
             Debug.Assert(currentState.Phase == VersionSchemeState.REST);
@@ -219,7 +222,7 @@ namespace FASTER.core
             criticalSection(fromState.Version, toState.Version);
         }
 
-        public override void AfterEnteringState(VersionSchemeState state) {}
+        public override void AfterEnteringState(VersionSchemeState state) { }
     }
 
     /// <summary>
@@ -249,7 +252,7 @@ namespace FASTER.core
         private LightEpoch epoch;
         private VersionSchemeState state;
         private VersionSchemeStateMachine currentMachine;
-        
+
         /// <summary>
         /// Construct a new EPVS backed by the given epoch framework. Multiple EPVS instances can share an underlying
         /// epoch framework (WARNING: re-entrance is not yet supported, so nested protection of these shared instances
@@ -266,7 +269,7 @@ namespace FASTER.core
         /// <summary></summary>
         /// <returns> the current state</returns>
         public VersionSchemeState CurrentState() => state;
-        
+
         // Atomic transition from expectedState -> nextState
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool MakeTransition(VersionSchemeState expectedState, VersionSchemeState nextState)
@@ -296,7 +299,7 @@ namespace FASTER.core
                 Thread.Yield();
                 epoch.Resume();
             }
-            
+
             return result;
         }
 
@@ -333,7 +336,7 @@ namespace FASTER.core
         {
             var machineLocal = currentMachine;
             var oldState = state;
-            
+
             // Nothing to step
             if (machineLocal == null) return;
 
@@ -342,7 +345,7 @@ namespace FASTER.core
 
             // Still computing actual to version
             if (machineLocal.actualToVersion == -1) return;
-            
+
             // Machine finished, but not reset yet. Should reset and avoid starting another cycle
             if (oldState.Phase == VersionSchemeState.REST && oldState.Version == machineLocal.actualToVersion)
             {
@@ -352,7 +355,7 @@ namespace FASTER.core
 
             // Step is in progress or no step is available
             if (oldState.IsIntermediate() || !machineLocal.GetNextStep(oldState, out var nextState)) return;
-            
+
             var intermediate = VersionSchemeState.MakeIntermediate(oldState);
             if (!MakeTransition(oldState, intermediate)) return;
             // Avoid upfront memory allocation by going to a function
@@ -412,9 +415,9 @@ namespace FASTER.core
                 TryStepStateMachine(stateMachine);
                 return StateMachineExecutionStatus.OK;
             }
-            
+
             // Otherwise, need to check that we are not a duplicate attempt to increment version
-            if (stateMachine.ToVersion() != -1 && currentMachine.actualToVersion >= stateMachine.ToVersion()) 
+            if (stateMachine.ToVersion() != -1 && currentMachine.actualToVersion >= stateMachine.ToVersion())
                 return StateMachineExecutionStatus.FAIL;
 
             return StateMachineExecutionStatus.RETRY;
@@ -430,7 +433,7 @@ namespace FASTER.core
         public bool ExecuteStateMachine(VersionSchemeStateMachine stateMachine, bool spin = false)
         {
             if (epoch.ThisInstanceProtected())
-                throw new InvalidOperationException("unsafe to execute a state machine blockingly when under protection"); 
+                throw new InvalidOperationException("unsafe to execute a state machine blockingly when under protection");
             StateMachineExecutionStatus status;
             do
             {
@@ -477,6 +480,6 @@ namespace FASTER.core
         {
             return ExecuteStateMachine(new SimpleVersionSchemeStateMachine(criticalSection, targetVersion), spin);
         }
-        
+
     }
 }

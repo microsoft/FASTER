@@ -501,7 +501,7 @@ namespace FASTER.core
                 }
             }
         }
-        
+
         /// <summary>
         /// A 32-bit murmur3 implementation.
         /// </summary>
@@ -517,7 +517,7 @@ namespace FASTER.core
             a ^= a >> 16;
             return (int)a;
         }
-        
+
         /// <summary>
         /// Allocate a new entry in epoch table. This is called 
         /// once for a thread.

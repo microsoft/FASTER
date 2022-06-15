@@ -339,7 +339,7 @@ namespace FASTER.core
         {
             return ((ulong)x < 4294967295ul);
         }
-        
+
         /// <summary>
         /// Updates the variable to newValue only if the current value is smaller than the new value.
         /// </summary>

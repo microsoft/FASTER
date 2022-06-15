@@ -4,8 +4,10 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test.UnsafeContext
 {
@@ -19,21 +21,21 @@ namespace FASTER.test.UnsafeContext
         private UnsafeContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> uContext;
         private IDevice log;
         private string path;
-        TestUtils.DeviceType deviceType;
+        DeviceType deviceType;
 
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
+            path = MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            DeleteDirectory(path, wait: true);
         }
 
-        private void Setup(long size, LogSettings logSettings, TestUtils.DeviceType deviceType)
+        private void Setup(long size, LogSettings logSettings, DeviceType deviceType)
         {
             string filename = path + TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
+            log = CreateTestDevice(deviceType, filename);
             logSettings.LogDevice = log;
             fht = new FasterKV<KeyStruct, ValueStruct>(size, logSettings);
             fullSession = fht.For(new Functions()).NewSession<Functions>();
@@ -51,7 +53,7 @@ namespace FASTER.test.UnsafeContext
             fht = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(path);
+            DeleteDirectory(path);
         }
 
         private void AssertCompleted(Status expected, Status actual)
@@ -64,13 +66,13 @@ namespace FASTER.test.UnsafeContext
         private (Status status, OutputStruct output) CompletePendingResult()
         {
             uContext.CompletePendingWithOutputs(out var completedOutputs);
-            return TestUtils.GetSinglePendingResult(completedOutputs);
+            return GetSinglePendingResult(completedOutputs);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteRead([Values] TestUtils.DeviceType deviceType)
+        public void NativeInMemWriteRead([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
             uContext.ResumeThread();
@@ -99,7 +101,7 @@ namespace FASTER.test.UnsafeContext
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteReadDelete([Values] TestUtils.DeviceType deviceType)
+        public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
             uContext.ResumeThread();
@@ -144,7 +146,7 @@ namespace FASTER.test.UnsafeContext
         public void NativeInMemWriteReadDelete2()
         {
             // Just set this one since Write Read Delete already does all four devices
-            deviceType = TestUtils.DeviceType.MLSD;
+            deviceType = DeviceType.MLSD;
 
             const int count = 10;
 
@@ -201,7 +203,7 @@ namespace FASTER.test.UnsafeContext
         public unsafe void NativeInMemWriteRead2()
         {
             // Just use this one instead of all four devices since InMemWriteRead covers all four devices
-            deviceType = TestUtils.DeviceType.MLSD;
+            deviceType = DeviceType.MLSD;
 
             int count = 200;
 
@@ -261,7 +263,7 @@ namespace FASTER.test.UnsafeContext
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public unsafe void TestShiftHeadAddress([Values] TestUtils.DeviceType deviceType)
+        public async Task TestShiftHeadAddress([Values] DeviceType deviceType, [Values] SyncMode syncMode)
         {
             InputStruct input = default;
             const int RandSeed = 10;
@@ -281,7 +283,17 @@ namespace FASTER.test.UnsafeContext
                     var i = r.Next(RandRange);
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                    uContext.Upsert(ref key1, ref value, Empty.Default, 0);
+                    if (syncMode == SyncMode.Sync)
+                    {
+                        uContext.Upsert(ref key1, ref value, Empty.Default, 0);
+                    }
+                    else
+                    {
+                        uContext.SuspendThread();
+                        var status = (await uContext.UpsertAsync(ref key1, ref value)).Complete();
+                        uContext.ResumeThread();
+                        Assert.IsFalse(status.IsPending);
+                    }
                 }
 
                 r = new Random(RandSeed);
@@ -294,13 +306,33 @@ namespace FASTER.test.UnsafeContext
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                    if (!uContext.Read(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
+                    Status status;
+                    if (syncMode == SyncMode.Sync || (c % 1 == 0))  // in .Async mode, half the ops should be sync to test CompletePendingAsync
+                    {
+                        status = uContext.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                    }
+                    else
+                    {
+                        uContext.SuspendThread();
+                        (status, output) = (await uContext.ReadAsync(ref key1, ref input)).Complete();
+                        uContext.ResumeThread();
+                    }
+                    if (!status.IsPending)
                     {
                         Assert.AreEqual(value.vfield1, output.value.vfield1);
                         Assert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                 }
-                uContext.CompletePending(true);
+                if (syncMode == SyncMode.Sync)
+                {
+                    uContext.CompletePending(true);
+                }
+                else
+                {
+                    uContext.SuspendThread();
+                    await uContext.CompletePendingAsync();
+                    uContext.ResumeThread();
+                }
 
                 // Shift head and retry - should not find in main memory now
                 fht.Log.FlushAndEvict(true);
@@ -317,7 +349,18 @@ namespace FASTER.test.UnsafeContext
                     Assert.IsTrue(foundStatus.IsPending);
                 }
 
-                uContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty> outputs;
+                if (syncMode == SyncMode.Sync)
+                {
+                    uContext.CompletePendingWithOutputs(out outputs, wait: true);
+                }
+                else
+                {
+                    uContext.SuspendThread();
+                    outputs = await uContext.CompletePendingWithOutputsAsync();
+                    uContext.ResumeThread();
+                }
+
                 int count = 0;
                 while (outputs.Next())
                 {
@@ -337,7 +380,7 @@ namespace FASTER.test.UnsafeContext
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public unsafe void NativeInMemRMWRefKeys([Values] TestUtils.DeviceType deviceType)
+        public unsafe void NativeInMemRMWRefKeys([Values] DeviceType deviceType)
         {
             InputStruct input = default;
             OutputStruct output = default;
@@ -410,7 +453,7 @@ namespace FASTER.test.UnsafeContext
         // Tests the overload where no reference params used: key,input,userContext,serialNo
         [Test]
         [Category("FasterKV")]
-        public unsafe void NativeInMemRMWNoRefKeys([Values] TestUtils.DeviceType deviceType)
+        public unsafe void NativeInMemRMWNoRefKeys([Values] DeviceType deviceType)
         {
             InputStruct input = default;
 
@@ -476,7 +519,7 @@ namespace FASTER.test.UnsafeContext
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void ReadNoRefKeyInputOutput([Values] TestUtils.DeviceType deviceType)
+        public void ReadNoRefKeyInputOutput([Values] DeviceType deviceType)
         {
             InputStruct input = default;
 
@@ -507,7 +550,7 @@ namespace FASTER.test.UnsafeContext
         // Test the overload call of .Read (key, out output, userContext, serialNo)
         [Test]
         [Category("FasterKV")]
-        public void ReadNoRefKey([Values] TestUtils.DeviceType deviceType)
+        public void ReadNoRefKey([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             uContext.ResumeThread();
@@ -538,7 +581,7 @@ namespace FASTER.test.UnsafeContext
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void ReadWithoutInput([Values] TestUtils.DeviceType deviceType)
+        public void ReadWithoutInput([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             uContext.ResumeThread();
@@ -573,7 +616,7 @@ namespace FASTER.test.UnsafeContext
         public void ReadWithoutSerialID()
         {
             // Just checking without Serial ID so one device type is enough
-            deviceType = TestUtils.DeviceType.MLSD;
+            deviceType = DeviceType.MLSD;
 
             Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
             uContext.ResumeThread();
@@ -605,7 +648,7 @@ namespace FASTER.test.UnsafeContext
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void ReadBareMinParams([Values] TestUtils.DeviceType deviceType)
+        public void ReadBareMinParams([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             uContext.ResumeThread();
@@ -638,7 +681,7 @@ namespace FASTER.test.UnsafeContext
         public void ReadAtAddressReadFlagsNone()
         {
             // Just functional test of ReadFlag so one device is enough
-            deviceType = TestUtils.DeviceType.MLSD;
+            deviceType = DeviceType.MLSD;
 
             Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
             uContext.ResumeThread();

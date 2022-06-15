@@ -31,6 +31,20 @@ namespace FASTER.core
         bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 
         /// <summary>
+        /// Complete all pending synchronous FASTER operations.
+        /// Async operations must be completed individually.
+        /// </summary>
+        /// <returns></returns>
+        ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default);
+
+        /// <summary>
+        /// Complete all pending synchronous FASTER operations, returning outputs for the completed operations.
+        /// Async operations must be completed individually.
+        /// </summary>
+        /// <returns>Outputs completed by this operation</returns>
+        ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default);
+
+        /// <summary>
         /// Read operation
         /// </summary>
         /// <param name="key">The key to look up</param>

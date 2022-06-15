@@ -1303,23 +1303,21 @@ namespace FASTER.core
                     int closePage = (int)(closePageAddress >> LogPageSizeBits);
                     int closePageIndex = closePage % BufferSize;
 
-                    // Do not free or clear partial page
-                    // Future work: clear partial page
+                    // If the end of the closing range is at the end of the page, free the page
                     if (end == closePageAddress + PageSize)
                     {
+                        // If the start of the closing range is not at the beginning of this page, spin-wait until the adjacent earlier ranges on this page are closed
+                        if ((start & PageSizeMask) > 0)
+                        {
+                            while (ClosedUntilAddress < start)
+                            {
+                                epoch.ProtectAndDrain();
+                                Thread.Yield();
+                            }
+                        }
                         FreePage(closePage);
                     }
 
-                    // If start of closing range is not at page beginning,
-                    // spin-wait until adjacent earlier range is closed
-                    if ((start & PageSizeMask) > 0)
-                    {
-                        while (ClosedUntilAddress < start)
-                        {
-                            epoch.ProtectAndDrain();
-                            Thread.Yield();
-                        }
-                    }
                     Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, end, out _);
                     ShiftClosedUntilAddress();
                     if (ClosedUntilAddress > FlushedUntilAddress)
