@@ -61,3 +61,11 @@ set (FASTER_SOURCES ${FASTER_SOURCES}
 endif()
 
 add_library(faster STATIC ${FASTER_SOURCES} ${FASTER_HEADERS})
+
+install(TARGETS faster EXPORT fasterConfig)
+install(EXPORT fasterConfig DESTINATION fasterConfig)
+install(DIRECTORY environment DESTINATION include PATTERN *.h)
+install(DIRECTORY device DESTINATION include PATTERN *.h)
+install(DIRECTORY core DESTINATION include PATTERN   *.h)
+install(DIRECTORY common DESTINATION include PATTERN *.h)
+include(CPack)
