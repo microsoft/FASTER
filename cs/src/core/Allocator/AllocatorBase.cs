@@ -432,7 +432,6 @@ namespace FASTER.core
                 endPage++;
 
             long prevEndPage = GetPage(prevEndAddress);
-
             deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
             int destOffset = 0;
 
@@ -445,7 +444,11 @@ namespace FASTER.core
 
                 var logicalAddress = p << LogPageSizeBits;
                 var physicalAddress = GetPhysicalAddress(logicalAddress);
-                var endPhysicalAddress = physicalAddress + PageSize;
+
+                var endLogicalAddress = logicalAddress + PageSize;
+                if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
+                Debug.Assert(endLogicalAddress > logicalAddress);
+                var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
 
                 if (p == startPage)
                 {
