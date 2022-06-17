@@ -204,7 +204,6 @@ namespace FASTER.core
                 case Phase.PREPARE:
                     faster._lastSnapshotCheckpoint.Dispose();
                     base.GlobalBeforeEnteringState(next, faster);
-                    faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.FlushedUntilAddress;
                     faster._hybridLogCheckpoint.info.useSnapshotFile = 1;
                     break;
                 case Phase.WAIT_FLUSH:
@@ -219,7 +218,8 @@ namespace FASTER.core
                     faster._hybridLogCheckpoint.snapshotFileDevice.Initialize(faster.hlog.GetSegmentSize());
                     faster._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
 
-                    long startPage = faster.hlog.GetPage(faster._hybridLogCheckpoint.info.startLogicalAddress);
+                    faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
+                    long startPage = faster.hlog.GetPage(faster._hybridLogCheckpoint.info.flushedLogicalAddress);
                     long endPage = faster.hlog.GetPage(faster._hybridLogCheckpoint.info.finalLogicalAddress);
                     if (faster._hybridLogCheckpoint.info.finalLogicalAddress >
                         faster.hlog.GetStartLogicalAddress(endPage))
@@ -240,8 +240,6 @@ namespace FASTER.core
                         out faster._hybridLogCheckpoint.flushedSemaphore);
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
-                    // update flushed-until address to the latest
-                    faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
                     base.GlobalBeforeEnteringState(next, faster);
                     faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint.Transfer();
                     break;
