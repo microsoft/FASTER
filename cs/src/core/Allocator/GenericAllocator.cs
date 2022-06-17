@@ -423,26 +423,44 @@ namespace FASTER.core
             {
                 if (!src[i].info.Invalid)
                 {
-                    if (KeyHasObjects())
+                    bool lockTaken = true;
+                    while (!src[i].info.LockShared())
                     {
-                        long pos = ms.Position;
-                        keySerializer.Serialize(ref src[i].key);
-                        var key_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
-                        key_address->Address = pos;
-                        key_address->Size = (int)(ms.Position - pos);
-                        addr.Add((long)key_address);
-                        endPosition = pos + key_address->Size;
+                        if (src[i].info.Sealed)
+                        {
+                            lockTaken = false;
+                            break;
+                        }
+                        Thread.Yield();
                     }
 
-                    if (ValueHasObjects() && !src[i].info.Tombstone)
+                    try
                     {
-                        long pos = ms.Position;
-                        valueSerializer.Serialize(ref src[i].value);
-                        var value_address = GetValueAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
-                        value_address->Address = pos;
-                        value_address->Size = (int)(ms.Position - pos);
-                        addr.Add((long)value_address);
-                        endPosition = pos + value_address->Size;
+                        if (KeyHasObjects())
+                        {
+                            long pos = ms.Position;
+                            keySerializer.Serialize(ref src[i].key);
+                            var key_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
+                            key_address->Address = pos;
+                            key_address->Size = (int)(ms.Position - pos);
+                            addr.Add((long)key_address);
+                            endPosition = pos + key_address->Size;
+                        }
+
+                        if (ValueHasObjects() && !src[i].info.Tombstone)
+                        {
+                            long pos = ms.Position;
+                            valueSerializer.Serialize(ref src[i].value);
+                            var value_address = GetValueAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
+                            value_address->Address = pos;
+                            value_address->Size = (int)(ms.Position - pos);
+                            addr.Add((long)value_address);
+                            endPosition = pos + value_address->Size;
+                        }
+                    }
+                    finally
+                    {
+                        if (lockTaken) src[i].info.UnlockShared();
                     }
                 }
 
