@@ -1531,12 +1531,12 @@ namespace FASTER.core
             ClearPage(pageIndex, (int)GetOffsetInPage(tailAddress));
 
             // Printing debug info
-            Debug.WriteLine("******* Recovered HybridLog Stats *******");
-            Debug.WriteLine("Head Address: {0}", HeadAddress);
-            Debug.WriteLine("Safe Head Address: {0}", SafeHeadAddress);
-            Debug.WriteLine("ReadOnly Address: {0}", ReadOnlyAddress);
-            Debug.WriteLine("Safe ReadOnly Address: {0}", SafeReadOnlyAddress);
-            Debug.WriteLine("Tail Address: {0}", tailAddress);
+            logger?.LogInformation("******* Recovered HybridLog Stats *******");
+            logger?.LogInformation("Head Address: {HeadAddress}", HeadAddress);
+            logger?.LogInformation("Safe Head Address: {SafeHeadAddress}", SafeHeadAddress);
+            logger?.LogInformation("ReadOnly Address: {ReadOnlyAddress}", ReadOnlyAddress);
+            logger?.LogInformation("Safe ReadOnly Address: {SafeReadOnlyAddress}", SafeReadOnlyAddress);
+            logger?.LogInformation("Tail Address: {tailAddress}", tailAddress);
         }
 
         /// <summary>
