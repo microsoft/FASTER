@@ -99,7 +99,10 @@ class HashIndex : public IHashIndex<D> {
   void Grow();
 
   // Hash index ops do not go pending
-  void CompletePendingRequests() { };
+  void StartSession() { };
+  void StopSession() { };
+  void CompletePending() { };
+  void Refresh() { };
 
   // Checkpointing methods
   Status Checkpoint(CheckpointState<file_t>& checkpoint);
@@ -118,6 +121,9 @@ class HashIndex : public IHashIndex<D> {
   }
   uint64_t new_size() const {
     return table_[1 - this->resize_info.version].size();
+  }
+  bool IsSync() const {
+    return true;
   }
 
  private:

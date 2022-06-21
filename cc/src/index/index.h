@@ -54,7 +54,12 @@ class IHashIndex {
   template<class R>
   void Grow();
 
-  void CompletePendingRequests();
+  // Helper methods to support the FASTER-like interface
+  // used in the FASTER index (i.e., cold index).
+  void StartSession();
+  void StopSession();
+  void CompletePending();
+  void Refresh();
 
   // Checkpointing methods
   Status Checkpoint(CheckpointState<file_t>& checkpoint);
@@ -69,6 +74,7 @@ class IHashIndex {
   // Helper functions
   uint64_t size() const;
   uint64_t new_size() const;
+  bool IsSync() const;
 
  public:
   ResizeInfo resize_info;
