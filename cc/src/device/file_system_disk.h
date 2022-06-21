@@ -118,7 +118,7 @@ private:
     std::mutex* m_mutex;
     bool m_released;
 };
- 
+
 /// Manages a bundle of segment files.
 template <class H>
 class FileSystemSegmentBundle {
@@ -481,10 +481,10 @@ class FileSystemDisk {
                  const std::string& config = "",
                  bool enablePrivileges = false, bool unbuffered = true,
                  bool delete_on_close = false)
-    : root_path_{ NormalizePath(root_path) }
+    : root_path{ NormalizePath(root_path) }
     , handler_{ 16 /*max threads*/ }
     , default_file_options_{ unbuffered, delete_on_close }
-    , log_{ root_path_ + "log.log", default_file_options_, &epoch} {
+    , log_{ root_path + "log.log", default_file_options_, &epoch} {
     core::Status result = log_.Open(&handler_);
     assert(result == core::Status::Ok);
   }
@@ -509,7 +509,7 @@ class FileSystemDisk {
     return retval;
   }
   std::string index_checkpoint_path(const core::Guid& token) const {
-    return root_path_ + relative_index_checkpoint_path(token);
+    return root_path + relative_index_checkpoint_path(token);
   }
 
   std::string relative_cpr_checkpoint_path(const core::Guid& token) const {
@@ -520,7 +520,7 @@ class FileSystemDisk {
     return retval;
   }
   std::string cpr_checkpoint_path(const core::Guid& token) const {
-    return root_path_ + relative_cpr_checkpoint_path(token);
+    return root_path + relative_cpr_checkpoint_path(token);
   }
 
   void CreateIndexCheckpointDirectory(const core::Guid& token) {
@@ -546,7 +546,7 @@ class FileSystemDisk {
   }
 
   file_t NewFile(const std::string& relative_path) {
-    return file_t{ root_path_ + relative_path, default_file_options_ };
+    return file_t{ root_path + relative_path, default_file_options_ };
   }
 
   /// Implementation-specific accessor.
@@ -558,8 +558,10 @@ class FileSystemDisk {
     return handler_.TryComplete();
   }
 
+ public:
+  std::string root_path;
+
  private:
-  std::string root_path_;
   handler_t handler_;
 
   environment::FileOptions default_file_options_;
