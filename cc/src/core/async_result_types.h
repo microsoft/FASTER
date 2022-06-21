@@ -63,28 +63,24 @@ class AsyncIOContext : public IAsyncContext {
 
 class AsyncIndexIOContext : public IAsyncContext {
  public:
-  AsyncIndexIOContext(void* faster_, KeyHash hash_, IAsyncContext* caller_context_,
+  AsyncIndexIOContext(IAsyncContext* caller_context_,
                       concurrent_queue<AsyncIndexIOContext*>* thread_io_responses_,
                       uint64_t io_id_)
-    : faster{ faster_ }
-    , hash{ hash_ }
-    , caller_context{ caller_context_ }
+    : caller_context{ caller_context_ }
     , thread_io_responses{ thread_io_responses_ }
     , io_id{ io_id_ }
-    , entry{ HashBucketEntry::kInvalidEntry }
-    , atomic_entry{ nullptr } {
+    , result{ Status::Corruption }
+    , entry{ HashBucketEntry::kInvalidEntry } {
   }
   /// No copy constructor.
   AsyncIndexIOContext(const AsyncIOContext& other) = delete;
   /// The deep-copy constructor.
   AsyncIndexIOContext(AsyncIndexIOContext& other, IAsyncContext* caller_context_)
-    : faster{ other.faster }
-    , caller_context{ caller_context_ }
+    : caller_context{ caller_context_ }
     , thread_io_responses{ other.thread_io_responses }
     , io_id{ other.io_id }
-    , hash{ other.hash }
-    , entry{ other.entry }
-    , atomic_entry{ other.atomic_entry } {
+    , result{ other.result }
+    , entry{ other.entry } {
   }
  protected:
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
@@ -92,18 +88,17 @@ class AsyncIndexIOContext : public IAsyncContext {
   }
 
  public:
-  void* faster;
   IAsyncContext* caller_context;
   /// Queue where finished pending requests are pushed
   concurrent_queue<AsyncIndexIOContext*>* thread_io_responses;
   /// Unique id for I/O request
   uint64_t io_id;
 
-  KeyHash hash;
+  /// Result of the index operation
+  Status result;
+  /// Entry found in the index
   HashBucketEntry entry;
-  AtomicHashBucketEntry* atomic_entry;
 };
-
 
 }
 } // namespace FASTER::core

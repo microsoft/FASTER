@@ -28,6 +28,10 @@ using namespace FASTER::index;
 namespace FASTER {
 namespace core {
 
+/// Forward class declaration
+class AsyncIOContext;
+class AsyncIndexIOContext;
+
 /// Internal contexts, used by FASTER.
 
 enum class OperationType : uint8_t {
@@ -114,19 +118,14 @@ class PendingContext : public IAsyncContext {
   /// Go async
   inline void go_async(Address address_) {
     address = address_;
+  }
 
-    // reset index op fields
+  inline void clear_index_op() {
     index_op_type = IndexOperationType::None;
     index_op_result = Status::Corruption;
   }
 
-  /// Go async -- TODO: remove after Hash Index integration
-  inline void go_async(Address address_, HashBucketEntry entry_) {
-    address = address_;
-    entry = entry_;
-  }
-
-  void set_index_entry(HashBucketEntry entry_, AtomicHashBucketEntry* atomic_entry_) {
+  inline void set_index_entry(HashBucketEntry entry_, AtomicHashBucketEntry* atomic_entry_) {
     entry = entry_;
     atomic_entry = atomic_entry_;
   }
@@ -155,7 +154,6 @@ class PendingContext : public IAsyncContext {
   IndexOperationType index_op_type;
   // Result of index operation
   Status index_op_result;
-  /// Pointer to record that
   /// Hash table entry that (indirectly) leads to the record being read or modified.
   HashBucketEntry entry;
   ///
@@ -519,14 +517,16 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
     : PendingContext<key_t>(OperationType::ConditionalInsert, caller_context_, caller_callback_)
     , start_search_entry{ start_search_entry_ }
     , min_search_offset{ min_search_offset_ }
-    , dest_store{ dest_store_ } {
+    , dest_store{ dest_store_ }
+    , io_context{ nullptr } {
   }
   /// The deep copy constructor.
   AsyncPendingConditionalInsertContext(AsyncPendingConditionalInsertContext& other, IAsyncContext* caller_context)
     : PendingContext<key_t>(other, caller_context)
     , start_search_entry{ other.start_search_entry }
     , min_search_offset{ other.min_search_offset }
-    , dest_store{ other.dest_store } {
+    , dest_store{ other.dest_store }
+    , io_context{ other.io_context } {
   }
  public:
   virtual uint32_t value_size() const = 0;
@@ -542,6 +542,8 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
   HashBucketEntry start_search_entry;
   Address min_search_offset;
   void* dest_store;
+
+  AsyncIOContext* io_context;
 };
 
 /// A synchronous ConditionalInsert() context preserves its type information.
@@ -656,10 +658,6 @@ class IndexContext : public IAsyncContext {
   AtomicHashBucketEntry* atomic_entry;
 };
 
-/// Forward class declaration
-class AsyncIOContext;
-class AsyncIndexIOContext;
-
 /// Per-thread execution context. (Just the stuff that's checkpointed to disk.)
 struct PersistentExecContext {
   PersistentExecContext()
@@ -709,6 +707,7 @@ struct ExecutionContext : public PersistentExecContext {
   /// Retry request contexts are stored inside the deque.
   std::deque<IAsyncContext*> retry_requests;
   /// Assign a unique ID to every I/O request.
+  /// NOTE: this includes index-related requests from e.g., cold index
   uint64_t io_id;
   /// For each pending I/O, maps io_id to the hash of the key being retrieved.
   std::unordered_map<uint64_t, KeyHash> pending_ios;
@@ -718,7 +717,7 @@ struct ExecutionContext : public PersistentExecContext {
   concurrent_queue<AsyncIOContext*> io_responses;
 
   /// The I/O completion thread hands the PendingContext back to the thread that issued the
-  /// request.
+  /// index-related request.
   concurrent_queue<AsyncIndexIOContext*> index_io_responses;
 };
 
