@@ -163,11 +163,14 @@ union HotLogIndexBucketEntryDef {
     , tentative{ tentative_ } {
   }
 
+  static constexpr int kTagBits = 14;
+  static constexpr int kReservedBits = 1;
+
   struct {
-    uint64_t address : 48;   // corresponds to logical address
-    uint64_t tag : 14;       // used to distinguish among different entries in same hash table position
-    uint64_t reserved : 1;   // not used
-    uint64_t tentative : 1;  // used (internally) to handle concurrent updates to the hash table
+    uint64_t address    :  48;            // corresponds to logical address
+    uint64_t tag        : kTagBits;       // used to distinguish among different entries in same hash table position
+    uint64_t reserved   : kReservedBits;  // not used
+    uint64_t tentative  : 1;              // used (internally) to handle concurrent updates to the hash table
   };
   uint64_t control;
 };
@@ -186,11 +189,14 @@ union ColdLogIndexBucketEntryDef {
     , tentative{ tentative_ } {
   }
 
+  static constexpr int kTagBits = 3;
+  static constexpr int kReservedBits = 12;
+
   struct {
-    uint64_t address : 48;  // corresponds to logical address
-    uint64_t tag : 3;       // used to distinguish among different entries in same hash table position
-    uint64_t reserved : 12;  // not used
-    uint64_t tentative : 1; // used (internally) to handle concurrent updates to the hash table
+    uint64_t address  : 48;             // corresponds to logical address
+    uint64_t tag      : kTagBits;       // used to distinguish among different entries in same hash table position
+    uint64_t reserved : kReservedBits;  // not used by HT -- used by cold index key hash for in-chunk indexing
+    uint64_t tentative: 1;              // used (internally) to handle concurrent updates to the hash table
   };
   uint64_t control;
 };
