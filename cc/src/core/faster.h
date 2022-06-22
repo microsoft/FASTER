@@ -304,6 +304,8 @@ class FasterKv {
   disk_t disk;
   hlog_t hlog;
 
+  hash_index_t hash_index_;
+
  private:
   static constexpr bool kCopyReadsToTail = false;
   static constexpr int kNumCompactionThreads = 8;
@@ -312,8 +314,6 @@ class FasterKv {
 
   /// Initial size of the table
   uint64_t min_table_size_;
-  /// Instance of hash index that stores hash -> root address mapping
-  hash_index_t hash_index_;
 
   CheckpointLocks<key_hash_t> checkpoint_locks_;
 
@@ -342,6 +342,7 @@ class FasterKv {
 // Implementations.
 template <class K, class V, class D, class H>
 inline Guid FasterKv<K, V, D, H>::StartSession(Guid guid) {
+  hash_index_.StartSession();
   SystemState state = system_state_.load();
   if(state.phase != Phase::REST) {
     throw std::runtime_error{ "Can acquire only in REST phase!" };
@@ -374,6 +375,7 @@ inline uint64_t FasterKv<K, V, D, H>::ContinueSession(const Guid& session_id) {
 
 template <class K, class V, class D, class H>
 inline void FasterKv<K, V, D, H>::Refresh() {
+  hash_index_.CompletePending();
   epoch_.ProtectAndDrain();
   // We check if we are in normal mode
   SystemState new_state = system_state_.load();
@@ -402,6 +404,7 @@ inline void FasterKv<K, V, D, H>::StopSession() {
   assert(prev_thread_ctx().io_responses.empty());
 
   assert(thread_ctx().phase == Phase::REST);
+  hash_index_.StopSession();
 
   epoch_.Unprotect();
   --num_active_sessions;
@@ -522,7 +525,7 @@ template <class K, class V, class D, class H>
 inline bool FasterKv<K, V, D, H>::CompletePending(bool wait) {
   do {
     disk.TryComplete();
-    hash_index_.CompletePendingRequests();
+    hash_index_.CompletePending();
 
     bool done = true;
     if(thread_ctx().phase != Phase::WAIT_PENDING && thread_ctx().phase != Phase::IN_PROGRESS) {
@@ -566,8 +569,10 @@ inline void FasterKv<K, V, D, H>::CompleteIoPendingRequests(ExecutionContext& co
     OperationStatus internal_status;
     if(pending_context->type == OperationType::Read) {
       internal_status = InternalContinuePendingRead(context, *io_context.get(), log_truncated);
+      assert(internal_status != OperationStatus::INDEX_ENTRY_ON_DISK); // continue reads do not access index
     } else if (pending_context->type == OperationType::RMW) {
       internal_status = InternalContinuePendingRmw(context, *io_context.get());
+      assert(internal_status != OperationStatus::INDEX_ENTRY_ON_DISK); // RMWs not used in cold log
     } else {
       assert(pending_context->type == OperationType::ConditionalInsert);
       internal_status = InternalContinuePendingConditionalInsert(context, *io_context.get());
@@ -612,19 +617,25 @@ inline void FasterKv<K, V, D, H>::CompleteIndexPendingRequests(ExecutionContext&
   // Clear this thread's index I/O response queue.
   // NOTE: Does not clear I/Os issued by this thread that have not yet completed.
   while(context.index_io_responses.try_pop(ctxt)) {
-    CallbackContext<AsyncIndexIOContext> io_context{ ctxt };
-    CallbackContext<pending_context_t> pending_context{ io_context->caller_context };
+    CallbackContext<AsyncIndexIOContext> index_io_context{ ctxt };
+    CallbackContext<pending_context_t> pending_context{ index_io_context->caller_context };
     // This I/O is no longer pending, since we popped its response off the queue.
-    auto pending_io = context.pending_ios.find(io_context->io_id);
+    auto pending_io = context.pending_ios.find(index_io_context->io_id);
     assert(pending_io != context.pending_ios.end());
     context.pending_ios.erase(pending_io);
 
+    // Update index entry from finished cold index (on-disk) request
+    pending_context->set_index_entry(index_io_context->entry, nullptr);
+    pending_context->index_op_result = index_io_context->result;
+
+    //fprintf(stderr, "%d %d %d\n", pending_context->type, pending_context->index_op_type,
+    //                              pending_context->index_op_result);
     assert(pending_context->index_op_type != IndexOperationType::None);
 
     Status result;
     switch(pending_context->type) {
       case OperationType::Read:
-        // Only Retrieve index op is posisble
+        // Only Retrieve index op is possible
         assert(pending_context->index_op_type == IndexOperationType::Retrieve);
         assert(pending_context->index_op_result == Status::Ok ||
                 pending_context->index_op_result == Status::NotFound);
@@ -638,28 +649,87 @@ inline void FasterKv<K, V, D, H>::CompleteIndexPendingRequests(ExecutionContext&
           // Resume request with the retrieved index hash bucket
           result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
                                           pending_context.async);
-        } else {
-          assert(pending_context->index_op_type == IndexOperationType::Update);
-          // Handle
+        } else if (pending_context->index_op_type == IndexOperationType::Update) {
           if (pending_context->index_op_result == Status::Ok) {
             // Request was sucessfully completed!
             pending_context.async = false;
+            result = Status::Ok;
           } else {
             assert(pending_context->index_op_result == Status::Aborted);
-            // TODO: Request was aborted. Try to mark record as invalid
+            // Request was aborted: try to mark record as invalid
+            Address record_address = index_io_context->record_address;
+            if (record_address >= hlog.head_address.load()) {
+              record_t* record = reinterpret_cast<record_t*>(hlog.Get(record_address));
+              record->header.invalid = true;
+            }
+            // if not marked here, it will be ignored by conditional insert during compaction
 
             // Retry request
             result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
                                           pending_context.async);
           }
+        } else {
+          assert(false); // not reachable
+        }
+        break;
+      case OperationType::ConditionalInsert:
+        if (pending_context->index_op_type == IndexOperationType::Retrieve) {
+          // Resume request with retrieved index hash bucket
+          {
+            fprintf(stderr, "RETRIEVE: %d\n", pending_context->index_op_result);
+            async_pending_ci_context_t* pending_ci_context = \
+              static_cast<async_pending_ci_context_t*>(index_io_context->caller_context);
+
+            OperationStatus internal_status;
+            if (pending_ci_context->start_search_entry == HashBucketEntry::kInvalidEntry) {
+              // Set starting entry and start CI request
+              pending_ci_context->start_search_entry = pending_ci_context->entry;
+              internal_status = OperationStatus::RETRY_NOW;
+            } else {
+              CallbackContext<AsyncIOContext> io_context{ pending_ci_context->io_context };
+              assert(io_context.get() != nullptr);
+              // Continue CI request
+              internal_status = InternalContinuePendingConditionalInsert(context, *io_context.get());
+            }
+
+            if (internal_status == OperationStatus::RETRY_NOW) {
+              result = HandleOperationStatus(context, *pending_context.get(), internal_status,
+                                            pending_context.async);
+            } else if(internal_status == OperationStatus::NOT_FOUND) {
+              result = Status::NotFound;
+            } else {
+              assert(internal_status == OperationStatus::ABORTED);
+              result = Status::Aborted;
+            }
+          }
+        } else if (pending_context->index_op_type == IndexOperationType::Update) {
+          fprintf(stderr, "UPDATE: %d\n", pending_context->index_op_result);
+          if (pending_context->index_op_result == Status::Ok) {
+            // Request was sucessfully completed!
+            pending_context.async = false;
+            result = Status::Ok;
+          } else {
+            assert(pending_context->index_op_result == Status::Aborted);
+            // Request was aborted: try to mark record as invalid
+            Address record_address = index_io_context->record_address;
+            if (record_address >= hlog.head_address.load()) {
+              record_t* record = reinterpret_cast<record_t*>(hlog.Get(record_address));
+              record->header.invalid = true;
+            }
+            // if not marked here, it will be ignored by conditional insert during compaction
+
+            // Retry request
+            result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
+                                          pending_context.async);
+          }
+        } else {
+          assert(false); // not reachable
         }
         break;
       case OperationType::RMW:
-        // not implementede
-        assert(false);
-        break;
-      case OperationType::ConditionalInsert:
-        // not implemented
+        // Not implemented; not needed as no RMW requests are used in the cold log
+        // NOTE: If needed in the future, implementation is similar to ConditionalInsert
+        // but care should be taken wrt the race conditions related to atomic_entry.
         assert(false);
         break;
       default:
@@ -735,7 +805,10 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalRead(C& pending_context) co
       return OperationStatus::INDEX_ENTRY_ON_DISK;
     }
   } else {
+    // retrieve result of async index operation
+    assert(!hash_index_.IsSync());
     index_status = pending_context.index_op_result;
+    pending_context.clear_index_op();
   }
 
   if(index_status == Status::NotFound) {
@@ -830,7 +903,10 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalUpsert(C& pending_context) 
       return OperationStatus::INDEX_ENTRY_ON_DISK;
     }
   } else {
+    // retrieve result of async index operation
+    assert(!hash_index_.IsSync());
     index_status = pending_context.index_op_result;
+    pending_context.clear_index_op();
   }
   assert(index_status == Status::Ok);
 
@@ -919,6 +995,17 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalUpsert(C& pending_context) 
 
   if(address >= read_only_address) {
     // Mutable region; try to update in place.
+    // TODO: fix this in the cold log; UPDATE: it might just be the case that there is no need to fix anything here.
+    // NOTE: ;TLDR; cold log index cannot experience the lost-update anomally.
+    //       Cold log only receives upserts during hot-cold compaction
+    //       During a single hot-cold compaction, a record with a given key, can be updated AT MOST once!
+    //       This is guarranteed by the lookup compaction algorithm, as only a single hot-cold compaction is active at any given time.
+    //       In case of hash collisions, there should be no problem, as different threads are upserting records with different keys.
+    //       Even when there is a concurrent cold-cold compaction occuring, these records are only being inserted *conditionally*.
+    //       This means that there will be inserted at the tail, ONLY IF there is *no* other record present anywhere in the cold log.
+    //       And since these records to be compacted are NOT located in the mutable region, then entering this if is impossible :)
+    //
+    assert(hash_index_.IsSync() && atomic_entry != nullptr);
     if(atomic_entry->load() != expected_entry) {
       // Some other thread may have RCUed the record before we locked it; try again.
       return OperationStatus::RETRY_NOW;
@@ -952,6 +1039,7 @@ create_record:
     // Installed the new record in the hash table.
     return OperationStatus::SUCCESS;
   } else if (index_status == Status::Pending) {
+    assert(!hash_index_.IsSync());
     return OperationStatus::INDEX_ENTRY_ON_DISK;
   } else {
     assert(index_status == Status::Aborted);
@@ -965,7 +1053,7 @@ template <class K, class V, class D, class H>
 template <class C>
 inline OperationStatus FasterKv<K, V, D, H>::InternalRmw(C& pending_context, bool retrying) {
   typedef C pending_rmw_context_t;
-  assert(pending_context.index_op_type != IndexOperationType::Update);
+  assert(hash_index_.IsSync()); // cold log does not need to support RMWs requests
 
   Phase phase = retrying ? pending_context.phase : thread_ctx().phase;
   uint32_t version = retrying ? pending_context.version : thread_ctx().version;
@@ -976,15 +1064,7 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalRmw(C& pending_context, boo
   // Stamp request (if not stamped already)
   pending_context.try_stamp_request(thread_ctx().phase, thread_ctx().version);
 
-  Status index_status;
-  if (pending_context.index_op_type == IndexOperationType::None) {
-    index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
-    if (index_status == Status::Pending) {
-      return OperationStatus::INDEX_ENTRY_ON_DISK;
-    }
-  } else {
-    index_status = pending_context.index_op_result;
-  }
+  Status index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
   assert(index_status == Status::Ok);
 
   HashBucketEntry expected_entry{ pending_context.entry };
@@ -1159,12 +1239,9 @@ create_record:
     return OperationStatus::RECORD_ON_DISK;
   }
 
-  // TODO: fix the issue with the record which should be invalided even if req goes pending!
   index_status = hash_index_.TryUpdateEntry(thread_ctx(), pending_context, new_address);
   if (index_status == Status::Ok) {
     return OperationStatus::SUCCESS;
-  } else if (index_status == Status::Pending) {
-    return OperationStatus::INDEX_ENTRY_ON_DISK;
   } else {
     assert(index_status == Status::Aborted);
     // Try again.
@@ -1187,7 +1264,6 @@ template <class K, class V, class D, class H>
 template<class C>
 inline OperationStatus FasterKv<K, V, D, H>::InternalDelete(C& pending_context, bool force_tombstone) {
   typedef C pending_delete_context_t;
-
   assert(pending_context.index_op_type != IndexOperationType::Update);
 
   if(thread_ctx().phase != Phase::REST) {
@@ -1213,11 +1289,12 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalDelete(C& pending_context, 
       return OperationStatus::INDEX_ENTRY_ON_DISK;
     }
   } else {
+    // retrieve result of async index operation
     index_status = pending_context.index_op_result;
+    pending_context.clear_index_op();
   }
 
   HashBucketEntry expected_entry{ pending_context.entry };
-  AtomicHashBucketEntry* atomic_entry{ pending_context.atomic_entry };
 
   if(index_status == Status::NotFound) {
     // no record found
@@ -1298,10 +1375,11 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalDelete(C& pending_context, 
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
     // If the record is the head of the hash chain, try to update the hash chain and completely
     // elide record only if the previous address points to invalid address
-    if(expected_entry.address() == address) {
+    // NOTE: this is an optimization enabled for hot log; disabled when cold index is used.
+    if(hash_index_.IsSync() && expected_entry.address() == address) {
       Address previous_address = record->header.previous_address();
       if (previous_address < begin_address) {
-        atomic_entry->compare_exchange_strong(expected_entry, HashBucketEntry::kInvalidEntry);
+        hash_index_.TryUpdateEntry(thread_ctx(), pending_context, HashBucketEntry::kInvalidEntry);
       }
     }
     record->header.tombstone = true;
@@ -1663,22 +1741,44 @@ OperationStatus FasterKv<K, V, D, H>::InternalContinuePendingConditionalInsert(E
   if (io_context.address > pending_context->min_search_offset) {
     // found newer version for this record -- abort insert!
     return OperationStatus::ABORTED;
+  } else if (io_context.address < pending_context->min_search_offset) {
+    // record not part of the same hash chain: i.e., invalid record; skip record
+    // NOTE: this check mainly protects from copying "invalid" records that were not marked invalid
+    // due to an index operation going pending, and the record being flushed to disk before being marked.
+    // (flush-before-maked-invalid race condition).
+    // Cross-validating that a record is part of the same hash chain is a relatively cheap way to identify
+    // those records.
+    return OperationStatus::ABORTED;
   }
+  assert(io_context.address == pending_context->min_search_offset);
   // Searched entire region, but did not find newer version for record
 
   // Find a hash bucket entry to store the updated value in.
-  Status status = hash_index_.FindOrCreateEntry(thread_ctx(), *pending_context);
-  assert(status == Status::Ok);
+  Status index_status;
+  if (pending_context->index_op_type == IndexOperationType::None) {
+    index_status = hash_index_.FindOrCreateEntry(thread_ctx(), *pending_context);
+    if (index_status == Status::Pending) {
+      // Store AsyncIOContext for when resuming this request, after index op is finished
+      pending_context->io_context = &io_context;
+      return OperationStatus::INDEX_ENTRY_ON_DISK;
+    }
+  } else {
+    index_status = pending_context->index_op_result;
+    pending_context->clear_index_op();      // async index op done
+    pending_context->io_context = nullptr;  // clear stored AsyncIOContext
+  }
+  assert(index_status == Status::Ok);
 
   HashBucketEntry expected_entry{ pending_context->entry };
-  AtomicHashBucketEntry* atomic_entry{ pending_context->atomic_entry };
-  assert(atomic_entry != nullptr);
+  assert(!hash_index_.IsSync() ^ (pending_context->atomic_entry != nullptr));
+
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
 
   // Update search range to [prev start search addr, current latest hash entry addr]
   pending_context->min_search_offset = pending_context->start_search_entry.address();
   if (address != Address::kInvalidAddress) {
+    // TODO: check that this is indeed correct
     pending_context->start_search_entry = expected_entry;
   }
 
@@ -1689,6 +1789,7 @@ OperationStatus FasterKv<K, V, D, H>::InternalContinuePendingConditionalInsert(E
 template <class K, class V, class D, class H>
 OperationStatus FasterKv<K, V, D, H>::InternalContinuePendingRmw(ExecutionContext& context,
                                                               AsyncIOContext& io_context) {
+  assert(hash_index_.IsSync()); // RMWs are not supported when cold index is used
   async_pending_rmw_context_t* pending_context = static_cast<async_pending_rmw_context_t*>(
         io_context.caller_context);
   bool create_if_not_exists = pending_context->create_if_not_exists;
@@ -1706,7 +1807,7 @@ OperationStatus FasterKv<K, V, D, H>::InternalContinuePendingRmw(ExecutionContex
   // Address from new hash index entry
   Address address = pending_context->entry.address();
 
-  // Make sure that atomic_entry is OK to update.
+  // Make sure that no other record has been inserted in the meantime
   if(address >= head_address && address != prev_address) {
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
     if(!pending_context->is_key_equal(record->key())) {
@@ -1733,7 +1834,6 @@ OperationStatus FasterKv<K, V, D, H>::InternalContinuePendingRmw(ExecutionContex
   assert(address < begin_address || address == prev_address);
 
   HashBucketEntry expected_entry{ pending_context->entry };
-  AtomicHashBucketEntry* atomic_entry{ pending_context->atomic_entry };
 
   // We have to do RCU and write the updated value to the tail of the log.
   Address new_address;
@@ -1782,9 +1882,6 @@ OperationStatus FasterKv<K, V, D, H>::InternalContinuePendingRmw(ExecutionContex
     assert(thread_ctx().version >= context.version);
     return (thread_ctx().version == context.version) ? OperationStatus::SUCCESS
                                                      : OperationStatus::SUCCESS_UNMARK;
-  } else if (index_status == Status::Pending) {
-    // TODO: Mark somehow that this req is from ContinueRMW? Need to do SUCCSS_UNMARK when it returns!
-    return OperationStatus::INDEX_ENTRY_ON_DISK;
   } else {
     assert(index_status == Status::Aborted);
     // CAS failed; try again.
@@ -2076,8 +2173,6 @@ Status FasterKv<K, V, D, H>::RecoverFromPage(Address from_address, Address to_ad
     assert(status == Status::Ok);
 
     HashBucketEntry expected_entry{ pending_context.entry };
-    AtomicHashBucketEntry* atomic_entry{ pending_context.atomic_entry };
-
     KeyHash hash = record->key().GetHash();
 
     if(record->header.checkpoint_version <= checkpoint_.log_metadata.version) {
@@ -3090,11 +3185,18 @@ inline Status FasterKv<K, V, D, H>::ConditionalInsert(CIC& context, AsyncCallbac
 
   // Set initial start address to last entry of hash chain
   Status index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
-  assert(index_status == Status::Ok);
-  pending_context.start_search_entry = pending_context.entry;
-  pending_context.entry = HashBucketEntry::kInvalidEntry;
+  assert(index_status == Status::Ok || index_status == Status::Pending);
 
-  OperationStatus internal_status = InternalConditionalInsert(pending_context);
+  OperationStatus internal_status;
+  if (index_status == Status::Ok) {
+    pending_context.start_search_entry = pending_context.entry;
+    pending_context.entry = HashBucketEntry::kInvalidEntry;
+    // perform op
+    internal_status = InternalConditionalInsert(pending_context);
+  } else {
+    internal_status = OperationStatus::INDEX_ENTRY_ON_DISK;
+  }
+
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     // insert performed successfully
@@ -3106,7 +3208,8 @@ inline Status FasterKv<K, V, D, H>::ConditionalInsert(CIC& context, AsyncCallbac
     // was not able to properly search up to min_search_offset
     status = Status::NotFound;
   } else {
-    assert(internal_status == OperationStatus::RECORD_ON_DISK);
+    assert(internal_status == OperationStatus::RECORD_ON_DISK ||
+            internal_status == OperationStatus::INDEX_ENTRY_ON_DISK);
     bool async;
     status = HandleOperationStatus(thread_ctx(), pending_context, internal_status, async);
   }
@@ -3123,9 +3226,7 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalConditionalInsert(C& pendin
   faster_t* dest_store = static_cast<faster_t*>(pending_context.dest_store);
   Address min_search_offset = pending_context.min_search_offset;
 
-  //fprintf(stderr, "[%d] PHASE = %d\n", Thread::id(), static_cast<uint8_t>(thread_ctx().phase));
   if(thread_ctx().phase != Phase::REST) {
-    //fprintf(stderr, "[%d] ENTR\n", Thread::id());
     HeavyEnter();
   }
   if(dest_store != this && dest_store->thread_ctx().phase != Phase::REST) {
@@ -3136,12 +3237,20 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalConditionalInsert(C& pendin
   Address head_address = hlog.head_address.load();
 
   // Retrieve or create hash index bucket for this entry
-  // TODO: handle requests that go pending
-  Status status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
-  assert(status == Status::Ok);
+  Status index_status;
+  if (pending_context.index_op_type == IndexOperationType::None) {
+    index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
+    if (index_status == Status::Pending) {
+      return OperationStatus::INDEX_ENTRY_ON_DISK;
+    }
+  } else {
+    // retrieve result of async index operation
+    index_status = pending_context.index_op_result;
+    pending_context.clear_index_op();
+  }
+  assert(index_status == Status::Ok);
 
   HashBucketEntry expected_entry{ pending_context.entry };
-  AtomicHashBucketEntry* atomic_entry{ pending_context.atomic_entry };
   Address address = expected_entry.address();
 
   if (address == Address::kInvalidAddress) {
@@ -3184,7 +3293,7 @@ inline OperationStatus FasterKv<K, V, D, H>::InternalConditionalInsert(C& pendin
     // Stable region [on-disk]
     if (address > min_search_offset) {
       // Record not available in-memory -- issue disk I/O request
-      pending_context.go_async(address, expected_entry);
+      pending_context.go_async(address);
       return OperationStatus::RECORD_ON_DISK;
     }
     assert(address == min_search_offset);
@@ -3219,20 +3328,24 @@ create_record:
         true, false, false, expected_entry.address() }
     };
     // Try to update hash bucket address
-    Status status = hash_index_.TryUpdateEntry(thread_ctx(), pending_context, new_address);
-    assert(status == Status::Ok || status == Status::Aborted);
+    index_status = hash_index_.TryUpdateEntry(thread_ctx(), pending_context, new_address);
 
-    if (status == Status::Ok) {
+    if (index_status == Status::Ok) {
       // Installed the new record in the hash table.
       return OperationStatus::SUCCESS;
+    } else if (index_status == Status::Pending) {
+      return OperationStatus::INDEX_ENTRY_ON_DISK;
+    } else {
+      assert(index_status == Status::Aborted);
+      // Hash-chain changed since last time -- retry!
+      record->header.invalid = true;
+      return InternalConditionalInsert(pending_context);
     }
-    // Hash-chain changed since last time -- retry!
-    record->header.invalid = true;
-    return InternalConditionalInsert(pending_context);
   }
   else {
     // Case: hot-cold compaction
     // Upsert/Deletes on cold log should not go pending since upserts only go pending when during checkpointing
+    // TODO: handle case where go pending (e.g. cold index request goes pending -- may need to define some callback)
     OperationStatus op_status;
     if (!pending_context.is_tombstone()) {
       op_status = dest_store->InternalUpsert(pending_context);
