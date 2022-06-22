@@ -70,7 +70,8 @@ class AsyncIndexIOContext : public IAsyncContext {
     , thread_io_responses{ thread_io_responses_ }
     , io_id{ io_id_ }
     , result{ Status::Corruption }
-    , entry{ HashBucketEntry::kInvalidEntry } {
+    , entry{ HashBucketEntry::kInvalidEntry }
+    , record_address{ Address::kInvalidAddress } {
   }
   /// No copy constructor.
   AsyncIndexIOContext(const AsyncIOContext& other) = delete;
@@ -80,7 +81,8 @@ class AsyncIndexIOContext : public IAsyncContext {
     , thread_io_responses{ other.thread_io_responses }
     , io_id{ other.io_id }
     , result{ other.result }
-    , entry{ other.entry } {
+    , entry{ other.entry }
+    , record_address{ other.record_address } {
   }
  protected:
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
@@ -98,6 +100,8 @@ class AsyncIndexIOContext : public IAsyncContext {
   Status result;
   /// Entry found in the index
   HashBucketEntry entry;
+  /// Address of the newly created record (to be CASed in the index)
+  Address record_address;
 };
 
 }
