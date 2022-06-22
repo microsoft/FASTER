@@ -15,7 +15,7 @@ namespace FASTER.core
     /// Format: [4-byte (int) length of payload][[optional 8-byte metadata] payload bytes...]
     /// First 2 bits of length are used as a mask for properties, so max payload length is 1GB
     /// </summary>
-    [StructLayout(LayoutKind.Explicit)]
+    [StructLayout(LayoutKind.Explicit, Pack = 4)]
     public unsafe struct SpanByte
     {
         // Byte #31 is used to denote unserialized (1) or serialized (0) data 

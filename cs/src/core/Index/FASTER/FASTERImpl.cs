@@ -356,6 +356,15 @@ namespace FASTER.core
             NormalProcessing
         }
 
+        void Unseal(long unsealPhysicalAddress)
+        {
+            if (unsealPhysicalAddress != Constants.kInvalidAddress && unsealPhysicalAddress >= hlog.HeadAddress)
+            {
+                // Operation failed, so unseal the old record. If it went below HeadAddress, we'll Unseal in InternalCompletePendingRead
+                hlog.GetInfo(unsealPhysicalAddress).Unseal();
+            }
+        }
+
         /// <summary>
         /// Upsert operation. Replaces the value corresponding to 'key' with provided 'value', if one exists 
         /// else inserts a new record with 'key' and 'value'.
@@ -471,14 +480,14 @@ namespace FASTER.core
                             pendingContext.logicalAddress = logicalAddress;
                             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         }
+                        if (upsertInfo.Action == UpsertAction.CancelOperation)
+                            return OperationStatus.CANCELED;
 
                         // ConcurrentWriter failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
                         if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                             return OperationStatus.RETRY_NOW;
                         unsealPhysicalAddress = physicalAddress;
                     }
-                    if (upsertInfo.Action == UpsertAction.CancelOperation)
-                        return OperationStatus.CANCELED;
                     goto CreateNewRecord;
                 }
             }
@@ -562,7 +571,10 @@ namespace FASTER.core
             {
                 var la = prevHighestReadCacheLogicalAddress;
                 if (!SkipAndInvalidateReadCache(ref la, ref key, out lowestReadCachePhysicalAddress, out OperationStatus internalStatus))
+                {
+                    Unseal(unsealPhysicalAddress);
                     return internalStatus;
+                }
             }
 
             if (latchDestination != LatchDestination.CreatePendingContext)
@@ -574,11 +586,7 @@ namespace FASTER.core
                 {
                     // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                     Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
-                    if (unsealPhysicalAddress != Constants.kInvalidAddress && unsealPhysicalAddress >= hlog.HeadAddress)
-                    {
-                        // Operation failed, so unseal the old record. If it went below HeadAddress, we'll Unseal in InternalCompletePendingRead
-                        hlog.GetInfo(unsealPhysicalAddress).Unseal();
-                    }
+                    Unseal(unsealPhysicalAddress);
                     if (status == OperationStatus.ALLOCATE_FAILED)
                     {
                         latchDestination = LatchDestination.CreatePendingContext;
@@ -1094,7 +1102,10 @@ namespace FASTER.core
             {
                 var la = prevHighestReadCacheLogicalAddress;
                 if (!SkipAndInvalidateReadCache(ref la, ref key, out lowestReadCachePhysicalAddress, out OperationStatus internalStatus))
+                {
+                    Unseal(unsealPhysicalAddress);
                     return internalStatus;
+                }
             }
 
             if (latchDestination != LatchDestination.CreatePendingContext)
@@ -1117,11 +1128,7 @@ namespace FASTER.core
                 if (!OperationStatusUtils.IsAppend(status))
                 {
                     // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
-                    if (unsealPhysicalAddress != Constants.kInvalidAddress && unsealPhysicalAddress >= hlog.HeadAddress)
-                    {
-                        // Operation failed, so unseal the old record. If it went below HeadAddress, we'll Unseal in InternalCompletePendingRead
-                        hlog.GetInfo(unsealPhysicalAddress).Unseal();
-                    }
+                    Unseal(unsealPhysicalAddress);
                     if (status == OperationStatus.ALLOCATE_FAILED)
                     {
                         latchDestination = LatchDestination.CreatePendingContext;
@@ -1718,7 +1725,10 @@ namespace FASTER.core
                 {
                     var la = prevHighestReadCacheLogicalAddress;
                     if (!SkipAndInvalidateReadCache(ref la, ref key, out lowestReadCachePhysicalAddress, out OperationStatus internalStatus))
+                    {
+                        Unseal(unsealPhysicalAddress);
                         return internalStatus;
+                    }
                 }
 
                 var value = default(Value);
@@ -1813,12 +1823,7 @@ namespace FASTER.core
                     fasterSession.DisposeSingleDeleter(ref insertedKey, ref insertedValue, ref recordInfo, ref deleteInfo);
 
                     status = OperationStatus.RETRY_NOW;
-
-                    if (unsealPhysicalAddress != Constants.kInvalidAddress && unsealPhysicalAddress >= hlog.HeadAddress)
-                    {
-                        // Operation failed, so unseal the old record. If it went below HeadAddress, we'll Unseal in InternalCompletePendingRead
-                        hlog.GetInfo(unsealPhysicalAddress).Unseal();
-                    }
+                    Unseal(unsealPhysicalAddress);
                     goto LatchRelease;
                 }
             }
