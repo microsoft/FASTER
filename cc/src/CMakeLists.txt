@@ -36,6 +36,8 @@ set (FASTER_HEADERS
   index/hash_table.h
   index/index.h
   index/mem_index.h
+  index/faster_index.h
+  index/faster_index_contexts.h
 )
 
 if (MSVC)
