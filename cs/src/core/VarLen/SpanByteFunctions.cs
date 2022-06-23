@@ -58,6 +58,10 @@ namespace FASTER.core
             UpsertInfo upsertInfo = new(ref rmwInfo);
             return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref upsertInfo);
         }
+
+        /// <inheritdoc/>
+        /// <remarks>Avoids the "value = default" for added tombstone record, which do not have space for the payload</remarks>
+        public override bool SingleDeleter(ref Key key, ref SpanByte value, ref DeleteInfo deleteInfo) => true;
     }
 
     /// <summary>
