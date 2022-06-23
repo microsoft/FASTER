@@ -30,7 +30,7 @@ namespace FASTER.core
                         faster.InitializeHybridLogCheckpoint(faster._hybridLogCheckpointToken, next.Version);
                     }
                     faster._hybridLogCheckpoint.info.version = next.Version;
-                    faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.startLogicalAddress);
+                    faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.GetTailAddress();
                     break;
                 case Phase.WAIT_FLUSH:
                     faster._hybridLogCheckpoint.info.headAddress = faster.hlog.HeadAddress;
@@ -208,7 +208,7 @@ namespace FASTER.core
                     break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, faster);
-                    faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.finalLogicalAddress);
+                    faster._hybridLogCheckpoint.info.finalLogicalAddress = faster.hlog.GetTailAddress();
                     faster._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = faster._hybridLogCheckpoint.info.finalLogicalAddress;
 
                     faster._hybridLogCheckpoint.snapshotFileDevice =
@@ -302,13 +302,12 @@ namespace FASTER.core
                 case Phase.PREPARE:
                     faster._hybridLogCheckpoint = faster._lastSnapshotCheckpoint;
                     base.GlobalBeforeEnteringState(next, faster);
-                    faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.FlushedUntilAddress;
                     faster._hybridLogCheckpoint.prevVersion = next.Version;
                     break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, faster);
-                    faster._hybridLogCheckpoint.info.finalLogicalAddress = 0;
-                    faster.ObtainCurrentTailAddress(ref faster._hybridLogCheckpoint.info.finalLogicalAddress);
+                    faster._hybridLogCheckpoint.info.finalLogicalAddress = faster.hlog.GetTailAddress();
+                    faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
 
                     if (faster._hybridLogCheckpoint.deltaLog == null)
                     {
@@ -319,14 +318,13 @@ namespace FASTER.core
                     }
 
                     faster.hlog.AsyncFlushDeltaToDevice(
-                        faster._hybridLogCheckpoint.info.startLogicalAddress,
+                        faster._hybridLogCheckpoint.info.flushedLogicalAddress,
                         faster._hybridLogCheckpoint.info.finalLogicalAddress,
                         faster._lastSnapshotCheckpoint.info.finalLogicalAddress,
                         faster._hybridLogCheckpoint.prevVersion,
                         faster._hybridLogCheckpoint.deltaLog);
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
-                    faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
                     CollectMetadata(next, faster);
                     faster.WriteHybridLogIncrementalMetaInfo(faster._hybridLogCheckpoint.deltaLog);
                     faster._hybridLogCheckpoint.info.deltaTailAddress = faster._hybridLogCheckpoint.deltaLog.TailAddress;
