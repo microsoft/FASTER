@@ -4,7 +4,6 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -868,6 +867,7 @@ namespace FASTER.core
                                    : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo, out lockFailed);
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentReaderNoLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
                 if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo))
@@ -887,7 +887,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
+                    return !recordInfo.Tombstone && ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
                 }
                 finally
                 {
@@ -1062,7 +1062,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo);
+                    return recordInfo.Tombstone || ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo);
                 }
                 finally
                 {

@@ -483,8 +483,8 @@ namespace FASTER.core
                         if (upsertInfo.Action == UpsertAction.CancelOperation)
                             return OperationStatus.CANCELED;
 
-                        // ConcurrentWriter failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
-                        if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
+                        // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Another thread may come along to do this update in-place; Seal it to prevent that.
+                        if (recordInfo.Tombstone || lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                             return OperationStatus.RETRY_NOW;
                         unsealPhysicalAddress = physicalAddress;
                     }
@@ -531,8 +531,8 @@ namespace FASTER.core
                             goto LatchRelease; // Release shared latch (if acquired)
                         }
 
-                        // ConcurrentWriter failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
-                        if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
+                        // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Another thread may come along to do this update in-place; Seal it to prevent that.
+                        if (recordInfo.Tombstone || lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                         {
                             status = OperationStatus.RETRY_NOW;
                             goto LatchRelease; // Release shared latch (if acquired)
@@ -1008,8 +1008,8 @@ namespace FASTER.core
                     if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
                         return status;
 
-                    // InPlaceUpdater failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
-                    if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
+                    // InPlaceUpdater failed (e.g. insufficient space, another thread set Tombstone, etc). Another thread may come along to do this update in-place; Seal it to prevent that.
+                    if (recordInfo.Tombstone || lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                         return OperationStatus.RETRY_NOW;
                     unsealPhysicalAddress = physicalAddress;
                 }
@@ -1051,8 +1051,8 @@ namespace FASTER.core
                         if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
                             goto LatchRelease; // Release shared latch (if acquired)
 
-                        // InPlaceUpdater failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
-                        if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
+                        // InPlaceUpdater failed (e.g. insufficient space, another thread set Tombstone, etc). Another thread may come along to do this update in-place; Seal it to prevent that.
+                        if (recordInfo.Tombstone || lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                             return OperationStatus.RETRY_NOW;
                         unsealPhysicalAddress = physicalAddress;
                     }
@@ -2399,6 +2399,7 @@ namespace FASTER.core
             }
             else
             {
+                Debug.Assert(asyncOp, "Sync ops should never return status.IsFaulted");
                 return new(StatusCode.Error);
             }
         }
