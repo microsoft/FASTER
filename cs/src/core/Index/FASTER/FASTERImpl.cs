@@ -483,7 +483,9 @@ namespace FASTER.core
                         if (upsertInfo.Action == UpsertAction.CancelOperation)
                             return OperationStatus.CANCELED;
 
-                        // ConcurrentWriter failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
+                        // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Another thread may come along to do this update in-place; Seal it to prevent that.
+                        if (recordInfo.Tombstone)
+                            goto CreateNewRecord;
                         if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                             return OperationStatus.RETRY_NOW;
                         unsealPhysicalAddress = physicalAddress;
@@ -531,15 +533,17 @@ namespace FASTER.core
                             goto LatchRelease; // Release shared latch (if acquired)
                         }
 
-                        // ConcurrentWriter failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
+                        // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Another thread may come along to do this update in-place; Seal it to prevent that.
+                        if (recordInfo.Tombstone)
+                            goto CreateNewRecord;
                         if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                         {
                             status = OperationStatus.RETRY_NOW;
                             goto LatchRelease; // Release shared latch (if acquired)
                         }
                         unsealPhysicalAddress = physicalAddress;
-                        goto CreateNewRecord;
                     }
+                    goto CreateNewRecord;
                 }
                 else if (processReadOnly && logicalAddress >= hlog.HeadAddress)
                 {
@@ -1008,7 +1012,9 @@ namespace FASTER.core
                     if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
                         return status;
 
-                    // InPlaceUpdater failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
+                    // InPlaceUpdater failed (e.g. insufficient space, another thread set Tombstone, etc). Another thread may come along to do this update in-place; Seal it to prevent that.
+                    if (recordInfo.Tombstone)
+                        goto CreateNewRecord;
                     if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                         return OperationStatus.RETRY_NOW;
                     unsealPhysicalAddress = physicalAddress;
@@ -1051,13 +1057,16 @@ namespace FASTER.core
                         if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
                             goto LatchRelease; // Release shared latch (if acquired)
 
-                        // InPlaceUpdater failed (e.g. insufficient space). Another thread may come along to do this update in-place; Seal it to prevent that.
+                        // InPlaceUpdater failed (e.g. insufficient space, another thread set Tombstone, etc). Another thread may come along to do this update in-place; Seal it to prevent that.
+                        if (recordInfo.Tombstone)
+                            goto CreateNewRecord;
                         if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
                             return OperationStatus.RETRY_NOW;
                         unsealPhysicalAddress = physicalAddress;
                     }
+                    goto CreateNewRecord;
                 }
-
+ 
                 // Fuzzy Region: Must go pending due to lost-update anomaly
                 else if (logicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone) // TODO potentially replace with Sealed
                 {
@@ -2399,6 +2408,7 @@ namespace FASTER.core
             }
             else
             {
+                Debug.Assert(asyncOp, "Sync ops should never return status.IsFaulted");
                 return new(StatusCode.Error);
             }
         }
