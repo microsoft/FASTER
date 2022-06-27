@@ -34,9 +34,12 @@ class ColdLogHashIndexDefinition {
   typedef ColdLogIndexHashBucketEntry hash_bucket_entry_t;
 };
 
-// Forward Declaration
+// Forward Declarations
 template <class D, class HID, bool HasOverflowBucket>
 struct HashBucketOverflowEntryHelper;
+
+template <class D, class HID>
+class FasterIndex;
 
 template<class D, class HID = HotLogHashIndexDefinition>
 class HashIndex : public IHashIndex<D> {
@@ -50,11 +53,15 @@ class HashIndex : public IHashIndex<D> {
   typedef typename HID::hash_bucket_t hash_bucket_t;
   typedef typename HID::hash_bucket_entry_t hash_bucket_entry_t;
 
-  typedef GcStateWithIndex gc_state_t;
+  typedef GcStateInMemIndex gc_state_t;
   typedef GrowState<hlog_t> grow_state_t;
 
   static constexpr bool HasOverflowBucket = has_overflow_entry<typeof(hash_bucket_t)>::value;
   friend struct HashBucketOverflowEntryHelper<D, HID, HasOverflowBucket>;
+
+  // Make friend all templated instances of this class
+  template <class Di, class HIDi>
+  friend class FasterIndex;
 
   HashIndex(disk_t& disk, LightEpoch& epoch, gc_state_t& gc_state, grow_state_t& grow_state)
     : disk_{ disk }
@@ -297,6 +304,10 @@ inline Status HashIndex<D, HID>::TryUpdateEntry(ExecutionContext& context, C& pe
   // Try to atomically update the hash index entry based on expected entry
   key_hash_t hash{ pending_context.get_key_hash() };
   hash_bucket_entry_t new_entry{ new_address, hash.tag(), false };
+  if (new_address == HashBucketEntry::kInvalidEntry) {
+    // To handle InternalDelete's minor optimization that elides a record completely
+    new_entry = HashBucketEntry::kInvalidEntry;
+  }
   bool success = pending_context.atomic_entry->compare_exchange_strong(pending_context.entry, new_entry);
   return success ? Status::Ok : Status::Aborted;
 }

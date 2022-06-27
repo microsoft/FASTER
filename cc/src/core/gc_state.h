@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 
 #include "address.h"
 
@@ -36,11 +37,11 @@ class GcState {
 };
 
 
-class GcStateWithIndex: public GcState {
+class GcStateInMemIndex: public GcState {
  public:
   static constexpr uint64_t kHashTableChunkSize = 16384;
 
-  GcStateWithIndex()
+  GcStateInMemIndex()
     : GcState()
     , num_chunks{ 0 }
     , next_chunk{ 0 } {
@@ -56,6 +57,28 @@ class GcStateWithIndex: public GcState {
   uint64_t num_chunks;
   std::atomic<uint64_t> next_chunk;
 };
+
+class GcStateFasterIndex: public GcStateInMemIndex {
+ public:
+  static constexpr uint64_t kHashTableChunkSize = GcStateInMemIndex::kHashTableChunkSize;
+
+  GcStateFasterIndex()
+    : GcStateInMemIndex()
+    , min_address{ std::numeric_limits<uint64_t>::max() }
+    , thread_count{ 0 } {
+  }
+
+  void Initialize(Address new_begin_address_, truncate_callback_t truncate_callback_,
+                  complete_callback_t complete_callback_, uint64_t num_chunks_) {
+    GcStateInMemIndex::Initialize(new_begin_address_, truncate_callback_, complete_callback_, num_chunks_);
+    min_address = std::numeric_limits<uint64_t>::max();
+    thread_count = 0;
+  }
+
+  std::atomic<uint64_t> min_address;
+  std::atomic<uint16_t> thread_count;
+};
+
 
 }
 } // namespace FASTER::core

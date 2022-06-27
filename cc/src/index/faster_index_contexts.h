@@ -103,21 +103,18 @@ class FasterIndexContext : public IAsyncContext {
   HashIndexChunkPos pos_;
 };
 
-/// Used by FindEntry & FindOrCreateEntry hash index methods
-/// TODO: maybe move FindOrCreate entry to Rmw? (may be useful since it is copying entry to tail)
+/// Used by FindEntry hash index method
 class FasterIndexReadContext : public FasterIndexContext {
  public:
   FasterIndexReadContext(OperationType op_type, IAsyncContext& caller_context, uint64_t io_id,
                         concurrent_queue<AsyncIndexIOContext*>* thread_io_responses,
-                        HashIndexChunkKey key, HashIndexChunkPos pos, bool create)
+                        HashIndexChunkKey key, HashIndexChunkPos pos)
     : FasterIndexContext(op_type, caller_context, io_id, thread_io_responses,
-                          HashBucketEntry::kInvalidEntry, key, pos)
-    , create_{ create } {
+                          HashBucketEntry::kInvalidEntry, key, pos) {
   }
   /// Copy (and deep-copy) constructor.
   FasterIndexReadContext(const FasterIndexReadContext& other, IAsyncContext* caller_context_)
-    : FasterIndexContext(other, caller_context_)
-    , create_{ other.create_ } {
+    : FasterIndexContext(other, caller_context_) {
   }
 
   /// The implicit and explicit interfaces require a key() accessor.
@@ -128,12 +125,12 @@ class FasterIndexReadContext : public FasterIndexContext {
   inline void Get(const HashIndexChunkEntry& value) {
     const AtomicHashBucketEntry& atomic_entry = value.entries[pos_.index].entries[pos_.tag];
     entry = atomic_entry.load();
-    result = (create_ || entry != HashBucketEntry::kInvalidEntry) ? Status::Ok : Status::NotFound;
+    result = (entry != HashBucketEntry::kInvalidEntry) ? Status::Ok : Status::NotFound;
   }
   inline bool GetAtomic(const HashIndexChunkEntry& value) {
     const AtomicHashBucketEntry& atomic_entry = value.entries[pos_.index].entries[pos_.tag];
     entry = atomic_entry.load();
-    result = (create_ || entry != HashBucketEntry::kInvalidEntry) ? Status::Ok : Status::NotFound;
+    result = (entry != HashBucketEntry::kInvalidEntry) ? Status::Ok : Status::NotFound;
     return true;
   }
 
@@ -142,16 +139,10 @@ class FasterIndexReadContext : public FasterIndexContext {
   Status DeepCopy_Internal(IAsyncContext*& context_copy) {
     return IAsyncContext::DeepCopy_Internal(*this, caller_context, context_copy);
   }
-
- private:
-  /// Distinguished between FindEntry & FindOrCreateEntry
-  /// If set to true, Status::Ok will be returned, even if entry is an invalid one
-  bool create_;
 };
 
-
-/// Used by TryUpdateEntry & UpdateEntry hash index methods
-/// NOTE: force argument distingishes between the two methods
+/// Used by FindOrCreateEntry, TryUpdateEntry & UpdateEntry hash index methods
+/// NOTE: force argument distingishes between the update-related methods
 class FasterIndexRmwContext : public FasterIndexContext {
  public:
   FasterIndexRmwContext(OperationType op_type, IAsyncContext& caller_context, uint64_t io_id,
@@ -182,7 +173,7 @@ class FasterIndexRmwContext : public FasterIndexContext {
   }
 
   inline void RmwInitial(HashIndexChunkEntry& value) {
-    // Initialize chunk to invalid entries
+    // Initialize chunk to free hash bucket entries
     std::memset(&value, 0, sizeof(HashIndexChunkEntry));
     // Perform update
     UpdateEntry(value);
@@ -206,14 +197,30 @@ class FasterIndexRmwContext : public FasterIndexContext {
  private:
   inline void UpdateEntry(HashIndexChunkEntry& value) {
     // (Try to) update single hash bucket entry
-    AtomicHashBucketEntry& atomic_entry = value.entries[pos_.index].entries[pos_.tag];
-    if (!force_) {
-      bool success = atomic_entry.compare_exchange_strong(entry, desired_entry_);
-      result = success ? Status::Ok : Status::Aborted;
-    } else {
-      atomic_entry.store(desired_entry_);
+    AtomicHashBucketEntry* atomic_entry = &value.entries[pos_.index].entries[pos_.tag];
+    if (record_address() != Address::kInvalidAddress) {
+      if (!force_) { // TryUpdateEntry
+        if (atomic_entry->compare_exchange_strong(entry, desired_entry_)) {
+          entry = desired_entry_;
+          result = Status::Ok;
+        } else {
+          result = Status::Aborted;
+        }
+      } else { // UpdateEntry
+        atomic_entry->store(desired_entry_);
+        entry = desired_entry_;
+        result = Status::Ok;
+      }
+    } else { // FindOrCreateEntry
+      assert(entry == HashBucketEntry::kInvalidEntry);
+      assert(desired_entry_.address() == Address::kInvalidAddress);
+      if (atomic_entry->compare_exchange_strong(entry, desired_entry_)) {
+        // atomic entry was updated successfully; update local entry copy
+        entry = desired_entry_;
+      }
       result = Status::Ok;
     }
+    // NOTE: this->entry has the most recent value of atomic_entry
   }
 
  protected:

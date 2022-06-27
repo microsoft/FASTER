@@ -4,8 +4,6 @@
 #include "hash_table.h"
 
 #include "../core/checkpoint_state.h"
-#include "../core/gc_state.h"
-#include "../core/grow_state.h"
 #include "../core/internal_contexts.h"
 #include "../core/light_epoch.h"
 #include "../core/persistent_memory_malloc.h"
@@ -21,9 +19,6 @@ class IHashIndex {
   typedef D disk_t;
   typedef typename D::file_t file_t;
   typedef PersistentMemoryMalloc<disk_t> hlog_t;
-
-  typedef GcStateWithIndex gc_state_t;
-  typedef GrowState<hlog_t> grow_state_t;
 
   IHashIndex() { }
   ~IHashIndex() { }

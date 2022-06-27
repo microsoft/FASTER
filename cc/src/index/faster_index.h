@@ -24,7 +24,8 @@ using namespace FASTER::core;
 
 namespace FASTER {
 namespace core {
-  template<class K, class V, class D, class H>
+  // Forward Declaration
+  template<class K, class V, class D, class H, class OH>
   class FasterKv;
 }
 }
@@ -40,12 +41,13 @@ class FasterIndex : public IHashIndex<D> {
   typedef PersistentMemoryMalloc<disk_t> hlog_t;
 
   typedef typename HID::key_hash_t key_hash_t;
+  typedef typename HID::hash_bucket_t hash_bucket_t;
   typedef typename HID::hash_bucket_entry_t hash_bucket_entry_t;
 
   typedef HashIndex<D, HID> hash_index_t;
   typedef FasterKv<HashIndexChunkKey, HashIndexChunkEntry, disk_t, hash_index_t> store_t;
 
-  typedef GcStateWithIndex gc_state_t;
+  typedef GcStateFasterIndex gc_state_t;
   typedef GrowState<hlog_t> grow_state_t;
 
   // 256k rows x 8 entries each = 2M entries
@@ -91,12 +93,8 @@ class FasterIndex : public IHashIndex<D> {
   // Garbage Collect methods
   void GarbageCollectSetup(Address new_begin_address,
                           GcState::truncate_callback_t truncate_callback,
-                          GcState::complete_callback_t complete_callback) {
-    throw std::runtime_error{ "Not Implemented!" };
-  }
-  bool GarbageCollect() {
-    throw std::runtime_error{ "Not Implemented!" };
-  }
+                          GcState::complete_callback_t complete_callback);
+  bool GarbageCollect();
 
   // Index grow related methods
   void GrowSetup(GrowCompleteCallback callback) {
@@ -157,7 +155,7 @@ class FasterIndex : public IHashIndex<D> {
   static void AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, Status result);
 
   template <class C>
-  Status ReadIndexEntry(ExecutionContext& exec_context, C& pending_context, bool create_entry) const;
+  Status ReadIndexEntry(ExecutionContext& exec_context, C& pending_context) const;
 
   template <class C>
   Status RmwIndexEntry(ExecutionContext& exec_context, C& pending_context,
@@ -182,23 +180,13 @@ template <class D, class HID>
 template <class C>
 inline Status FasterIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
                                             C& pending_context) const {
-  return ReadIndexEntry(exec_context, pending_context, false);
-}
-
-template <class D, class HID>
-template <class C>
-inline Status FasterIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context) {
-  // FIXME: replace read with RMW
-  Status status = ReadIndexEntry(exec_context, pending_context, true);
-  return (status == Status::NotFound) ? Status::Ok : status;
-}
-
-template <class D, class HID>
-template <class C>
-inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context, C& pending_context,
-                                                bool create_entry) const {
   pending_context.index_op_type = IndexOperationType::Retrieve;
+  return ReadIndexEntry(exec_context, pending_context);
+}
 
+template <class D, class HID>
+template <class C>
+inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context, C& pending_context) const {
   key_hash_t hash{ pending_context.get_key_hash() };
   HashIndexChunkKey key{ hash.chunk_id(kHashIndexNumEntries) };
   HashIndexChunkPos pos{ hash.index_in_chunk(), hash.tag_in_chunk() };
@@ -206,11 +194,9 @@ inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context
   // TODO: avoid incrementing io_id for every request if possible
   uint64_t io_id = exec_context.io_id++;
   FasterIndexReadContext context{ OperationType::Read, pending_context, io_id,
-                                  &exec_context.index_io_responses,
-                                  key, pos, create_entry };
+                                  &exec_context.index_io_responses, key, pos };
 
   // TODO: replace serial_num with thread-local (possibly inside )
-  // FIXME: replace nullptr with appropriate callback
   Status status = store_->Read(context, AsyncEntryOperationDiskCallback, 0);
   if (status != Status::Pending) {
     pending_context.index_op_result = context.result;
@@ -224,8 +210,18 @@ inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context
 
 template <class D, class HID>
 template <class C>
+inline Status FasterIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context) {
+  pending_context.index_op_type = IndexOperationType::Retrieve;
+  pending_context.entry = HashBucketEntry::kInvalidEntry;
+
+  return RmwIndexEntry(exec_context, pending_context, Address::kInvalidAddress, false);
+}
+
+template <class D, class HID>
+template <class C>
 inline Status FasterIndex<D, HID>::TryUpdateEntry(ExecutionContext& exec_context, C& pending_context,
                                                 Address new_address) {
+  pending_context.index_op_type = IndexOperationType::Update;
   return RmwIndexEntry(exec_context, pending_context, new_address, false);
 }
 
@@ -233,6 +229,7 @@ template <class D, class HID>
 template <class C>
 inline Status FasterIndex<D, HID>::UpdateEntry(ExecutionContext& exec_context, C& pending_context,
                                               Address new_address) {
+  pending_context.index_op_type = IndexOperationType::Update;
   return RmwIndexEntry(exec_context, pending_context, new_address, true);
 }
 
@@ -240,21 +237,16 @@ template <class D, class HID>
 template <class C>
 inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context, C& pending_context,
                                                 Address new_address, bool force_update) {
-  pending_context.index_op_type = IndexOperationType::Update;
-
   key_hash_t hash{ pending_context.get_key_hash() };
   HashIndexChunkKey key{ hash.chunk_id(kHashIndexNumEntries) };
-  //fprintf(stderr, "%llu\n", hash.chunk_id(kHashIndexNumEntries));
   HashIndexChunkPos pos{ hash.index_in_chunk(), hash.tag_in_chunk() };
 
-  // TODO: avoid incrementing io_id for every request if possible
+  // FIXME: avoid incrementing io_id for every request if possible
   uint64_t io_id = exec_context.io_id++;
 
   // TODO: check usefullness of tentative flag here
   hash_bucket_entry_t desired_entry{ new_address, pos.tag, false };
-  /*if (new_address == HashBucketEntry::kInvalidEntry) {
-    desired_entry = HashBucketEntry::kInvalidEntry; // Invalidate hash bucket entry
-  }*/
+  //fprintf(stderr, "DESIRED = %llu\n", HashBucketEntry{desired_entry}.control_);
   FasterIndexRmwContext context{ OperationType::RMW, pending_context, io_id,
                                 &exec_context.index_io_responses,
                                 key, pos, force_update, pending_context.entry, desired_entry };
@@ -262,7 +254,6 @@ inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context,
   Status status = store_->Rmw(context, AsyncEntryOperationDiskCallback, ++serial_num_);
   if (status != Status::Pending) {
     pending_context.index_op_result = context.result;
-    //pending_context.set_index_entry(context.entry, hash.control());
     pending_context.set_index_entry(context.entry, nullptr);
     return status;
   }
@@ -280,20 +271,84 @@ void FasterIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, S
   // FIXME: store this inside FasterIndexReadContext
   AsyncIndexIOContext index_io_context{ context->caller_context, context->thread_io_responses,
                                         context->io_id};
-
   index_io_context.entry = context->entry;
   // TODO: cross-validate result from here with internal context result
   index_io_context.result = context->result;
+
   if (context->op_type == OperationType::RMW) {
     index_io_context.record_address = static_cast<FasterIndexRmwContext*>(ctxt)->record_address();
-    assert(index_io_context.record_address != Address::kInvalidAddress);
+    // NOTE: record address can be Address::kInvalidAddress if FindOrCreateEntry was called
   }
 
   IAsyncContext* index_io_context_copy;
-  assert(index_io_context.DeepCopy(index_io_context_copy) == Status::Ok);
+  Status copy_status = index_io_context.DeepCopy(index_io_context_copy);
+  assert(copy_status == Status::Ok);
 
   context->thread_io_responses->push(reinterpret_cast<AsyncIndexIOContext*>(index_io_context_copy));
 }
+
+template <class D, class HID>
+void FasterIndex<D, HID>::GarbageCollectSetup(Address new_begin_address,
+                                            GcState::truncate_callback_t truncate_callback,
+                                            GcState::complete_callback_t complete_callback) {
+
+  uint64_t num_chunks = std::max(store_->hash_index_.size() / gc_state_t::kHashTableChunkSize, (uint64_t)1);
+  gc_state_->Initialize(new_begin_address, truncate_callback, complete_callback, num_chunks);
+}
+
+template <class D, class HID>
+bool FasterIndex<D, HID>::GarbageCollect() {
+  uint64_t chunk = gc_state_->next_chunk++;
+  if(chunk >= gc_state_->num_chunks) {
+    // No chunk left to clean.
+    return false;
+  }
+  ++gc_state_->thread_count;
+
+  uint8_t version = store_->hash_index_.resize_info.version;
+  auto& current_table = store_->hash_index_.table_[version];
+
+  uint64_t upper_bound;
+  if(chunk + 1 < gc_state_->num_chunks) {
+    // All chunks but the last chunk contain gc.kHashTableChunkSize elements.
+    upper_bound = gc_state_t::kHashTableChunkSize;
+  } else {
+    // Last chunk might contain more or fewer elements.
+    upper_bound = current_table.size() - (chunk * gc_state_t::kHashTableChunkSize);
+  }
+
+  // find smaller address in the hash table
+  uint64_t min_address{ gc_state_->min_address.load() };
+  for(uint64_t idx = 0; idx < upper_bound; ++idx) {
+    hash_bucket_t* bucket = &current_table.bucket(chunk * gc_state_t::kHashTableChunkSize + idx);
+    for(uint32_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
+      AtomicHashBucketEntry& atomic_entry = bucket->entries[entry_idx];
+      hash_bucket_entry_t expected_entry{ atomic_entry.load() };
+
+      if (!expected_entry.unused() && expected_entry.address() != Address::kInvalidAddress) {
+        while (min_address > expected_entry.address().control()) {
+          // try updating min address with smaller address
+          if (gc_state_->min_address.compare_exchange_strong(min_address, expected_entry.address().control())) {
+            break;
+          }
+          // retry with new min_address value
+        }
+      }
+    }
+  }
+
+  --gc_state_->thread_count;
+  if (gc_state_->next_chunk.load() >= gc_state_->num_chunks && gc_state_->thread_count == 0) {
+    // last thread after garbage collection is finished
+    // truncate log -- no need to define/wait for callbacks
+    Address new_begin_address = gc_state_->min_address.load();
+    assert(new_begin_address >= store_->hlog.begin_address.load());
+    store_->ShiftBeginAddress(new_begin_address, nullptr, nullptr);
+  }
+
+  return true;
+}
+
 
 }
 } // namespace FASTER::index
