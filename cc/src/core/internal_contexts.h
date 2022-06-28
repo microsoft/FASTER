@@ -269,15 +269,13 @@ class AsyncPendingUpsertContext : public PendingContext<K> {
 };
 
 /// A synchronous Upsert() context preserves its type information.
-template <class UC>
+template <class UC, bool IsHCContext = false>
 class PendingUpsertContext : public AsyncPendingUpsertContext<typename UC::key_t> {
  public:
   typedef UC upsert_context_t;
   typedef typename upsert_context_t::key_t key_t;
   typedef typename upsert_context_t::value_t value_t;
-  using key_or_shallow_key_t = std::remove_const_t<std::remove_reference_t<std::result_of_t<decltype(&UC::key)(UC)>>>;
   typedef Record<key_t, value_t> record_t;
-  constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
   PendingUpsertContext(upsert_context_t& caller_context_, AsyncCallback caller_callback_)
     : AsyncPendingUpsertContext<key_t>(caller_context_, caller_callback_) {
@@ -301,28 +299,23 @@ class PendingUpsertContext : public AsyncPendingUpsertContext<typename UC::key_t
 
  public:
   /// Accessors.
-  inline const key_or_shallow_key_t& get_key_or_shallow_key() const {
-     return upsert_context().key();
-  }
   inline uint32_t key_size() const final {
-    return upsert_context().key().size();
+    return hc_context_helper<IsHCContext>::key_size(upsert_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    write_deep_key_at_helper<kIsShallowKey>::execute(upsert_context().key(), dst);
+    hc_context_helper<IsHCContext>::write_deep_key_at(upsert_context(), dst);
   }
   inline KeyHash get_key_hash() const final {
-    return upsert_context().key().GetHash();
+    return hc_context_helper<IsHCContext>::get_key_hash(upsert_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return upsert_context().key() == other;
+    return hc_context_helper<IsHCContext>::is_key_equal(upsert_context(), other);
   }
   inline void Put(void* rec) final {
-    record_t* record = reinterpret_cast<record_t*>(rec);
-    upsert_context().Put(record->value());
+    hc_context_helper<IsHCContext>::template Put<upsert_context_t, record_t>(upsert_context(), rec);
   }
   inline bool PutAtomic(void* rec) final {
-    record_t* record = reinterpret_cast<record_t*>(rec);
-    return upsert_context().PutAtomic(record->value());
+    return hc_context_helper<IsHCContext>::template PutAtomic<upsert_context_t, record_t>(upsert_context(), rec);
   }
   inline constexpr uint32_t value_size() const final {
     return upsert_context().value_size();
@@ -396,7 +389,6 @@ class PendingRmwContext : public AsyncPendingRmwContext<typename MC::key_t> {
   }
   inline void write_deep_key_at(key_t* dst) const final {
     hc_context_helper<IsHCContext>::write_deep_key_at(rmw_context(), dst);
-    //write_deep_key_at_helper<kIsShallowKey>::execute(rmw_context().key(), dst);
   }
   inline KeyHash get_key_hash() const final {
     return hc_context_helper<IsHCContext>::get_key_hash(rmw_context());
@@ -452,15 +444,13 @@ class AsyncPendingDeleteContext : public PendingContext<K> {
 };
 
 /// A synchronous Delete() context preserves its type information.
-template <class MC>
+template <class MC, bool IsHCContext = false>
 class PendingDeleteContext : public AsyncPendingDeleteContext<typename MC::key_t> {
  public:
   typedef MC delete_context_t;
   typedef typename delete_context_t::key_t key_t;
   typedef typename delete_context_t::value_t value_t;
-  using key_or_shallow_key_t = std::remove_const_t<std::remove_reference_t<std::result_of_t<decltype(&MC::key)(MC)>>>;
   typedef Record<key_t, value_t> record_t;
-  constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, key_t>::value;
 
   PendingDeleteContext(delete_context_t& caller_context_, AsyncCallback caller_callback_)
     : AsyncPendingDeleteContext<key_t>(caller_context_, caller_callback_) {
@@ -483,20 +473,17 @@ class PendingDeleteContext : public AsyncPendingDeleteContext<typename MC::key_t
   }
  public:
   /// Accessors.
-  inline const key_or_shallow_key_t& get_key_or_shallow_key() const {
-    return delete_context().key();
-  }
   inline uint32_t key_size() const final {
-    return delete_context().key().size();
+    return hc_context_helper<IsHCContext>::key_size(delete_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    write_deep_key_at_helper<kIsShallowKey>::execute(delete_context().key(), dst);
+    hc_context_helper<IsHCContext>::write_deep_key_at(delete_context(), dst);
   }
   inline KeyHash get_key_hash() const final {
-    return delete_context().key().GetHash();
+    return hc_context_helper<IsHCContext>::get_key_hash(delete_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return delete_context().key() == other;
+    return hc_context_helper<IsHCContext>::is_key_equal(delete_context(), other);
   }
   /// Get value size for initial value
   inline uint32_t value_size() const final {
@@ -511,12 +498,15 @@ template <class K>
 class AsyncPendingConditionalInsertContext : public PendingContext<K> {
  public:
   typedef K key_t;
+  typedef AsyncPendingUpsertContext<key_t> async_pending_upsert_context_t;
+  typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
  protected:
   AsyncPendingConditionalInsertContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_,
                                         HashBucketEntry start_search_entry_, Address min_search_offset_, void* dest_store_)
     : PendingContext<key_t>(OperationType::ConditionalInsert, caller_context_, caller_callback_)
     , start_search_entry{ start_search_entry_ }
     , min_search_offset{ min_search_offset_ }
+    , orig_min_search_offset{ min_search_offset_ }
     , dest_store{ dest_store_ }
     , io_context{ nullptr } {
   }
@@ -525,35 +515,47 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
     : PendingContext<key_t>(other, caller_context)
     , start_search_entry{ other.start_search_entry }
     , min_search_offset{ other.min_search_offset }
+    , orig_min_search_offset{ other.orig_min_search_offset }
     , dest_store{ other.dest_store }
     , io_context{ other.io_context } {
   }
+
  public:
   virtual uint32_t value_size() const = 0;
   virtual bool is_tombstone() const = 0;
 
   // Called when writing to same store
   virtual bool Insert(void* dest, uint32_t alloc_size) const = 0;
-  // Called when writing to different store (i.e. hot-cold compaction)
-  // NOTE: these methods are called by FASTER InternalUpsert method
-  virtual void Put(void *rec) = 0;
-  virtual bool PutAtomic(void *rec) = 0;
+
+  // Used to provide a context for InternalUpsert/InternalDelete
+  // methods used when performing hot-cold compaction
+  virtual async_pending_upsert_context_t* WrapInUpsertContext() = 0;
+  virtual async_pending_delete_context_t* WrapInDeleteContext() = 0;
+
  public:
   HashBucketEntry start_search_entry;
   Address min_search_offset;
+  Address orig_min_search_offset;
   void* dest_store;
 
   AsyncIOContext* io_context;
 };
 
 /// A synchronous ConditionalInsert() context preserves its type information.
-template<class CIC, bool IsHCContext = is_hc_ci_context<CIC>>
+template<class CIC>
 class PendingConditionalInsertContext : public AsyncPendingConditionalInsertContext<typename CIC::key_t> {
  public:
   typedef CIC conditional_insert_context_t;
   typedef typename conditional_insert_context_t::key_t key_t;
   typedef typename conditional_insert_context_t::value_t value_t;
   typedef Record<key_t, value_t> record_t;
+
+  // Upsert context definitions
+  typedef AsyncPendingUpsertContext<key_t> async_pending_upsert_context_t;
+  typedef PendingUpsertContext<CIC, true> pending_upsert_context_t;
+  // Delete context definitions
+  typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
+  typedef PendingDeleteContext<CIC, true> pending_delete_context_t;
 
   PendingConditionalInsertContext(conditional_insert_context_t& caller_context_, AsyncCallback caller_callback_,
                                   HashBucketEntry start_search_entry_, Address min_search_offset_, void* dest_store_)
@@ -579,16 +581,16 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
  public:
   /// Accessors.
   inline uint32_t key_size() const final {
-    return hc_context_helper<IsHCContext>::key_size(conditional_insert_context());
+    return hc_context_helper<true>::key_size(conditional_insert_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    conditional_insert_context().write_deep_key_at(dst);
+    return hc_context_helper<true>::write_deep_key_at(conditional_insert_context(), dst);
   }
   inline KeyHash get_key_hash() const final {
-    return hc_context_helper<IsHCContext>::get_key_hash(conditional_insert_context());
+    return hc_context_helper<true>::get_key_hash(conditional_insert_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return hc_context_helper<IsHCContext>::is_key_equal(conditional_insert_context(), other);
+    return hc_context_helper<true>::is_key_equal(conditional_insert_context(), other);
   }
   inline uint32_t value_size() const final {
     return conditional_insert_context().value_size();
@@ -601,11 +603,23 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
   inline bool Insert(void* dest, uint32_t alloc_size) const final {
     return conditional_insert_context().Insert(dest, alloc_size);
   }
-  inline void Put(void* rec) final {
-    conditional_insert_context().Put(rec);
+
+  inline async_pending_upsert_context_t* WrapInUpsertContext() final {
+    pending_upsert_context_t context{ conditional_insert_context(), PendingContext<key_t>::caller_callback };
+    // Deep copy context to heap
+    IAsyncContext* context_copy;
+    Status copy_status = context.DeepCopy(context_copy);
+    assert(copy_status == Status::Ok);
+    return static_cast<async_pending_upsert_context_t*>(context_copy);
   }
-  inline bool PutAtomic(void* rec) final {
-    return conditional_insert_context().PutAtomic(rec);
+
+  inline async_pending_delete_context_t* WrapInDeleteContext() final {
+    pending_delete_context_t context{ conditional_insert_context(), PendingContext<key_t>::caller_callback };
+    // Deep copy context to heap
+    IAsyncContext* context_copy;
+    Status copy_status = context.DeepCopy(context_copy);
+    assert(copy_status == Status::Ok);
+    return static_cast<async_pending_delete_context_t*>(context_copy);
   }
 };
 

@@ -55,12 +55,21 @@ class CompactionConditionalInsertContext : public IAsyncContext {
   inline const key_t& key() const {
     return record_->key();
   }
+  inline uint32_t key_size() const {
+    return key().size();
+  }
+  inline KeyHash get_key_hash() const {
+    return key().GetHash();
+  }
+  inline bool is_key_equal(const key_t& other) const {
+    return key() == other;
+  }
   inline uint32_t value_size() const {
     return record_->value().size();
   }
   inline void write_deep_key_at(key_t* dst) const {
     // Copy the already "deep-written" key to the new destination
-    memcpy(dst, &this->key(), this->key().size());
+    memcpy(dst, &key(), key().size());
   }
   inline bool is_tombstone() const {
     return record_->header.tombstone;

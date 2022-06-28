@@ -70,12 +70,21 @@ struct hc_context_helper
   static inline void GetAtomic(RC& context, const void* rec) {
     context.GetAtomic(rec);
   }
+  /// Used by FASTER's Upsert pending context
+  template<class UC, class Record>
+  static inline void Put(UC& context, void* rec) {
+    context.Put(rec);
+  }
+  template<class UC, class Record>
+  static inline bool PutAtomic(UC& context, void* rec) {
+    return context.PutAtomic(rec);
+  }
 };
 
 template<>
 struct hc_context_helper<false>
 {
-  /// Used by all FASTER pending contexts
+  /// Used by user-provided contexts
   template<class RC>
   static inline uint32_t key_size(RC& context) {
     return context.key().size();
@@ -106,6 +115,17 @@ struct hc_context_helper<false>
   static inline void GetAtomic(RC& context, const void* rec) {
     const Record* record = reinterpret_cast<const Record*>(rec);
     context.GetAtomic(record->value());
+  }
+  /// Used by FASTER's Upsert pending context
+  template<class UC, class Record>
+  static inline void Put(UC& context, void* rec) {
+    Record* record = reinterpret_cast<Record*>(rec);
+    context.Put(record->value());
+  }
+  template<class UC, class Record>
+  static inline bool PutAtomic(UC& context, void* rec) {
+    Record* record = reinterpret_cast<Record*>(rec);
+    return context.PutAtomic(record->value());
   }
 };
 
@@ -460,8 +480,9 @@ class HotColdRmwReadContext : public IAsyncContext {
     memcpy(this->record, record_, record_->size());
   }
   inline void GetAtomic(const void* rec) {
-    // This should not be called, since we are doing a request on the cold log
-    // TODO: fix
+    // TODO: check if this is fine.
+    // There might be a race condition when hot-cold compaction is copying record and
+    // another thread copies the record to the hot log as part of RMW op -- need to check though.
     this->Get(rec);
   }
 
@@ -515,7 +536,6 @@ class HotColdIndexContext : public IAsyncContext {
 };
 
 
-
 template <class RC>
 constexpr bool is_hc_read_context = std::integral_constant<bool,
                                   std::is_base_of<AsyncHotColdReadContext<typename RC::key_t, typename RC::value_t>, RC>::value ||
@@ -525,15 +545,9 @@ template <class MC>
 constexpr bool is_hc_rmw_context = std::is_base_of<AsyncHotColdRmwContext<typename MC::key_t, typename MC::value_t>, MC>::value;
 
 
-class HotColdConditionalInsertContext : public IAsyncContext {
-  // dummy class to differentiate HotCold ConditionalInsert from compaction one
-};
-template <class CIC>
-constexpr bool is_hc_ci_context = std::is_base_of<HotColdConditionalInsertContext, CIC>::value;
-
 /// Internal context that holds the HC RMW context when doing ConditionalInsert
 template <class K, class V>
-class HotColdRmwConditionalInsertContext: public HotColdConditionalInsertContext {
+class HotColdRmwConditionalInsertContext: public IAsyncContext {
  public:
   // Typedefs on the key and value required internally by FASTER.
   typedef K key_t;
@@ -542,8 +556,8 @@ class HotColdRmwConditionalInsertContext: public HotColdConditionalInsertContext
   typedef HotColdRmwReadContext<key_t, value_t> rmw_read_context_t;
   typedef Record<key_t, value_t> record_t;
 
-  HotColdRmwConditionalInsertContext(rmw_context_t* rmw_context, bool rmw_rcu)
-    : rmw_context{ rmw_context }
+  HotColdRmwConditionalInsertContext(rmw_context_t* rmw_context_, bool rmw_rcu)
+    : rmw_context{ rmw_context_ }
     , rmw_rcu_{ rmw_rcu }
   {}
   /// Copy constructor deleted; copy to tail request doesn't go async
@@ -555,7 +569,6 @@ class HotColdRmwConditionalInsertContext: public HotColdConditionalInsertContext
  protected:
   /// The explicit interface requires a DeepCopy_Internal() implementation.
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
-    fprintf(stderr, "QQQQ\n");
     // Deep copy RmwRead context
     // NOTE: this may also trigger a deep copy for HC RmwContext (if necessary)
     IAsyncContext* read_context_copy;
@@ -607,11 +620,14 @@ class HotColdRmwConditionalInsertContext: public HotColdConditionalInsertContext
     }
     return true;
   }
+
   inline void Put(void* rec) {
     assert(false); // this should never be called
+    throw std::runtime_error{ "Impossible call to Put method" };
   }
   inline bool PutAtomic(void* rec) {
     assert(false); // this should never be called
+    throw std::runtime_error{ "Impossible call to PutAtomic method" };
     return false;
   }
 
