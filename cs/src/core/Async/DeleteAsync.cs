@@ -103,9 +103,10 @@ namespace FASTER.core
                 } while (internalStatus == OperationStatus.RETRY_NOW);
 
                 if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                    return new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>(new(internalStatus)));
-
-                Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
+                    return new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>(status));
+                status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, ref flushEvent, out _);
+                if (!status.IsPending)
+                    return new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>(status));
             }
             finally
             {

@@ -130,7 +130,9 @@ namespace FASTER.core
 
                 if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                     return new ValueTask<UpsertAsyncResult<Input, Output, Context>>(new UpsertAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
-                Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
+                status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, ref flushEvent, out _);
+                if (!status.IsPending)
+                    return new ValueTask<UpsertAsyncResult<Input, Output, Context>>(new UpsertAsyncResult<Input, Output, Context>(status, pcontext.output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
             finally
             {

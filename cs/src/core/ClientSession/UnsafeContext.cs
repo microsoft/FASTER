@@ -12,7 +12,7 @@ namespace FASTER.core
     /// <summary>
     /// Faster Operations implementation that allows manual control of record epoch management. For advanced use only.
     /// </summary>
-    public sealed class UnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, IDisposable
+    public sealed class UnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, IUnsafeContext, IDisposable
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;

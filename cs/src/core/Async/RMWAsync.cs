@@ -25,16 +25,15 @@ namespace FASTER.core
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output)
             {
-                flushEvent = fasterKV.hlog.FlushEvent;
                 Status status = !this.diskRequest.IsDefault()
-                    ? fasterKV.InternalCompletePendingRequestFromContext(currentCtx, currentCtx, fasterSession, this.diskRequest, ref pendingContext, asyncOp, out AsyncIOContext<Key, Value> newDiskRequest)
+                    ? fasterKV.InternalCompletePendingRequestFromContext(currentCtx, currentCtx, fasterSession, this.diskRequest, ref pendingContext, asyncOp, out flushEvent, out AsyncIOContext<Key, Value> newDiskRequest)
                     : fasterKV.CallInternalRMW(fasterSession, currentCtx, ref pendingContext, ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, pendingContext.userContext,
                                                      pendingContext.serialNum, asyncOp, out flushEvent, out newDiskRequest);
                 output = pendingContext.output;
 
                 if (status.IsPending && !newDiskRequest.IsDefault())
                 {
-                    flushEvent = default;
+                    Debug.Assert(flushEvent.IsDefault(), "flushEvent should be default if there is a diskRequest");
                     this.diskRequest = newDiskRequest;
                 }
                 return status;
@@ -182,12 +181,9 @@ namespace FASTER.core
 
             if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                 return status;
-            if (internalStatus == OperationStatus.ALLOCATE_FAILED)
-                return new(StatusCode.Pending);    // This plus diskRequest.IsDefault() means allocate failed
 
-            status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, asyncOp, out diskRequest);
-            if (!diskRequest.IsDefault())
-                flushEvent = default;
+            status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, asyncOp, ref flushEvent, out diskRequest);
+            output = pcontext.output;
             return status;
         }
 
@@ -208,8 +204,12 @@ namespace FASTER.core
                     throw new NotSupportedException("Async operations not supported over protected epoch");
 
                 // If we are here because of flushEvent, then _diskRequest is default--there is no pending disk operation.
+                // If both flushEvent.IsDefault() and _diskEvent.IsDefault(), then we encountered a RETRY_LATER
                 if (diskRequest.IsDefault())
-                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                {
+                    if (!flushEvent.IsDefault())
+                        await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                }
                 else
                 {
                     using (token.Register(() => diskRequest.asyncOperation.TrySetCanceled()))

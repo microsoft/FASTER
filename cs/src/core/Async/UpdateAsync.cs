@@ -184,25 +184,28 @@ namespace FASTER.core
         {
             if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                 return status;
-            Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
+            Debug.Assert(internalStatus == OperationStatus.RETRY_LATER || internalStatus == OperationStatus.ALLOCATE_FAILED);
             return new(StatusCode.Pending);
         }
 
         private static async ValueTask<ExceptionDispatchInfo> WaitForFlushCompletionAsync<Input, Output, Context>(FasterKV<Key, Value> @this, FasterExecutionContext<Input, Output, Context> currentCtx, CompletionEvent flushEvent, CancellationToken token)
         {
             ExceptionDispatchInfo exceptionDispatchInfo = default;
-            try
+            if (!flushEvent.IsDefault())
             {
-                token.ThrowIfCancellationRequested();
+                try
+                {
+                    token.ThrowIfCancellationRequested();
 
-                if (@this.epoch.ThisInstanceProtected())
-                    throw new NotSupportedException("Async operations not supported over protected epoch");
+                    if (@this.epoch.ThisInstanceProtected())
+                        throw new NotSupportedException("Async operations not supported over protected epoch");
 
-                await flushEvent.WaitAsync(token).ConfigureAwait(false);
-            }
-            catch (Exception e)
-            {
-                exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
+                }
             }
             return exceptionDispatchInfo;
         }

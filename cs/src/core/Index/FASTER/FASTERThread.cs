@@ -189,7 +189,7 @@ namespace FASTER.core
             } while (internalStatus == OperationStatus.RETRY_NOW);
 
             if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, false, out _);
+                status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, out _);
 
             // If done, callback user code.
             if (status.IsCompletedSuccessfully)
@@ -204,7 +204,7 @@ namespace FASTER.core
                                                 new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
                         break;
                     default:
-                        throw new FasterException("Operation type not allowed for retry");
+                        break;// throw new FasterException("Operation type not allowed for retry");
                 }
             }
         }
@@ -271,7 +271,7 @@ namespace FASTER.core
             {
                 // Remove from pending dictionary
                 opCtx.ioPendingRequests.Remove(request.id);
-                var status = InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _);
+                var status = InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, false, out _, out _);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
@@ -290,9 +290,10 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> currentCtx,
             FasterSession fasterSession,
             AsyncIOContext<Key, Value> request,
-            ref PendingContext<Input, Output, Context> pendingContext, bool asyncOp, out AsyncIOContext<Key, Value> newRequest)
+            ref PendingContext<Input, Output, Context> pendingContext, bool asyncOp, out CompletionEvent flushEvent, out AsyncIOContext<Key, Value> newRequest)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
+            flushEvent = hlog.FlushEvent;
             newRequest = default;
 
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
@@ -305,15 +306,10 @@ namespace FASTER.core
                 ? InternalContinuePendingRead(opCtx, request, ref pendingContext, fasterSession, currentCtx)
                 : InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
 
-            if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-            {
-                if (internalStatus == OperationStatus.ALLOCATE_FAILED)
-                {
-                    status = new(StatusCode.Pending);  // This plus newRequest.IsDefault() means allocate failed
-                    goto Done;
-                }
-                status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, asyncOp, out newRequest);
-            }
+            if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
+                flushEvent = default;
+            else
+                status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, ref flushEvent, out newRequest);
 
             // If done, callback user code
             if (status.IsCompletedSuccessfully)
@@ -338,7 +334,6 @@ namespace FASTER.core
                 }
             }
 
-        Done:
             unsafe
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());

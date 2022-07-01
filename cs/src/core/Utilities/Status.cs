@@ -135,6 +135,6 @@ namespace FASTER.core
         public byte Value => (byte)statusCode;
 
         /// <inheritdoc />
-        public override string ToString() => this.statusCode.ToString();
+        public override string ToString() => (this.Found ? "Found, " : string.Empty) + this.statusCode.ToString();
     }
 }

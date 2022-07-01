@@ -460,7 +460,7 @@ namespace FASTER.core
             (*(tableAligned + entry)).localCurrentEpoch = 0;
             (*(tableAligned + entry)).threadId = 0;
 
-            // Decrement "AnyInstanceProtedted()" (static thread table)
+            // Decrement "AnyInstanceProtected()" (static thread table)
             threadEntryIndexCount--;
             if (threadEntryIndexCount == 0)
             {

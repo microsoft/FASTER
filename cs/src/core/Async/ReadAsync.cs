@@ -52,7 +52,7 @@ namespace FASTER.core
                             _fasterSession.UnsafeResumeThread();
                             try
                             {
-                                var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _);
+                                var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _, out _);
                                 Debug.Assert(!status.IsPending);
                                 _result = (status, _pendingContext.output);
                                 _recordMetadata = new(_pendingContext.recordInfo, _pendingContext.logicalAddress);
@@ -170,9 +170,11 @@ namespace FASTER.core
                 if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                     return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(new(internalStatus), output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
 
-                status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, true, out diskRequest);
+                // Read does not allocate so do not handle flushEvent
+                CompletionEvent flushEvent = default;
+                status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, true, ref flushEvent, out diskRequest);
                 if (!status.IsPending)
-                    return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
+                    return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(status, pcontext.output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
             finally
             {
