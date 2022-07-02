@@ -43,7 +43,7 @@ namespace FASTER.stress
             Console.WriteLine($"Creating and populating FasterKV<{options.KeyType}, {options.ValueType}> with {options.KeyCount} records and {hashTableSize} hash table size");
             tester.Populate(hashTableCacheLines, logSettings, checkpointSettings);
 
-            var totalOps = options.IterationCount * options.KeyCount * options.ThreadCount;
+            long totalOps = (long)options.IterationCount * options.KeyCount * options.ThreadCount;
             Console.WriteLine($"Performing {options.IterationCount} iterations of {options.KeyCount} key operations over {options.ThreadCount} threads (total {totalOps})");
 
             int numExtraThreads = (testLoader.UseCheckpoints ? 1 : 0) + (testLoader.UseCompact ? 1 : 0);
@@ -105,6 +105,7 @@ namespace FASTER.stress
             }
 
             Console.WriteLine($"{totalOps} operations complete");
+            Console.WriteLine("Disposing Device");
         }
 
         private static void PopulateLogSettings(Options options, long recordSize, LogSettings logSettings)

@@ -213,9 +213,9 @@ namespace FASTER.stress
             return ordinals.Length;
         }
 
-        internal void Status(string message)
+        internal void Status(Verbose level, string message)
         {
-            if (this.Options.Verbose)
+            if (this.Options.Verbose >= level)
                 Console.WriteLine(message);
         }
 
@@ -284,7 +284,7 @@ namespace FASTER.stress
 
         internal void Test<TKey>(int tid, Random rng, int[] lockOrdinals, TKey[] lockKeys, Func<int, TKey> getOrdinalKey, IComparer<TKey> sortComparer, IValueTester<TKey> valueTester)
         {
-            this.Status($"Thread {tid}/{Environment.CurrentManagedThreadId} starting Sync Test");
+            this.Status(Verbose.Low, $"Thread {tid}/{Environment.CurrentManagedThreadId} starting Sync Test");
             for (var iter = 0; iter < this.Options.IterationCount; ++iter)
             {
                 for (var ii = 0; ii < this.Options.KeyCount; ++ii)
@@ -295,14 +295,14 @@ namespace FASTER.stress
                     Array.Sort(lockKeys, sortComparer);   // Sort to avoid deadlocks
                     valueTester.TestRecord(lockOrdinals[0], lockKeyCount, lockKeys);
                 }
-                this.Status($"Thread {tid}/{Environment.CurrentManagedThreadId} completed Sync iteration {iter}");
+                this.Status(iter > 0 && iter % 100 == 0 ? Verbose.Low : Verbose.High, $"Thread {tid}/{Environment.CurrentManagedThreadId} completed Sync iteration {iter}");
             }
-            this.Status($"Thread {tid}/{Environment.CurrentManagedThreadId} completed Sync Test");
+            this.Status(Verbose.Low, $"Thread {tid}/{Environment.CurrentManagedThreadId} completed Sync Test");
         }
 
         internal async Task TestAsync<TKey>(int tid, Random rng, int[] lockOrdinals, TKey[] lockKeys, Func<int, TKey> getOrdinalKey, IComparer<TKey> sortComparer, IValueTester<TKey> valueTester)
         {
-            this.Status($"Thread {tid}/{Environment.CurrentManagedThreadId} starting Async Test");
+            this.Status(Verbose.Low, $"Thread {tid}/{Environment.CurrentManagedThreadId} starting Async Test");
             await Task.Delay(50);  // Make sure the test doesn't start by executing synchronously for a while
             for (var iter = 0; iter < this.Options.IterationCount; ++iter)
             {
@@ -314,9 +314,9 @@ namespace FASTER.stress
                     Array.Sort(lockKeys, sortComparer);   // Sort to avoid deadlocks
                     await valueTester.TestRecordAsync(lockOrdinals[0], lockKeyCount, lockKeys);
                 }
-                this.Status($"Thread {tid}/{Environment.CurrentManagedThreadId} completed Async iteration {iter}");
+                this.Status(iter > 0 && iter % 100 == 0 ? Verbose.Low : Verbose.High, $"Thread {tid}/{Environment.CurrentManagedThreadId} completed Async iteration {iter}");
             }
-            this.Status($"Thread {tid}/{Environment.CurrentManagedThreadId} completed Async Test");
+            this.Status(Verbose.Low, $"Thread {tid}/{Environment.CurrentManagedThreadId} completed Async Test");
         }
 
         internal async Task DoPeriodicCheckpoints(IValueTester tester, CancellationToken cancellationToken)
@@ -343,7 +343,7 @@ namespace FASTER.stress
                 ++checkpointsTaken;
                 if (success)
                     ++successfulCheckpoints;
-                Console.WriteLine($"Checkpoint #{checkpointsTaken}: {(success ? "succeeded" : "failed")}, elapsed time: {0}ms, successful checkpoints: {successfulCheckpoints}", sw.ElapsedMilliseconds);
+                Status(Verbose.Low, $"Checkpoint #{checkpointsTaken}: {(success ? "succeeded" : "failed")}, elapsed time: {sw.ElapsedMilliseconds}ms, successful checkpoints: {successfulCheckpoints}");
             }
         }
 
@@ -371,7 +371,7 @@ namespace FASTER.stress
                 ++compactsTaken;
                 if (success)
                     ++successfulCompacts;
-                Console.WriteLine($"Compact #{compactsTaken}: {(success ? "succeeded" : "failed")}, elapsed time: {0}ms, successful compacts: {successfulCompacts}", sw.ElapsedMilliseconds);
+                Status(Verbose.Low, $"Compact #{compactsTaken}: {(success ? "succeeded" : "failed")}, elapsed time: {sw.ElapsedMilliseconds}ms, successful compacts: {successfulCompacts}");
             }
         }
     }

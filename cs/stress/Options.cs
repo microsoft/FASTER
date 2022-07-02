@@ -7,6 +7,7 @@ using FASTER.core;
 namespace FASTER.stress
 {
     public enum DataType { Long, String, SpanByte };
+    public enum Verbose { None, Low, Med, High };
 
     class Options
     {
@@ -24,8 +25,8 @@ namespace FASTER.stress
         [Option('s', "Seed", Required = false, Default = 0, HelpText = "Seed for random key selection; if not specified, sequential key accesses are done")]
         public int RandomSeed { get; set; }
 
-        [Option('v', "Verbose", Required = false, Default = false, HelpText = "Verbose status output during the run")]
-        public bool Verbose { get; set; }
+        [Option('v', "Verbose", Required = false, Default = 1, HelpText = "Verbose status output level during the run")]
+        public Verbose Verbose { get; set; }
 
         [Option('o', "OutputDir", Required = false, Default = "D:/data/FasterStress", HelpText = "Output directory for FasterKV log and snapshot checkpoints")]
         public string OutputDirectory { get; set; } = string.Empty;
@@ -45,7 +46,7 @@ namespace FASTER.stress
         [Option(Required = false, Default = CheckpointType.FoldOver, HelpText = "Type of Checkpoint if doing periodic Checkpoints")]
         public CheckpointType CheckpointType { get; set; }
 
-        [Option("CheckpointInc", Required = false, Default = false, HelpText = "Try incremental Checkpoint if doing periodic Checkpoints")]
+        [Option("Inc", Required = false, Default = false, HelpText = "Try incremental Checkpoint if doing periodic Checkpoints")]
         public bool CheckpointIncremental { get; set; }
 
         [Option("CompactSec", Required = false,   // Supply space-delimited values
