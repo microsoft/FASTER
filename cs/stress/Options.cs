@@ -62,6 +62,9 @@ namespace FASTER.stress
         [Option(Required = false, Default = 20, HelpText = "Percentage of the log to Compact if doing periodic Compacts")]
         public int CompactPercent { get; set; }
 
+        [Option("Trunc", Required = false, Default = false, HelpText = "Truncate the log on Compacts")]
+        public bool CompactTruncate { get; set; }
+
         [Option("ReadCache", Required = false, Default = false, HelpText = "Use the read cache")]
         public bool ReadCache { get; set; }
 

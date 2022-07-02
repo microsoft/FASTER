@@ -58,7 +58,11 @@ namespace FASTER.stress
         public bool CompactStore()
         {
             long compactUntil = testLoader.GetCompactUntilAddress(fkv.Log.BeginAddress, fkv.Log.TailAddress);
-            return session.FkvSession.Compact(compactUntil, testLoader.Options.CompactType) == fkv.Log.BeginAddress;
+            if (session.FkvSession.Compact(compactUntil, testLoader.Options.CompactType) != fkv.Log.BeginAddress)
+                return false;
+            if (testLoader.Options.CompactTruncate)
+                fkv.Log.Truncate();
+            return true;
         }
 
         public void TestRecord(int keyOrdinal, int keyCount, TKey[] keys)

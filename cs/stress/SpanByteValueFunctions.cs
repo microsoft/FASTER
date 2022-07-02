@@ -30,10 +30,10 @@ namespace FASTER.stress
 
         public override bool ConcurrentWriter(ref TKey key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
-            if (dst.Length < input.Length)
+            if (dst.Length < src.Length)
                 return false;
-            input.CopyTo(ref dst);
-            input.CopyTo(ref output, memoryPool);
+            src.CopyTo(ref dst);
+            // TODO: we're not using output yet, so this would leak: src.CopyTo(ref output, memoryPool);
             return true;
         }
 
@@ -46,12 +46,25 @@ namespace FASTER.stress
             return true;
         }
 
+        bool copyInput;
+
         public override bool CopyUpdater(ref TKey key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             if (newValue.Length < input.Length)
                 throw new ApplicationException("CopyUpdater should have allocated enough space");
-            input.CopyTo(ref newValue);
-            input.CopyTo(ref output, memoryPool);
+
+            // For our purposes, input and oldValue are the same. To ensure we're reading correctly, we'll toggle between input and oldValue being copied to output.
+            if (copyInput)
+            {
+                input.CopyTo(ref newValue);
+                input.CopyTo(ref output, memoryPool);
+            }
+            else
+            {
+                oldValue.CopyTo(ref newValue);
+                oldValue.CopyTo(ref output, memoryPool);
+            }
+            copyInput = !copyInput;
             return true;
         }
 
