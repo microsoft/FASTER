@@ -11,15 +11,18 @@ namespace FASTER.stress
         readonly TestLoader testLoader;
         readonly Func<TOutput, int> GetResultKeyOrdinal;
         readonly Random rng;
+        readonly Action<TOutput> disposer = o => { };
 
         ClientSession<TKey, TValue, TInput, TOutput, Empty, IFunctions<TKey, TValue, TInput, TOutput, Empty>> session;
         LockableUnsafeContext<TKey, TValue, TInput, TOutput, Empty, IFunctions<TKey, TValue, TInput, TOutput, Empty>> luContext;
 
-        internal SessionWrapper(TestLoader testLoader, Func<TOutput, int> getResultKeyOrdinal, Random rng)
+        internal SessionWrapper(TestLoader testLoader, Func<TOutput, int> getResultKeyOrdinal, Random rng, Action<TOutput> disposer = default)
         {
             this.testLoader = testLoader;
             this.GetResultKeyOrdinal = getResultKeyOrdinal;
             this.rng = rng;
+            if (disposer is not null)
+                this.disposer = disposer;
         }
 
         internal void PrepareTest(ClientSession<TKey, TValue, TInput, TOutput, Empty, IFunctions<TKey, TValue, TInput, TOutput, Empty>> session)
@@ -58,6 +61,7 @@ namespace FASTER.stress
             }
             Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
             Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            disposer(output);
         }
 
         internal async Task ReadAsync(int keyOrdinal, TKey key)
@@ -65,6 +69,7 @@ namespace FASTER.stress
             var (status, output) = (await session.ReadAsync(ref key)).Complete();
             Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
             Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            disposer(output);
         }
 
         internal void ReadLUC(int keyOrdinal, int keyCount, TKey[] keys)
@@ -84,6 +89,7 @@ namespace FASTER.stress
                 }
                 Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
                 Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                disposer(output);
             }
             finally
             {
@@ -102,6 +108,7 @@ namespace FASTER.stress
                 var (status, output) = (await luContext.ReadAsync(ref keys[0])).Complete();
                 Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
                 Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                disposer(output);
             }
             finally
             {
@@ -135,6 +142,7 @@ namespace FASTER.stress
             }
             Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
             Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            disposer(output);
         }
 
         internal async Task RMWAsync(int keyOrdinal, TKey key, TInput input)
@@ -142,6 +150,7 @@ namespace FASTER.stress
             var (status, output) = (await session.RMWAsync(ref key, ref input)).Complete();
             Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
             Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            disposer(output);
         }
 
         internal void RMWLUC(int keyOrdinal, int keyCount, TKey[] keys, TInput input)
@@ -161,6 +170,7 @@ namespace FASTER.stress
                 }
                 Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
                 Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                disposer(output);
             }
             finally
             {
@@ -179,6 +189,7 @@ namespace FASTER.stress
                 var (status, output) = (await luContext.RMWAsync(ref keys[0], ref input)).Complete();
                 Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
                 Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                disposer(output);
             }
             finally
             {

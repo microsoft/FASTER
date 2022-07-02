@@ -25,7 +25,7 @@ namespace FASTER.stress
             this.tid = tid;
             rng = new Random((tid + testLoader.Options.ThreadCount) * testLoader.Options.RandomSeed);
             values = new PinnedByteArray[testLoader.Options.KeyCount];
-            this.session = new(testLoader, output => BitConverter.ToInt32(output.Memory.Memory.Span) % testLoader.ValueIncrement, rng);
+            this.session = new(testLoader, output => BitConverter.ToInt32(output.Memory.Memory.Span) % testLoader.ValueIncrement, rng, o => o.Memory.Dispose());
         }
 
         public long GetAverageSize() => sizeof(int) + (testLoader.Options.ValueLength / (testLoader.UseRandom ? 2 : 1));
