@@ -127,7 +127,7 @@ namespace FASTER.core
             while (true)
             {
                 InternalCompletePendingRequests(ctx, ctx, fasterSession, completedOutputs);
-                InternalCompleteRetryRequests(ctx, ctx, fasterSession);
+                InternalCompleteRetryRequests(ctx, ctx, fasterSession, completedOutputs);
                 if (wait) ctx.WaitPending(epoch);
 
                 if (ctx.HasNoPendingRequests) return true;
@@ -145,7 +145,7 @@ namespace FASTER.core
         internal void InternalCompleteRetryRequests<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> opCtx, 
             FasterExecutionContext<Input, Output, Context> currentCtx, 
-            FasterSession fasterSession)
+            FasterSession fasterSession, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             int count = opCtx.retryRequests.Count;
@@ -155,11 +155,18 @@ namespace FASTER.core
             for (int i = 0; i < count; i++)
             {
                 var pendingContext = opCtx.retryRequests.Dequeue();
-                InternalCompleteRetryRequest(opCtx, currentCtx, pendingContext, fasterSession);
+                var status = InternalCompleteRetryRequest(opCtx, currentCtx, pendingContext, fasterSession);
+                if (completedOutputs is not null && status.IsCompletedSuccessfully)
+                {
+                    // Transfer things to outputs from pendingContext before we dispose it.
+                    completedOutputs.TransferTo(ref pendingContext, status);
+                }
+                if (!status.IsPending)
+                    pendingContext.Dispose();
             }
         }
 
-        internal void InternalCompleteRetryRequest<Input, Output, Context, FasterSession>(
+        internal Status InternalCompleteRetryRequest<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> opCtx, 
             FasterExecutionContext<Input, Output, Context> currentCtx, 
             PendingContext<Input, Output, Context> pendingContext, 
@@ -207,6 +214,7 @@ namespace FASTER.core
                         break;// throw new FasterException("Operation type not allowed for retry");
                 }
             }
+            return status;
         }
         #endregion
 

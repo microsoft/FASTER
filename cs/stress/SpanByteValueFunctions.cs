@@ -33,7 +33,7 @@ namespace FASTER.stress
             if (dst.Length < src.Length)
                 return false;
             src.CopyTo(ref dst);
-            // TODO: we're not using output yet, so this would leak: src.CopyTo(ref output, memoryPool);
+            // TODO: we're not using output yet for Upsert, so this would leak: src.CopyTo(ref output, memoryPool);
             return true;
         }
 
@@ -70,8 +70,11 @@ namespace FASTER.stress
 
         public override bool InPlaceUpdater(ref TKey key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
-            UpsertInfo upsertInfo = new(ref rmwInfo);
-            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref upsertInfo);
+            if (value.Length < input.Length)
+                return false;
+            input.CopyTo(ref value);
+            input.CopyTo(ref output, memoryPool);
+            return true;
         }
     }
 }

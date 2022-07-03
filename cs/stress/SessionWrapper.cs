@@ -137,8 +137,7 @@ namespace FASTER.stress
             {
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 (status, output) = TestLoader.GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.NotFound && status.Record.Created, $"keyOrdinal {keyOrdinal}: {status}");
-                Assert.AreEqual(status.Found, status.Record.CopyUpdated, $"keyOrdinal {keyOrdinal}: {status}");
+                Assert.AreEqual(status.Found, status.Record.CopyUpdated | status.Record.InPlaceUpdated, $"keyOrdinal {keyOrdinal}: {status}");
             }
             Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
             Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
@@ -165,8 +164,7 @@ namespace FASTER.stress
                 {
                     luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     (status, output) = TestLoader.GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                    Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.NotFound && status.Record.Created, $"keyOrdinal {keyOrdinal}: {status}");
-                    Assert.AreEqual(status.Found, status.Record.CopyUpdated, $"keyOrdinal {keyOrdinal}: {status}");
+                    Assert.AreEqual(status.Found, status.Record.CopyUpdated | status.Record.InPlaceUpdated, $"keyOrdinal {keyOrdinal}: {status}");
                 }
                 Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
                 Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));

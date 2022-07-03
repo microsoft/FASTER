@@ -467,7 +467,6 @@ namespace FASTER.core
                 if (logicalAddress >= hlog.ReadOnlyAddress)
                 {
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
-                    Debug.Assert(!recordInfo.Invalid);
                     if (recordInfo.IsIntermediate(out status))
                         return status;
 
@@ -796,7 +795,6 @@ namespace FASTER.core
 
             if (success)
             {
-                Debug.Assert(!recordInfo.Invalid);
                 if (unsealPhysicalAddress != Constants.kInvalidAddress && unsealLogicalAddress >= hlog.HeadAddress)
                     recordInfo.CopyLocksFrom(hlog.GetInfo(unsealPhysicalAddress));
                 else if (LockTable.IsActive)
@@ -1579,7 +1577,6 @@ namespace FASTER.core
             if (logicalAddress >= minAddress)
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                Debug.Assert(!hlog.GetInfo(physicalAddress).Invalid);
                 if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
@@ -1812,7 +1809,6 @@ namespace FASTER.core
                 deleteInfo.RecordInfo = recordInfo;
                 if (success)
                 {
-                    Debug.Assert(recordInfo.Valid);
                     if (unsealPhysicalAddress != Constants.kInvalidAddress && logicalAddress >= hlog.HeadAddress)
                         recordInfo.CopyLocksFrom(hlog.GetInfo(unsealPhysicalAddress));
                     else if (LockTable.IsActive)
