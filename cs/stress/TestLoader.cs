@@ -322,7 +322,16 @@ namespace FASTER.stress
         internal async Task DoPeriodicCheckpoints(IValueTester tester, CancellationToken cancellationToken)
         {
             if (Options.CheckpointDelaySec > 0)
-                await Task.Delay(Options.CheckpointDelaySec * 1000, cancellationToken);
+            {
+                try
+                {
+                    await Task.Delay(Options.CheckpointDelaySec * 1000, cancellationToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    return;
+                }
+            }
 
             int checkpointsTaken = 0;
             int successfulCheckpoints = 0;
@@ -333,7 +342,7 @@ namespace FASTER.stress
                 {
                     await Task.Delay(Options.CheckpointIntervalSec * 1000, cancellationToken);
                 }
-                catch (OperationCanceledException)
+                catch (TaskCanceledException)
                 {
                     return;
                 }
@@ -350,7 +359,16 @@ namespace FASTER.stress
         internal async Task DoPeriodicCompact(IValueTester tester, CancellationToken cancellationToken)
         {
             if (Options.CompactDelaySec > 0)
-                await Task.Delay(Options.CompactDelaySec * 1000, cancellationToken);
+            {
+                try
+                {
+                    await Task.Delay(Options.CompactDelaySec * 1000, cancellationToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    return;
+                }
+            }
 
             int compactsTaken = 0;
             int successfulCompacts = 0;
@@ -361,7 +379,7 @@ namespace FASTER.stress
                 {
                     await Task.Delay(Options.CompactIntervalSec * 1000, cancellationToken);
                 }
-                catch (OperationCanceledException)
+                catch (TaskCanceledException)
                 {
                     return;
                 }
