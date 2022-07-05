@@ -317,7 +317,7 @@ namespace FASTER.core
             if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                 flushEvent = default;
             else
-                status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, ref flushEvent, out newRequest);
+                status = HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, internalStatus, asyncOp, ref flushEvent, out newRequest);
 
             // If done, callback user code
             if (status.IsCompletedSuccessfully)
