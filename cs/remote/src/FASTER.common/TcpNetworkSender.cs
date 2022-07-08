@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -14,6 +15,7 @@ namespace FASTER.common
         public SeaaBuffer sendObject;
         public int offset;
         public int size;
+        public bool toThrottle;
     }
 
     /// <summary>
@@ -66,7 +68,7 @@ namespace FASTER.common
             this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize));
             this.responseObject = null;
-            this.sendQueue = new(async s => await SendAsync(s.socket, s.sendObject, s.offset, s.size));
+            this.sendQueue = new(async s => await SendAsync(s.socket, s.sendObject, s.offset, s.size, s.toThrottle));
         }
 
         /// <summary>
@@ -82,7 +84,7 @@ namespace FASTER.common
             this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize));
             this.responseObject = null;
-            this.sendQueue = new(async s => await SendAsync(s.socket, s.sendObject, s.offset, s.size));
+            this.sendQueue = new(async s => await SendAsync(s.socket, s.sendObject, s.offset, s.size, s.toThrottle));
         }
 
 
@@ -174,9 +176,10 @@ namespace FASTER.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe void Send(Socket socket, SeaaBuffer sendObject, int offset, int size)
         {
-            if (Interlocked.Increment(ref throttleCount) > ThrottleMax || sendQueue.Count > 0)
+            bool toThrottle = Interlocked.Increment(ref throttleCount) > ThrottleMax;
+            if (toThrottle || sendQueue.Count > 0)
             {
-                sendQueue.EnqueueAndTryWork(new SendWorkItem { socket = socket, sendObject = sendObject, offset = offset, size = size}, true);
+                sendQueue.EnqueueAndTryWork(new SendWorkItem { socket = socket, sendObject = sendObject, offset = offset, size = size, toThrottle = toThrottle }, true);
                 return;
             }
 
@@ -188,9 +191,9 @@ namespace FASTER.common
                 SeaaBuffer_Completed(null, sendObject.socketEventAsyncArgs);
         }
 
-        private async Task SendAsync(Socket socket, SeaaBuffer sendObject, int offset, int size)
+        private async Task SendAsync(Socket socket, SeaaBuffer sendObject, int offset, int size, bool toThrottle)
         {
-            if (throttleCount > ThrottleMax)
+            if (toThrottle)
                 await throttle.WaitAsync();
 
             // Reset send buffer
