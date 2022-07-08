@@ -4,9 +4,18 @@
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FASTER.common
 {
+    struct SendWorkItem
+    {
+        public Socket socket;
+        public SeaaBuffer sendObject;
+        public int offset;
+        public int size;
+    }
+
     /// <summary>
     /// TCP network sender
     /// </summary>
@@ -37,6 +46,8 @@ namespace FASTER.common
         /// </summary>
         protected int throttleCount;
 
+        readonly WorkQueueFIFO<SendWorkItem> sendQueue;
+
         /// <summary>
         /// Max concurrent sends (per session) for throttling
         /// </summary>
@@ -55,6 +66,7 @@ namespace FASTER.common
             this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize));
             this.responseObject = null;
+            this.sendQueue = new(async s => await SendAsync(s.socket, s.sendObject, s.offset, s.size));
         }
 
         /// <summary>
@@ -70,6 +82,7 @@ namespace FASTER.common
             this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize));
             this.responseObject = null;
+            this.sendQueue = new(async s => await SendAsync(s.socket, s.sendObject, s.offset, s.size));
         }
 
 
@@ -161,8 +174,24 @@ namespace FASTER.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe void Send(Socket socket, SeaaBuffer sendObject, int offset, int size)
         {
-            if (Interlocked.Increment(ref throttleCount) > ThrottleMax)
-                throttle.Wait();
+            if (Interlocked.Increment(ref throttleCount) > ThrottleMax || sendQueue.Count > 0)
+            {
+                sendQueue.EnqueueAndTryWork(new SendWorkItem { socket = socket, sendObject = sendObject, offset = offset, size = size}, true);
+                return;
+            }
+
+            // Reset send buffer
+            sendObject.socketEventAsyncArgs.SetBuffer(offset, size);
+            // Set user context to reusable object handle for disposal when send is done
+            sendObject.socketEventAsyncArgs.UserToken = sendObject;
+            if (!socket.SendAsync(sendObject.socketEventAsyncArgs))
+                SeaaBuffer_Completed(null, sendObject.socketEventAsyncArgs);
+        }
+
+        private async Task SendAsync(Socket socket, SeaaBuffer sendObject, int offset, int size)
+        {
+            if (throttleCount > ThrottleMax)
+                await throttle.WaitAsync();
 
             // Reset send buffer
             sendObject.socketEventAsyncArgs.SetBuffer(offset, size);
