@@ -34,8 +34,9 @@ namespace FASTER.stress
 
         internal ClientSession<TKey, TValue, TInput, TOutput, Empty, IFunctions<TKey, TValue, TInput, TOutput, Empty>> FkvSession => this.session;
 
-        #region Read
         internal bool IsLUC => this.luContext is not null;
+
+        #region Read
 
         internal void Read(int keyOrdinal, int keyCount, TKey[] keys)
         {
@@ -48,7 +49,7 @@ namespace FASTER.stress
         internal Task ReadAsync(int keyOrdinal, int keyCount, TKey[] keys)
             => this.IsLUC ? this.ReadLUCAsync(keyOrdinal, keyCount, keys) : this.ReadAsync(keyOrdinal, keys[0]);
 
-        internal void Read(int keyOrdinal, TKey key)
+        private void Read(int keyOrdinal, TKey key)
         {
             TOutput output = default;
             var status = session.Read(ref key, ref output);
@@ -60,11 +61,12 @@ namespace FASTER.stress
                     Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"keyOrdinal {keyOrdinal}: {status}");
             }
             Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
-            Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            if (status.Found)
+                Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
             disposer(output);
         }
 
-        internal async Task ReadAsync(int keyOrdinal, TKey key)
+        private async Task ReadAsync(int keyOrdinal, TKey key)
         {
             var (status, output) = (await session.ReadAsync(ref key)).Complete();
             Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
@@ -72,7 +74,7 @@ namespace FASTER.stress
             disposer(output);
         }
 
-        internal void ReadLUC(int keyOrdinal, int keyCount, TKey[] keys)
+        private void ReadLUC(int keyOrdinal, int keyCount, TKey[] keys)
         {
             try
             {
@@ -98,7 +100,7 @@ namespace FASTER.stress
             }
         }
 
-        internal async Task ReadLUCAsync(int keyOrdinal, int keyCount, TKey[] keys)
+        private async Task ReadLUCAsync(int keyOrdinal, int keyCount, TKey[] keys)
         {
             try
             {
@@ -129,7 +131,7 @@ namespace FASTER.stress
         internal Task RMWAsync(int keyOrdinal, int keyCount, TKey[] keys, TInput input)
             => this.IsLUC ? this.RMWLUCAsync(keyOrdinal, keyCount, keys, input) : this.RMWAsync(keyOrdinal, keys[0], input);
 
-        internal void RMW(int keyOrdinal, TKey key, TInput input)
+        private void RMW(int keyOrdinal, TKey key, TInput input)
         {
             TOutput output = default;
             var status = session.RMW(ref key, ref input, ref output);
@@ -144,7 +146,7 @@ namespace FASTER.stress
             disposer(output);
         }
 
-        internal async Task RMWAsync(int keyOrdinal, TKey key, TInput input)
+        private async Task RMWAsync(int keyOrdinal, TKey key, TInput input)
         {
             var (status, output) = (await session.RMWAsync(ref key, ref input)).Complete();
             Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
@@ -152,7 +154,7 @@ namespace FASTER.stress
             disposer(output);
         }
 
-        internal void RMWLUC(int keyOrdinal, int keyCount, TKey[] keys, TInput input)
+        private void RMWLUC(int keyOrdinal, int keyCount, TKey[] keys, TInput input)
         {
             try
             {
@@ -177,7 +179,7 @@ namespace FASTER.stress
             }
         }
 
-        internal async Task RMWLUCAsync(int keyOrdinal, int keyCount, TKey[] keys, TInput input)
+        private async Task RMWLUCAsync(int keyOrdinal, int keyCount, TKey[] keys, TInput input)
         {
             try
             {
@@ -214,9 +216,9 @@ namespace FASTER.stress
                 session.CompletePending(wait: true);
         }
 
-        internal async Task UpsertAsync(TKey key, TValue value) => (await session.UpsertAsync(ref key, ref value)).Complete();
+        private async Task UpsertAsync(TKey key, TValue value) => (await session.UpsertAsync(ref key, ref value)).Complete();
 
-        internal void UpsertLUC(ref TKey key, ref TValue value)
+        private void UpsertLUC(ref TKey key, ref TValue value)
         {
             try
             {
@@ -230,7 +232,7 @@ namespace FASTER.stress
             }
         }
 
-        internal async Task UpsertLUCAsync(TKey key, TValue value) => (await luContext.UpsertAsync(ref key, ref value)).Complete();
+        private async Task UpsertLUCAsync(TKey key, TValue value) => (await luContext.UpsertAsync(ref key, ref value)).Complete();
         #endregion Upsert
 
         #region Delete
@@ -244,16 +246,16 @@ namespace FASTER.stress
 
         internal Task DeleteAsync(TKey[] keys) => this.IsLUC ? this.DeleteLUCAsync(keys[0]) : this.DeleteAsync(keys[0]);
 
-        internal void Delete(TKey key)
+        private void Delete(TKey key)
         {
             var status = session.Delete(ref key);
             if (status.IsPending)
                 session.CompletePending(wait: true);
         }
 
-        internal async Task DeleteAsync(TKey key) => (await session.DeleteAsync(ref key)).Complete();
+        private async Task DeleteAsync(TKey key) => (await session.DeleteAsync(ref key)).Complete();
 
-        internal void DeleteLUC(TKey key)
+        private void DeleteLUC(TKey key)
         {
             try
             {
@@ -267,7 +269,7 @@ namespace FASTER.stress
             }
         }
 
-        internal async Task DeleteLUCAsync(TKey key) => (await luContext.DeleteAsync(ref key)).Complete();
+        private async Task DeleteLUCAsync(TKey key) => (await luContext.DeleteAsync(ref key)).Complete();
 
         public void Dispose()
         {

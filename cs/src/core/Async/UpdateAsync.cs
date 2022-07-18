@@ -36,10 +36,9 @@ namespace FASTER.core
             /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
             /// <param name="asyncOp">Whether this is from a synchronous or asynchronous completion call</param>
             /// <param name="flushEvent">The event to wait for flush completion on</param>
-            /// <param name="output">The output to be populated by this operation</param>
-            /// <returns></returns>
+            /// <remarks>Populates <paramref name="pendingContext"/>.output</remarks>
             Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output);
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent);
             /// <summary>
             /// Performs the asynchronous operation. This may be a wait for <paramref name="flushEvent"/> or a disk IO.
             /// </summary>
@@ -55,11 +54,11 @@ namespace FASTER.core
                                             CompletionEvent flushEvent, CancellationToken token);
 
             /// <summary>
-            /// For RMW only, completes any pending IO; no-op for other implementations.
+            /// If RMW, completes pending IO if there is any; else for all Upsert, RMW, Delete, tries to complete any Retry requests.
             /// </summary>
             /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
             /// <returns>Whether the pending operation was complete</returns>
-            bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession);
+            bool CompletePendingOperation(IFasterSession<Key, Value, Input, Output, Context> fasterSession);
 
             /// <summary>
             /// For RMW only, decrements the count of pending IOs and async operations; no-op for other implementations.
@@ -118,7 +117,7 @@ namespace FASTER.core
 
                         if (!flushEvent.IsDefault())
                             flushEvent.Wait();
-                        else if (_asyncOperation.CompletePendingIO(_fasterSession))
+                        else if (_asyncOperation.CompletePendingOperation(_fasterSession))
                             break;
 
                         if (this.TryCompleteSync(asyncOp: false, out flushEvent, out asyncResult))
@@ -155,12 +154,12 @@ namespace FASTER.core
                 _fasterSession.UnsafeResumeThread();
                 try
                 {
-                    Status status = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx, asyncOp, out flushEvent, out Output output);
+                    Status status = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx, asyncOp, out flushEvent);
 
                     if (!status.IsPending)
                     {
                         _pendingContext.Dispose();
-                        asyncResult = _asyncOperation.CreateResult(status, output, new RecordMetadata(_pendingContext.recordInfo, _pendingContext.logicalAddress));
+                        asyncResult = _asyncOperation.CreateResult(status, _pendingContext.output, new RecordMetadata(_pendingContext.recordInfo, _pendingContext.logicalAddress));
                         return true;
                     }
                 }
@@ -188,26 +187,28 @@ namespace FASTER.core
             return new(StatusCode.Pending);
         }
 
-        private static async ValueTask<ExceptionDispatchInfo> WaitForFlushCompletionAsync<Input, Output, Context>(FasterKV<Key, Value> @this, FasterExecutionContext<Input, Output, Context> currentCtx, CompletionEvent flushEvent, CancellationToken token)
+        private static async ValueTask<(bool retryLater, ExceptionDispatchInfo exceptionDispatchInfo)> WaitForFlushCompletionAsync(
+                FasterKV<Key, Value> @this, CompletionEvent flushEvent, CancellationToken token)
         {
+            // If flushEvent.IsDefault(), then this was called for RETRY_LATER; both paths release the epoch and retry, with a wait on flushEvent if there is one.
+            if (flushEvent.IsDefault())
+                return (true, default);
+
             ExceptionDispatchInfo exceptionDispatchInfo = default;
-            if (!flushEvent.IsDefault())
+            try
             {
-                try
-                {
-                    token.ThrowIfCancellationRequested();
+                token.ThrowIfCancellationRequested();
 
-                    if (@this.epoch.ThisInstanceProtected())
-                        throw new NotSupportedException("Async operations not supported over protected epoch");
+                if (@this.epoch.ThisInstanceProtected())
+                    throw new NotSupportedException("Async operations not supported over protected epoch");
 
-                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
-                }
-                catch (Exception e)
-                {
-                    exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
-                }
+                await flushEvent.WaitAsync(token).ConfigureAwait(false);
             }
-            return exceptionDispatchInfo;
+            catch (Exception e)
+            {
+                exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
+            }
+            return (false, exceptionDispatchInfo);
         }
     }
 }

@@ -165,7 +165,7 @@ namespace FASTER.core
                 do
                     internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
                 while (internalStatus == OperationStatus.RETRY_NOW);
-                Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);
+                Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);  // Read cannot go the Retry route
 
                 if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                     return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(new(internalStatus), output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));

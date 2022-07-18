@@ -30,38 +30,48 @@ namespace FASTER.stress
                 };
             }
 
+            // Use the last tester only to set up the static instance of FasterKV (each Stressie run has one TKey and one TValue, and thus
+            // one static FasterKV instance specific to those TKey/TValue types).
             var tester = testers[^1];
+
+            // Create devices and settings for the FasterKV instance.
             using var log = Devices.CreateLogDevice(Path.Combine(testLoader.OutputDirectory, $"stress.log"), deleteOnClose: true);
             using var objlog = testLoader.HasObjects ? Devices.CreateLogDevice(Path.Combine(testLoader.OutputDirectory, $"stress.obj.log"), deleteOnClose: true) : null;
             LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = objlog };
             CheckpointSettings checkpointSettings = testLoader.UseCheckpoints ? new() { CheckpointDir = testLoader.OutputDirectory } : null;
             PopulateLogSettings(options, RecordInfo.GetLength() + tester.GetAverageRecordSize(), logSettings);
 
+            // Determine hash table size.
             int hashTableSize = (int)Utility.PreviousPowerOf2(options.KeyCount * 2);
             int hashTableCacheLines = hashTableSize / 64; // sizeof(HashBucket);
 
+            // Create and populate the FasterKV instance: the KeyTester contains a ValueTester instance of the TKey/TValue types that "owns" the static FasterKV instance.
             Console.WriteLine($"Creating and populating FasterKV<{options.KeyType}, {options.ValueType}> with {options.KeyCount} records and {hashTableSize} hash table size");
             tester.Populate(hashTableCacheLines, logSettings, checkpointSettings);
 
             long totalOps = (long)options.IterationCount * options.KeyCount * options.ThreadCount;
             Console.WriteLine($"Performing {options.IterationCount} iterations of {options.KeyCount} key operations over {options.ThreadCount} threads (total {totalOps})");
 
-            int numExtraThreads = (testLoader.UseCheckpoints ? 1 : 0) + (testLoader.UseCompact ? 1 : 0);
-            var extraTasks = Array.Empty<Task>();
-            CancellationTokenSource cts = new();
-            if (numExtraThreads > 0)
+            // The background threads are the threads that run the periodic checkpoint and compaction, if either/both of these are specified.
+            int numBackgroundThreads = (testLoader.UseCheckpoints ? 1 : 0) + (testLoader.UseCompact ? 1 : 0);
+            var backgroundTasks = Array.Empty<Task>();
+            CancellationTokenSource ctsBackground = new();
+            if (numBackgroundThreads > 0)
             {
-                var iExtraTask = 0;
-                extraTasks = new Task[numExtraThreads];
+                var iBackgroundTask = 0;
+                backgroundTasks = new Task[numBackgroundThreads];
                 if (testLoader.UseCheckpoints)
-                    extraTasks[iExtraTask++] = testLoader.DoPeriodicCheckpoints(tester.ValueTester, cts.Token);
+                    backgroundTasks[iBackgroundTask++] = testLoader.DoPeriodicCheckpoints(tester.ValueTester, ctsBackground.Token);
                 if (testLoader.UseCompact)
-                    extraTasks[iExtraTask++] = testLoader.DoPeriodicCompact(tester.ValueTester, cts.Token);
+                    backgroundTasks[iBackgroundTask++] = testLoader.DoPeriodicCompact(tester.ValueTester, ctsBackground.Token);
             }
 
+            // The KeyTester instances that will run the test (i.e. not the last one, that we used for static FasterKV setup) will 
+            // call their contained ValueTesters to initialize for the test run.
             for (var ii = 0; ii < testers.Length; ii++)
                 testers[ii].ValueTester.PrepareTest();
 
+            // And off we go!
             Console.WriteLine("Beginning test");
             var sw = Stopwatch.StartNew();
             try
@@ -94,14 +104,17 @@ namespace FASTER.stress
                 Console.WriteLine(ex.StackTrace);
             }
             sw.Stop();
-            cts.Cancel();
+
+            // Test is done.
             TimeSpan ts = new(sw.ElapsedTicks);
             Console.WriteLine($"Test complete in {ts}");
 
-            if (numExtraThreads > 0)
+            // Tell any background threads to stop.
+            if (numBackgroundThreads > 0)
             {
-                Console.WriteLine("Canceling extra threads");
-                await Task.WhenAll(extraTasks);
+                Console.WriteLine("Canceling background threads");
+                ctsBackground.Cancel();
+                await Task.WhenAll(backgroundTasks);
             }
 
             Console.WriteLine($"{totalOps} operations complete");

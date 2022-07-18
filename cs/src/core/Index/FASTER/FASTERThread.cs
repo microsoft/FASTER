@@ -119,8 +119,8 @@ namespace FASTER.core
         }
 
         internal bool InternalCompletePending<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> ctx, 
-            FasterSession fasterSession, 
+            FasterExecutionContext<Input, Output, Context> ctx,
+            FasterSession fasterSession,
             bool wait = false, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -143,8 +143,8 @@ namespace FASTER.core
 
         #region Complete Retry Requests
         internal void InternalCompleteRetryRequests<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx, 
-            FasterExecutionContext<Input, Output, Context> currentCtx, 
+            FasterExecutionContext<Input, Output, Context> opCtx,
+            FasterExecutionContext<Input, Output, Context> currentCtx,
             FasterSession fasterSession, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -155,7 +155,7 @@ namespace FASTER.core
             for (int i = 0; i < count; i++)
             {
                 var pendingContext = opCtx.retryRequests.Dequeue();
-                var status = InternalCompleteRetryRequest(opCtx, currentCtx, pendingContext, fasterSession);
+                var status = InternalCompleteRetryRequest(opCtx, currentCtx, ref pendingContext, fasterSession);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
@@ -167,9 +167,9 @@ namespace FASTER.core
         }
 
         internal Status InternalCompleteRetryRequest<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx, 
-            FasterExecutionContext<Input, Output, Context> currentCtx, 
-            PendingContext<Input, Output, Context> pendingContext, 
+            FasterExecutionContext<Input, Output, Context> opCtx,
+            FasterExecutionContext<Input, Output, Context> currentCtx,
+            ref PendingContext<Input, Output, Context> pendingContext,
             FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -220,8 +220,8 @@ namespace FASTER.core
 
         #region Complete Pending Requests
         internal void InternalCompletePendingRequests<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx, 
-            FasterExecutionContext<Input, Output, Context> currentCtx, 
+            FasterExecutionContext<Input, Output, Context> opCtx,
+            FasterExecutionContext<Input, Output, Context> currentCtx,
             FasterSession fasterSession, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -236,9 +236,9 @@ namespace FASTER.core
         }
 
         internal async ValueTask InternalCompletePendingRequestsAsync<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx, 
-            FasterExecutionContext<Input, Output, Context> currentCtx, 
-            FasterSession fasterSession, 
+            FasterExecutionContext<Input, Output, Context> opCtx,
+            FasterExecutionContext<Input, Output, Context> currentCtx,
+            FasterSession fasterSession,
             CancellationToken token,
             CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
@@ -269,9 +269,9 @@ namespace FASTER.core
         }
 
         internal void InternalCompletePendingRequest<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx, 
-            FasterExecutionContext<Input, Output, Context> currentCtx, 
-            FasterSession fasterSession, 
+            FasterExecutionContext<Input, Output, Context> opCtx,
+            FasterExecutionContext<Input, Output, Context> currentCtx,
+            FasterSession fasterSession,
             AsyncIOContext<Key, Value> request, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {

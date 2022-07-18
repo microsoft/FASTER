@@ -49,9 +49,9 @@ namespace FASTER.stress
             this.tid = tid;
             this.valueTester = testLoader.Options.ValueType switch
             {
-                DataType.Long => new LongValueTester<SpanByte, NonSpanByteValueFunctions<SpanByte, long>>(tid, testLoader, new NonSpanByteValueFunctions<SpanByte, long>()),
-                DataType.String => new StringValueTester<SpanByte, NonSpanByteValueFunctions<SpanByte, string>>(tid, testLoader, new NonSpanByteValueFunctions<SpanByte, string>()),
-                DataType.SpanByte => new SpanByteValueTester<SpanByte, SpanByteValueFunctions<SpanByte>>(tid, testLoader, new SpanByteValueFunctions<SpanByte>()),
+                DataType.Long => new LongValueTester<SpanByte, NonSpanByteValueFunctions<SpanByte, long>>(tid, testLoader, new ()),
+                DataType.String => new StringValueTester<SpanByte, NonSpanByteValueFunctions<SpanByte, string>>(tid, testLoader, new ()),
+                DataType.SpanByte => new SpanByteValueTester<SpanByte, SpanByteValueFunctions<SpanByte>>(tid, testLoader, new ()),
                 _ => throw new ApplicationException(testLoader.MissingKeyTypeHandler)
             };
             rng = new Random(tid * testLoader.Options.RandomSeed);

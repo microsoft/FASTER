@@ -13,21 +13,33 @@ namespace FASTER.core
     {
         internal struct UpsertAsyncOperation<Input, Output, Context> : IUpdateAsyncOperation<Input, Output, Context, UpsertAsyncResult<Input, Output, Context>>
         {
+            readonly bool retryLater;
+
+            internal UpsertAsyncOperation(bool retryLater) => this.retryLater = retryLater;
+
             /// <inheritdoc/>
             public UpsertAsyncResult<Input, Output, Context> CreateResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status, output, recordMetadata);
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output)
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent)
             {
-                output = default;
+                flushEvent = default;
+                return this.retryLater
+                    ? fasterKV.InternalCompleteRetryRequest(currentCtx, currentCtx, ref pendingContext, fasterSession)
+                    : DoInternalUpsert(fasterKV, ref pendingContext, fasterSession, currentCtx, out flushEvent);
+            }
+
+            private static Status DoInternalUpsert(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, out CompletionEvent flushEvent)
+            {
                 OperationStatus internalStatus;
                 do
                 {
                     flushEvent = fasterKV.hlog.FlushEvent;
-                    internalStatus = fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref output, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                    internalStatus = fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref pendingContext.output, ref pendingContext.userContext,
+                        ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                 } while (internalStatus == OperationStatus.RETRY_NOW);
-                output = default;
                 return TranslateStatus(internalStatus);
             }
 
@@ -37,7 +49,7 @@ namespace FASTER.core
                 => SlowUpsertAsync(fasterKV, fasterSession, currentCtx, pendingContext, flushEvent, token);
 
             /// <inheritdoc/>
-            public bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession) => false;
+            public bool CompletePendingOperation(IFasterSession<Key, Value, Input, Output, Context> fasterSession) => false;
 
             /// <inheritdoc/>
             public void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext) { }
@@ -68,13 +80,13 @@ namespace FASTER.core
             }
 
             internal UpsertAsyncResult(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, TOutput, Context> fasterSession,
-                FasterExecutionContext<Input, TOutput, Context> currentCtx, PendingContext<Input, TOutput, Context> pendingContext, ExceptionDispatchInfo exceptionDispatchInfo)
+                FasterExecutionContext<Input, TOutput, Context> currentCtx, PendingContext<Input, TOutput, Context> pendingContext, bool retryLater, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 this.Status = new(StatusCode.Pending);
                 this.Output = default;
                 this.RecordMetadata = default;
                 updateAsyncInternal = new UpdateAsyncInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new UpsertAsyncOperation<Input, TOutput, Context>());
+                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new (retryLater));
             }
 
             /// <summary>Complete the Upsert operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
@@ -150,8 +162,8 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> currentCtx,
             PendingContext<Input, Output, Context> pcontext, CompletionEvent flushEvent, CancellationToken token = default)
         {
-            ExceptionDispatchInfo exceptionDispatchInfo = await WaitForFlushCompletionAsync(@this, currentCtx, flushEvent, token).ConfigureAwait(false);
-            return new UpsertAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pcontext, exceptionDispatchInfo);
+            var (retryLater, exceptionDispatchInfo) = await WaitForFlushCompletionAsync(@this, flushEvent, token).ConfigureAwait(false);
+            return new UpsertAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pcontext, retryLater, exceptionDispatchInfo);
         }
     }
 }
