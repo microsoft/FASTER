@@ -688,6 +688,7 @@ namespace FASTER.core
                         }
                         break; // Normal Processing
                     }
+                case Phase.WAIT_INDEX_CHECKPOINT:
                 case Phase.WAIT_FLUSH:
                     {
                         if (!CheckEntryVersionNew(logicalAddress))
@@ -1233,6 +1234,7 @@ namespace FASTER.core
                         }
                         break; // Normal Processing
                     }
+                case Phase.WAIT_INDEX_CHECKPOINT:
                 case Phase.WAIT_FLUSH:
                     {
                         if (!CheckEntryVersionNew(logicalAddress))
@@ -1638,6 +1640,7 @@ namespace FASTER.core
                             }
                             break; // Normal Processing
                         }
+                    case Phase.WAIT_INDEX_CHECKPOINT:
                     case Phase.WAIT_FLUSH:
                         {
                             if (!CheckEntryVersionNew(logicalAddress))
