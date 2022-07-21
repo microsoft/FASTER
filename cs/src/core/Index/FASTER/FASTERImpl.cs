@@ -555,6 +555,8 @@ namespace FASTER.core
 
                     if (recordInfo.IsIntermediate(out status))
                         goto LatchRelease; // Release shared latch (if acquired)
+                    if (recordInfo.Tombstone)
+                        goto CreateNewRecord;
                     if (!recordInfo.Seal(fasterSession.IsManualLocking))
                     {
                         status = OperationStatus.RETRY_NOW;
@@ -1082,6 +1084,8 @@ namespace FASTER.core
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                     if (recordInfo.IsIntermediate(out status))
                         goto LatchRelease; // Release shared latch (if acquired)
+                    if (recordInfo.Tombstone)
+                        goto CreateNewRecord;
                     if (!recordInfo.Seal(fasterSession.IsManualLocking))
                         return OperationStatus.RETRY_NOW;
                     unsealPhysicalAddress = physicalAddress;
@@ -1662,8 +1666,14 @@ namespace FASTER.core
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 ref Value recordValue = ref hlog.GetValue(physicalAddress);
+
                 if (recordInfo.IsIntermediate(out status))
                 {
+                    goto LatchRelease; // Release shared latch (if acquired)
+                }
+                if (recordInfo.Tombstone)
+                {
+                    status = OperationStatus.NOTFOUND;
                     goto LatchRelease; // Release shared latch (if acquired)
                 }
 
@@ -1717,6 +1727,11 @@ namespace FASTER.core
 
                 if (recordInfo.IsIntermediate(out status))
                     goto LatchRelease; // Release shared latch (if acquired)
+                if (recordInfo.Tombstone)
+                {
+                    status = OperationStatus.NOTFOUND;
+                    goto LatchRelease; // Release shared latch (if acquired)
+                }
                 if (!recordInfo.Seal(fasterSession.IsManualLocking))
                 {
                     status = OperationStatus.RETRY_NOW;
@@ -2286,9 +2301,10 @@ namespace FASTER.core
                 if (logicalAddress > pendingContext.entry.Address)                  // previous latestLogicalAddress
                     break;
                 byte* recordPointer = request.record.GetValidPointer();
-                RecordInfo recordInfo = hlog.GetInfoFromBytePointer(recordPointer); // not ref as we don't want to write into request.record
+                ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(recordPointer);
+                recordInfo.Unseal();  // Need to do this here because we might not create a new one, and this may have escaped to disk on a failed Upsert etc.
 
-                status =
+                status =    // RecordInfo is not passed as ref, as we don't want to write into request.record
                     CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
                         ref pendingContext, fasterSession, sessionCtx, bucket, slot, request.logicalAddress, (long)recordPointer, recordInfo, tag, entry, latestLogicalAddress,
                         prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, Constants.kInvalidAddress, Constants.kInvalidAddress,
