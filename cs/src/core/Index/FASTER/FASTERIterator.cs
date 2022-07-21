@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 
 namespace FASTER.core
@@ -20,7 +21,7 @@ namespace FASTER.core
                 untilAddress = Log.TailAddress;
 
             return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>
-                (this, functions, untilAddress);
+                (this, functions, untilAddress, loggerFactory: loggerFactory);
         }
 
 
@@ -61,7 +62,7 @@ namespace FASTER.core
 
         private int enumerationPhase;
 
-        public FasterKVIterator(FasterKV<Key, Value> fht, Functions functions, long untilAddress)
+        public FasterKVIterator(FasterKV<Key, Value> fht, Functions functions, long untilAddress, ILoggerFactory loggerFactory = null)
         {
             this.fht = fht;
             enumerationPhase = 0;
@@ -76,7 +77,7 @@ namespace FASTER.core
                 };
             }
 
-            tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
+            tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings, loggerFactory: loggerFactory);
             tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions);
             iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);
         }

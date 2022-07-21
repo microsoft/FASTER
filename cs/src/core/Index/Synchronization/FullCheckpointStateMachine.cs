@@ -32,7 +32,7 @@ namespace FASTER.core
                     break;
                 case Phase.WAIT_FLUSH:
                     faster._indexCheckpoint.info.num_buckets = faster.overflowBucketsAllocator.GetMaxValidAddress();
-                    faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.finalLogicalAddress);
+                    faster._indexCheckpoint.info.finalLogicalAddress = faster.hlog.GetTailAddress();
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     faster.WriteIndexMetaInfo();

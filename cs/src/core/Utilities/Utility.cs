@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
 using System.Reflection;
@@ -81,12 +82,13 @@ namespace FASTER.core
         /// Num bits in the previous power of 2 for specified number
         /// </summary>
         /// <param name="v"></param>
+        /// <param name="logger"></param>
         /// <returns></returns>
-        internal static int NumBitsPreviousPowerOf2(long v)
+        internal static int NumBitsPreviousPowerOf2(long v, ILogger logger = null)
         {
             long adjustedSize = PreviousPowerOf2(v);
             if (v != adjustedSize)
-                Trace.TraceInformation($"Warning: using lower value {adjustedSize} instead of specified value {v}");
+                logger?.LogError($"Warning: using lower value {adjustedSize} instead of specified value {v}");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -336,23 +338,6 @@ namespace FASTER.core
         public static bool Is32Bit(long x)
         {
             return ((ulong)x < 4294967295ul);
-        }
-
-
-        /// <summary>
-        /// A 32-bit murmur3 implementation.
-        /// </summary>
-        /// <param name="h"></param>
-        /// <returns></returns>
-        internal static int Murmur3(int h)
-        {
-            uint a = (uint)h;
-            a ^= a >> 16;
-            a *= 0x85ebca6b;
-            a ^= a >> 13;
-            a *= 0xc2b2ae35;
-            a ^= a >> 16;
-            return (int)a;
         }
 
         /// <summary>

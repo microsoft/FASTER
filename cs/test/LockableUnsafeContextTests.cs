@@ -11,6 +11,7 @@ using NUnit.Framework;
 using FASTER.test.ReadCacheTests;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
+using System.Diagnostics;
 
 namespace FASTER.test.LockableUnsafeContext
 {
@@ -177,6 +178,119 @@ namespace FASTER.test.LockableUnsafeContext
 
             // We delete some records so just make sure the test worked.
             Assert.Greater(count, numRecords - 10);
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+        public async Task TestShiftHeadAddress([Values] SyncMode syncMode)
+        {
+            int input = default;
+            const int RandSeed = 10;
+            const int RandRange = numRecords;
+            const int NumRecs = 200;
+
+            Random r = new(RandSeed);
+            var sw = Stopwatch.StartNew();
+
+            // Copied from UnsafeContextTests to test Async.
+            using var luContext = session.GetLockableUnsafeContext();
+            luContext.ResumeThread(out var epoch);
+
+            try
+            {
+                for (int c = 0; c < NumRecs; c++)
+                {
+                    var key1 = r.Next(RandRange);
+                    var value = key1 + numRecords;
+                    if (syncMode == SyncMode.Sync)
+                    {
+                        luContext.Upsert(ref key1, ref value, Empty.Default, 0);
+                    }
+                    else
+                    {
+                        luContext.SuspendThread();
+                        var status = (await luContext.UpsertAsync(ref key1, ref value)).Complete();
+                        luContext.ResumeThread();
+                        Assert.IsFalse(status.IsPending);
+                    }
+                }
+
+                r = new Random(RandSeed);
+                sw.Restart();
+
+                for (int c = 0; c < NumRecs; c++)
+                {
+                    var key1 = r.Next(RandRange);
+                    var value = key1 + numRecords;
+                    int output = 0;
+
+                    Status status;
+                    if (syncMode == SyncMode.Sync || (c % 1 == 0))  // in .Async mode, half the ops should be sync to test CompletePendingAsync
+                    {
+                        status = luContext.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                    }
+                    else
+                    {
+                        luContext.SuspendThread();
+                        (status, output) = (await luContext.ReadAsync(ref key1, ref input)).Complete();
+                        luContext.ResumeThread();
+                    }
+                    if (!status.IsPending)
+                    {
+                        Assert.AreEqual(value, output);
+                    }
+                }
+                if (syncMode == SyncMode.Sync)
+                {
+                    luContext.CompletePending(true);
+                }
+                else
+                {
+                    luContext.SuspendThread();
+                    await luContext.CompletePendingAsync();
+                    luContext.ResumeThread();
+                }
+
+                // Shift head and retry - should not find in main memory now
+                fht.Log.FlushAndEvict(true);
+
+                r = new Random(RandSeed);
+                sw.Restart();
+
+                for (int c = 0; c < NumRecs; c++)
+                {
+                    var key1 = r.Next(RandRange);
+                    int output = 0;
+                    Status foundStatus = luContext.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                    Assert.IsTrue(foundStatus.IsPending);
+                }
+
+                CompletedOutputIterator<int, int, int, int, Empty> outputs;
+                if (syncMode == SyncMode.Sync)
+                {
+                    luContext.CompletePendingWithOutputs(out outputs, wait: true);
+                }
+                else
+                {
+                    luContext.SuspendThread();
+                    outputs = await luContext.CompletePendingWithOutputsAsync();
+                    luContext.ResumeThread();
+                }
+
+                int count = 0;
+                while (outputs.Next())
+                {
+                    count++;
+                    Assert.AreEqual(outputs.Current.Key + numRecords, outputs.Current.Output);
+                }
+                outputs.Dispose();
+                Assert.AreEqual(NumRecs, count);
+            }
+            finally
+            {
+                luContext.SuspendThread();
+            }
         }
 
         [Test]

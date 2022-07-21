@@ -68,20 +68,6 @@ namespace FASTER.core
         /// </summary>
         public int LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
 
-        /// <inheritdoc/>
-        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
-        {
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return this.clientSession.UnsafeCompletePending(this.FasterSession, false, wait, spinWaitForCommit);
-        }
-
-        /// <inheritdoc/>
-        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-        {
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return this.clientSession.UnsafeCompletePendingWithOutputs(this.FasterSession, out completedOutputs, wait, spinWaitForCommit);
-        }
-
         #region Acquire and Dispose
         internal void Acquire()
         {
@@ -102,6 +88,28 @@ namespace FASTER.core
         #endregion Acquire and Dispose
 
         #region IFasterContext
+
+        /// <inheritdoc/>
+        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
+        {
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            return this.clientSession.UnsafeCompletePending(this.FasterSession, false, wait, spinWaitForCommit);
+        }
+
+        /// <inheritdoc/>
+        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+        {
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
+            return this.clientSession.UnsafeCompletePendingWithOutputs(this.FasterSession, out completedOutputs, wait, spinWaitForCommit);
+        }
+
+        /// <inheritdoc/>
+        public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
+            => this.clientSession.CompletePendingAsync(waitForCommit, token);
+
+        /// <inheritdoc/>
+        public ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
+            => this.clientSession.CompletePendingWithOutputsAsync(waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -417,7 +425,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
+                    return !recordInfo.Tombstone && ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
                 }
                 finally
                 {
@@ -562,11 +570,8 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
-            {
-                value = default;
-                return true;
-            }
-
+                => _clientSession.functions.SingleDeleter(ref key, ref value, ref deleteInfo);
+ 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed)
             {
@@ -595,7 +600,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo);
+                    return recordInfo.Tombstone || ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo);
                 }
                 finally
                 {

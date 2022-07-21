@@ -22,18 +22,22 @@
         <dependency id="System.Threading.Tasks.Extensions" version="4.5.4" />
         <dependency id="Microsoft.Bcl.AsyncInterfaces" version="6.0.0" />
         <dependency id="System.Interactive.Async" version="6.0.1" />
+		<dependency id="Microsoft.Extensions.Logging" version="3.1.26" />
 	  </group>
       <group targetFramework="netstandard2.1">
         <dependency id="System.Runtime.CompilerServices.Unsafe" version="6.0.0" />
         <dependency id="System.Interactive.Async" version="6.0.1" />
+		<dependency id="Microsoft.Extensions.Logging" version="3.1.26" />
 	  </group>
       <group targetFramework="net5.0">
         <dependency id="System.Runtime.CompilerServices.Unsafe" version="6.0.0" />
         <dependency id="System.Interactive.Async" version="6.0.1" />
+		<dependency id="Microsoft.Extensions.Logging" version="6.0.0" />
 	  </group>
       <group targetFramework="net6.0">
         <dependency id="System.Runtime.CompilerServices.Unsafe" version="6.0.0" />
         <dependency id="System.Interactive.Async" version="6.0.1" />
+		<dependency id="Microsoft.Extensions.Logging" version="6.0.0" />
 	  </group>
     </dependencies>
   </metadata>

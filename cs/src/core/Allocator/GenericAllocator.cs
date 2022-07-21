@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -40,8 +41,8 @@ namespace FASTER.core
 
         private readonly OverflowPool<Record<Key, Value>[]> overflowPagePool;
 
-        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
-            : base(settings, comparer, evictCallback, epoch, flushCallback)
+        public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null, ILogger logger = null)
+            : base(settings, comparer, evictCallback, epoch, flushCallback, logger)
         {
             overflowPagePool = new OverflowPool<Record<Key, Value>[]>(4);
 
@@ -422,26 +423,44 @@ namespace FASTER.core
             {
                 if (!src[i].info.Invalid)
                 {
-                    if (KeyHasObjects())
+                    bool lockTaken = true;
+                    while (!src[i].info.LockShared())
                     {
-                        long pos = ms.Position;
-                        keySerializer.Serialize(ref src[i].key);
-                        var key_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
-                        key_address->Address = pos;
-                        key_address->Size = (int)(ms.Position - pos);
-                        addr.Add((long)key_address);
-                        endPosition = pos + key_address->Size;
+                        if (src[i].info.Sealed)
+                        {
+                            lockTaken = false;
+                            break;
+                        }
+                        Thread.Yield();
                     }
 
-                    if (ValueHasObjects() && !src[i].info.Tombstone)
+                    try
                     {
-                        long pos = ms.Position;
-                        valueSerializer.Serialize(ref src[i].value);
-                        var value_address = GetValueAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
-                        value_address->Address = pos;
-                        value_address->Size = (int)(ms.Position - pos);
-                        addr.Add((long)value_address);
-                        endPosition = pos + value_address->Size;
+                        if (KeyHasObjects())
+                        {
+                            long pos = ms.Position;
+                            keySerializer.Serialize(ref src[i].key);
+                            var key_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
+                            key_address->Address = pos;
+                            key_address->Size = (int)(ms.Position - pos);
+                            addr.Add((long)key_address);
+                            endPosition = pos + key_address->Size;
+                        }
+
+                        if (ValueHasObjects() && !src[i].info.Tombstone)
+                        {
+                            long pos = ms.Position;
+                            valueSerializer.Serialize(ref src[i].value);
+                            var value_address = GetValueAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
+                            value_address->Address = pos;
+                            value_address->Size = (int)(ms.Position - pos);
+                            addr.Add((long)value_address);
+                            endPosition = pos + value_address->Size;
+                        }
+                    }
+                    finally
+                    {
+                        if (lockTaken) src[i].info.UnlockShared();
                     }
                 }
 
@@ -532,7 +551,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncReadPageCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncReadPageCallback error: {errorCode}");
             }
 
             // Set the page status to flushed
@@ -579,7 +598,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-               Trace.TraceError("AsyncFlushPartialObjectLogCallback error: {0}", errorCode);
+               logger?.LogError($"AsyncFlushPartialObjectLogCallback error: {errorCode}");
             }
 
             // Set the page status to flushed
@@ -591,7 +610,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncReadPageWithObjectsCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncReadPageWithObjectsCallback error: {errorCode}");
             }
 
             PageAsyncReadResult<TContext> result = (PageAsyncReadResult<TContext>)context;

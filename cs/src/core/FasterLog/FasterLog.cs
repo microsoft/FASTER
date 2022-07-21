@@ -8,9 +8,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
 {
@@ -116,6 +118,8 @@ namespace FASTER.core
         /// </summary>
         internal int logRefCount = 1;
 
+        readonly ILogger logger;
+
         /// <summary>
         /// Whether we refresh safe tail as records are inserted
         /// </summary>
@@ -135,8 +139,9 @@ namespace FASTER.core
         /// Create new log instance
         /// </summary>
         /// <param name="logSettings">Log settings</param>
-        public FasterLog(FasterLogSettings logSettings)
-            : this(logSettings, logSettings.TryRecoverLatest)
+        /// <param name="logger">Log settings</param>
+        public FasterLog(FasterLogSettings logSettings, ILogger logger = null)
+            : this(logSettings, logSettings.TryRecoverLatest, logger)
         { }
 
         /// <summary>
@@ -144,8 +149,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="logSettings">Log settings</param>
         /// <param name="syncRecover">Recover synchronously</param>
-        private FasterLog(FasterLogSettings logSettings, bool syncRecover)
+        /// <param name="logger">Log settings</param>
+        private FasterLog(FasterLogSettings logSettings, bool syncRecover, ILogger logger = null)
         {
+            this.logger = logger;
             AutoRefreshSafeTailAddress = logSettings.AutoRefreshSafeTailAddress;
             AutoCommit = logSettings.AutoCommit;
             logCommitManager = logSettings.LogCommitManager ??
@@ -170,7 +177,7 @@ namespace FASTER.core
             commitQueue = new WorkQueueLIFO<CommitInfo>(ci => SerialCommitCallbackWorker(ci));
             allocator = new BlittableAllocator<Empty, byte>(
                 logSettings.GetLogSettings(), null,
-                null, epoch, CommitCallback);
+                null, epoch, CommitCallback, logger);
             allocator.Initialize();
             beginAddress = allocator.BeginAddress;
 
@@ -1388,7 +1395,7 @@ namespace FASTER.core
                 if (name.Length > 20)
                     throw new FasterException("Max length of iterator name is 20 characters");
                 if (PersistedIterators.ContainsKey(name))
-                    Debug.WriteLine("Iterator name exists, overwriting");
+                    logger?.LogDebug("Iterator name exists, overwriting");
                 PersistedIterators[name] = iter;
             }
 
@@ -1828,7 +1835,7 @@ namespace FASTER.core
             // from any any commit. Set the log to its start position and return
             if (info.UntilAddress == 0)
             {
-                Trace.WriteLine("Unable to recover using any available commit");
+                logger?.LogInformation("Unable to recover using any available commit");
 
                 // Reset variables to normal
                 allocator.Initialize();
@@ -1974,7 +1981,7 @@ namespace FASTER.core
             // from any any commit. Set the log to its start position and return
             if (info.UntilAddress == 0)
             {
-                Debug.WriteLine("Unable to recover using any available commit");
+                logger?.LogDebug("Unable to recover using any available commit");
                 // Reset things to be something normal lol
                 allocator.Initialize();
                 CommittedUntilAddress = Constants.kFirstValidAddress;
@@ -2079,7 +2086,7 @@ namespace FASTER.core
 
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncGetFromDiskCallback error: {0}", errorCode);
+                logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
                 ctx.record.Return();
                 ctx.record = null;
                 ctx.completedRead.Release();
@@ -2091,7 +2098,7 @@ namespace FASTER.core
 
                 if (length < 0 || length > allocator.PageSize)
                 {
-                    Debug.WriteLine("Invalid record length found: " + length);
+                    logger?.LogDebug("Invalid record length found: " + length);
                     ctx.record.Return();
                     ctx.record = null;
                     ctx.completedRead.Release();
@@ -2118,7 +2125,7 @@ namespace FASTER.core
 
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncGetFromDiskCallback error: {0}", errorCode);
+                logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
                 ctx.record.Return();
                 ctx.record = null;
                 ctx.completedRead.Release();
@@ -2127,7 +2134,7 @@ namespace FASTER.core
             {
                 if (ctx.record.available_bytes < headerSize)
                 {
-                    Debug.WriteLine("No record header present at address: " + ctx.logicalAddress);
+                    logger?.LogDebug("No record header present at address: " + ctx.logicalAddress);
                     ctx.record.Return();
                     ctx.record = null;
                 }

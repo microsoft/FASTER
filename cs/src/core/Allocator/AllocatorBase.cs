@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
 {
@@ -49,7 +50,7 @@ namespace FASTER.core
         /// </summary>
         protected readonly LightEpoch epoch;
         private readonly bool ownedEpoch;
-        
+
         /// <summary>
         /// Comparer
         /// </summary>
@@ -226,7 +227,7 @@ namespace FASTER.core
         /// Whether to preallocate log on initialization
         /// </summary>
         private readonly bool PreallocateLog = false;
-        
+
         /// <summary>
         /// Error handling
         /// </summary>
@@ -441,7 +442,6 @@ namespace FASTER.core
                 endPage++;
 
             long prevEndPage = GetPage(prevEndAddress);
-
             deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
             int destOffset = 0;
 
@@ -454,7 +454,11 @@ namespace FASTER.core
 
                 var logicalAddress = p << LogPageSizeBits;
                 var physicalAddress = GetPhysicalAddress(logicalAddress);
-                var endPhysicalAddress = physicalAddress + PageSize;
+
+                var endLogicalAddress = logicalAddress + PageSize;
+                if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
+                Debug.Assert(endLogicalAddress > logicalAddress);
+                var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
 
                 if (p == startPage)
                 {
@@ -475,6 +479,11 @@ namespace FASTER.core
                             deltaLog.Seal(destOffset);
                             deltaLog.Allocate(out entryLength, out destPhysicalAddress);
                             destOffset = 0;
+                            if (destOffset + size > entryLength)
+                            {
+                                deltaLog.Seal(0);
+                                deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                            }
                             if (destOffset + size > entryLength)
                                 throw new FasterException("Insufficient page size to write delta");
                         }
@@ -531,7 +540,7 @@ namespace FASTER.core
                             unsafe
                             {
                                 fixed (byte* m = metadata)
-                                    Buffer.MemoryCopy((void*) physicalAddress, m, entryLength, entryLength);
+                                    Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
                             }
 
                             HybridLogRecoveryInfo recoveryInfo = new();
@@ -544,7 +553,7 @@ namespace FASTER.core
                         break;
                     default:
                         throw new FasterException("Unexpected entry type");
-                        
+
                 }
             }
         }
@@ -706,6 +715,11 @@ namespace FASTER.core
         #endregion
 
         /// <summary>
+        /// Allocator base 
+        /// </summary>
+        protected readonly ILogger logger;
+
+        /// <summary>
         /// Instantiate base allocator
         /// </summary>
         /// <param name="settings"></param>
@@ -713,8 +727,10 @@ namespace FASTER.core
         /// <param name="evictCallback"></param>
         /// <param name="epoch"></param>
         /// <param name="flushCallback"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback)
+        /// <param name="logger"></param>
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null)
         {
+            this.logger = logger;
             AggressiveShiftReadOnly = settings.AggressiveShiftReadOnlyAddress;
             if (settings.LogDevice == null)
             {
@@ -1223,7 +1239,7 @@ namespace FASTER.core
         {
             if (Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
             {
-                Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
+                // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 if (OnReadOnlyObserver != null)
                 {
                     using var iter = Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
@@ -1314,29 +1330,27 @@ namespace FASTER.core
                     if (this.NumActiveLockingSessions > 0 && OnLockEvictionObserver is not null)
                         MemoryPageScan(start, end, OnLockEvictionObserver);
 
-                    if (OnEvictionObserver is not null) 
+                    if (OnEvictionObserver is not null)
                         MemoryPageScan(start, end, OnEvictionObserver);
 
                     int closePage = (int)(closePageAddress >> LogPageSizeBits);
                     int closePageIndex = closePage % BufferSize;
 
-                    // Do not free or clear partial page
-                    // Future work: clear partial page
+                    // If the end of the closing range is at the end of the page, free the page
                     if (end == closePageAddress + PageSize)
                     {
+                        // If the start of the closing range is not at the beginning of this page, spin-wait until the adjacent earlier ranges on this page are closed
+                        if ((start & PageSizeMask) > 0)
+                        {
+                            while (ClosedUntilAddress < start)
+                            {
+                                epoch.ProtectAndDrain();
+                                Thread.Yield();
+                            }
+                        }
                         FreePage(closePage);
                     }
 
-                    // If start of closing range is not at page beginning,
-                    // spin-wait until adjacent earlier range is closed
-                    if ((start & PageSizeMask) > 0)
-                    {
-                        while (ClosedUntilAddress < start)
-                        {
-                            epoch.ProtectAndDrain();
-                            Thread.Yield();
-                        }
-                    }
                     Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, end, out _);
                     ShiftClosedUntilAddress();
                     if (ClosedUntilAddress > FlushedUntilAddress)
@@ -1381,10 +1395,10 @@ namespace FASTER.core
             long desiredReadOnlyAddress = (pageAlignedTailAddress - ReadOnlyLagAddress);
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out long oldReadOnlyAddress))
             {
-                Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
+                // Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(desiredReadOnlyAddress));
             }
-        }
+        } 
 
         /// <summary>
         /// Called whenever a new tail page is allocated or when the user is checking for a failed memory allocation
@@ -1411,7 +1425,7 @@ namespace FASTER.core
 
             if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
             {
-                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
+                // Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
             }
 
@@ -1459,7 +1473,7 @@ namespace FASTER.core
                     }
                 }
             }
-            
+
             if (!errorList.Empty)
             {
                 var info = errorList.GetEarliestError();
@@ -1547,12 +1561,12 @@ namespace FASTER.core
             ClearPage(pageIndex, (int)GetOffsetInPage(tailAddress));
 
             // Printing debug info
-            Debug.WriteLine("******* Recovered HybridLog Stats *******");
-            Debug.WriteLine("Head Address: {0}", HeadAddress);
-            Debug.WriteLine("Safe Head Address: {0}", SafeHeadAddress);
-            Debug.WriteLine("ReadOnly Address: {0}", ReadOnlyAddress);
-            Debug.WriteLine("Safe ReadOnly Address: {0}", SafeReadOnlyAddress);
-            Debug.WriteLine("Tail Address: {0}", tailAddress);
+            logger?.LogInformation("******* Recovered HybridLog Stats *******");
+            logger?.LogInformation("Head Address: {HeadAddress}", HeadAddress);
+            logger?.LogInformation("Safe Head Address: {SafeHeadAddress}", SafeHeadAddress);
+            logger?.LogInformation("ReadOnly Address: {ReadOnlyAddress}", ReadOnlyAddress);
+            logger?.LogInformation("Safe ReadOnly Address: {SafeReadOnlyAddress}", SafeReadOnlyAddress);
+            logger?.LogInformation("Tail Address: {tailAddress}", tailAddress);
         }
 
         /// <summary>
@@ -1897,7 +1911,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncGetFromDiskCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncGetFromDiskCallback error: {errorCode}");
             }
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)context;
@@ -1970,7 +1984,7 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("AsyncFlushPageCallback error: {0}", errorCode);
+                    logger?.LogError("AsyncFlushPageCallback error: {0}", errorCode);
                 }
 
                 // Set the page status to flushed
@@ -1982,7 +1996,7 @@ namespace FASTER.core
                     {
                         // Note down error details and trigger handling only when we are certain this is the earliest
                         // error among currently issued flushes
-                        errorList.Add(new CommitInfo { FromAddress =  result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode } );
+                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode });
                     }
                     else
                     {
@@ -2024,7 +2038,7 @@ namespace FASTER.core
             catch when (disposed) { }
 
         }
-        
+
         /// <summary>
         /// IOCompletion callback for page flush
         /// </summary>
@@ -2037,7 +2051,7 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
+                    logger?.LogError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
                 }
 
                 PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)context;

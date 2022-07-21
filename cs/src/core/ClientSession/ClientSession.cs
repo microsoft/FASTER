@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -40,12 +40,18 @@ namespace FASTER.core
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
+        readonly ILoggerFactory loggerFactory;
+        readonly ILogger logger;
+
         internal ClientSession(
             FasterKV<Key, Value> fht,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
             Functions functions,
-            SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings)
+            SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings,
+            ILoggerFactory loggerFactory = null)
         {
+            this.loggerFactory = loggerFactory;
+            this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode().ToString("X8")}");
             this.fht = fht;
             this.ctx = ctx;
             this.functions = functions;
@@ -59,14 +65,14 @@ namespace FASTER.core
 
                 if ((this.variableLengthStruct == default) && (fht.hlog is VariableLengthBlittableAllocator<Key, Value> allocator))
                 {
-                    Debug.WriteLine("Warning: Session did not specify Input-specific functions for variable-length values via IVariableLengthStruct<Value, Input>");
+                    logger?.LogWarning("Warning: Session did not specify Input-specific functions for variable-length values via IVariableLengthStruct<Value, Input>");
                     this.variableLengthStruct = new DefaultVariableLengthStruct<Value, Input>(allocator.ValueLength);
                 }
             }
             else
             {
                 if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
-                    Debug.WriteLine("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
+                    logger?.LogWarning("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
             }
 
             this.inputVariableLengthStruct = sessionVariableLengthStructSettings?.inputLength;
@@ -560,19 +566,11 @@ namespace FASTER.core
             return result;
         }
 
-        /// <summary>
-        /// Complete all pending synchronous FASTER operations.
-        /// Async operations must be completed individually.
-        /// </summary>
-        /// <returns></returns>
+        /// <inheritdoc/>
         public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
             => CompletePendingAsync(false, waitForCommit, token);
 
-        /// <summary>
-        /// Complete all pending synchronous FASTER operations, returning outputs for the completed operations.
-        /// Async operations must be completed individually.
-        /// </summary>
-        /// <returns>Outputs completed by this operation</returns>
+        /// <inheritdoc/>
         public async ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
         {
             InitializeCompletedOutputs();
@@ -758,7 +756,7 @@ namespace FASTER.core
             if (untilAddress == -1)
                 untilAddress = fht.Log.TailAddress;
 
-            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress);
+            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress, loggerFactory: loggerFactory);
         }
 
         /// <summary>
@@ -869,6 +867,7 @@ namespace FASTER.core
                                    : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo, out lockFailed);
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentReaderNoLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
                 if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo))
@@ -888,7 +887,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
+                    return !recordInfo.Tombstone && ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
                 }
                 finally
                 {
@@ -1063,7 +1062,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo);
+                    return recordInfo.Tombstone || ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo);
                 }
                 finally
                 {

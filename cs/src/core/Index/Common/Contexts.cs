@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -32,21 +33,19 @@ namespace FASTER.core
         RETRY_NOW,
         RETRY_LATER,
         RECORD_ON_DISK,
-        SUCCESS_UNMARK,
         CPR_SHIFT_DETECTED,
-        CPR_PENDING_DETECTED,
         ALLOCATE_FAILED,
         BASIC_MASK = 0xFF,      // Leave plenty of space for future expansion
 
         ADVANCED_MASK = 0x700,  // Coordinate any changes with OperationStatusUtils.OpStatusToStatusCodeShif
-        CREATED_RECORD = (int)StatusCode.CreatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        INPLACE_UPDATED_RECORD = (int)StatusCode.InPlaceUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPY_UPDATED_RECORD = (int)StatusCode.CopyUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPIED_RECORD = (int)StatusCode.CopiedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPIED_RECORD_TO_READ_CACHE = (int)StatusCode.CopiedRecordToReadCache << OperationStatusUtils.OpStatusToStatusCodeShift,
-        // unused,
-        // unused,
-        EXPIRED = (int)StatusCode.Expired << OperationStatusUtils.OpStatusToStatusCodeShift
+        CREATED_RECORD = StatusCode.CreatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        INPLACE_UPDATED_RECORD = StatusCode.InPlaceUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPY_UPDATED_RECORD = StatusCode.CopyUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPIED_RECORD = StatusCode.CopiedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPIED_RECORD_TO_READ_CACHE = StatusCode.CopiedRecordToReadCache << OperationStatusUtils.OpStatusToStatusCodeShift,
+        // unused (StatusCode)0x60,
+        // unused (StatusCode)0x70,
+        EXPIRED = StatusCode.Expired << OperationStatusUtils.OpStatusToStatusCodeShift
     }
 
     internal static class OperationStatusUtils
@@ -207,8 +206,11 @@ namespace FASTER.core
             public void Dispose()
             {
                 key?.Dispose();
+                key = default;
                 value?.Dispose();
+                value = default;
                 input?.Dispose();
+                input = default;
             }
         }
 
@@ -601,29 +603,29 @@ namespace FASTER.core
         /// <summary>
         /// Print checkpoint info for debugging purposes
         /// </summary>
-        public readonly void DebugPrint()
+        public readonly void DebugPrint(ILogger logger)
         {
-            Debug.WriteLine("******** HybridLog Checkpoint Info for {0} ********", guid);
-            Debug.WriteLine("Version: {0}", version);
-            Debug.WriteLine("Next Version: {0}", nextVersion);
-            Debug.WriteLine("Is Snapshot?: {0}", useSnapshotFile == 1);
-            Debug.WriteLine("Flushed LogicalAddress: {0}", flushedLogicalAddress);
-            Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);
-            Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
-            Debug.WriteLine("Snapshot Final Logical Address: {0}", snapshotFinalLogicalAddress);
-            Debug.WriteLine("Head Address: {0}", headAddress);
-            Debug.WriteLine("Begin Address: {0}", beginAddress);
-            Debug.WriteLine("Delta Tail Address: {0}", deltaTailAddress);
-            Debug.WriteLine("Manual Locking Active: {0}", manualLockingActive);
-            Debug.WriteLine("Num sessions recovered: {0}", continueTokens.Count);
-            Debug.WriteLine("Recovered sessions: ");
+            logger?.LogInformation("******** HybridLog Checkpoint Info for {guid} ********", guid);
+            logger?.LogInformation("Version: {version}", version);
+            logger?.LogInformation("Next Version: {nextVersion}", nextVersion);
+            logger?.LogInformation("Is Snapshot?: {useSnapshotFile}", useSnapshotFile == 1);
+            logger?.LogInformation("Flushed LogicalAddress: {flushedLogicalAddress}", flushedLogicalAddress);
+            logger?.LogInformation("Start Logical Address: {startLogicalAddress}", startLogicalAddress);
+            logger?.LogInformation("Final Logical Address: {finalLogicalAddress}", finalLogicalAddress);
+            logger?.LogInformation("Snapshot Final Logical Address: {snapshotFinalLogicalAddress}", snapshotFinalLogicalAddress);
+            logger?.LogInformation("Head Address: {headAddress}", headAddress);
+            logger?.LogInformation("Begin Address: {beginAddress}", beginAddress);
+            logger?.LogInformation("Delta Tail Address: {deltaTailAddress}", deltaTailAddress);
+            logger?.LogInformation("Manual Locking Active: {manualLockingActive}", manualLockingActive);
+            logger?.LogInformation("Num sessions recovered: {continueTokensCount}", continueTokens.Count);
+            logger?.LogInformation("Recovered sessions: ");
             foreach (var sessionInfo in continueTokens.Take(10))
             {
-                Debug.WriteLine("{0}: {1}", sessionInfo.Key, sessionInfo.Value);
+                logger?.LogInformation("{sessionInfo.Key}: {sessionInfo.Value}", sessionInfo.Key, sessionInfo.Value);
             }
 
             if (continueTokens.Count > 10)
-                Debug.WriteLine("... {0} skipped", continueTokens.Count - 10);
+                logger?.LogInformation("... {continueTokensSkipped} skipped", continueTokens.Count - 10);
         }
     }
 
@@ -803,15 +805,15 @@ namespace FASTER.core
                         ^ num_buckets ^ startLogicalAddress ^ finalLogicalAddress;
         }
 
-        public readonly void DebugPrint()
+        public readonly void DebugPrint(ILogger logger)
         {
-            Debug.WriteLine("******** Index Checkpoint Info for {0} ********", token);
-            Debug.WriteLine("Table Size: {0}", table_size);
-            Debug.WriteLine("Main Table Size (in GB): {0}", ((double)num_ht_bytes) / 1000.0 / 1000.0 / 1000.0);
-            Debug.WriteLine("Overflow Table Size (in GB): {0}", ((double)num_ofb_bytes) / 1000.0 / 1000.0 / 1000.0);
-            Debug.WriteLine("Num Buckets: {0}", num_buckets);
-            Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);
-            Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
+            logger?.LogInformation("******** Index Checkpoint Info for {token} ********", token);
+            logger?.LogInformation("Table Size: {table_size}", table_size);
+            logger?.LogInformation("Main Table Size (in GB): {num_ht_bytes}", ((double)num_ht_bytes) / 1000.0 / 1000.0 / 1000.0);
+            logger?.LogInformation("Overflow Table Size (in GB): {num_ofb_bytes}", ((double)num_ofb_bytes) / 1000.0 / 1000.0 / 1000.0);
+            logger?.LogInformation("Num Buckets: {num_buckets}", num_buckets);
+            logger?.LogInformation("Start Logical Address: {startLogicalAddress}", startLogicalAddress);
+            logger?.LogInformation("Final Logical Address: {finalLogicalAddress}", finalLogicalAddress);
         }
 
         public void Reset()

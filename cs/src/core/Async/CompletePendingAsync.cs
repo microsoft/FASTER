@@ -40,7 +40,7 @@ namespace FASTER.core
                 try
                 {
                     InternalCompletePendingRequests(currentCtx, currentCtx, fasterSession, completedOutputs);
-                    InternalCompleteRetryRequests(currentCtx, currentCtx, fasterSession);
+                    InternalCompleteRetryRequests(currentCtx, currentCtx, fasterSession, completedOutputs);
                 }
                 finally
                 {

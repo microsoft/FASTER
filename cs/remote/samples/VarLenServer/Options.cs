@@ -3,6 +3,7 @@
 
 using CommandLine;
 using FASTER.server;
+using Microsoft.Extensions.Logging;
 
 namespace FasterServerOptions
 {
@@ -44,9 +45,9 @@ namespace FasterServerOptions
         [Option("pubsub-pagesize", Required = false, Default = "4k", HelpText = "Page size of log used for pub/sub (rounds down to power of 2)")]
         public string PubSubPageSize { get; set; }
 
-        public ServerOptions GetServerOptions()
+        public ServerOptions GetServerOptions(ILogger logger = null)
         {
-            return new ServerOptions
+            return new ServerOptions(logger)
             {
                 Port = Port,
                 Address = Address,

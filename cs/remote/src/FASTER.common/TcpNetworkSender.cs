@@ -3,6 +3,7 @@
 
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace FASTER.common
 {
@@ -27,16 +28,31 @@ namespace FASTER.common
         readonly SimpleObjectPool<SeaaBuffer> reusableSeaaBuffer;
 
         /// <summary>
+        /// Throttle
+        /// </summary>
+        readonly protected SemaphoreSlim throttle = new(0);
+
+        /// <summary>
+        /// Count of sends for throttling
+        /// </summary>
+        protected int throttleCount;
+
+        /// <summary>
+        /// Max concurrent sends (per session) for throttling
+        /// </summary>
+        protected const int ThrottleMax = 8;
+
+        /// <summary>
         /// 
         /// </summary>
         /// <param name="socket"></param>
         /// <param name="maxSizeSettings"></param>
         public TcpNetworkSender(
-            Socket socket, 
-            MaxSizeSettings maxSizeSettings) 
+            Socket socket,
+            MaxSizeSettings maxSizeSettings)
             : base(maxSizeSettings)
         {
-            this.socket = socket;            
+            this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize));
             this.responseObject = null;
         }
@@ -61,14 +77,14 @@ namespace FASTER.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override void GetResponseObject()
         {
-            if (responseObject == null)                
+            if (responseObject == null)
                 this.responseObject = reusableSeaaBuffer.Checkout();
         }
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override void ReturnResponseObject()
-        {            
+        {
             reusableSeaaBuffer.Return(responseObject);
             responseObject = null;
         }
@@ -105,9 +121,23 @@ namespace FASTER.common
             catch
             {
                 reusableSeaaBuffer.Return(_r);
+                if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+                    throttle.Release();
                 return false;
             }
             return true;
+        }
+
+        /// <inheritdoc />
+        public override void SendResponse(byte[] buffer, int offset, int count, object context)
+        {
+            throw new System.NotImplementedException();
+        }
+
+        /// <inheritdoc />
+        public override void SendCallback(object context)
+        {
+            throw new System.NotImplementedException();
         }
 
         /// <inheritdoc />
@@ -123,7 +153,7 @@ namespace FASTER.common
             if (_r != null)
                 reusableSeaaBuffer.Return(_r);
             reusableSeaaBuffer.Dispose();
-
+            throttle.Dispose();
             if (waitForSendCompletion)
                 socket.Dispose();
         }
@@ -131,6 +161,9 @@ namespace FASTER.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe void Send(Socket socket, SeaaBuffer sendObject, int offset, int size)
         {
+            if (Interlocked.Increment(ref throttleCount) > ThrottleMax)
+                throttle.Wait();
+
             // Reset send buffer
             sendObject.socketEventAsyncArgs.SetBuffer(offset, size);
             // Set user context to reusable object handle for disposal when send is done
@@ -142,7 +175,9 @@ namespace FASTER.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SeaaBuffer_Completed(object sender, SocketAsyncEventArgs e)
         {
-            reusableSeaaBuffer.Return((SeaaBuffer)e.UserToken);
+           reusableSeaaBuffer.Return((SeaaBuffer)e.UserToken);
+           if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+                throttle.Release();
         }
     }
 }

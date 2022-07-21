@@ -28,7 +28,7 @@ namespace FASTER.core
 
         // We use 7 lock bits: 6 shared lock bits + 1 exclusive lock bit
         const int kSharedLockBits = 6;
-        const int kExlcusiveLockBits = 1;
+        const int kExclusiveLockBits = 1;
 
         // Shared lock constants
         const long kSharedLockMaskInWord = ((1L << kSharedLockBits) - 1) << kLockShiftInWord;
@@ -46,6 +46,9 @@ namespace FASTER.core
         const int kDirtyBitOffset = kSealedBitOffset + 1;
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
+        // If these become used, start with the highest number
+        internal const int kUnusedBit2Offset = kInNewVersionBitOffset + 1;
+        internal const int kUnusedBit1Offset = kUnusedBit2Offset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
@@ -54,6 +57,8 @@ namespace FASTER.core
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
         const long kFillerBitMask = 1L << kFillerBitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
+        internal const long kUnused2BitMask = 1L << kUnusedBit2Offset;
+        internal const long kUnused1BitMask = 1L << kUnusedBit1Offset;
 
         [FieldOffset(0)]
         private long word;
@@ -399,6 +404,27 @@ namespace FASTER.core
         public void SetValid() => word |= kValidBitMask;
         public void SetInvalid() => word &= ~(kValidBitMask | kTentativeBitMask);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TrySetInvalidAtomic(bool forTentative = false)
+        {
+            while (!this.Invalid)
+            {
+                long expected_word = word;
+
+                // Bail if sealed, or tentative when we are not specifically clearing the Tentative flag.
+                if ((expected_word & (kSealedBitMask | (forTentative ? 0 : kTentativeBitMask))) != 0)
+                    return false;
+                long new_word = expected_word & ~(kValidBitMask | kTentativeBitMask);
+                long current_word = Interlocked.CompareExchange(ref word, new_word, expected_word);
+                if (expected_word == current_word)
+                    return true;
+                Thread.Yield();
+            }
+
+            // If we got here, someone else set it Invalid--that's OK
+            return true;
+        }
+
         public bool Invalid => (word & kValidBitMask) == 0;
 
         public bool SkipOnScan => Invalid || (word & (kSealedBitMask | kTentativeBitMask)) != 0;
@@ -418,6 +444,9 @@ namespace FASTER.core
         {
             return kTotalSizeInBytes;
         }
+
+        internal bool Unused1 { get => (word & kUnused1BitMask) != 0; set => word = value ? word | kUnused1BitMask : word & ~kUnused1BitMask; }
+        internal bool Unused2 { get => (word & kUnused2BitMask) != 0; set => word = value ? word | kUnused2BitMask : word & ~kUnused2BitMask; }
 
         public override string ToString() => word.ToString();
     }

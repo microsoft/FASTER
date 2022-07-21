@@ -21,7 +21,7 @@ namespace FASTER.core
         /// </summary>
         public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo) => true;
 
-        public bool SingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { value = default; return true; }
+        public bool SingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) => true;
 
         public void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo) { }
 

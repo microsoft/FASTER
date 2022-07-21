@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -51,8 +52,9 @@ namespace FASTER.core
         /// <param name="name"></param>
         /// <param name="getMemory"></param>
         /// <param name="scanUncommitted"></param>
-        internal unsafe FasterLogScanIterator(FasterLog fasterLog, BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits)
+        /// <param name="logger"></param>
+        internal unsafe FasterLogScanIterator(FasterLog fasterLog, BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.fasterLog = fasterLog;
             this.allocator = hlog;
@@ -566,7 +568,7 @@ namespace FASTER.core
 
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("AsyncReadPagesCallback error: {0}", errorCode);
+                    logger?.LogError($"AsyncReadPagesCallback error: {errorCode}");
                     result.cts?.Cancel();
                 }
 

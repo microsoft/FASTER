@@ -14,6 +14,7 @@ namespace FASTER.core
     /// </summary>
     public unsafe sealed class LightEpoch
     {
+        private const int kCacheLineBytes = 64;
         /// <summary>
         /// Default invalid index entry.
         /// </summary>
@@ -45,9 +46,8 @@ namespace FASTER.core
 #endif
 
         /// <summary>
-        /// List of action, epoch pairs containing actions to performed 
-        /// when an epoch becomes safe to reclaim. Marked volatile to
-        /// ensure latest value is seen by the last suspended thread.
+        /// List of action, epoch pairs containing actions to be performed when an epoch becomes safe to reclaim.
+        /// Marked volatile to ensure latest value is seen by the last suspended thread.
         /// </summary>
         volatile int drainCount = 0;
         readonly EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
@@ -64,11 +64,21 @@ namespace FASTER.core
         [ThreadStatic]
         static int threadEntryIndexCount;
 
+        /// <summary>
+        /// Managed thread id of this thread
+        /// </summary>
         [ThreadStatic]
         static int threadId;
 
+        /// <summary>
+        /// Start offset to reserve entry in the epoch table
+        /// </summary>
         [ThreadStatic]
         static ushort startOffset1;
+
+        /// <summary>
+        /// Alternate start offset to reserve entry in the epoch table (to reduce probing if <see cref="startOffset1"/> slot is already filled)
+        /// </summary>
         [ThreadStatic]
         static ushort startOffset2;
 
@@ -105,7 +115,7 @@ namespace FASTER.core
             p = (long)threadIndexHandle.AddrOfPinnedObject();
 #endif
             // Force the pointer to align to 64-byte boundaries
-            long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
+            long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
             threadIndexAligned = (Entry*)p2;
         }
 
@@ -126,12 +136,13 @@ namespace FASTER.core
             p = (long)tableHandle.AddrOfPinnedObject();
 #endif
             // Force the pointer to align to 64-byte boundaries
-            long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
+            long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
             tableAligned = (Entry*)p2;
 
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
 
+            // Mark all epoch table entries as "available"
             for (int i = 0; i < kDrainListSize; i++)
                 drainList[i].epoch = int.MaxValue;
             drainCount = 0;
@@ -187,6 +198,7 @@ namespace FASTER.core
         {
             int entry = threadEntryIndex;
 
+            // Protect CurrentEpoch by making an entry for it in the non-static epoch table so ComputeNewSafeToReclaimEpoch() will see it.
             (*(tableAligned + entry)).threadId = threadEntryIndex;
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
 
@@ -243,6 +255,7 @@ namespace FASTER.core
             {
                 if (drainList[i].epoch == int.MaxValue)
                 {
+                    // This was an empty slot. If it still is, assign this action/epoch to the slot.
                     if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, int.MaxValue) == int.MaxValue)
                     {
                         drainList[i].action = onDrain;
@@ -257,6 +270,7 @@ namespace FASTER.core
 
                     if (triggerEpoch <= SafeToReclaimEpoch)
                     {
+                        // This was a slot with an epoch that was safe to reclaim. If it still is, execute its trigger, then assign this action/epoch to the slot.
                         if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, triggerEpoch) == triggerEpoch)
                         {
                             var triggerAction = drainList[i].action;
@@ -270,12 +284,14 @@ namespace FASTER.core
 
                 if (++i == kDrainListSize)
                 {
+                    // We are at the end of the drain list and found no empty or reclaimable slot. ProtectAndDrain, which should clear one or more slots.
                     ProtectAndDrain();
                     i = 0;
                     Thread.Yield();
                 }
             }
 
+            // Now ProtectAndDrain, which may execute the action we just added.
             ProtectAndDrain();
         }
 
@@ -353,8 +369,7 @@ namespace FASTER.core
                 }
             }
 
-            // The latest safe epoch is the one just before 
-            // the earliest unsafe epoch.
+            // The latest safe epoch is the one just before the earliest unsafe epoch.
             SafeToReclaimEpoch = oldestOngoingCall - 1;
             return SafeToReclaimEpoch;
         }
@@ -400,10 +415,13 @@ namespace FASTER.core
                 {
                     if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, trigger_epoch) == trigger_epoch)
                     {
+                        // Store off the trigger action, then set epoch to int.MaxValue to mark this slot as "available for use".
                         var trigger_action = drainList[i].action;
                         drainList[i].action = null;
                         drainList[i].epoch = int.MaxValue;
                         Interlocked.Decrement(ref drainCount);
+
+                        // Execute the action
                         trigger_action();
                         if (drainCount == 0) break;
                     }
@@ -423,6 +441,7 @@ namespace FASTER.core
             Debug.Assert((*(tableAligned + threadEntryIndex)).localCurrentEpoch == 0,
                 "Trying to acquire protected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
+            // This corresponds to AnyInstanceProtected(). We do not mark "ThisInstanceProtected" until ProtectAndDrain().
             threadEntryIndexCount++;
         }
 
@@ -437,9 +456,11 @@ namespace FASTER.core
             Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
                 "Trying to release unprotected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
+            // Clear "ThisInstanceProtected()" (non-static epoch table)
             (*(tableAligned + entry)).localCurrentEpoch = 0;
             (*(tableAligned + entry)).threadId = 0;
 
+            // Decrement "AnyInstanceProtedted()" (static thread table)
             threadEntryIndexCount--;
             if (threadEntryIndexCount == 0)
             {
@@ -482,6 +503,22 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// A 32-bit murmur3 implementation.
+        /// </summary>
+        /// <param name="h"></param>
+        /// <returns></returns>
+        private static int Murmur3(int h)
+        {
+            uint a = (uint)h;
+            a ^= a >> 16;
+            a *= 0x85ebca6b;
+            a ^= a >> 13;
+            a *= 0xc2b2ae35;
+            a ^= a >> 16;
+            return (int)a;
+        }
+
+        /// <summary>
         /// Allocate a new entry in epoch table. This is called 
         /// once for a thread.
         /// </summary>
@@ -491,7 +528,7 @@ namespace FASTER.core
             if (threadId == 0) // run once per thread for performance
             {
                 threadId = Environment.CurrentManagedThreadId;
-                uint code = (uint)Utility.Murmur3(threadId);
+                uint code = (uint)Murmur3(threadId);
                 startOffset1 = (ushort)(1 + (code % kTableSize));
                 startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }
@@ -501,7 +538,7 @@ namespace FASTER.core
         /// <summary>
         /// Epoch table entry (cache line size).
         /// </summary>
-        [StructLayout(LayoutKind.Explicit, Size = Constants.kCacheLineBytes)]
+        [StructLayout(LayoutKind.Explicit, Size = kCacheLineBytes)]
         struct Entry
         {
             /// <summary>
@@ -521,12 +558,15 @@ namespace FASTER.core
 
             [FieldOffset(12)]
             public fixed int markers[13];
-        };
 
+            public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}, re-ent {reentrant}";
+        }
         struct EpochActionPair
         {
             public long epoch;
             public Action action;
+
+            public override string ToString() => $"epoch = {epoch}, action = {(action is null ? "n/a" : action.Method.ToString())}";
         }
     }
 }
