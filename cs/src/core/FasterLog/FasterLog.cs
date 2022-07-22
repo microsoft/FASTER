@@ -1379,10 +1379,13 @@ namespace FASTER.core
                 scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
 
                 if (name != null)
-                    throw new FasterException("Cannot used named iterators with read-only FasterLog");
+                    throw new FasterException("Cannot use named iterators with read-only FasterLog");
                 if (scanUncommitted)
-                    throw new FasterException("Cannot used scanUncommitted with read-only FasterLog");
+                    throw new FasterException("Cannot use scanUncommitted with read-only FasterLog");
             }
+
+            if (scanUncommitted && !AutoRefreshSafeTailAddress)
+                throw new FasterException("Cannot use scanUncommitted without setting AutoRefreshSafeTailAddress to true in FasterLog settings");
 
             FasterLogScanIterator iter;
             if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))

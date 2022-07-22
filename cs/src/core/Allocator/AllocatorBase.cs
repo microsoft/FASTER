@@ -253,16 +253,6 @@ namespace FASTER.core
         /// </summary>
         internal CompletionEvent FlushEvent;
 
-        /// <summary>
-        /// Whether we aggressively shift read-only as records are inserted
-        /// </summary>
-        readonly bool AggressiveShiftReadOnly;
-
-        /// <summary>
-        /// Whether there is an ongoing auto shift read-only
-        /// </summary>
-        int _ongoingAggressiveShiftReadOnly = 0;
-
         #region Abstract methods
         /// <summary>
         /// Initialize
@@ -731,7 +721,6 @@ namespace FASTER.core
         public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null)
         {
             this.logger = logger;
-            AggressiveShiftReadOnly = settings.AggressiveShiftReadOnlyAddress;
             if (settings.LogDevice == null)
             {
                 throw new FasterException("LogSettings.LogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
@@ -1056,8 +1045,7 @@ namespace FASTER.core
 
                 // All overflow threads try to shift addresses
                 long shiftAddress = ((long)pageIndex) << LogPageSizeBits;
-                if (AggressiveShiftReadOnly) DoAggressiveShiftReadOnly();
-                else PageAlignedShiftReadOnlyAddress(shiftAddress);
+                PageAlignedShiftReadOnlyAddress(shiftAddress);
                 PageAlignedShiftHeadAddress(shiftAddress);
 
                 if (offset > PageSize)
@@ -1100,7 +1088,6 @@ namespace FASTER.core
             }
             #endregion
 
-            if (AggressiveShiftReadOnly) DoAggressiveShiftReadOnly();
             return (((long)page) << LogPageSizeBits) | ((long)offset);
         }
 
@@ -1249,62 +1236,6 @@ namespace FASTER.core
             }
         }
 
-        private void DoAggressiveShiftReadOnly()
-        {
-            if (_ongoingAggressiveShiftReadOnly == 0 && Interlocked.CompareExchange(ref _ongoingAggressiveShiftReadOnly, 1, 0) == 0)
-                AggressiveShiftReadOnlyRunner(false);
-        }
-
-        private void EpochProtectAggressiveShiftReadOnlyRunner()
-        {
-            try
-            {
-                epoch.Resume();
-                AggressiveShiftReadOnlyRunner(false);
-            }
-            finally
-            {
-                epoch.Suspend();
-            }
-        }
-
-        private void AggressiveShiftReadOnlyRunner(bool recurse)
-        {
-            do
-            {
-                if (GetTailAddress() > ReadOnlyAddress)
-                {
-                    if (recurse)
-                    {
-                        Task.Run(EpochProtectAggressiveShiftReadOnlyRunner);
-                        return;
-                    }
-                    else
-                    {
-                        if (AggressiveFlushShiftReadOnlyBump()) return;
-                    }
-                }
-                _ongoingAggressiveShiftReadOnly = 0;
-            } while (GetTailAddress() > ReadOnlyAddress && _ongoingAggressiveShiftReadOnly == 0 && Interlocked.CompareExchange(ref _ongoingAggressiveShiftReadOnly, 1, 0) == 0);
-        }
-
-        private bool AggressiveFlushShiftReadOnlyBump()
-        {
-            long newReadOnlyAddress = GetTailAddress() - ReadOnlyLagAddress;
-            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, out long oldReadOnly))
-            {
-                epoch.BumpCurrentEpoch(() => AggressiveFlushShiftReadOnlyBumpCallback(newReadOnlyAddress));
-                return true;
-            }
-            return false;
-        }
-
-        private void AggressiveFlushShiftReadOnlyBumpCallback(long newSafeReadOnlyAddress)
-        {
-            OnPagesMarkedReadOnly(newSafeReadOnlyAddress);
-            AggressiveShiftReadOnlyRunner(true);
-        }
-
         /// <summary>
         /// Action to be performed for when all threads have 
         /// agreed that a page range is closed.
@@ -1398,7 +1329,7 @@ namespace FASTER.core
                 // Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(desiredReadOnlyAddress));
             }
-        } 
+        }
 
         /// <summary>
         /// Called whenever a new tail page is allocated or when the user is checking for a failed memory allocation
