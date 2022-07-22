@@ -68,6 +68,11 @@ namespace FASTER.core
         public long Address { get; internal set; }
 
         /// <summary>
+        /// The ID of session context executing the operation
+        /// </summary>
+        public int SessionID { get; internal set; }
+
+        /// <summary>
         /// The header of the record.
         /// </summary>
         public RecordInfo RecordInfo { get; internal set; }
@@ -84,6 +89,7 @@ namespace FASTER.core
         {
             this.SessionType = rmwInfo.SessionType;
             this.Version = rmwInfo.Version;
+            this.SessionID = rmwInfo.SessionID;
             this.Address = rmwInfo.Address;
             this.RecordInfo = default;
             this.Action = UpsertAction.Default;
@@ -140,6 +146,11 @@ namespace FASTER.core
         /// The logical address of the record being operated on
         /// </summary>
         public long Address { get; internal set; }
+
+        /// <summary>
+        /// The ID of session context executing the operation
+        /// </summary>
+        public int SessionID { get; internal set; }
 
         /// <summary>
         /// The header of the record.

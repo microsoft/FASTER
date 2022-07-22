@@ -357,7 +357,153 @@ namespace FASTER.test.statemachine
 
             RecoverAndTest(log);
         }
+
+
+
+        [TestCase]
+        [Category("FasterKV"), Category("CheckpointRestore")]
+        public void LUCScenario1()
+        {
+            createSessions(out var f, out var s1, out var ts, out var lts);
+            // System should be in REST, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
+
+            lts.getLUC();
+            Assert.IsTrue(lts.isProtected);
+
+            fht1.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
+
+            // System should be in PREPARE, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
+
+            ts.Refresh();
+            lts.Refresh();
+
+            // System should be in PREPARE, 1 Since there is an active locking session
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
+
+            lts.DisposeLUC();
+
+            ts.Refresh();
+            // fast-foward state machine to completion
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
+
+            // Expect checkpoint completion callback
+            f.checkpointCallbackExpectation = 1;
+            lts.Refresh();
+
+            RecoverAndTest(log);
+            s1.Dispose();
+            ts.Dispose();
+            lts.Dispose();
+        }
         
+        [TestCase]
+        [Category("FasterKV"), Category("CheckpointRestore")]
+        public void LUCScenario2()
+        {
+            createSessions(out var f, out var s1, out var ts, out var lts);
+
+            // System should be in REST, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
+
+            var uc1 = s1.GetUnsafeContext();
+            uc1.ResumeThread();
+            
+            fht1.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
+
+            // should not succeed since checkpoint is in progress
+            lts.getLUC();
+            Assert.IsFalse(lts.isProtected);
+            
+            // We should be in PREPARE phase
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
+
+            ts.Refresh();
+            // System should be in PREPARE, 1 
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
+
+            // should not succeed since checkpoint is in progress
+            lts.getLUC();
+            Assert.IsFalse(lts.isProtected);
+
+            uc1.SuspendThread();
+            uc1.Dispose();
+
+            // fast-foward state machine to completion
+            ts.Refresh();
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
+
+            // should be true since checkpoint is done
+            lts.getLUC();
+            Assert.IsTrue(lts.isProtected);
+            lts.DisposeLUC();
+
+            // Expect checkpoint completion callback
+            f.checkpointCallbackExpectation = 1;
+            RecoverAndTest(log);
+            s1.Dispose();
+            ts.Dispose();
+            lts.Dispose();
+        }
+        [TestCase]
+        [Category("FasterKV"), Category("CheckpointRestore")]
+        public void LUCScenario3()
+        {
+
+            createSessions(out var f, out var s1, out var ts, out var lts);
+
+            // System should be in REST, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
+
+            // Start first LUC before checkpoint
+            var luc1 = s1.GetLockableUnsafeContext();
+            luc1.ResumeThread();
+
+            fht1.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
+
+            // System should be in PREPARE, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
+
+            luc1.Refresh();
+            ts.Refresh();
+            luc1.Refresh();
+
+            // System should be in PREPARE, 1 Since there is an active locking session
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
+
+            // should not let new LUC start since checkpoint is in progress
+            lts.getLUC();
+            Assert.IsFalse(lts.isProtected);
+
+            // We still should be in PREPARE phase
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
+
+            // End first LUC 
+            luc1.SuspendThread();
+            luc1.Dispose();
+
+            s1.Refresh();
+            // System should be in IN_PROGRESS, 1 
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState));
+
+            // should be true since checkpoint is in IN_PROGRESS phase
+            lts.getLUC();
+            Assert.IsTrue(lts.isProtected);
+            lts.DisposeLUC();
+
+            ts.Refresh();
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
+
+            // Expect checkpoint completion callback
+            f.checkpointCallbackExpectation = 1;
+            RecoverAndTest(log);
+            s1.Dispose();
+            ts.Dispose();
+            lts.Dispose();
+        }
+
+
         [TestCase]
         [Category("FasterKV")]
         [Category("CheckpointRestore")]
@@ -513,6 +659,50 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
         }
 
+
+        void createSessions(out SimpleFunctions f,
+            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1,
+            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> ts,
+            out LUCThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> lts,
+            long toVersion = -1)
+        {
+            f = new SimpleFunctions();
+            NumClicks value;
+
+            s1 = fht1.For(f).NewSession<SimpleFunctions>("foo");
+
+            for (int key = 0; key < numOps; key++)
+            {
+                value.numClicks = key;
+                s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
+            }
+
+            // Start session s2 on another thread for testing
+            ts = fht1.For(f).CreateThreadSession(f);
+            lts = fht1.For(f).CreateLUCThreadSession(f);
+
+            // We should be in REST, 1
+            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
+
+            // Take index checkpoint for recovery purposes
+            fht1.TryInitiateIndexCheckpoint(out _);
+            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+        }
+
+
+        bool tryStartLUC(
+            ref LockableUnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> luContext,
+            ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> session)
+        {
+
+            luContext = session.GetLockableUnsafeContext();
+            if (session.IsInPreparePhase())
+            {
+                luContext.Dispose();
+                return false;
+            }
+            return true;
+        }
         void RecoverAndTest(IDevice log)
         {
             NumClicks inputArg = default;

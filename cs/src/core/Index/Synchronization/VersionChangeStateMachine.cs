@@ -50,7 +50,7 @@ namespace FASTER.core
                     }
 
                     faster.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
-                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version))
+                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version) && faster.hlog.NumActiveLockingSessions == 0)
                         faster.GlobalStateMachineStep(current);
                     break;
                 case Phase.IN_PROGRESS:
@@ -154,7 +154,7 @@ namespace FASTER.core
                     nextState.Phase = Phase.IN_PROGRESS;
                     // TODO: Move to long for system state as well. 
                     SetToVersion(targetVersion == -1 ? start.Version + 1 : targetVersion);
-                    nextState.Version = (int) ToVersion();
+                    nextState.Version = (int)ToVersion();
                     break;
                 case Phase.IN_PROGRESS:
                     nextState.Phase = Phase.REST;

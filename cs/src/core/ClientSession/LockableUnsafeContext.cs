@@ -188,6 +188,11 @@ namespace FASTER.core
         /// <param name="key">The key to lock</param>
         public (bool exclusive, byte shared) IsLocked(Key key) => IsLocked(ref key);
 
+        /// <summary>
+        /// The session id of FasterSession
+        /// </summary>
+        public int sessionID { get { return clientSession.ctx.sessionID; } }
+
         #endregion Key Locking
 
         #region IFasterContext

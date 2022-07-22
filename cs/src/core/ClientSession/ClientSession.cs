@@ -165,7 +165,7 @@ namespace FASTER.core
         /// </summary>
         public UnsafeContext<Key, Value, Input, Output, Context, Functions> GetUnsafeContext()
         {
-            this.uContext ??= new (this);
+            this.uContext ??= new(this);
             this.uContext.Acquire();
             return this.uContext;
         }
@@ -792,6 +792,14 @@ namespace FASTER.core
         void IClientSession.AtomicSwitch(long version)
         {
             fht.AtomicSwitch(ctx, ctx.prevCtx, version, fht._hybridLogCheckpoint.info.checkpointTokens);
+        }
+
+        /// <summary>
+        /// Return true if Faster State Machine is in PREPARE sate
+        /// </summary>
+        public bool IsInPreparePhase()
+        {
+            return this.fht.SystemState.Phase == Phase.PREPARE;
         }
 
         #endregion Other Operations

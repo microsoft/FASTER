@@ -1217,6 +1217,7 @@ namespace FASTER.test.LockableUnsafeContext
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
         [Category(CheckpointRestoreCategory)]
+        [Ignore("Should not hold LUC while calling sync checkpoint")]
         public async ValueTask CheckpointRecoverTest([Values] CheckpointType checkpointType, [Values] SyncMode syncMode)
         {
             Populate();
@@ -1317,6 +1318,7 @@ namespace FASTER.test.LockableUnsafeContext
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
         [Category(CheckpointRestoreCategory)]
+        [Ignore("Should not hold LUC while calling sync checkpoint")]
         async public Task SecondaryReaderTest([Values] SyncMode syncMode)
         {
             // This test is taken from the SecondaryReaderStore sample
