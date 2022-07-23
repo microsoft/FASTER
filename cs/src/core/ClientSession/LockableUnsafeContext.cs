@@ -36,9 +36,7 @@ namespace FASTER.core
             FasterSession = new InternalFasterSession(clientSession);
         }
 
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResumeThread()
         {
@@ -46,10 +44,7 @@ namespace FASTER.core
             clientSession.UnsafeResumeThread();
         }
 
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
-        /// <param name="resumeEpoch">Epoch that the session resumed on; can be saved to see if epoch has changed</param>
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResumeThread(out int resumeEpoch)
         {
@@ -57,9 +52,7 @@ namespace FASTER.core
             clientSession.UnsafeResumeThread(out resumeEpoch);
         }
 
-        /// <summary>
-        /// Suspend session on current thread
-        /// </summary>
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SuspendThread()
         {
@@ -67,9 +60,7 @@ namespace FASTER.core
             clientSession.UnsafeSuspendThread();
         }
 
-        /// <summary>
-        /// Current epoch of the session
-        /// </summary>
+        /// <inheritdoc/>
         public int LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
 
         #region Acquire and Dispose

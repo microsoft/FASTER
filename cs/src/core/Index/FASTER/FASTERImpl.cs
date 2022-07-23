@@ -2305,29 +2305,6 @@ namespace FASTER.core
 
         #region Helper Functions
 
-        private Status HandleOperationStatus<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx,
-            FasterExecutionContext<Input, Output, Context> currentCtx,
-            ref PendingContext<Input, Output, Context> pendingContext,
-            FasterSession fasterSession,
-            OperationStatus operationStatus, ref CompletionEvent flushEvent, out AsyncIOContext<Key, Value> request)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            return HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, operationStatus, asyncOp: true, ref flushEvent, out request);
-        }
-
-        private Status HandleOperationStatus<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx,
-            FasterExecutionContext<Input, Output, Context> currentCtx,
-            ref PendingContext<Input, Output, Context> pendingContext,
-            FasterSession fasterSession,
-            OperationStatus operationStatus, out AsyncIOContext<Key, Value> request)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            CompletionEvent flushEvent = default;
-            return HandleOperationStatus(opCtx, currentCtx, ref pendingContext, fasterSession, operationStatus, asyncOp: false, ref flushEvent, out request);
-        }
-
         /// <summary>
         /// Performs appropriate handling based on the internal failure status of the trial.
         /// </summary>
@@ -2337,7 +2314,6 @@ namespace FASTER.core
         /// <param name="fasterSession">Callback functions.</param>
         /// <param name="operationStatus">Internal status of the trial.</param>
         /// <param name="asyncOp">When operation issued via async call</param>
-        /// <param name="flushEvent">Flush event, if allocation failed in async</param>
         /// <param name="request">IO request, if operation went pending</param>
         /// <returns>Operation status</returns>
         private Status HandleOperationStatus<Input, Output, Context, FasterSession>(
@@ -2345,16 +2321,10 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> currentCtx,
             ref PendingContext<Input, Output, Context> pendingContext,
             FasterSession fasterSession,
-            OperationStatus operationStatus, bool asyncOp, ref CompletionEvent flushEvent, out AsyncIOContext<Key, Value> request)
+            OperationStatus operationStatus, bool asyncOp, out AsyncIOContext<Key, Value> request)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             request = default;
-            if (operationStatus == OperationStatus.ALLOCATE_FAILED)
-            {
-                // Preserve the existing flushEvent; if we overwrite that with the current one, it may not be signaled for a while.
-                return new(StatusCode.Pending);
-            }
-            flushEvent = default;
 
             if (operationStatus == OperationStatus.CPR_SHIFT_DETECTED)
             {
@@ -2362,16 +2332,12 @@ namespace FASTER.core
             }
 
             // RMW now suppports RETRY_NOW due to Sealed records.
-            // RETRY_LATER may not be able to resolve NOW, e.g. if it continues to encounter Phase.IN_PROGRESS, so back off to actual retry (releasing the epoch) after a few spins.
-            const int maxRetryLater = 10;
-            int numRetryLater = 0;
             if (operationStatus == OperationStatus.CPR_SHIFT_DETECTED || operationStatus == OperationStatus.RETRY_NOW || (asyncOp && operationStatus == OperationStatus.RETRY_LATER))
             {
 #region Retry as (v+1) Operation
                 var internalStatus = default(OperationStatus);
                 do
                 {
-                    flushEvent = hlog.FlushEvent;
                     switch (pendingContext.type)
                     {
                         case OperationType.READ:
@@ -2404,20 +2370,11 @@ namespace FASTER.core
                             break;
                     }
                     Debug.Assert(internalStatus != OperationStatus.CPR_SHIFT_DETECTED);
-                    if (internalStatus == OperationStatus.RETRY_LATER)
-                        ++numRetryLater; 
-                } while (internalStatus == OperationStatus.RETRY_NOW || (asyncOp && internalStatus == OperationStatus.RETRY_LATER && numRetryLater < maxRetryLater));
+                } while (internalStatus == OperationStatus.RETRY_NOW || (asyncOp && internalStatus == OperationStatus.RETRY_LATER));
 
                 operationStatus = internalStatus;
 #endregion
             }
-
-            if (operationStatus == OperationStatus.ALLOCATE_FAILED)
-            {
-                Debug.Assert(asyncOp, "Sync ops should have handled ALLOCATE_FAILED synchronously");
-                return new(StatusCode.Pending);
-            }
-            flushEvent = default;
 
             if (OperationStatusUtils.TryConvertToStatusCode(operationStatus, out Status status))
                 return status;
@@ -2445,6 +2402,7 @@ namespace FASTER.core
             }
             else if (operationStatus == OperationStatus.RETRY_LATER)
             {
+                Debug.Assert(!asyncOp);
                 opCtx.retryRequests.Enqueue(pendingContext);
                 return new(StatusCode.Pending);
             }

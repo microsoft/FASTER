@@ -15,13 +15,7 @@ namespace FASTER.core
         internal struct RmwAsyncOperation<Input, Output, Context> : IUpdateAsyncOperation<Input, Output, Context, RmwAsyncResult<Input, Output, Context>>
         {
             AsyncIOContext<Key, Value> diskRequest;
-            readonly bool retryLater;
-
-            internal RmwAsyncOperation(bool retryLater, AsyncIOContext<Key, Value> diskRequest)
-            {
-                this.retryLater = retryLater;
-                this.diskRequest = diskRequest;
-            }
+            internal RmwAsyncOperation(AsyncIOContext<Key, Value> diskRequest) => this.diskRequest = diskRequest;
 
             /// <inheritdoc/>
             public RmwAsyncResult<Input, Output, Context> CreateResult(Status status, Output output, RecordMetadata recordMetadata) => new(status, output, recordMetadata);
@@ -30,20 +24,15 @@ namespace FASTER.core
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent)
             {
-                AsyncIOContext<Key, Value> newDiskRequest = default;
-                flushEvent = default;
-                Status status = (this.retryLater, !this.diskRequest.IsDefault()) switch
-                {
-                    (false, true) => fasterKV.InternalCompletePendingRequestFromContext(currentCtx, currentCtx, fasterSession, this.diskRequest, ref pendingContext, asyncOp, out flushEvent, out newDiskRequest),
-                    (true, false) => fasterKV.InternalCompleteRetryRequest(currentCtx, currentCtx, ref pendingContext, fasterSession),
-                    (false, false) => fasterKV.CallInternalRMW(fasterSession, currentCtx, ref pendingContext, ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, pendingContext.userContext,
-                                                     pendingContext.serialNum, asyncOp, out flushEvent, out newDiskRequest),
-                    _ => throw new FasterException("Internal error: cannot have both retry and disk IO")
-                };
+                flushEvent = fasterKV.hlog.FlushEvent;
+                Status status = !this.diskRequest.IsDefault()
+                    ? fasterKV.InternalCompletePendingRequestFromContext(currentCtx, currentCtx, fasterSession, this.diskRequest, ref pendingContext, asyncOp, out AsyncIOContext<Key, Value> newDiskRequest)
+                    : fasterKV.CallInternalRMW(fasterSession, currentCtx, ref pendingContext, ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, pendingContext.userContext,
+                                                     pendingContext.serialNum, asyncOp, out flushEvent, out newDiskRequest);
 
                 if (status.IsPending && !newDiskRequest.IsDefault())
                 {
-                    Debug.Assert(flushEvent.IsDefault(), "flushEvent should be default if there is a diskRequest");
+                    flushEvent = default;
                     this.diskRequest = newDiskRequest;
                 }
                 return status;
@@ -55,7 +44,7 @@ namespace FASTER.core
                 => SlowRmwAsync(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest, flushEvent, token);
 
             /// <inheritdoc/>
-            public bool CompletePendingOperation(IFasterSession<Key, Value, Input, Output, Context> fasterSession)
+            public bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession)
             {
                 if (this.diskRequest.IsDefault())
                     return false;
@@ -74,9 +63,9 @@ namespace FASTER.core
                 if (!this.diskRequest.IsDefault())
                 {
                     currentCtx.ioPendingRequests.Remove(pendingContext.id);
-                    currentCtx.asyncPendingCount--;
-                    currentCtx.pendingReads.Remove();
                 }
+                currentCtx.asyncPendingCount--;
+                currentCtx.pendingReads.Remove();
             }
         }
 
@@ -107,13 +96,13 @@ namespace FASTER.core
 
             internal RmwAsyncResult(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, TOutput, Context> fasterSession,
                 FasterExecutionContext<Input, TOutput, Context> currentCtx, PendingContext<Input, TOutput, Context> pendingContext,
-                AsyncIOContext<Key, Value> diskRequest, bool retryLater, ExceptionDispatchInfo exceptionDispatchInfo)
+                AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 Status = new(StatusCode.Pending);
                 this.Output = default;
                 this.RecordMetadata = default;
                 updateAsyncInternal = new UpdateAsyncInternal<Input, TOutput, Context, RmwAsyncOperation<Input, TOutput, Context>, RmwAsyncResult<Input, TOutput, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new (retryLater, diskRequest));
+                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new (diskRequest));
             }
 
             /// <summary>Complete the RMW operation, issuing additional (rare) I/O asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
@@ -188,12 +177,17 @@ namespace FASTER.core
             {
                 flushEvent = hlog.FlushEvent;
                 internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
-            } while (internalStatus == OperationStatus.RETRY_NOW);
+            } while (internalStatus == OperationStatus.RETRY_NOW || internalStatus == OperationStatus.RETRY_LATER);
 
             if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                 return status;
 
-            status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, asyncOp, ref flushEvent, out diskRequest);
+            if (internalStatus == OperationStatus.ALLOCATE_FAILED)
+                return new(StatusCode.Pending);    // This plus diskRequest.IsDefault() means allocate failed
+
+            status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, asyncOp, out diskRequest);
+            if (!diskRequest.IsDefault())
+                flushEvent = default;
             output = pcontext.output;
             return status;
         }
@@ -203,35 +197,33 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pcontext,
             AsyncIOContext<Key, Value> diskRequest, CompletionEvent flushEvent, CancellationToken token = default)
         {
+            currentCtx.asyncPendingCount++;
+            currentCtx.pendingReads.Add();
+
             ExceptionDispatchInfo exceptionDispatchInfo = default;
-            bool retryLater = false;
 
-            if (diskRequest.IsDefault())
+            try
             {
-                (retryLater, exceptionDispatchInfo) = await WaitForFlushCompletionAsync(@this, flushEvent, token).ConfigureAwait(false);
-            }
-            else
-            {
-                currentCtx.asyncPendingCount++;
-                currentCtx.pendingReads.Add();
+                token.ThrowIfCancellationRequested();
 
-                try
+                if (@this.epoch.ThisInstanceProtected())
+                    throw new NotSupportedException("Async operations not supported over protected epoch");
+
+                // If we are here because of flushEvent, then _diskRequest is default--there is no pending disk operation.
+                if (diskRequest.IsDefault())
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                else
                 {
-                    token.ThrowIfCancellationRequested();
-
-                    if (@this.epoch.ThisInstanceProtected())
-                        throw new NotSupportedException("Async operations not supported over protected epoch");
-
                     using (token.Register(() => diskRequest.asyncOperation.TrySetCanceled()))
                         diskRequest = await diskRequest.asyncOperation.Task.WithCancellationAsync(token).ConfigureAwait(false);
                 }
-                catch (Exception e)
-                {
-                    exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
-                }
+            }
+            catch (Exception e)
+            {
+                exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
             }
 
-            return new RmwAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pcontext, diskRequest, retryLater, exceptionDispatchInfo);
+            return new RmwAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pcontext, diskRequest, exceptionDispatchInfo);
         }
     }
 }

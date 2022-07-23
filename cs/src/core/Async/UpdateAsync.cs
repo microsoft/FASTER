@@ -37,6 +37,7 @@ namespace FASTER.core
             /// <param name="asyncOp">Whether this is from a synchronous or asynchronous completion call</param>
             /// <param name="flushEvent">The event to wait for flush completion on</param>
             /// <remarks>Populates <paramref name="pendingContext"/>.output</remarks>
+            /// <returns></returns>
             Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent);
             /// <summary>
@@ -54,11 +55,11 @@ namespace FASTER.core
                                             CompletionEvent flushEvent, CancellationToken token);
 
             /// <summary>
-            /// If RMW, completes pending IO if there is any; else for all Upsert, RMW, Delete, tries to complete any Retry requests.
+            /// For RMW only, completes any pending IO; no-op for other implementations.
             /// </summary>
             /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
             /// <returns>Whether the pending operation was complete</returns>
-            bool CompletePendingOperation(IFasterSession<Key, Value, Input, Output, Context> fasterSession);
+            bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession);
 
             /// <summary>
             /// For RMW only, decrements the count of pending IOs and async operations; no-op for other implementations.
@@ -117,7 +118,7 @@ namespace FASTER.core
 
                         if (!flushEvent.IsDefault())
                             flushEvent.Wait();
-                        else if (_asyncOperation.CompletePendingOperation(_fasterSession))
+                        else if (_asyncOperation.CompletePendingIO(_fasterSession))
                             break;
 
                         if (this.TryCompleteSync(asyncOp: false, out flushEvent, out asyncResult))
@@ -183,17 +184,12 @@ namespace FASTER.core
         {
             if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                 return status;
-            Debug.Assert(internalStatus == OperationStatus.RETRY_LATER || internalStatus == OperationStatus.ALLOCATE_FAILED);
+            Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
             return new(StatusCode.Pending);
         }
 
-        private static async ValueTask<(bool retryLater, ExceptionDispatchInfo exceptionDispatchInfo)> WaitForFlushCompletionAsync(
-                FasterKV<Key, Value> @this, CompletionEvent flushEvent, CancellationToken token)
+        private static async ValueTask<ExceptionDispatchInfo> WaitForFlushCompletionAsync<Input, Output, Context>(FasterKV<Key, Value> @this, FasterExecutionContext<Input, Output, Context> currentCtx, CompletionEvent flushEvent, CancellationToken token)
         {
-            // If flushEvent.IsDefault(), then this was called for RETRY_LATER; both paths release the epoch and retry, with a wait on flushEvent if there is one.
-            if (flushEvent.IsDefault())
-                return (true, default);
-
             ExceptionDispatchInfo exceptionDispatchInfo = default;
             try
             {
@@ -208,7 +204,7 @@ namespace FASTER.core
             {
                 exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
             }
-            return (false, exceptionDispatchInfo);
+            return exceptionDispatchInfo;
         }
     }
 }
