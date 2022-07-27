@@ -18,16 +18,15 @@ namespace FASTER.core
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output)
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent)
             {
-                output = default;
                 OperationStatus internalStatus;
                 do
                 {
                     flushEvent = fasterKV.hlog.FlushEvent;
-                    internalStatus = fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref output, ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
+                    internalStatus = fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref pendingContext.output, ref pendingContext.userContext,
+                        ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                 } while (internalStatus == OperationStatus.RETRY_NOW);
-                output = default;
                 return TranslateStatus(internalStatus);
             }
 
@@ -74,7 +73,7 @@ namespace FASTER.core
                 this.Output = default;
                 this.RecordMetadata = default;
                 updateAsyncInternal = new UpdateAsyncInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new UpsertAsyncOperation<Input, TOutput, Context>());
+                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new ());
             }
 
             /// <summary>Complete the Upsert operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>

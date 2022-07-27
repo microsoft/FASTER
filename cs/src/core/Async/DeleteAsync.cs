@@ -18,7 +18,7 @@ namespace FASTER.core
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output)
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent)
             {
                 OperationStatus internalStatus;
                 do
@@ -26,7 +26,6 @@ namespace FASTER.core
                     flushEvent = fasterKV.hlog.FlushEvent;
                     internalStatus = fasterKV.InternalDelete(ref pendingContext.key.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
                 } while (internalStatus == OperationStatus.RETRY_NOW);
-                output = default;
                 return TranslateStatus(internalStatus);
             }
 
@@ -63,7 +62,7 @@ namespace FASTER.core
             {
                 this.Status = new(StatusCode.Pending);
                 updateAsyncInternal = new UpdateAsyncInternal<Input, Output, Context, DeleteAsyncOperation<Input, Output, Context>, DeleteAsyncResult<Input, Output, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new DeleteAsyncOperation<Input, Output, Context>());
+                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new ());
             }
 
             /// <summary>Complete the Delete operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
@@ -104,7 +103,6 @@ namespace FASTER.core
 
                 if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
                     return new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>(new(internalStatus)));
-
                 Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
             }
             finally

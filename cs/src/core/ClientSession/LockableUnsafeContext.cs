@@ -12,7 +12,7 @@ namespace FASTER.core
     /// <summary>
     /// Faster Context implementation that allows manual control of record locking and epoch management. For advanced use only.
     /// </summary>
-    public sealed class LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, IDisposable
+    public sealed class LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, ILockableContext<Key>, IUnsafeContext, IDisposable
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
@@ -36,9 +36,7 @@ namespace FASTER.core
             FasterSession = new InternalFasterSession(clientSession);
         }
 
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResumeThread()
         {
@@ -46,10 +44,7 @@ namespace FASTER.core
             clientSession.UnsafeResumeThread();
         }
 
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
-        /// <param name="resumeEpoch">Epoch that the session resumed on; can be saved to see if epoch has changed</param>
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResumeThread(out int resumeEpoch)
         {
@@ -57,9 +52,7 @@ namespace FASTER.core
             clientSession.UnsafeResumeThread(out resumeEpoch);
         }
 
-        /// <summary>
-        /// Suspend session on current thread
-        /// </summary>
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SuspendThread()
         {
@@ -67,9 +60,7 @@ namespace FASTER.core
             clientSession.UnsafeSuspendThread();
         }
 
-        /// <summary>
-        /// Current epoch of the session
-        /// </summary>
+        /// <inheritdoc/>
         public int LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
 
         #region Acquire and Dispose
@@ -97,11 +88,7 @@ namespace FASTER.core
 
         #region Key Locking
 
-        /// <summary>
-        /// Lock the key with the specified <paramref name="lockType"/>, waiting until it is acquired
-        /// </summary>
-        /// <param name="key">The key to lock</param>
-        /// <param name="lockType">The type of lock to take</param>
+        /// <inheritdoc/>
         public unsafe void Lock(ref Key key, LockType lockType)
         {
             CheckAcquired();
@@ -122,18 +109,10 @@ namespace FASTER.core
                 ++this.sharedLockCount;
         }
 
-        /// <summary>
-        /// Lock the key with the specified <paramref name="lockType"/>, waiting until it is acquired
-        /// </summary>
-        /// <param name="key">The key to lock</param>
-        /// <param name="lockType">The type of lock to take</param>
+        /// <inheritdoc/>
         public unsafe void Lock(Key key, LockType lockType) => Lock(ref key, lockType);
 
-        /// <summary>
-        /// Lock the key with the specified <paramref name="lockType"/>
-        /// </summary>
-        /// <param name="key">The key to lock</param>
-        /// <param name="lockType">The type of lock to release</param>
+        /// <inheritdoc/>
         public void Unlock(ref Key key, LockType lockType)
         {
             CheckAcquired();
@@ -154,17 +133,10 @@ namespace FASTER.core
                 --this.sharedLockCount;
         }
 
-        /// <summary>
-        /// Unlock the key with the specified <paramref name="lockType"/>
-        /// </summary>
-        /// <param name="key">The key to lock</param>
-        /// <param name="lockType">The type of lock to release</param>
+        /// <inheritdoc/>
         public void Unlock(Key key, LockType lockType) => Unlock(ref key, lockType);
 
-        /// <summary>
-        /// Determines if the key is locked. Note this value may be obsolete as soon as it returns.
-        /// </summary>
-        /// <param name="key">The key to lock</param>
+        /// <inheritdoc/>
         public (bool exclusive, byte shared) IsLocked(ref Key key)
         {
             CheckAcquired();
@@ -182,10 +154,7 @@ namespace FASTER.core
             return (lockInfo.IsLockedExclusive, lockInfo.NumLockedShared);
         }
 
-        /// <summary>
-        /// Determines if the key is locked. Note this value may be obsolete as soon as it returns.
-        /// </summary>
-        /// <param name="key">The key to lock</param>
+        /// <inheritdoc/>
         public (bool exclusive, byte shared) IsLocked(Key key) => IsLocked(ref key);
 
         #endregion Key Locking

@@ -2320,9 +2320,9 @@ namespace FASTER.core
             return status;
         }
 
-#endregion
+        #endregion
 
-#region Helper Functions
+        #region Helper Functions
 
         /// <summary>
         /// Performs appropriate handling based on the internal failure status of the trial.
@@ -2335,7 +2335,7 @@ namespace FASTER.core
         /// <param name="asyncOp">When operation issued via async call</param>
         /// <param name="request">IO request, if operation went pending</param>
         /// <returns>Operation status</returns>
-        internal Status HandleOperationStatus<Input, Output, Context, FasterSession>(
+        private Status HandleOperationStatus<Input, Output, Context, FasterSession>(
             FasterExecutionContext<Input, Output, Context> opCtx,
             FasterExecutionContext<Input, Output, Context> currentCtx,
             ref PendingContext<Input, Output, Context> pendingContext,
