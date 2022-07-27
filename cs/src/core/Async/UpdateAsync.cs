@@ -34,39 +34,40 @@ namespace FASTER.core
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
             /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
             /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
-            /// <param name="asyncOp">Whether this is from a synchronous or asynchronous completion call</param>
-            /// <param name="flushEvent">The event to wait for flush completion on</param>
             /// <param name="output">The output to be populated by this operation</param>
             /// <returns></returns>
             Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output);
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, out Output output);
             /// <summary>
-            /// Performs the asynchronous operation. This may be a wait for <paramref name="flushEvent"/> or a disk IO.
+            /// Performs the asynchronous operation. This may be a wait for either a page-flush or a disk-read IO.
             /// </summary>
             /// <param name="fasterKV">The <see cref="FasterKV{Key, Value}"/> instance the async call was made on</param>
             /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
             /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
-            /// <param name="flushEvent">The event to wait for flush completion on</param>
             /// <param name="token">The cancellation token, if any</param>
             /// <returns></returns>
             ValueTask<TAsyncResult> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
-                                            CompletionEvent flushEvent, CancellationToken token);
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CancellationToken token);
 
             /// <summary>
-            /// For RMW only, completes any pending IO; no-op for other implementations.
+            /// For RMW only, completes any pending sync IO (using readyResponses); no-op for other implementations.
             /// </summary>
             /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
             /// <returns>Whether the pending operation was complete</returns>
-            bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession);
+            bool CompletePendingSyncIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession);
 
             /// <summary>
-            /// For RMW only, decrements the count of pending IOs and async operations; no-op for other implementations.
+            /// For RMW only, indicates whether there is a pending IO; no-op for other implementations.
+            /// </summary>
+            bool HasPendingIO { get; }
+
+            /// <summary>
+            /// For RMW only, decrements the count of pending async IOs; no-op for other implementations.
             /// </summary>
             /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
-            void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext);
+            void DecrementPendingAsyncIO(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext);
         }
 
         internal sealed class UpdateAsyncInternal<Input, Output, Context, TAsyncOperation, TAsyncResult>
@@ -100,62 +101,70 @@ namespace FASTER.core
                 // Note: We currently do not await anything here, and we must never do any post-await work inside CompleteAsync; this includes any code in
                 // a 'finally' block. All post-await work must be re-initiated by end user on the mono-threaded session.
 
-                if (TryCompleteAsyncState(asyncOp: true, out CompletionEvent flushEvent, out var asyncResult))
+                if (TryCompleteAsyncState(out var asyncResult))
                     return new ValueTask<TAsyncResult>(asyncResult);
 
                 if (_exception != default)
                     _exception.Throw();
-                return _asyncOperation.DoSlowOperation(_fasterKV, _fasterSession, _currentCtx, _pendingContext, flushEvent, token);
+
+                // DoSlowOperation returns a new XxxAsyncResult, which contains a new UpdateAsyncInternal with a pendingContext with a default flushEvent
+                return _asyncOperation.DoSlowOperation(_fasterKV, _fasterSession, _currentCtx, _pendingContext, token);
             }
 
-            internal TAsyncResult Complete()
+            internal TAsyncResult CompleteSync()
             {
-                if (!TryCompleteAsyncState(asyncOp: false, out CompletionEvent flushEvent, out TAsyncResult asyncResult))
+                _pendingContext.IsAsync = false;    // We are now operating in sync mode for any subsequent IO or ALLOCATE_FAILED
+                if (!TryCompleteAsyncState(out TAsyncResult asyncResult))
                 {
                     while (true) { 
                         if (_exception != default)
                             _exception.Throw();
 
-                        if (!flushEvent.IsDefault())
-                            flushEvent.Wait();
-                        else if (_asyncOperation.CompletePendingIO(_fasterSession))
+                        if (!_pendingContext.flushEvent.IsDefault())
+                        {
+                            _pendingContext.flushEvent.Wait();
+                            _pendingContext.flushEvent = default;
+                        }
+                        else if (_asyncOperation.CompletePendingSyncIO(_fasterSession))
                             break;
 
-                        if (this.TryCompleteSync(asyncOp: false, out flushEvent, out asyncResult))
+                        if (this.TryCompleteSync(out asyncResult))
                             break;
                     }
                 }
                 return asyncResult;
             }
 
-            private bool TryCompleteAsyncState(bool asyncOp, out CompletionEvent flushEvent, out TAsyncResult asyncResult)
+            private bool TryCompleteAsyncState(out TAsyncResult asyncResult)
             {
                 // This makes one attempt to complete the async operation's synchronous state, and clears the async pending counters.
                 if (CompletionComputeStatus != Completed
                     && Interlocked.CompareExchange(ref CompletionComputeStatus, Completed, Pending) == Pending)
                 {
+                    bool hasPendingIO = _asyncOperation.HasPendingIO;
                     try
                     {
                         if (_exception == default)
-                            return TryCompleteSync(asyncOp, out flushEvent, out asyncResult);
+                            return TryCompleteSync(out asyncResult);
                     }
                     finally
                     {
-                        _asyncOperation.DecrementPending(_currentCtx, ref _pendingContext);
+                        if (hasPendingIO)
+                            _asyncOperation.DecrementPendingAsyncIO(_currentCtx, ref _pendingContext);
                     }
                 }
 
-                flushEvent = default;
+                _pendingContext.flushEvent = default;
                 asyncResult = default;
                 return false;
             }
 
-            private bool TryCompleteSync(bool asyncOp, out CompletionEvent flushEvent, out TAsyncResult asyncResult)
+            private bool TryCompleteSync(out TAsyncResult asyncResult)
             {
                 _fasterSession.UnsafeResumeThread();
                 try
                 {
-                    Status status = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx, asyncOp, out flushEvent, out Output output);
+                    Status status = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx, out Output output);
 
                     if (!status.IsPending)
                     {
@@ -167,7 +176,7 @@ namespace FASTER.core
                 catch (Exception e)
                 {
                     _exception = ExceptionDispatchInfo.Capture(e);
-                    flushEvent = default;
+                    _pendingContext.flushEvent = default;
                 }
                 finally
                 {
@@ -182,13 +191,14 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static Status TranslateStatus(OperationStatus internalStatus)
         {
-            if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
+            if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
                 return status;
             Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
             return new(StatusCode.Pending);
         }
 
-        private static async ValueTask<ExceptionDispatchInfo> WaitForFlushCompletionAsync<Input, Output, Context>(FasterKV<Key, Value> @this, FasterExecutionContext<Input, Output, Context> currentCtx, CompletionEvent flushEvent, CancellationToken token)
+        // This takes flushEvent as a parameter because we can't pass by ref to an async method.
+        private static async ValueTask<ExceptionDispatchInfo> WaitForFlushCompletionAsync(FasterKV<Key, Value> @this, CompletionEvent flushEvent, CancellationToken token)
         {
             ExceptionDispatchInfo exceptionDispatchInfo = default;
             try
@@ -205,6 +215,42 @@ namespace FASTER.core
                 exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
             }
             return exceptionDispatchInfo;
+        }
+
+        // This takes flushEvent as a parameter because we can't pass by ref to an async method.
+        private static async ValueTask<(AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo edi)> WaitForFlushOrIOCompletionAsync<Input, Output, Context>(
+                        FasterKV<Key, Value> @this, FasterExecutionContext<Input, Output, Context> currentCtx,
+                        CompletionEvent flushEvent, AsyncIOContext<Key, Value> diskRequest, CancellationToken token)
+        {
+            ExceptionDispatchInfo exceptionDispatchInfo = default;
+            try
+            {
+                token.ThrowIfCancellationRequested();
+
+                if (@this.epoch.ThisInstanceProtected())
+                    throw new NotSupportedException("Async operations not supported over protected epoch");
+
+                // If we are here because of flushEvent, then _diskRequest is default--there is no pending disk operation.
+                if (diskRequest.IsDefault())
+                {
+                    Debug.Assert(!flushEvent.IsDefault());
+                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                }
+                else
+                {
+                    Debug.Assert(flushEvent.IsDefault());
+                    currentCtx.asyncPendingCount++;
+                    currentCtx.pendingReads.Add();
+
+                    using (token.Register(() => diskRequest.asyncOperation.TrySetCanceled()))
+                        diskRequest = await diskRequest.asyncOperation.Task.WithCancellationAsync(token).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
+            }
+            return (diskRequest, exceptionDispatchInfo);
         }
     }
 }

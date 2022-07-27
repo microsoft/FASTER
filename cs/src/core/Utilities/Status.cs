@@ -68,7 +68,7 @@ namespace FASTER.core
         internal Status(OperationStatus operationStatus) : this()
         {
             var basicOperationStatus = OperationStatusUtils.BasicOpCode(operationStatus);
-            Debug.Assert(basicOperationStatus <= OperationStatus.MAX_DIRECT_MAP_TO_STATUSCODE);
+            Debug.Assert(basicOperationStatus <= OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE);
             statusCode = (StatusCode)basicOperationStatus | (StatusCode)((int)operationStatus >> OperationStatusUtils.OpStatusToStatusCodeShift);
         }
 

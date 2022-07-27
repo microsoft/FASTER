@@ -21,18 +21,20 @@ namespace FASTER.core
             readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
             readonly FasterExecutionContext<Input, Output, Context> _currentCtx;
             PendingContext<Input, Output, Context> _pendingContext;
-            readonly AsyncIOContext<Key, Value> _diskRequest;
+            ReadOptions _readOptions;
+            AsyncIOContext<Key, Value> _diskRequest;
             int CompletionComputeStatus;
             internal RecordMetadata _recordMetadata;
 
             internal ReadAsyncInternal(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession, FasterExecutionContext<Input, Output, Context> currentCtx,
-                                       PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
+                                       PendingContext<Input, Output, Context> pendingContext, ReadOptions readOptions, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 _exception = exceptionDispatchInfo;
                 _fasterKV = fasterKV;
                 _fasterSession = fasterSession;
                 _currentCtx = currentCtx;
                 _pendingContext = pendingContext;
+                _readOptions = readOptions;
                 _diskRequest = diskRequest;
                 CompletionComputeStatus = Pending;
                 _recordMetadata = default;
@@ -41,8 +43,7 @@ namespace FASTER.core
             internal (Status, Output) Complete()
             {
                 (Status, Output) _result = default;
-                if (_diskRequest.asyncOperation != null
-                    && CompletionComputeStatus != Completed
+                if (CompletionComputeStatus != Completed
                     && Interlocked.CompareExchange(ref CompletionComputeStatus, Completed, Pending) == Pending)
                 {
                     try
@@ -52,8 +53,16 @@ namespace FASTER.core
                             _fasterSession.UnsafeResumeThread();
                             try
                             {
-                                var status = _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, true, out _);
-                                Debug.Assert(!status.IsPending);
+                                Status status;
+                                do
+                                {
+                                    status = !this._diskRequest.IsDefault()
+                                        ? _fasterKV.InternalCompletePendingRequestFromContext(_currentCtx, _currentCtx, _fasterSession, _diskRequest, ref _pendingContext, out var newDiskRequest)
+                                        : _fasterKV.CallInternalRead(_fasterSession, _currentCtx, ref _pendingContext, ref _pendingContext.key.Get(), ref _pendingContext.input.Get(), ref _pendingContext.output,
+                                                        ref _readOptions, _pendingContext.userContext, _pendingContext.serialNum, out newDiskRequest);
+                                    this._diskRequest = newDiskRequest;
+                                    Debug.Assert(this._diskRequest.IsDefault() || _pendingContext.flushEvent.IsDefault(), "Cannot have both flushEvent and diskRequest");
+                                } while (status.IsPending);
                                 _result = (status, _pendingContext.output);
                                 _recordMetadata = new(_pendingContext.recordInfo, _pendingContext.logicalAddress);
                                 _pendingContext.Dispose();
@@ -112,12 +121,12 @@ namespace FASTER.core
                 FasterKV<Key, Value> fasterKV,
                 IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                 FasterExecutionContext<Input, Output, Context> currentCtx,
-                PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
+                PendingContext<Input, Output, Context> pendingContext, ReadOptions readOptions, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 status = new(StatusCode.Pending);
                 output = default;
                 this.recordMetadata = default;
-                readAsyncInternal = new ReadAsyncInternal<Input, Output, Context>(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
+                readAsyncInternal = new ReadAsyncInternal<Input, Output, Context>(fasterKV, fasterSession, currentCtx, pendingContext, readOptions, diskRequest, exceptionDispatchInfo);
             }
 
             /// <summary>
@@ -152,25 +161,16 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> currentCtx,
             ref Key key, ref Input input, ref ReadOptions readOptions, Context context, long serialNo, CancellationToken token, bool noKey = false)
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
+            var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
             var operationFlags = PendingContext<Input, Output, Context>.GetOperationFlags(MergeReadFlags(currentCtx.ReadFlags, readOptions.ReadFlags), noKey);
             pcontext.SetOperationFlags(operationFlags, readOptions.StopAddress);
             var diskRequest = default(AsyncIOContext<Key, Value>);
-            Output output = default;
 
             fasterSession.UnsafeResumeThread();
             try
             {
-                OperationStatus internalStatus;
-                do
-                    internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
-                while (internalStatus == OperationStatus.RETRY_NOW);
-                Debug.Assert(internalStatus != OperationStatus.RETRY_LATER);
-
-                if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                    return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(new(internalStatus), output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
-
-                status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, true, out diskRequest);
+                Output output = default;
+                var status = CallInternalRead(fasterSession, currentCtx, ref pcontext, ref key, ref input, ref output, ref readOptions, context, serialNo, out diskRequest);
                 if (!status.IsPending)
                     return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
@@ -181,36 +181,43 @@ namespace FASTER.core
                 fasterSession.UnsafeSuspendThread();
             }
 
-            return SlowReadAsync(this, fasterSession, currentCtx, pcontext, diskRequest, token);
+            return SlowReadAsync(this, fasterSession, currentCtx, pcontext, readOptions, diskRequest, token);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private Status CallInternalRead<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pcontext, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, Context context, long serialNo,
+            out AsyncIOContext<Key, Value> diskRequest)
+        {
+            diskRequest = default;
+            OperationStatus internalStatus;
+            do
+            {
+                internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
+                Debug.Assert(internalStatus != OperationStatus.RETRY_LATER, "Read should not return RETRY_LATER");
+            } while (HandleImmediateRetryStatus(internalStatus, currentCtx, currentCtx, fasterSession, ref pcontext));
+
+            if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
+                return status;
+            if (internalStatus == OperationStatus.ALLOCATE_FAILED)
+            {
+                Debug.Assert(!pcontext.flushEvent.IsDefault(), "Expected flushEvent");
+                return new(StatusCode.Pending);
+            }
+
+            status = HandleOperationStatus(currentCtx, ref pcontext, internalStatus, out diskRequest);
+            return status;
         }
 
         private static async ValueTask<ReadAsyncResult<Input, Output, Context>> SlowReadAsync<Input, Output, Context>(
-            FasterKV<Key, Value> @this,
-            IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            FasterKV<Key, Value> @this, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx,
-            PendingContext<Input, Output, Context> pendingContext, AsyncIOContext<Key, Value> diskRequest, CancellationToken token = default)
+            PendingContext<Input, Output, Context> pcontext, ReadOptions readOptions, AsyncIOContext<Key, Value> diskRequest, CancellationToken token = default)
         {
-            currentCtx.asyncPendingCount++;
-            currentCtx.pendingReads.Add();
-
-            ExceptionDispatchInfo exceptionDispatchInfo = default;
-
-            try
-            {
-                token.ThrowIfCancellationRequested();
-
-                if (@this.epoch.ThisInstanceProtected())
-                    throw new NotSupportedException("Async operations not supported over protected epoch");
-
-                using (token.Register(() => diskRequest.asyncOperation.TrySetCanceled()))
-                    diskRequest = await diskRequest.asyncOperation.Task.WithCancellationAsync(token).ConfigureAwait(false);
-            }
-            catch (Exception e)
-            {
-                exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
-            }
-
-            return new ReadAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pendingContext, diskRequest, exceptionDispatchInfo);
+            ExceptionDispatchInfo exceptionDispatchInfo;
+            (diskRequest, exceptionDispatchInfo) = await WaitForFlushOrIOCompletionAsync(@this, currentCtx, pcontext.flushEvent, diskRequest, token);
+            pcontext.flushEvent = default;
+            return new ReadAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pcontext, readOptions, diskRequest, exceptionDispatchInfo);
         }
     }
 }

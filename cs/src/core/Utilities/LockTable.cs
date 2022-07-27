@@ -187,8 +187,10 @@ namespace FASTER.core
                     return !lte.lockRecordInfo.Invalid;
                 }
             }
+
+            // !IsActive is still valid; the record is not locked.
             recordInfo = default;
-            return false;
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
