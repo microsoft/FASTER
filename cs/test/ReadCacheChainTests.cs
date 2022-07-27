@@ -692,6 +692,13 @@ namespace FASTER.test.ReadCacheTests
                 value = output = input;
                 return true;
             }
+
+            /// <inheritdoc/>
+            public override bool InitialUpdater(ref long key, ref long input, ref long value, ref long output, ref RMWInfo rmwInfo)
+            {
+                Assert.Fail("For these tests, InitialUpdater should never be called");
+                return false;
+            }
         }
 
         public enum ModuloRange { Hundred = 100, Thousand = 1000, None = int.MaxValue }
@@ -865,6 +872,13 @@ namespace FASTER.test.ReadCacheTests
                 base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
                 input.CopyTo(ref output, base.memoryPool);
                 return true;
+            }
+
+            /// <inheritdoc/>
+            public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            {
+                Assert.Fail("For these tests, InitialUpdater should never be called");
+                return false;
             }
         }
 

@@ -36,10 +36,10 @@ namespace FASTER.core
             /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
             /// <param name="asyncOp">Whether this is from a synchronous or asynchronous completion call</param>
             /// <param name="flushEvent">The event to wait for flush completion on</param>
-            /// <param name="output">The output to be populated by this operation</param>
+            /// <remarks>Populates <paramref name="pendingContext"/>.output</remarks>
             /// <returns></returns>
             Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output);
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent);
             /// <summary>
             /// Performs the asynchronous operation. This may be a wait for <paramref name="flushEvent"/> or a disk IO.
             /// </summary>
@@ -155,12 +155,12 @@ namespace FASTER.core
                 _fasterSession.UnsafeResumeThread();
                 try
                 {
-                    Status status = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx, asyncOp, out flushEvent, out Output output);
+                    Status status = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx, asyncOp, out flushEvent);
 
                     if (!status.IsPending)
                     {
                         _pendingContext.Dispose();
-                        asyncResult = _asyncOperation.CreateResult(status, output, new RecordMetadata(_pendingContext.recordInfo, _pendingContext.logicalAddress));
+                        asyncResult = _asyncOperation.CreateResult(status, _pendingContext.output, new RecordMetadata(_pendingContext.recordInfo, _pendingContext.logicalAddress));
                         return true;
                     }
                 }
