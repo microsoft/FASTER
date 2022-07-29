@@ -746,7 +746,8 @@ namespace FASTER.test.ReadCacheTests
                     {
                         long key = ii, output = 0;
                         var status = session.Read(ref key, ref output);
-                        if (status.IsPending)
+                        bool wasPending = status.IsPending;
+                        if (wasPending)
                         {
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
@@ -770,7 +771,8 @@ namespace FASTER.test.ReadCacheTests
                     {
                         long key = ii, input = ii + valueAdd * tid, output = 0;
                         var status = session.RMW(ref key, ref input, ref output);
-                        if (status.IsPending)
+                        bool wasPending = status.IsPending;
+                        if (wasPending)
                         {
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs);
@@ -938,7 +940,7 @@ namespace FASTER.test.ReadCacheTests
                         Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
                         var status = session.Read(ref key, ref output);
                         bool wasPending = status.IsPending;
-                        if (status.IsPending)
+                        if (wasPending)
                         {
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
@@ -976,7 +978,7 @@ namespace FASTER.test.ReadCacheTests
                         Assert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + valueAdd));
                         var status = session.RMW(ref key, ref input, ref output);
                         bool wasPending = status.IsPending;
-                        if (status.IsPending)
+                        if (wasPending)
                         {
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs);

@@ -198,14 +198,7 @@ namespace FASTER.core
                 : InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
 
             if (!OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
-            {
-                if (internalStatus == OperationStatus.ALLOCATE_FAILED)
-                {
-                    status = new(StatusCode.Pending);  // This plus newRequest.IsDefault() means allocate failed
-                    goto Done;
-                }
                 status = HandleOperationStatus(opCtx, ref pendingContext, internalStatus, out newRequest);
-            }
 
             // If done, callback user code
             if (status.IsCompletedSuccessfully)
@@ -230,7 +223,6 @@ namespace FASTER.core
                 }
             }
 
-        Done:
             unsafe
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());

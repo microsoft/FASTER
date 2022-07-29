@@ -87,7 +87,6 @@ namespace FASTER.core
                             copyStatus = fhtSession.CompactionCopyToTail(ref key, ref input, ref value, ref output, checkedAddress);
                             recordMetadata.RecordInfo.PreviousAddress = checkedAddress;
                         } while (copyStatus == OperationStatus.RECORD_ON_DISK);
-                        Debug.Assert(copyStatus == OperationStatus.SUCCESS);
                     }
 
                     // Ensure address is at record boundary
@@ -176,7 +175,6 @@ namespace FASTER.core
                             // we are safe to copy the old record to the tail.
                             copyStatus = fhtSession.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1);
                         } while (copyStatus == OperationStatus.RECORD_ON_DISK);
-                        Debug.Assert(copyStatus == OperationStatus.SUCCESS);
                     }
                 }
             }

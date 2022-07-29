@@ -14,7 +14,7 @@ namespace FASTER.core
         internal struct DeleteAsyncOperation<Input, Output, Context> : IUpdateAsyncOperation<Input, Output, Context, DeleteAsyncResult<Input, Output, Context>>
         {
             /// <inheritdoc/>
-            public DeleteAsyncResult<Input, Output, Context> CreateResult(Status status, Output output, RecordMetadata recordMetadata) => new DeleteAsyncResult<Input, Output, Context>(status);
+            public DeleteAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new DeleteAsyncResult<Input, Output, Context>(status);
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
@@ -35,13 +35,7 @@ namespace FASTER.core
                 => SlowDeleteAsync(fasterKV, fasterSession, currentCtx, pendingContext, token);
 
             /// <inheritdoc/>
-            public bool CompletePendingSyncIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession) => false;
-
-            /// <inheritdoc/>
             public bool HasPendingIO => false;
-
-            /// <inheritdoc/>
-            public void DecrementPendingAsyncIO(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext) { }
         }
 
         /// <summary>

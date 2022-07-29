@@ -12,8 +12,8 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        // UpsertAsync, DeleteAsync, and RMWAsync can go pending when they generate Flush operations on BlockAllocate when inserting new records at the tail.
-        // RMW can also go pending with a disk operation. Define some interfaces to and a shared UpdateAsyncInternal class to consolidate the code.
+        // All 4 operations can go pending when they generate Flush operations on BlockAllocate when inserting new records at the tail.
+        // Read and RMW can also go pending with a disk operation.
 
         internal interface IUpdateAsyncOperation<Input, Output, Context, TAsyncResult>
         {
@@ -24,7 +24,7 @@ namespace FASTER.core
             /// <param name="output">The completed output of the operation, if any</param>
             /// <param name="recordMetadata">The record metadata from the operation (currently used by RMW only)</param>
             /// <returns></returns>
-            TAsyncResult CreateResult(Status status, Output output, RecordMetadata recordMetadata);
+            TAsyncResult CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata);
 
             /// <summary>
             /// This performs the low-level synchronous operation for the implementation class of <typeparamref name="TAsyncResult"/>; for example,
@@ -51,23 +51,9 @@ namespace FASTER.core
                                             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CancellationToken token);
 
             /// <summary>
-            /// For RMW only, completes any pending sync IO (using readyResponses); no-op for other implementations.
-            /// </summary>
-            /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
-            /// <returns>Whether the pending operation was complete</returns>
-            bool CompletePendingSyncIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession);
-
-            /// <summary>
             /// For RMW only, indicates whether there is a pending IO; no-op for other implementations.
             /// </summary>
             bool HasPendingIO { get; }
-
-            /// <summary>
-            /// For RMW only, decrements the count of pending async IOs; no-op for other implementations.
-            /// </summary>
-            /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
-            /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
-            void DecrementPendingAsyncIO(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext);
         }
 
         internal sealed class UpdateAsyncInternal<Input, Output, Context, TAsyncOperation, TAsyncResult>
@@ -120,15 +106,16 @@ namespace FASTER.core
                         if (_exception != default)
                             _exception.Throw();
 
+                        bool isPending = false;
                         if (!_pendingContext.flushEvent.IsDefault())
                         {
                             _pendingContext.flushEvent.Wait();
                             _pendingContext.flushEvent = default;
                         }
-                        else if (_asyncOperation.CompletePendingSyncIO(_fasterSession))
+                        else if (TryCompletePendingSyncIO(out asyncResult, out isPending))
                             break;
 
-                        if (this.TryCompleteSync(out asyncResult))
+                        if (!isPending && TryCompleteSync(out asyncResult))
                             break;
                     }
                 }
@@ -150,7 +137,11 @@ namespace FASTER.core
                     finally
                     {
                         if (hasPendingIO)
-                            _asyncOperation.DecrementPendingAsyncIO(_currentCtx, ref _pendingContext);
+                        {
+                            _currentCtx.ioPendingRequests.Remove(_pendingContext.id);
+                            _currentCtx.asyncPendingCount--;
+                            _currentCtx.pendingReads.Remove();
+                        }
                     }
                 }
 
@@ -169,7 +160,7 @@ namespace FASTER.core
                     if (!status.IsPending)
                     {
                         _pendingContext.Dispose();
-                        asyncResult = _asyncOperation.CreateResult(status, output, new RecordMetadata(_pendingContext.recordInfo, _pendingContext.logicalAddress));
+                        asyncResult = _asyncOperation.CreateCompletedResult(status, output, new RecordMetadata(_pendingContext.recordInfo, _pendingContext.logicalAddress));
                         return true;
                     }
                 }
@@ -185,6 +176,39 @@ namespace FASTER.core
 
                 asyncResult = default;
                 return false;
+            }
+
+            bool TryCompletePendingSyncIO(out TAsyncResult asyncResult, out bool isPending)
+            {
+                asyncResult = default;
+                isPending = false;
+                if (!_asyncOperation.HasPendingIO)
+                    return false;
+
+                // Because we've set pendingContext.IsAsync false, CompletePending() will Wait() on any flushEvent if it encounters OperationStatus.ALLOCATE_FAILED.
+                Status status;
+                Output output = default;
+                if (!_fasterSession.CompletePendingWithOutputs(out var completedOutputs, wait: true, spinWaitForCommit: false))
+                    status = new(StatusCode.Error);
+                else
+                {
+                    if (!completedOutputs.Next())
+                        status = new(StatusCode.Error);
+                    else
+                    {
+                        status = completedOutputs.Current.Status;
+                        output = completedOutputs.Current.Output;
+                    }
+                    completedOutputs.Dispose();
+                    isPending = status.IsPending;
+                    if (isPending)
+                        return false;
+                }
+
+                // We have a result or an error state, so we have completed the operation.
+                _pendingContext.Dispose();
+                asyncResult = _asyncOperation.CreateCompletedResult(status, output, new RecordMetadata(_pendingContext.recordInfo, _pendingContext.logicalAddress));
+                return true;
             }
         }
 

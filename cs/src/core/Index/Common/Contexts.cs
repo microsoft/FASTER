@@ -169,7 +169,9 @@ namespace FASTER.core
             internal const ushort kHasPrevHighestKeyHashAddress = 0x0400;
 
             // Flags for various operations passed at multiple levels, e.g. through RETRY_NOW.
-            internal const ushort kIsFailedReadCacheAllocation = 0x4000;
+            internal const ushort kUnused1 = 0x1000;
+            internal const ushort kUnused2 = 0x2000;
+            internal const ushort kUnused3 = 0x4000;
             internal const ushort kHasExpiration = 0x8000;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -256,12 +258,6 @@ namespace FASTER.core
             {
                 get => (operationFlags & kHasPrevHighestKeyHashAddress) != 0;
                 set => operationFlags = value ? (ushort)(operationFlags | kHasPrevHighestKeyHashAddress) : (ushort)(operationFlags & ~kHasPrevHighestKeyHashAddress);
-            }
-
-            internal bool IsFailedReadCachedAllocation
-            {
-                get => (operationFlags & kIsFailedReadCacheAllocation) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kIsFailedReadCacheAllocation) : (ushort)(operationFlags & ~kIsFailedReadCacheAllocation);
             }
 
             public void Dispose()

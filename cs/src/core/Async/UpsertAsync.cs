@@ -14,7 +14,7 @@ namespace FASTER.core
         internal struct UpsertAsyncOperation<Input, Output, Context> : IUpdateAsyncOperation<Input, Output, Context, UpsertAsyncResult<Input, Output, Context>>
         {
             /// <inheritdoc/>
-            public UpsertAsyncResult<Input, Output, Context> CreateResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status, output, recordMetadata);
+            public UpsertAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status, output, recordMetadata);
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
@@ -36,13 +36,7 @@ namespace FASTER.core
                 => SlowUpsertAsync(fasterKV, fasterSession, currentCtx, pendingContext, token);
 
             /// <inheritdoc/>
-            public bool CompletePendingSyncIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession) => false;
-
-            /// <inheritdoc/>
             public bool HasPendingIO => false;
-
-            /// <inheritdoc/>
-            public void DecrementPendingAsyncIO(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext) { }
         }
 
         /// <summary>
