@@ -22,6 +22,7 @@ using System.Runtime.InteropServices;
 [assembly: Guid("01002755-60ca-40ee-94d9-11c07eb58786")]
 
 [assembly: InternalsVisibleTo("FASTER.test" + AssemblyRef.FASTERPublicKey)]
+[assembly: InternalsVisibleTo("FASTER.stress" + AssemblyRef.FASTERPublicKey)]
 
 /// <summary>
 /// Sets public key string for friend assemblies.

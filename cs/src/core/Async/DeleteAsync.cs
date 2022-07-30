@@ -59,7 +59,7 @@ namespace FASTER.core
             {
                 this.Status = new(StatusCode.Pending);
                 updateAsyncInternal = new UpdateAsyncInternal<Input, Output, Context, DeleteAsyncOperation<Input, Output, Context>, DeleteAsyncResult<Input, Output, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new DeleteAsyncOperation<Input, Output, Context>());
+                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new ());
             }
 
             /// <summary>Complete the Delete operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>

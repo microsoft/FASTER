@@ -135,6 +135,7 @@ namespace FASTER.core
         public byte Value => (byte)statusCode;
 
         /// <inheritdoc />
-        public override string ToString() => this.statusCode.ToString();
+        /// <remarks>"Found" is zero, so does not appear in the output by default; this handles that explicitly</remarks>
+        public override string ToString() => (this.Found ? "Found, " : string.Empty) + this.statusCode.ToString();
     }
 }

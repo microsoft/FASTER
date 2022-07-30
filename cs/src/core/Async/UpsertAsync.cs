@@ -70,7 +70,7 @@ namespace FASTER.core
                 this.Output = default;
                 this.RecordMetadata = default;
                 updateAsyncInternal = new UpdateAsyncInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new UpsertAsyncOperation<Input, TOutput, Context>());
+                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new ());
             }
 
             /// <summary>Complete the Upsert operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
