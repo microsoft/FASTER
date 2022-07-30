@@ -60,17 +60,20 @@ namespace FASTER.stress
                 if (testLoader.UseReadCache)
                     Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"keyOrdinal {keyOrdinal}: {status}");
             }
-            Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
             if (status.Found)
                 Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            else
+                Assert.IsTrue(testLoader.UseDelete, status.ToString());
             disposer(output);
         }
 
         private async Task ReadAsync(int keyOrdinal, TKey key)
         {
             var (status, output) = (await session.ReadAsync(ref key)).Complete();
-            Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
-            Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            if (status.Found)
+                Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            else
+                Assert.IsTrue(testLoader.UseDelete, status.ToString());
             disposer(output);
         }
 
@@ -89,8 +92,10 @@ namespace FASTER.stress
                     if (testLoader.UseReadCache)
                         Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"keyOrdinal {keyOrdinal}: {status}");
                 }
-                Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
-                Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                if (status.Found)
+                    Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                else
+                    Assert.IsTrue(testLoader.UseDelete, status.ToString());
                 disposer(output);
             }
             finally
@@ -108,8 +113,10 @@ namespace FASTER.stress
 
                 // Do not resume epoch for Async operations
                 var (status, output) = (await luContext.ReadAsync(ref keys[0])).Complete();
-                Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
-                Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                if (status.Found)
+                    Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                else
+                    Assert.IsTrue(testLoader.UseDelete, status.ToString());
                 disposer(output);
             }
             finally
@@ -141,16 +148,20 @@ namespace FASTER.stress
                 (status, output) = TestLoader.GetSinglePendingResult(completedOutputs, out var recordMetadata);
                 Assert.AreEqual(status.Found, status.Record.CopyUpdated | status.Record.InPlaceUpdated, $"keyOrdinal {keyOrdinal}: {status}");
             }
-            Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
-            Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            if (status.Found)
+                Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            else
+                Assert.IsTrue(testLoader.UseDelete, status.ToString());
             disposer(output);
         }
 
         private async Task RMWAsync(int keyOrdinal, TKey key, TInput input)
         {
             var (status, output) = (await session.RMWAsync(ref key, ref input)).Complete();
-            Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
-            Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            if (status.Found)
+                Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+            else
+                Assert.IsTrue(testLoader.UseDelete, status.ToString());
             disposer(output);
         }
 
@@ -168,8 +179,10 @@ namespace FASTER.stress
                     (status, output) = TestLoader.GetSinglePendingResult(completedOutputs, out var recordMetadata);
                     Assert.AreEqual(status.Found, status.Record.CopyUpdated | status.Record.InPlaceUpdated, $"keyOrdinal {keyOrdinal}: {status}");
                 }
-                Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
-                Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                if (status.Found)
+                    Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                else
+                    Assert.IsTrue(testLoader.UseDelete, status.ToString());
                 disposer(output);
             }
             finally
@@ -187,8 +200,10 @@ namespace FASTER.stress
 
                 // Do not resume epoch for Async operations
                 var (status, output) = (await luContext.RMWAsync(ref keys[0], ref input)).Complete();
-                Assert.IsTrue(testLoader.UseDelete || status.Found, status.ToString());
-                Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                if (status.Found)
+                    Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
+                else
+                    Assert.IsTrue(testLoader.UseDelete, status.ToString());
                 disposer(output);
             }
             finally
