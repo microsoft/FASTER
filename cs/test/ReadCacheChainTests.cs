@@ -664,7 +664,7 @@ namespace FASTER.test.ReadCacheTests
                 }
             }
 
-            fht = new FasterKV<long, long>(1L << 10, logSettings, comparer: new LongComparerModulo(modRange));
+            fht = new FasterKV<long, long>(1L << 20, logSettings, comparer: new LongComparerModulo(modRange));
         }
 
         [TearDown]
@@ -728,7 +728,7 @@ namespace FASTER.test.ReadCacheTests
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
-        public void MultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
+        public void LongRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
         {
             if (numReadThreads == 0 && numWriteThreads == 0)
                 Assert.Ignore();
@@ -844,7 +844,7 @@ namespace FASTER.test.ReadCacheTests
                 }
             }
 
-            fht = new FasterKV<SpanByte, SpanByte>(1L << 10, logSettings, comparer: new SpanByteComparerModulo(modRange));
+            fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: new SpanByteComparerModulo(modRange));
         }
 
         [TearDown]
@@ -914,7 +914,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         // [Repeat(1000)]
-        public void MultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
+        public void SpanByteRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
         {
             //Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
             

@@ -142,16 +142,7 @@ namespace FASTER.core
                 internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, currentCtx, currentCtx, fasterSession, ref pcontext));
 
-            if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
-                return status;
-            if (internalStatus == OperationStatus.ALLOCATE_FAILED)
-            {
-                Debug.Assert(!pcontext.flushEvent.IsDefault(), "Expected flushEvent");
-                return new(StatusCode.Pending);
-            }
-
-            status = HandleOperationStatus(currentCtx, ref pcontext, internalStatus, out diskRequest);
-            return status;
+            return HandleOperationStatus(currentCtx, ref pcontext, internalStatus, out diskRequest);
         }
 
         private static async ValueTask<ReadAsyncResult<Input, Output, Context>> SlowReadAsync<Input, Output, Context>(

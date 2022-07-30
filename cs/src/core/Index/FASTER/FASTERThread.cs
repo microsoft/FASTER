@@ -197,8 +197,7 @@ namespace FASTER.core
                 ? InternalContinuePendingRead(opCtx, request, ref pendingContext, fasterSession, currentCtx)
                 : InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
 
-            if (!OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
-                status = HandleOperationStatus(opCtx, ref pendingContext, internalStatus, out newRequest);
+            var status = HandleOperationStatus(opCtx, ref pendingContext, internalStatus, out newRequest);
 
             // If done, callback user code
             if (status.IsCompletedSuccessfully)

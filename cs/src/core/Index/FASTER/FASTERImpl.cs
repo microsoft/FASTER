@@ -2399,6 +2399,7 @@ namespace FASTER.core
             if (operationStatus == OperationStatus.ALLOCATE_FAILED)
             {
                 Debug.Assert(pendingContext.IsAsync, "Sync ops should have handled ALLOCATE_FAILED before HandleOperationStatus");
+                Debug.Assert(!pendingContext.flushEvent.IsDefault(), "Expected flushEvent for ALLOCATE_FAILED");
                 return new(StatusCode.Pending);
             }
             else if (operationStatus == OperationStatus.RECORD_ON_DISK)

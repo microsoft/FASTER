@@ -140,14 +140,7 @@ namespace FASTER.core
                 internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, currentCtx, currentCtx, fasterSession, ref pcontext));
 
-            if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
-                return status;
-
-            if (internalStatus == OperationStatus.ALLOCATE_FAILED)
-                return new(StatusCode.Pending);
-
-            status = HandleOperationStatus(currentCtx, ref pcontext, internalStatus, out diskRequest);
-            return status;
+            return HandleOperationStatus(currentCtx, ref pcontext, internalStatus, out diskRequest);
         }
 
         private static async ValueTask<RmwAsyncResult<Input, Output, Context>> SlowRmwAsync<Input, Output, Context>(
