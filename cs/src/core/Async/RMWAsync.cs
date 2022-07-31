@@ -11,7 +11,7 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        internal struct RmwAsyncOperation<Input, Output, Context> : IUpdateAsyncOperation<Input, Output, Context, RmwAsyncResult<Input, Output, Context>>
+        internal struct RmwAsyncOperation<Input, Output, Context> : IAsyncOperation<Input, Output, Context, RmwAsyncResult<Input, Output, Context>>
         {
             AsyncIOContext<Key, Value> diskRequest;
             internal RmwAsyncOperation(AsyncIOContext<Key, Value> diskRequest) => this.diskRequest = diskRequest;
@@ -46,7 +46,7 @@ namespace FASTER.core
         /// </summary>
         public struct RmwAsyncResult<Input, TOutput, Context>
         {
-            internal readonly UpdateAsyncInternal<Input, TOutput, Context, RmwAsyncOperation<Input, TOutput, Context>, RmwAsyncResult<Input, TOutput, Context>> updateAsyncInternal;
+            internal readonly AsyncOperationInternal<Input, TOutput, Context, RmwAsyncOperation<Input, TOutput, Context>, RmwAsyncResult<Input, TOutput, Context>> updateAsyncInternal;
 
             /// <summary>Current status of the RMW operation</summary>
             public Status Status { get; }
@@ -73,7 +73,7 @@ namespace FASTER.core
                 Status = new(StatusCode.Pending);
                 this.Output = default;
                 this.RecordMetadata = default;
-                updateAsyncInternal = new UpdateAsyncInternal<Input, TOutput, Context, RmwAsyncOperation<Input, TOutput, Context>, RmwAsyncResult<Input, TOutput, Context>>(
+                updateAsyncInternal = new AsyncOperationInternal<Input, TOutput, Context, RmwAsyncOperation<Input, TOutput, Context>, RmwAsyncResult<Input, TOutput, Context>>(
                                         fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new (diskRequest));
             }
 

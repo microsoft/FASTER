@@ -3268,7 +3268,7 @@ namespace FASTER.core
                 if (comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
                     while (!recordInfo.TrySetInvalidAtomic())
-                        Thread.Yield(); // Note: Readcache records are not Sealed
+                        Thread.Yield(); // Note: Readcache records are not Sealed except just before locks are transferred before being unlinked in ReadCacheEvict
                 }
                 entry.word = logicalAddress = recordInfo.PreviousAddress;
             }
@@ -3309,7 +3309,7 @@ namespace FASTER.core
                 if (comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
                     while (!recordInfo.TrySetInvalidAtomic())
-                        Thread.Yield(); // Note: Readcache records are not Sealed
+                        Thread.Yield(); // Note: Readcache records are not Sealed except just before locks are transferred before being unlinked in ReadCacheEvict
                 }
 
                 lowestReadCachePhysicalAddress = physicalAddress;

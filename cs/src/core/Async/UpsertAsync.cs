@@ -11,7 +11,7 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        internal struct UpsertAsyncOperation<Input, Output, Context> : IUpdateAsyncOperation<Input, Output, Context, UpsertAsyncResult<Input, Output, Context>>
+        internal struct UpsertAsyncOperation<Input, Output, Context> : IAsyncOperation<Input, Output, Context, UpsertAsyncResult<Input, Output, Context>>
         {
             /// <inheritdoc/>
             public UpsertAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status, output, recordMetadata);
@@ -44,7 +44,7 @@ namespace FASTER.core
         /// </summary>
         public struct UpsertAsyncResult<Input, TOutput, Context>
         {
-            internal readonly UpdateAsyncInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>> updateAsyncInternal;
+            internal readonly AsyncOperationInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>> updateAsyncInternal;
 
             /// <summary>Current status of the Upsert operation</summary>
             public Status Status { get; }
@@ -69,7 +69,7 @@ namespace FASTER.core
                 this.Status = new(StatusCode.Pending);
                 this.Output = default;
                 this.RecordMetadata = default;
-                updateAsyncInternal = new UpdateAsyncInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>>(
+                updateAsyncInternal = new AsyncOperationInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>>(
                                         fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new ());
             }
 

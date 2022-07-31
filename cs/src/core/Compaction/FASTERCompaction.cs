@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics;
 
 namespace FASTER.core
 {
@@ -51,7 +50,7 @@ namespace FASTER.core
 
                     if (!recordInfo.Tombstone && !cf.IsDeleted(ref key, ref value))
                     {
-                        OperationStatus copyStatus = OperationStatus.SUCCESS;
+                        OperationStatus copyStatus;
                         ReadOptions readOptions = new() { StopAddress = iter1.NextAddress, };
                         do
                         {

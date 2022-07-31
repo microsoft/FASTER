@@ -15,7 +15,7 @@ namespace FASTER.core
         // All 4 operations can go pending when they generate Flush operations on BlockAllocate when inserting new records at the tail.
         // Read and RMW can also go pending with a disk operation.
 
-        internal interface IUpdateAsyncOperation<Input, Output, Context, TAsyncResult>
+        internal interface IAsyncOperation<Input, Output, Context, TAsyncResult>
         {
             /// <summary>
             /// This creates an instance of the <typeparamref name="TAsyncResult"/>, for example <see cref="RmwAsyncResult{Input, Output, Context}"/>
@@ -56,8 +56,8 @@ namespace FASTER.core
             bool HasPendingIO { get; }
         }
 
-        internal sealed class UpdateAsyncInternal<Input, Output, Context, TAsyncOperation, TAsyncResult>
-            where TAsyncOperation : IUpdateAsyncOperation<Input, Output, Context, TAsyncResult>
+        internal sealed class AsyncOperationInternal<Input, Output, Context, TAsyncOperation, TAsyncResult>
+            where TAsyncOperation : IAsyncOperation<Input, Output, Context, TAsyncResult>
         {
             const int Completed = 1;
             const int Pending = 0;
@@ -69,7 +69,7 @@ namespace FASTER.core
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 
-            internal UpdateAsyncInternal(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            internal AsyncOperationInternal(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                       FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
                                       ExceptionDispatchInfo exceptionDispatchInfo, TAsyncOperation asyncOperation)
             {

@@ -210,6 +210,7 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void SetOperationFlags(ushort flags, long stopAddress)
             {
+                // The async flag is often set when the PendingContext is created, so preserve that.
                 this.operationFlags = (ushort)(flags | (this.operationFlags & kIsAsync));
                 this.minAddress = stopAddress;
             }
