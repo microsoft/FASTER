@@ -2329,10 +2329,11 @@ namespace FASTER.core
             FasterSession fasterSession,
             ref PendingContext<Input, Output, Context> pendingContext)
             where FasterSession : IFasterSession 
-            => internalStatus == OperationStatus.RETRY_NOW || HandleRetryStatusWithEpochRefresh(internalStatus, opCtx, currentCtx, fasterSession, ref pendingContext);
+            => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE 
+            && HandleRetryStatus(internalStatus, opCtx, currentCtx, fasterSession, ref pendingContext);
 
         // Split this out to help inline the most common case (RETRY_NOW)
-        private bool HandleRetryStatusWithEpochRefresh<Input, Output, Context, FasterSession>(
+        private bool HandleRetryStatus<Input, Output, Context, FasterSession>(
             OperationStatus internalStatus,
             FasterExecutionContext<Input, Output, Context> opCtx,
             FasterExecutionContext<Input, Output, Context> currentCtx,
@@ -2343,6 +2344,9 @@ namespace FASTER.core
             Debug.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)
             {
+                case OperationStatus.RETRY_NOW:
+                    Thread.Yield();
+                    return true;
                 case OperationStatus.RETRY_LATER:
                     InternalRefresh(currentCtx, fasterSession);
                     pendingContext.version = currentCtx.version;

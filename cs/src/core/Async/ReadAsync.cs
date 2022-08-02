@@ -136,7 +136,6 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pcontext, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, Context context, long serialNo,
             out AsyncIOContext<Key, Value> diskRequest)
         {
-            diskRequest = default;
             OperationStatus internalStatus;
             do
                 internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, currentCtx, serialNo);

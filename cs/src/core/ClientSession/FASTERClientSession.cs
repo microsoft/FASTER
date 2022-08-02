@@ -172,11 +172,11 @@ namespace FASTER.core
             int sessionID = Interlocked.Increment(ref maxSessionID);
             var ctx = new FasterExecutionContext<Input, Output, Context>();
             InitContext(ctx, sessionID, sessionName);
-            ctx.ReadFlags = readFlags;
+            ctx.ReadFlags = MergeReadFlags(ReadFlags, readFlags);
             var prevCtx = new FasterExecutionContext<Input, Output, Context>();
             InitContext(prevCtx, sessionID, sessionName);
             prevCtx.version--;
-            prevCtx.ReadFlags = readFlags;
+            prevCtx.ReadFlags = ctx.ReadFlags;
 
             ctx.prevCtx = prevCtx;
 
@@ -271,7 +271,7 @@ namespace FASTER.core
             (sessionName, commitPoint) = InternalContinue<Input, Output, Context>(sessionID, out var ctx);
             if (commitPoint.UntilSerialNo == -1)
                 throw new Exception($"Unable to find session {sessionID} to recover");
-            ctx.ReadFlags = readFlags;
+            ctx.ReadFlags = MergeReadFlags(ReadFlags, readFlags);
 
             var session = sessionCreator(ctx);
 

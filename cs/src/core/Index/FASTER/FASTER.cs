@@ -555,18 +555,13 @@ namespace FASTER.core
             }
         }
 
-        internal ReadFlags MergeReadFlags(ReadFlags session, ReadFlags read)
-            => MergeReadFlags(this.ReadFlags, session, read);
-
-        internal static ReadFlags MergeReadFlags(ReadFlags fkv, ReadFlags session, ReadFlags read)
+        internal static ReadFlags MergeReadFlags(ReadFlags upper, ReadFlags lower)
         {
-            ReadFlags flags = ((session & ReadFlags.None) == 0) ? fkv : ReadFlags.Default;
-            flags |= session & ~ReadFlags.None;
-
-            if ((read & ReadFlags.None) != 0)
-                flags = ReadFlags.Default;
-            flags |= read;
-            return flags & ~ReadFlags.None;
+            // If lower is None, start with Default, else start with "upper without None"
+            ReadFlags flags = ((lower & ReadFlags.None) == 0) ? (upper & ~ReadFlags.None) : ReadFlags.Default;
+            // Add in "lower without None"
+            flags |= (lower & ~ReadFlags.None);
+            return flags;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -575,8 +570,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            ReadOptions readOptions = default;
-            pcontext.SetOperationFlags(MergeReadFlags(sessionCtx.ReadFlags, readOptions.ReadFlags), ref readOptions);
+            pcontext.SetOperationFlags(sessionCtx.ReadFlags);
             OperationStatus internalStatus;
             do 
                 internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
