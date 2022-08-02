@@ -1614,14 +1614,14 @@ namespace FASTER.core
                                 if (CheckBucketVersionNew(ref entry))
                                 {
                                     status = OperationStatus.CPR_SHIFT_DETECTED;
-                                    goto CreatePendingContext; // Pivot Thread
+                                    goto LatchRelease; // Pivot Thread, retry
                                 }
                                 break; // Normal Processing
                             }
                             else
                             {
                                 status = OperationStatus.CPR_SHIFT_DETECTED;
-                                goto CreatePendingContext; // Pivot Thread
+                                goto LatchRelease; // Pivot Thread, retry
                             }
                         }
                     case Phase.IN_PROGRESS:
@@ -1637,7 +1637,7 @@ namespace FASTER.core
                                 else
                                 {
                                     status = OperationStatus.RETRY_LATER;
-                                    goto CreatePendingContext; // Go Pending
+                                    goto LatchRelease; // Retry after refresh
                                 }
                             }
                             break; // Normal Processing
