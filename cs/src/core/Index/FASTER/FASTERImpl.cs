@@ -211,8 +211,7 @@ namespace FASTER.core
 
             if (sessionCtx.phase == Phase.PREPARE && CheckBucketVersionNew(ref entry))
             {
-                status = OperationStatus.CPR_SHIFT_DETECTED;
-                goto CreatePendingContext; // Pivot thread
+                return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
             }
 
             readInfo.Address = logicalAddress;
@@ -306,7 +305,7 @@ namespace FASTER.core
                         if (HashBucket.TryAcquireSharedLatch(bucket))
                             HashBucket.ReleaseSharedLatch(bucket);
                         else
-                            status = OperationStatus.CPR_SHIFT_DETECTED;
+                            return OperationStatus.CPR_SHIFT_DETECTED;
                     }
                 }
 
@@ -355,7 +354,8 @@ namespace FASTER.core
         {
             CreateNewRecord,
             CreatePendingContext,
-            NormalProcessing
+            NormalProcessing,
+            Retry
         }
 
         void Unseal(long unsealPhysicalAddress)
@@ -568,6 +568,10 @@ namespace FASTER.core
                     goto CreateNewRecord;
                 }
             }
+            else if (latchDestination == LatchDestination.Retry)
+            {
+                goto LatchRelease;
+            }
 
         // All other regions: Create a record in the mutable region
 #endregion
@@ -664,14 +668,14 @@ namespace FASTER.core
                             if (CheckBucketVersionNew(ref entry))
                             {
                                 status = OperationStatus.CPR_SHIFT_DETECTED;
-                                return LatchDestination.CreatePendingContext; // Pivot Thread
+                                return LatchDestination.Retry; // Pivot Thread on retry
                             }
                             break; // Normal Processing
                         }
                         else
                         {
                             status = OperationStatus.CPR_SHIFT_DETECTED;
-                            return LatchDestination.CreatePendingContext; // Pivot Thread
+                            return LatchDestination.Retry; // Pivot Thread on retry
                         }
                     }
                 case Phase.IN_PROGRESS:
@@ -687,7 +691,7 @@ namespace FASTER.core
                             else
                             {
                                 status = OperationStatus.RETRY_LATER;
-                                return LatchDestination.CreatePendingContext; // Go Pending
+                                return LatchDestination.Retry; // Refresh and retry operation
                             }
                         }
                         break; // Normal Processing
@@ -1043,7 +1047,7 @@ namespace FASTER.core
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                     ref Value recordValue = ref hlog.GetValue(physicalAddress);
                     if (recordInfo.IsIntermediate(out status))
-                        return status;
+                        goto LatchRelease;
 
                     if (!recordInfo.Tombstone)
                     {
@@ -1065,7 +1069,10 @@ namespace FASTER.core
                         if (recordInfo.Tombstone)
                             goto CreateNewRecord;
                         if (lockFailed || !recordInfo.Seal(fasterSession.IsManualLocking))
-                            return OperationStatus.RETRY_LATER;
+                        {
+                            status = OperationStatus.RETRY_LATER;
+                            goto LatchRelease;
+                        }
                         unsealPhysicalAddress = physicalAddress;
                     }
                     goto CreateNewRecord;
@@ -1075,8 +1082,7 @@ namespace FASTER.core
                 else if (logicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(physicalAddress).Tombstone) // TODO potentially replace with Sealed
                 {
                     status = OperationStatus.RETRY_LATER;
-                    latchDestination = LatchDestination.CreatePendingContext;
-                    goto CreatePendingContext;
+                    goto LatchRelease;
                 }
 
                 // Safe Read-Only Region: Create a record in the mutable region
@@ -1088,7 +1094,10 @@ namespace FASTER.core
                     if (recordInfo.Tombstone)
                         goto CreateNewRecord;
                     if (!recordInfo.Seal(fasterSession.IsManualLocking))
-                        return OperationStatus.RETRY_LATER;
+                    {
+                        status = OperationStatus.RETRY_LATER;
+                        goto LatchRelease;
+                    }
                     unsealPhysicalAddress = physicalAddress;
                     goto CreateNewRecord;
                 }
@@ -1106,6 +1115,10 @@ namespace FASTER.core
                 {
                     goto CreateNewRecord;
                 }
+            }
+            else if (latchDestination == LatchDestination.Retry)
+            {
+                goto LatchRelease;
             }
 
 #endregion
@@ -1152,7 +1165,7 @@ namespace FASTER.core
             }
 #endregion
 
-#region Create failure context
+#region Create pending context
             CreatePendingContext:
             Debug.Assert(latchDestination == LatchDestination.CreatePendingContext, $"RMW CreatePendingContext encountered latchDest == {latchDestination}");
             {
@@ -1208,14 +1221,14 @@ namespace FASTER.core
                             if (CheckBucketVersionNew(ref entry))
                             {
                                 status = OperationStatus.CPR_SHIFT_DETECTED;
-                                return LatchDestination.CreatePendingContext; // Pivot Thread
+                                return LatchDestination.Retry; // Pivot Thread for retry
                             }
                             break; // Normal Processing
                         }
                         else
                         {
                             status = OperationStatus.CPR_SHIFT_DETECTED;
-                            return LatchDestination.CreatePendingContext; // Pivot Thread
+                            return LatchDestination.Retry; // Pivot Thread for retry
                         }
                     }
                 case Phase.IN_PROGRESS:
@@ -1232,7 +1245,7 @@ namespace FASTER.core
                             else
                             {
                                 status = OperationStatus.RETRY_LATER;
-                                return LatchDestination.CreatePendingContext; // Go Pending
+                                return LatchDestination.Retry; // Refresh and retry
                             }
                         }
                         break; // Normal Processing
@@ -2332,7 +2345,6 @@ namespace FASTER.core
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE 
             && HandleRetryStatus(internalStatus, opCtx, currentCtx, fasterSession, ref pendingContext);
 
-        // Split this out to help inline the most common case (RETRY_NOW)
         private bool HandleRetryStatus<Input, Output, Context, FasterSession>(
             OperationStatus internalStatus,
             FasterExecutionContext<Input, Output, Context> opCtx,
