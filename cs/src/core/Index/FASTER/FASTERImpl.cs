@@ -268,9 +268,10 @@ namespace FASTER.core
                     {
                         var container = hlog.GetValueContainer(ref hlog.GetValue(physicalAddress));
                         do
+                        {
                             status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref container.Get(), ref output, logicalAddress, fasterSession, sessionCtx, WriteReason.CopyToTail,
                                                             expired: readInfo.Action == ReadAction.Expire);
-                        while (status == OperationStatus.RETRY_NOW);
+                        } while (HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext));
                         container.Dispose();
 
                         // No copy to tail
@@ -2209,8 +2210,6 @@ namespace FASTER.core
                 status = InternalTryCopyToTail(opCtx, ref pendingContext, ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request),
                                  ref pendingContext.output, previousLatestLogicalAddress, fasterSession, currentCtx,
                                  (expired || pendingContext.CopyReadsToTail) ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
-                if (status == OperationStatus.RECORD_ON_DISK)   // Handled specially below
-                    break;
             } while (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext));
 
             // No copy to tail
@@ -2615,8 +2614,9 @@ namespace FASTER.core
             OperationStatus internalStatus;
             PendingContext<Input, Output, Context>  pendingContext = default;
             do
+            {
                 internalStatus = InternalTryCopyToTail(currentCtx, ref pendingContext, ref key, ref input, ref value, ref output, expectedLogicalAddress, fasterSession, currentCtx, reason);
-            while (HandleImmediateRetryStatus(internalStatus, currentCtx, currentCtx, fasterSession, ref pendingContext));
+            } while (HandleImmediateRetryStatus(internalStatus, currentCtx, currentCtx, fasterSession, ref pendingContext));
             return internalStatus;
         }
 
