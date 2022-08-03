@@ -19,7 +19,7 @@ namespace FASTER.core
         /// <param name="currentCtx"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        internal ValueTask ReadyToCompletePendingAsync<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token = default)
+        internal static ValueTask ReadyToCompletePendingAsync<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token = default) 
             => currentCtx.WaitPendingAsync(token);
 
         /// <summary>
@@ -37,7 +37,6 @@ namespace FASTER.core
                 try
                 {
                     InternalCompletePendingRequests(currentCtx, currentCtx, fasterSession, completedOutputs);
-                    InternalCompleteRetryRequests(currentCtx, currentCtx, fasterSession, completedOutputs);
                 }
                 finally
                 {

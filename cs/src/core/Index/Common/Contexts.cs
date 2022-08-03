@@ -25,16 +25,67 @@ namespace FASTER.core
     [Flags]
     internal enum OperationStatus
     {
-        SUCCESS = StatusCode.Found,
-        NOTFOUND = StatusCode.NotFound,
-        CANCELED = StatusCode.Canceled,
-        MAX_DIRECT_MAP_TO_STATUSCODE = CANCELED,
+        // Completed Status codes
 
+        /// <summary>
+        /// Operation completed successfully, and a record with the specified key was found.
+        /// </summary>
+        SUCCESS = StatusCode.Found,
+
+        /// <summary>
+        /// Operation completed successfully, and a record with the specified key was not found; the operation may have created a new one.
+        /// </summary>
+        NOTFOUND = StatusCode.NotFound,
+
+        /// <summary>
+        /// Operation was canceled by the client.
+        /// </summary>
+        CANCELED = StatusCode.Canceled,
+
+        /// <summary>
+        /// The maximum range that directly maps to the <see cref="StatusCode"/> enumeration; the operation completed. 
+        /// This is an internal code to reserve ranges in the <see cref="OperationStatus"/> enumeration.
+        /// </summary>
+        MAX_MAP_TO_COMPLETED_STATUSCODE = CANCELED,
+
+        // Not-completed Status codes
+
+        /// <summary>
+        /// Retry operation immediately, within the current epoch. This is only used in situations where another thread does not need to do another operation 
+        /// to bring things into a consistent state.
+        /// </summary>
         RETRY_NOW,
+
+        /// <summary>
+        /// Retry operation immediately, after refreshing the epoch. This is used in situations where another thread may have done an operation that requires it
+        /// to do a subsequent operation to bring things into a consistent state; that subsequent operation may require <see cref="LightEpoch.BumpCurrentEpoch()"/>.
+        /// </summary>
         RETRY_LATER,
+
+        /// <summary>
+        /// I/O has been enqueued and the caller must go through <see cref="IFasterContext{Key, Value, Input, Output, Context}.CompletePending(bool, bool)"/> or
+        /// <see cref="IFasterContext{Key, Value, Input, Output, Context}.CompletePendingWithOutputs(out CompletedOutputIterator{Key, Value, Input, Output, Context}, bool, bool)"/>,
+        /// or one of the Async forms.
+        /// </summary>
         RECORD_ON_DISK,
+
+        /// <summary>
+        /// A checkpoint is in progress so the operation must be retried internally after refreshing the epoch and updating the session context version.
+        /// </summary>
         CPR_SHIFT_DETECTED,
+
+        /// <summary>
+        /// Allocation failed, due to a need to flush pages. Clients do not see this status directly; they see <see cref="Status.IsPending"/>.
+        /// <list type="bullet">
+        ///   <item>For Sync operations we retry this as part of <see cref="FasterKV{Key, Value}.HandleImmediateRetryStatus{Input, Output, Context, FasterSession}(OperationStatus, FasterKV{Key, Value}.FasterExecutionContext{Input, Output, Context}, FasterKV{Key, Value}.FasterExecutionContext{Input, Output, Context}, FasterSession, ref FasterKV{Key, Value}.PendingContext{Input, Output, Context})"/>.</item>
+        ///   <item>For Async operations we retry this as part of the ".Complete(...)" or ".CompleteAsync(...)" operation on the appropriate "*AsyncResult{}" object.</item>
+        /// </list>
+        /// </summary>
         ALLOCATE_FAILED,
+
+        /// <summary>
+        /// An internal code to reserve ranges in the <see cref="OperationStatus"/> enumeration.
+        /// </summary>
         BASIC_MASK = 0xFF,      // Leave plenty of space for future expansion
 
         ADVANCED_MASK = 0x700,  // Coordinate any changes with OperationStatusUtils.OpStatusToStatusCodeShif
@@ -59,10 +110,10 @@ namespace FASTER.core
         internal static OperationStatus AdvancedOpCode(OperationStatus status, StatusCode advancedStatusCode) => status | (OperationStatus)((int)advancedStatusCode << OpStatusToStatusCodeShift);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool TryConvertToStatusCode(OperationStatus advInternalStatus, out Status statusCode)
+        internal static bool TryConvertToCompletedStatusCode(OperationStatus advInternalStatus, out Status statusCode)
         {
             var internalStatus = BasicOpCode(advInternalStatus);
-            if (internalStatus <= OperationStatus.MAX_DIRECT_MAP_TO_STATUSCODE)
+            if (internalStatus <= OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE)
             {
                 statusCode = new(advInternalStatus);
                 return true;
@@ -103,6 +154,9 @@ namespace FASTER.core
             internal long minAddress;
             internal LockOperation lockOperation;
 
+            // For flushing head pages on tail allocation.
+            internal CompletionEvent flushEvent;
+
             // BEGIN Must be kept in sync with corresponding ReadFlags enum values
             internal const ushort kDisableReadCacheUpdates = 0x0001;
             internal const ushort kDisableReadCacheReads = 0x0002;
@@ -115,6 +169,9 @@ namespace FASTER.core
             internal const ushort kHasPrevHighestKeyHashAddress = 0x0400;
 
             // Flags for various operations passed at multiple levels, e.g. through RETRY_NOW.
+            internal const ushort kUnused1 = 0x1000;
+            internal const ushort kUnused2 = 0x2000;
+            internal const ushort kUnused3 = 0x4000;
             internal const ushort kHasExpiration = 0x8000;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -134,7 +191,18 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey = false)
+            internal static ushort GetOperationFlags(ReadFlags readFlags)
+            {
+                Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
+                Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
+                Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
+                Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
+                ushort flags = (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
+                return flags;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey)
             {
                 Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
                 Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
@@ -147,13 +215,28 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions, bool noKey = false) 
+            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions) 
+                => this.SetOperationFlags(GetOperationFlags(readFlags), readOptions.StopAddress);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions, bool noKey)
                 => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), readOptions.StopAddress);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void SetOperationFlags(ReadFlags readFlags)
+            {
+                Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
+                Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
+                Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
+                Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
+                this.operationFlags = (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void SetOperationFlags(ushort flags, long stopAddress)
             {
-                this.operationFlags = flags;
+                // The async flag is often set when the PendingContext is created, so preserve that.
+                this.operationFlags = (ushort)(flags | (this.operationFlags & kIsAsync));
                 this.minAddress = stopAddress;
             }
 
@@ -228,7 +311,6 @@ namespace FASTER.core
 
             public bool[] markers;
             public long totalPending;
-            public Queue<PendingContext<Input, Output, Context>> retryRequests;
             public Dictionary<long, PendingContext<Input, Output, Context>> ioPendingRequests;
             public AsyncCountDown pendingReads;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
@@ -243,7 +325,7 @@ namespace FASTER.core
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 get
                 {
-                    return SyncIoPendingCount == 0 && retryRequests.Count == 0;
+                    return SyncIoPendingCount == 0;
                 }
             }
 

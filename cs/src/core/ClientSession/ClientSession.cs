@@ -485,14 +485,8 @@ namespace FASTER.core
             foreach (var kvp in ctx.prevCtx?.ioPendingRequests)
                 yield return kvp.Value.serialNum;
 
-            foreach (var val in ctx.prevCtx?.retryRequests)
-                yield return val.serialNum;
-
             foreach (var kvp in ctx.ioPendingRequests)
                 yield return kvp.Value.serialNum;
-
-            foreach (var val in ctx.retryRequests)
-                yield return val.serialNum;
         }
 
         /// <inheritdoc/>
@@ -606,7 +600,7 @@ namespace FASTER.core
             if (fht.epoch.ThisInstanceProtected())
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
-            await fht.ReadyToCompletePendingAsync(this.ctx, token).ConfigureAwait(false);
+            await FasterKV<Key, Value>.ReadyToCompletePendingAsync(this.ctx, token).ConfigureAwait(false);
         }
 
         #endregion Pending Operations

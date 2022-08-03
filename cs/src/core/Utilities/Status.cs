@@ -68,7 +68,7 @@ namespace FASTER.core
         internal Status(OperationStatus operationStatus) : this()
         {
             var basicOperationStatus = OperationStatusUtils.BasicOpCode(operationStatus);
-            Debug.Assert(basicOperationStatus <= OperationStatus.MAX_DIRECT_MAP_TO_STATUSCODE);
+            Debug.Assert(basicOperationStatus <= OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE);
             statusCode = (StatusCode)basicOperationStatus | (StatusCode)((int)operationStatus >> OperationStatusUtils.OpStatusToStatusCodeShift);
         }
 
@@ -135,6 +135,7 @@ namespace FASTER.core
         public byte Value => (byte)statusCode;
 
         /// <inheritdoc />
+        /// <remarks>"Found" is zero, so does not appear in the output by default; this handles that explicitly</remarks>
         public override string ToString() => (this.Found ? "Found, " : string.Empty) + this.statusCode.ToString();
     }
 }
