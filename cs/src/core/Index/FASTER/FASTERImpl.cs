@@ -462,6 +462,7 @@ namespace FASTER.core
             {
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
+                SessionID = sessionCtx.sessionID,
                 Address = logicalAddress
             };
 
@@ -754,6 +755,7 @@ namespace FASTER.core
             {
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
+                SessionID = sessionCtx.sessionID,
                 Address = newLogicalAddress
             };
 
@@ -995,6 +997,7 @@ namespace FASTER.core
             {
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
+                SessionID = sessionCtx.sessionID,
                 Address = logicalAddress
             };
 
@@ -1310,6 +1313,7 @@ namespace FASTER.core
             {
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
+                SessionID = sessionCtx.sessionID,
                 Address = logicalAddress
             };
 
@@ -2723,6 +2727,7 @@ namespace FASTER.core
             {
                 SessionType = fasterSession.SessionType,
                 Version = opCtx.version,
+                SessionID = opCtx.sessionID,
                 Address = Constants.kInvalidAddress
             };
 

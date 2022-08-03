@@ -157,6 +157,11 @@ namespace FASTER.core
         /// <inheritdoc/>
         public (bool exclusive, byte shared) IsLocked(Key key) => IsLocked(ref key);
 
+        /// <summary>
+        /// The session id of FasterSession
+        /// </summary>
+        public int sessionID { get { return clientSession.ctx.sessionID; } }
+
         #endregion Key Locking
 
         #region IFasterContext
