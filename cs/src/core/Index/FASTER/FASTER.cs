@@ -555,18 +555,13 @@ namespace FASTER.core
             }
         }
 
-        internal ReadFlags MergeReadFlags(ReadFlags session, ReadFlags read)
-            => MergeReadFlags(this.ReadFlags, session, read);
-
-        internal static ReadFlags MergeReadFlags(ReadFlags fkv, ReadFlags session, ReadFlags read)
+        internal static ReadFlags MergeReadFlags(ReadFlags upper, ReadFlags lower)
         {
-            ReadFlags flags = ((session & ReadFlags.None) == 0) ? fkv : ReadFlags.Default;
-            flags |= session & ~ReadFlags.None;
-
-            if ((read & ReadFlags.None) != 0)
-                flags = ReadFlags.Default;
-            flags |= read;
-            return flags & ~ReadFlags.None;
+            // If lower is None, start with Default, else start with "upper without None"
+            ReadFlags flags = ((lower & ReadFlags.None) == 0) ? (upper & ~ReadFlags.None) : ReadFlags.Default;
+            // Add in "lower without None"
+            flags |= (lower & ~ReadFlags.None);
+            return flags;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -575,15 +570,13 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
-            ReadOptions readOptions = default;
-            pcontext.SetOperationFlags(MergeReadFlags(sessionCtx.ReadFlags, readOptions.ReadFlags), ref readOptions);
+            pcontext.SetOperationFlags(sessionCtx.ReadFlags);
             OperationStatus internalStatus;
             do 
                 internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (internalStatus == OperationStatus.RETRY_NOW);
+            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
             sessionCtx.serialNum = serialNo;
@@ -600,15 +593,10 @@ namespace FASTER.core
             OperationStatus internalStatus;
             do
                 internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (internalStatus == OperationStatus.RETRY_NOW);
+            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
-            else
-            {
-                recordMetadata = default;
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
-            }
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
+            recordMetadata = status.IsCompletedSuccessfully ? recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress) : default;
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
             sessionCtx.serialNum = serialNo;
@@ -626,10 +614,9 @@ namespace FASTER.core
             OperationStatus internalStatus;
             do
                 internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (internalStatus == OperationStatus.RETRY_NOW);
+            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
             sessionCtx.serialNum = serialNo;
@@ -646,10 +633,9 @@ namespace FASTER.core
 
             do
                 internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (internalStatus == OperationStatus.RETRY_NOW);
+            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
             sessionCtx.serialNum = serialNo;
@@ -666,15 +652,10 @@ namespace FASTER.core
 
             do
                 internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (internalStatus == OperationStatus.RETRY_NOW);
+            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
-            else
-            {
-                recordMetadata = default;
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
-            }
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
+            recordMetadata = status.IsCompletedSuccessfully ? recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress) : default;
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
             sessionCtx.serialNum = serialNo;
@@ -697,15 +678,10 @@ namespace FASTER.core
 
             do
                 internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (internalStatus == OperationStatus.RETRY_NOW);
+            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
-            else
-            {
-                recordMetadata = default;
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
-            }
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
+            recordMetadata = status.IsCompletedSuccessfully ? recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress) : default;
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
             sessionCtx.serialNum = serialNo;
@@ -726,10 +702,9 @@ namespace FASTER.core
 
             do
                 internalStatus = InternalDelete(ref key, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (internalStatus == OperationStatus.RETRY_NOW);
+            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            if (!OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
             sessionCtx.serialNum = serialNo;

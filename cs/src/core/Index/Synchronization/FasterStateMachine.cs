@@ -211,10 +211,6 @@ namespace FASTER.core
                         {
                             excludedSerialNos.Add(v.serialNum);
                         }
-                        foreach (var v in ctx.retryRequests)
-                        {
-                            excludedSerialNos.Add(v.serialNum);
-                        }
 
                         var commitPoint = new CommitPoint
                         {
