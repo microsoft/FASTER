@@ -191,7 +191,18 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey = false)
+            internal static ushort GetOperationFlags(ReadFlags readFlags)
+            {
+                Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
+                Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
+                Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
+                Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
+                ushort flags = (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
+                return flags;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey)
             {
                 Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
                 Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
@@ -204,8 +215,22 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions, bool noKey = false) 
+            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions) 
+                => this.SetOperationFlags(GetOperationFlags(readFlags), readOptions.StopAddress);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions, bool noKey)
                 => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), readOptions.StopAddress);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void SetOperationFlags(ReadFlags readFlags)
+            {
+                Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
+                Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
+                Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
+                Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
+                this.operationFlags = (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void SetOperationFlags(ushort flags, long stopAddress)

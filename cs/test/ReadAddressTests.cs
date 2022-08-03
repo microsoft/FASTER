@@ -667,7 +667,7 @@ namespace FASTER.test.readaddress
             for (var ii = 0; ii < merges.Length; ++ii)
             {
                 var merge = merges[ii];
-                var flags = FasterKV<int, int>.MergeReadFlags(merge.Fkv, merge.Session, merge.Read);
+                var flags = FasterKV<int, int>.MergeReadFlags(FasterKV<int, int>.MergeReadFlags(merge.Fkv, merge.Session), merge.Read);
                 Assert.AreEqual(merge.Expected, flags, $"iter {ii}");
             }
         }
