@@ -95,9 +95,6 @@ namespace FASTER.test
                 // Add to FasterLog
                 logUncommitted.Enqueue(entry);
             }
-
-            // refresh uncommitted so can see it when scan - do NOT commit though 
-            logUncommitted.RefreshUncommitted(true);
         }
 
         [Test]
@@ -337,7 +334,7 @@ namespace FASTER.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = path + "LogScan" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path, AutoRefreshSafeTailAddress = true });
             PopulateUncommittedLog(log);
 
             // Setting scanUnCommitted to true is actual test here.

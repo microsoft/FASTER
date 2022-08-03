@@ -44,7 +44,7 @@ namespace FASTER.server
             this.keySerializer = keySerializer;
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4 });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, AutoRefreshSafeTailAddress = true });
             if (startFresh)
                 log.TruncateUntil(log.CommittedUntilAddress);
         }
@@ -399,7 +399,6 @@ namespace FASTER.server
             }
 
             log.Enqueue(logEntryBytes);
-            log.RefreshUncommitted();
         }
 
         /// <inheritdoc />

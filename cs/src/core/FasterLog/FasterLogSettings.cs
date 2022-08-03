@@ -131,6 +131,16 @@ namespace FASTER.core
         public bool TryRecoverLatest = true;
 
         /// <summary>
+        /// Whether we refresh safe tail address as records are inserted
+        /// </summary>
+        public bool AutoRefreshSafeTailAddress = false;
+
+        /// <summary>
+        /// Whether we automatically commit the log as records are inserted
+        /// </summary>
+        public bool AutoCommit = false;
+
+        /// <summary>
         /// Create default configuration settings for FasterLog. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
@@ -198,7 +208,7 @@ namespace FASTER.core
                 ReadFlags = ReadFlags.None,
                 MutableFraction = MutableFraction,
                 ObjectLogDevice = null,
-                ReadCacheSettings = null
+                ReadCacheSettings = null,
             };
         }
     }
