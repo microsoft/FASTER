@@ -182,14 +182,22 @@ namespace FASTER.core
                 if (@this.disposed)
                     return false;
                 if (@this.Ended) return false;
-                var refreshUncommittedTask = @this.fasterLog.RefreshUncommittedTask;
+
+                var tcs = @this.fasterLog.refreshUncommittedTcs;
+                if (tcs == null)
+                {
+                    var newTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    tcs = Interlocked.CompareExchange(ref @this.fasterLog.refreshUncommittedTcs, newTcs, null);
+                    if (tcs == null) tcs = newTcs;
+                }
+
                 if (@this.NextAddress < @this.fasterLog.SafeTailAddress)
                     return true;
 
                 // Ignore refresh-uncommitted exceptions, except when the token is signaled
                 try
                 {
-                    await refreshUncommittedTask.WithCancellationAsync(token).ConfigureAwait(false);
+                    await tcs.Task.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (ObjectDisposedException) { return false; }
                 catch when (!token.IsCancellationRequested) { }
