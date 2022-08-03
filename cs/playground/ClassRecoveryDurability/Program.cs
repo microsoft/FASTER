@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using FASTER.core;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -90,8 +91,8 @@ namespace ClassRecoveryDurablity
                         
                         // Console.WriteLine("add=" + i);
 
-                        if (!addStatus.Record.InPlaceUpdated)
-                            throw new Exception();
+                        if (!addStatus.NotFound || !addStatus.Record.Created)
+                            throw new Exception($"expected addStatus: .NotFound && .Record.Created; actual {addStatus}");
                     }
 
                     if (start > startDeleteHeight)
@@ -109,8 +110,8 @@ namespace ClassRecoveryDurablity
                                 var deleteStatus = session.Delete(ref deteletKey, context2, 1);
                                 // Console.WriteLine("delete=" + i);
 
-                                if (!deleteStatus.Record.InPlaceUpdated)
-                                    throw new Exception();
+                                if (!deleteStatus.Found || !deleteStatus.Record.InPlaceUpdated)
+                                    throw new Exception($"expected deleteStatus: .Found && .Record.Created; actual {deleteStatus}");
                             }
                         }
                     }
@@ -253,7 +254,7 @@ namespace ClassRecoveryDurablity
 
         public static byte[] Hash256(byte[] byteContents)
         {
-            using var hash = new System.Security.Cryptography.SHA256CryptoServiceProvider();
+            using var hash = System.Security.Cryptography.SHA256.Create();
             return hash.ComputeHash(byteContents);
         }
     }

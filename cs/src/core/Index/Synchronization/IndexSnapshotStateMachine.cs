@@ -27,7 +27,7 @@ namespace FASTER.core
                         faster.InitializeIndexCheckpoint(faster._indexCheckpointToken);
                     }
 
-                    faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.startLogicalAddress);
+                    faster._indexCheckpoint.info.startLogicalAddress = faster.hlog.GetTailAddress();
                     faster.TakeIndexFuzzyCheckpoint();
                     break;
 

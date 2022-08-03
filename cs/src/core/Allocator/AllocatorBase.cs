@@ -432,7 +432,6 @@ namespace FASTER.core
                 endPage++;
 
             long prevEndPage = GetPage(prevEndAddress);
-
             deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
             int destOffset = 0;
 
@@ -445,7 +444,11 @@ namespace FASTER.core
 
                 var logicalAddress = p << LogPageSizeBits;
                 var physicalAddress = GetPhysicalAddress(logicalAddress);
-                var endPhysicalAddress = physicalAddress + PageSize;
+
+                var endLogicalAddress = logicalAddress + PageSize;
+                if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
+                Debug.Assert(endLogicalAddress > logicalAddress);
+                var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
 
                 if (p == startPage)
                 {
@@ -1262,7 +1265,7 @@ namespace FASTER.core
         {
             if (Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
             {
-                Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
+                // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 if (OnReadOnlyObserver != null)
                 {
                     using var iter = Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
@@ -1362,10 +1365,10 @@ namespace FASTER.core
             long desiredReadOnlyAddress = (pageAlignedTailAddress - ReadOnlyLagAddress);
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out long oldReadOnlyAddress))
             {
-                Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
+                // Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(desiredReadOnlyAddress));
             }
-        }
+        } 
 
         /// <summary>
         /// Called whenever a new tail page is allocated or when the user is checking for a failed memory allocation
@@ -1392,7 +1395,7 @@ namespace FASTER.core
 
             if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
             {
-                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
+                // Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
             }
 
@@ -1528,12 +1531,12 @@ namespace FASTER.core
             ClearPage(pageIndex, (int)GetOffsetInPage(tailAddress));
 
             // Printing debug info
-            Debug.WriteLine("******* Recovered HybridLog Stats *******");
-            Debug.WriteLine("Head Address: {0}", HeadAddress);
-            Debug.WriteLine("Safe Head Address: {0}", SafeHeadAddress);
-            Debug.WriteLine("ReadOnly Address: {0}", ReadOnlyAddress);
-            Debug.WriteLine("Safe ReadOnly Address: {0}", SafeReadOnlyAddress);
-            Debug.WriteLine("Tail Address: {0}", tailAddress);
+            logger?.LogInformation("******* Recovered HybridLog Stats *******");
+            logger?.LogInformation("Head Address: {HeadAddress}", HeadAddress);
+            logger?.LogInformation("Safe Head Address: {SafeHeadAddress}", SafeHeadAddress);
+            logger?.LogInformation("ReadOnly Address: {ReadOnlyAddress}", ReadOnlyAddress);
+            logger?.LogInformation("Safe ReadOnly Address: {SafeReadOnlyAddress}", SafeReadOnlyAddress);
+            logger?.LogInformation("Tail Address: {tailAddress}", tailAddress);
         }
 
         /// <summary>

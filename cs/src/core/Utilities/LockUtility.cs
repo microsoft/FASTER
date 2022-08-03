@@ -23,6 +23,7 @@ namespace FASTER.core
 
         internal static bool HandleIntermediate(this ref RecordInfo recordInfo, out OperationStatus internalStatus, bool isReadingAtAddress = false)
         {
+            // Tentative records have already been allocated.
             while (recordInfo.Tentative)
                 Thread.Yield();
 
@@ -30,7 +31,9 @@ namespace FASTER.core
             if ((recordInfo.Sealed || recordInfo.Invalid) && !isReadingAtAddress)
             {
                 Thread.Yield();
-                internalStatus = OperationStatus.RETRY_NOW;
+
+                // A Sealed record implies the session that sealed it must make another allocation for a new record, so RETRY_LATER.
+                internalStatus = recordInfo.Sealed ? OperationStatus.RETRY_LATER : OperationStatus.RETRY_NOW;
                 return true;
             }
             internalStatus = OperationStatus.SUCCESS;

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
@@ -12,63 +11,34 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        internal struct RmwAsyncOperation<Input, Output, Context> : IUpdateAsyncOperation<Input, Output, Context, RmwAsyncResult<Input, Output, Context>>
+        internal struct RmwAsyncOperation<Input, Output, Context> : IAsyncOperation<Input, Output, Context, RmwAsyncResult<Input, Output, Context>>
         {
             AsyncIOContext<Key, Value> diskRequest;
-
             internal RmwAsyncOperation(AsyncIOContext<Key, Value> diskRequest) => this.diskRequest = diskRequest;
 
             /// <inheritdoc/>
-            public RmwAsyncResult<Input, Output, Context> CreateResult(Status status, Output output, RecordMetadata recordMetadata) => new(status, output, recordMetadata);
+            public RmwAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new(status, output, recordMetadata);
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output)
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, out Output output)
             {
-                flushEvent = fasterKV.hlog.FlushEvent;
                 Status status = !this.diskRequest.IsDefault()
-                    ? fasterKV.InternalCompletePendingRequestFromContext(currentCtx, currentCtx, fasterSession, this.diskRequest, ref pendingContext, asyncOp, out AsyncIOContext<Key, Value> newDiskRequest)
+                    ? fasterKV.InternalCompletePendingRequestFromContext(currentCtx, currentCtx, fasterSession, this.diskRequest, ref pendingContext, out AsyncIOContext<Key, Value> newDiskRequest)
                     : fasterKV.CallInternalRMW(fasterSession, currentCtx, ref pendingContext, ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, pendingContext.userContext,
-                                                     pendingContext.serialNum, asyncOp, out flushEvent, out newDiskRequest);
+                                                     pendingContext.serialNum, out newDiskRequest);
                 output = pendingContext.output;
-
-                if (status.IsPending && !newDiskRequest.IsDefault())
-                {
-                    flushEvent = default;
-                    this.diskRequest = newDiskRequest;
-                }
+                this.diskRequest = newDiskRequest;
                 return status;
             }
 
             /// <inheritdoc/>
             public ValueTask<RmwAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CompletionEvent flushEvent, CancellationToken token)
-                => SlowRmwAsync(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest, flushEvent, token);
+                                            FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
+                => SlowRmwAsync(fasterKV, fasterSession, currentCtx, pendingContext, diskRequest, token);
 
             /// <inheritdoc/>
-            public bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession)
-            {
-                if (this.diskRequest.IsDefault())
-                    return false;
-
-                // CompletePending() may encounter OperationStatus.ALLOCATE_FAILED; if so, we don't have a more current flushEvent to pass back.
-                fasterSession.CompletePendingWithOutputs(out var completedOutputs, wait: true, spinWaitForCommit: false);
-                var status = completedOutputs.Next() ? completedOutputs.Current.Status : new(StatusCode.Error);
-                completedOutputs.Dispose();
-                this.diskRequest = default;
-                return !status.IsPending;
-            }
-
-            /// <inheritdoc/>
-            public void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext)
-            {
-                if (!this.diskRequest.IsDefault())
-                {
-                    currentCtx.ioPendingRequests.Remove(pendingContext.id);
-                }
-                currentCtx.asyncPendingCount--;
-                currentCtx.pendingReads.Remove();
-            }
+            public bool HasPendingIO => !this.diskRequest.IsDefault();
         }
 
         /// <summary>
@@ -76,7 +46,7 @@ namespace FASTER.core
         /// </summary>
         public struct RmwAsyncResult<Input, TOutput, Context>
         {
-            internal readonly UpdateAsyncInternal<Input, TOutput, Context, RmwAsyncOperation<Input, TOutput, Context>, RmwAsyncResult<Input, TOutput, Context>> updateAsyncInternal;
+            internal readonly AsyncOperationInternal<Input, TOutput, Context, RmwAsyncOperation<Input, TOutput, Context>, RmwAsyncResult<Input, TOutput, Context>> updateAsyncInternal;
 
             /// <summary>Current status of the RMW operation</summary>
             public Status Status { get; }
@@ -89,6 +59,7 @@ namespace FASTER.core
 
             internal RmwAsyncResult(Status status, TOutput output, RecordMetadata recordMetadata)
             {
+                Debug.Assert(!status.IsPending);
                 this.Status = status;
                 this.Output = output;
                 this.RecordMetadata = recordMetadata;
@@ -102,8 +73,8 @@ namespace FASTER.core
                 Status = new(StatusCode.Pending);
                 this.Output = default;
                 this.RecordMetadata = default;
-                updateAsyncInternal = new UpdateAsyncInternal<Input, TOutput, Context, RmwAsyncOperation<Input, TOutput, Context>, RmwAsyncResult<Input, TOutput, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new RmwAsyncOperation<Input, TOutput, Context>(diskRequest));
+                updateAsyncInternal = new AsyncOperationInternal<Input, TOutput, Context, RmwAsyncOperation<Input, TOutput, Context>, RmwAsyncResult<Input, TOutput, Context>>(
+                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new (diskRequest));
             }
 
             /// <summary>Complete the RMW operation, issuing additional (rare) I/O asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
@@ -127,7 +98,7 @@ namespace FASTER.core
                     recordMetadata = this.RecordMetadata;
                     return (this.Status, this.Output);
                 }
-                var rmwAsyncResult = updateAsyncInternal.Complete();
+                var rmwAsyncResult = updateAsyncInternal.CompleteSync();
                 recordMetadata = rmwAsyncResult.RecordMetadata;
                 return (rmwAsyncResult.Status, rmwAsyncResult.Output);
             }
@@ -137,23 +108,14 @@ namespace FASTER.core
         internal ValueTask<RmwAsyncResult<Input, Output, Context>> RmwAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx, ref Key key, ref Input input, Context context, long serialNo, CancellationToken token = default)
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.IsAsync = true;
-            return RmwAsync(fasterSession, currentCtx, ref pcontext, ref key, ref input, context, serialNo, token);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<RmwAsyncResult<Input, Output, Context>> RmwAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-            FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pcontext, ref Key key, ref Input input, Context context, long serialNo, CancellationToken token)
-        {
+            var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
             var diskRequest = default(AsyncIOContext<Key, Value>);
-            CompletionEvent flushEvent;
 
             fasterSession.UnsafeResumeThread();
             try
             {
                 Output output = default;
-                var status = CallInternalRMW(fasterSession, currentCtx, ref pcontext, ref key, ref input, ref output, context, serialNo, asyncOp: true, out flushEvent, out diskRequest);
+                var status = CallInternalRMW(fasterSession, currentCtx, ref pcontext, ref key, ref input, ref output, context, serialNo, out diskRequest);
                 if (!status.IsPending)
                     return new ValueTask<RmwAsyncResult<Input, Output, Context>>(new RmwAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
@@ -164,63 +126,31 @@ namespace FASTER.core
                 fasterSession.UnsafeSuspendThread();
             }
 
-            return SlowRmwAsync(this, fasterSession, currentCtx, pcontext, diskRequest, flushEvent, token);
+            return SlowRmwAsync(this, fasterSession, currentCtx, pcontext, diskRequest, token);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status CallInternalRMW<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pcontext, ref Key key, ref Input input, ref Output output, Context context, long serialNo,
-            bool asyncOp, out CompletionEvent flushEvent, out AsyncIOContext<Key, Value> diskRequest)
+            out AsyncIOContext<Key, Value> diskRequest)
         {
             diskRequest = default;
             OperationStatus internalStatus;
             do
-            {
-                flushEvent = hlog.FlushEvent;
                 internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, currentCtx, serialNo);
-            } while (internalStatus == OperationStatus.RETRY_NOW || internalStatus == OperationStatus.RETRY_LATER);
+            while (HandleImmediateRetryStatus(internalStatus, currentCtx, currentCtx, fasterSession, ref pcontext));
 
-            if (OperationStatusUtils.TryConvertToStatusCode(internalStatus, out Status status))
-                return status;
-            if (internalStatus == OperationStatus.ALLOCATE_FAILED)
-                return new(StatusCode.Pending);    // This plus diskRequest.IsDefault() means allocate failed
-
-            status = HandleOperationStatus(currentCtx, currentCtx, ref pcontext, fasterSession, internalStatus, asyncOp, out diskRequest);
-            if (!diskRequest.IsDefault())
-                flushEvent = default;
-            return status;
+            return HandleOperationStatus(currentCtx, ref pcontext, internalStatus, out diskRequest);
         }
 
         private static async ValueTask<RmwAsyncResult<Input, Output, Context>> SlowRmwAsync<Input, Output, Context>(
             FasterKV<Key, Value> @this, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pcontext,
-            AsyncIOContext<Key, Value> diskRequest, CompletionEvent flushEvent, CancellationToken token = default)
+            AsyncIOContext<Key, Value> diskRequest, CancellationToken token = default)
         {
-            currentCtx.asyncPendingCount++;
-            currentCtx.pendingReads.Add();
-
-            ExceptionDispatchInfo exceptionDispatchInfo = default;
-            try
-            {
-                token.ThrowIfCancellationRequested();
-
-                if (@this.epoch.ThisInstanceProtected())
-                    throw new NotSupportedException("Async operations not supported over protected epoch");
-
-                // If we are here because of flushEvent, then _diskRequest is default--there is no pending disk operation.
-                if (diskRequest.IsDefault())
-                    await flushEvent.WaitAsync(token).ConfigureAwait(false);
-                else
-                {
-                    using (token.Register(() => diskRequest.asyncOperation.TrySetCanceled()))
-                        diskRequest = await diskRequest.asyncOperation.Task.WithCancellationAsync(token).ConfigureAwait(false);
-                }
-            }
-            catch (Exception e)
-            {
-                exceptionDispatchInfo = ExceptionDispatchInfo.Capture(e);
-            }
-
+            ExceptionDispatchInfo exceptionDispatchInfo;
+            (diskRequest, exceptionDispatchInfo) = await WaitForFlushOrIOCompletionAsync(@this, currentCtx, pcontext.flushEvent, diskRequest, token);
+            pcontext.flushEvent = default;
             return new RmwAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pcontext, diskRequest, exceptionDispatchInfo);
         }
     }

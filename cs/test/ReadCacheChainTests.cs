@@ -664,7 +664,7 @@ namespace FASTER.test.ReadCacheTests
                 }
             }
 
-            fht = new FasterKV<long, long>(1L << 10, logSettings, comparer: new LongComparerModulo(modRange));
+            fht = new FasterKV<long, long>(1L << 20, logSettings, comparer: new LongComparerModulo(modRange));
         }
 
         [TearDown]
@@ -691,6 +691,13 @@ namespace FASTER.test.ReadCacheTests
             {
                 value = output = input;
                 return true;
+            }
+
+            /// <inheritdoc/>
+            public override bool InitialUpdater(ref long key, ref long input, ref long value, ref long output, ref RMWInfo rmwInfo)
+            {
+                Assert.Fail("For these tests, InitialUpdater should never be called");
+                return false;
             }
         }
 
@@ -721,7 +728,7 @@ namespace FASTER.test.ReadCacheTests
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
-        public void MultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
+        public void LongRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
         {
             if (numReadThreads == 0 && numWriteThreads == 0)
                 Assert.Ignore();
@@ -739,7 +746,8 @@ namespace FASTER.test.ReadCacheTests
                     {
                         long key = ii, output = 0;
                         var status = session.Read(ref key, ref output);
-                        if (status.IsPending)
+                        bool wasPending = status.IsPending;
+                        if (wasPending)
                         {
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
@@ -763,7 +771,8 @@ namespace FASTER.test.ReadCacheTests
                     {
                         long key = ii, input = ii + valueAdd * tid, output = 0;
                         var status = session.RMW(ref key, ref input, ref output);
-                        if (status.IsPending)
+                        bool wasPending = status.IsPending;
+                        if (wasPending)
                         {
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs);
@@ -835,7 +844,7 @@ namespace FASTER.test.ReadCacheTests
                 }
             }
 
-            fht = new FasterKV<SpanByte, SpanByte>(1L << 10, logSettings, comparer: new SpanByteComparerModulo(modRange));
+            fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: new SpanByteComparerModulo(modRange));
         }
 
         [TearDown]
@@ -865,6 +874,13 @@ namespace FASTER.test.ReadCacheTests
                 base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
                 input.CopyTo(ref output, base.memoryPool);
                 return true;
+            }
+
+            /// <inheritdoc/>
+            public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            {
+                Assert.Fail("For these tests, InitialUpdater should never be called");
+                return false;
             }
         }
 
@@ -898,7 +914,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         // [Repeat(1000)]
-        public void MultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
+        public void SpanByteRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
         {
             //Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
             
@@ -924,7 +940,7 @@ namespace FASTER.test.ReadCacheTests
                         Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
                         var status = session.Read(ref key, ref output);
                         bool wasPending = status.IsPending;
-                        if (status.IsPending)
+                        if (wasPending)
                         {
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
@@ -962,7 +978,7 @@ namespace FASTER.test.ReadCacheTests
                         Assert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + valueAdd));
                         var status = session.RMW(ref key, ref input, ref output);
                         bool wasPending = status.IsPending;
-                        if (status.IsPending)
+                        if (wasPending)
                         {
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs);

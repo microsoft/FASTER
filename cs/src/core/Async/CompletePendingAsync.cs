@@ -19,11 +19,8 @@ namespace FASTER.core
         /// <param name="currentCtx"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        internal async ValueTask ReadyToCompletePendingAsync<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token = default)
-        {
-            if (currentCtx.SyncIoPendingCount != 0)
-                await currentCtx.readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
-        }
+        internal static ValueTask ReadyToCompletePendingAsync<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token = default) 
+            => currentCtx.WaitPendingAsync(token);
 
         /// <summary>
         /// Complete outstanding pending operations that were issued synchronously
@@ -40,7 +37,6 @@ namespace FASTER.core
                 try
                 {
                     InternalCompletePendingRequests(currentCtx, currentCtx, fasterSession, completedOutputs);
-                    InternalCompleteRetryRequests(currentCtx, currentCtx, fasterSession);
                 }
                 finally
                 {

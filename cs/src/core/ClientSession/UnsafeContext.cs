@@ -12,7 +12,7 @@ namespace FASTER.core
     /// <summary>
     /// Faster Operations implementation that allows manual control of record epoch management. For advanced use only.
     /// </summary>
-    public sealed class UnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, IDisposable
+    public sealed class UnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, IUnsafeContext, IDisposable
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
@@ -32,9 +32,7 @@ namespace FASTER.core
             FasterSession = new InternalFasterSession(clientSession);
         }
 
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResumeThread()
         {
@@ -42,10 +40,7 @@ namespace FASTER.core
             clientSession.UnsafeResumeThread();
         }
 
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
-        /// <param name="resumeEpoch">Epoch that the session resumed on; can be saved to see if epoch has changed</param>
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResumeThread(out int resumeEpoch)
         {
@@ -53,9 +48,7 @@ namespace FASTER.core
             clientSession.UnsafeResumeThread(out resumeEpoch);
         }
 
-        /// <summary>
-        /// Suspend session on current thread
-        /// </summary>
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SuspendThread()
         {
@@ -63,9 +56,7 @@ namespace FASTER.core
             clientSession.UnsafeSuspendThread();
         }
 
-        /// <summary>
-        /// Current epoch of the session
-        /// </summary>
+        /// <inheritdoc/>
         public int LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
 
         #region Acquire and Dispose
@@ -425,7 +416,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
+                    return !recordInfo.Tombstone && ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
                 }
                 finally
                 {
@@ -570,11 +561,8 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
-            {
-                value = default;
-                return true;
-            }
-
+                => _clientSession.functions.SingleDeleter(ref key, ref value, ref deleteInfo);
+ 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed)
             {
@@ -603,7 +591,7 @@ namespace FASTER.core
                 try
                 {
                     lockFailed = false;
-                    return ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo);
+                    return recordInfo.Tombstone || ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo);
                 }
                 finally
                 {

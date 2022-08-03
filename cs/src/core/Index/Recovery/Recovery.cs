@@ -141,7 +141,7 @@ namespace FASTER.core
             out IndexCheckpointInfo recoveredICInfo)
         {
 
-            Debug.WriteLine("********* Primary Recovery Information ********");
+            logger?.LogInformation("********* Primary Recovery Information ********");
 
             HybridLogCheckpointInfo current, closest = default;
             Guid closestToken = default;
@@ -191,7 +191,7 @@ namespace FASTER.core
                     continue;
                 }
 
-                Debug.WriteLine("HybridLog Checkpoint: {0}", hybridLogToken);
+                logger?.LogInformation("HybridLog Checkpoint: {hybridLogToken}", hybridLogToken);
             }
 
             recoveredHlcInfo = closest;
@@ -205,7 +205,7 @@ namespace FASTER.core
                 // need to actually scan delta log now
                 recoveredHlcInfo.Recover(closestToken, checkpointManager, hlog.LogPageSizeBits, out _, true);
             }
-            recoveredHlcInfo.info.DebugPrint();
+            recoveredHlcInfo.info.DebugPrint(logger);
 
             recoveredICInfo = default;
             foreach (var indexToken in checkpointManager.GetIndexCheckpointTokens())
@@ -227,14 +227,14 @@ namespace FASTER.core
                     continue;
                 }
 
-                Debug.WriteLine("Index Checkpoint: {0}", indexToken);
-                recoveredICInfo.info.DebugPrint();
+                logger?.LogInformation("Index Checkpoint: {indexToken}", indexToken);
+                recoveredICInfo.info.DebugPrint(logger);
                 break;
             }
 
             if (recoveredICInfo.IsDefault())
             {
-                Debug.WriteLine("No index checkpoint found, recovering from beginning of log");
+                logger?.LogInformation("No index checkpoint found, recovering from beginning of log");
             }
         }
 
@@ -263,22 +263,22 @@ namespace FASTER.core
 
         private void GetRecoveryInfo(Guid indexToken, Guid hybridLogToken, out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo)
         {
-            Debug.WriteLine("********* Primary Recovery Information ********");
-            Debug.WriteLine("Index Checkpoint: {0}", indexToken);
-            Debug.WriteLine("HybridLog Checkpoint: {0}", hybridLogToken);
+            logger?.LogInformation("********* Primary Recovery Information ********");
+            logger?.LogInformation("Index Checkpoint: {indexToken}", indexToken);
+            logger?.LogInformation("HybridLog Checkpoint: {hybridLogToken}", hybridLogToken);
 
 
             // Recovery appropriate context information
             recoveredHLCInfo = new HybridLogCheckpointInfo();
             recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits, out recoveredCommitCookie, true);
-            recoveredHLCInfo.info.DebugPrint();
+            recoveredHLCInfo.info.DebugPrint(logger);
             try
             {
                 recoveredICInfo = new IndexCheckpointInfo();
                 if (indexToken != default)
                 {
                     recoveredICInfo.Recover(indexToken, checkpointManager);
-                    recoveredICInfo.info.DebugPrint();
+                    recoveredICInfo.info.DebugPrint(logger);
                 }
             }
             catch
@@ -288,7 +288,7 @@ namespace FASTER.core
 
             if (recoveredICInfo.IsDefault())
             {
-                Debug.WriteLine("Invalid index checkpoint token, recovering from beginning of log");
+                logger?.LogInformation("Invalid index checkpoint token, recovering from beginning of log");
             }
             else
             {
@@ -324,7 +324,7 @@ namespace FASTER.core
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
                 RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, options);
                 // Then recover snapshot into mutable region
-                RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.startLogicalAddress,
+                RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.flushedLogicalAddress,
                                 recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo);
 
                 readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
@@ -360,7 +360,7 @@ namespace FASTER.core
                 await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot,
                                            new RecoveryOptions(recoveredHLCInfo.info.manualLockingActive, headAddress, tailAddress, undoNextVersion), cancellationToken).ConfigureAwait(false);
                 // Then recover snapshot into mutable region
-                await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.startLogicalAddress,
+                await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.flushedLogicalAddress,
                                         recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo, cancellationToken).ConfigureAwait(false);
 
                 readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
@@ -525,7 +525,7 @@ namespace FASTER.core
         {
             startPage = hlog.GetPage(scanFromAddress);
             endPage = hlog.GetPage(untilAddress);
-            if (untilAddress > hlog.GetStartLogicalAddress(endPage))
+            if (untilAddress > hlog.GetStartLogicalAddress(endPage) && untilAddress > scanFromAddress)
             {
                 endPage++;
             }
@@ -697,7 +697,7 @@ namespace FASTER.core
                 var endLogicalAddress = hlog.GetStartLogicalAddress(p + 1);
                 if ((recoverFromAddress < endLogicalAddress && recoverFromAddress < untilAddress)
                         || (options.clearLocks && options.headAddress < endLogicalAddress))
-                    ProcessReadSnapshotPage(scanFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
+                    ProcessReadSnapshotPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
 
                 // Issue next read
                 if (p + capacity < endPage)
@@ -718,11 +718,11 @@ namespace FASTER.core
             // Compute startPage and endPage
             startPage = hlog.GetPage(fromAddress);
             endPage = hlog.GetPage(untilAddress);
-            if (untilAddress > hlog.GetStartLogicalAddress(endPage))
+            if (untilAddress > hlog.GetStartLogicalAddress(endPage) && untilAddress > fromAddress)
                 endPage++;
             long snapshotStartPage = hlog.GetPage(snapshotStartAddress);
             snapshotEndPage = hlog.GetPage(snapshotEndAddress);
-            if (snapshotEndAddress > hlog.GetStartLogicalAddress(snapshotEndPage))
+            if (snapshotEndAddress > hlog.GetStartLogicalAddress(snapshotEndPage) && snapshotEndAddress > snapshotStartAddress)
                 snapshotEndPage++;
 
             // By default first page has one extra record
