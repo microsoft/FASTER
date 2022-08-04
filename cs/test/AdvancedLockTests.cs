@@ -217,6 +217,7 @@ namespace FASTER.test.LockTests
 
             [Test]
             [Category(FasterKVTestCategory), Category(CheckpointRestoreCategory), Category(LockTestCategory)]
+            [Ignore("Should not hold LUC while calling sync checkpoint")]
             public async ValueTask NoLocksAfterRestoreTest([Values] CheckpointType checkpointType, [Values] SyncMode syncMode, [Values] bool incremental)
             {
                 if (incremental && checkpointType != CheckpointType.Snapshot)
