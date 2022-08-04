@@ -23,7 +23,12 @@ namespace FASTER.core
         /// An unsafe context that does no ephemeral locking; the application must lock and unlock records manually and 
         /// make its own epoch protection calls.
         /// </summary>
-        LockableUnsafeContext
+        LockableUnsafeContext,
+
+        /// <summary>
+        /// A context that does no ephemeral locking; the application must lock and unlock records manually.
+        /// </summary>
+        LockableContext
     }
 
     /// <summary>
