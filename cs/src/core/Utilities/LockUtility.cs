@@ -63,6 +63,8 @@ namespace FASTER.core
                 return recordInfo.LockExclusive();
             if (lockType == LockType.ExclusiveFromShared)
                 return recordInfo.LockExclusiveFromShared();
+            if (lockType == LockType.Watch)
+                return recordInfo.Watch();
             else
                 Debug.Fail($"Unexpected LockType: {lockType}");
             return false;
@@ -74,6 +76,8 @@ namespace FASTER.core
                 recordInfo.UnlockShared();
             else if (lockType == LockType.Exclusive)
                 recordInfo.UnlockExclusive();
+            else if (lockType == LockType.Watch)
+                recordInfo.UnWatch();
             else
                 Debug.Fail($"Unexpected LockType: {lockType}");
         }

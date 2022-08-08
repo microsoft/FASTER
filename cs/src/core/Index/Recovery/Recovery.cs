@@ -833,7 +833,7 @@ namespace FASTER.core
                         entry.Pending = false;
                         entry.Tentative = false;
                         bucket->bucket_entries[slot] = entry.word;
-                        if (clearLocks && info.IsLocked)
+                        if (clearLocks && info.IsLockedOrWatched)
                         {
                             // We do not set 'touched' here as there is no need to write these pages back
                             info.ClearLocks();

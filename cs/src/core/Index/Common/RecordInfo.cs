@@ -11,8 +11,8 @@ using System.Threading;
 namespace FASTER.core
 {
     // RecordInfo layout (64 bits total):
-    // [--][InNewVersion][Filler][Dirty][Tentative][Sealed] [Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
-    //     where X = exclusive lock, S = shared lock, R = readcache, A = address, - = unused
+    // [-][InNewVersion][Filler][Dirty][Tentative][Sealed] [Valid][Tombstone][W][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
+    //     where W = watch bit, X = exclusive lock, S = shared lock, R = readcache, A = address, - = unused
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
     {
@@ -38,8 +38,12 @@ namespace FASTER.core
         const int kExclusiveLockBitOffset = kLockShiftInWord + kSharedLockBits;
         const long kExclusiveLockBitMask = 1L << kExclusiveLockBitOffset;
 
+        // Watch bit constants
+        const int kWatchBitOffset = kLockShiftInWord + kSharedLockBits + 1;
+        const long kWatchBitMask = 1L << kWatchBitOffset;
+
         // Other marker bits
-        const int kTombstoneBitOffset = kExclusiveLockBitOffset + 1;
+        const int kTombstoneBitOffset = kWatchBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
         const int kTentativeBitOffset = kValidBitOffset + 1;
         const int kSealedBitOffset = kTentativeBitOffset + 1;
@@ -78,6 +82,8 @@ namespace FASTER.core
         public long GetHashCode64() => Utility.GetHashCode(this.word);
 
         public bool IsLocked => (word & (kExclusiveLockBitMask | kSharedLockMaskInWord)) != 0;
+
+        public bool IsLockedOrWatched => (word & (kExclusiveLockBitMask | kSharedLockMaskInWord | kWatchBitMask)) != 0;
 
         public bool IsLockedExclusive => (word & kExclusiveLockBitMask) != 0;
 
@@ -124,7 +130,7 @@ namespace FASTER.core
                     return false;
                 if ((expected_word & kExclusiveLockBitMask) == 0)
                 {
-                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
+                    if (expected_word == Interlocked.CompareExchange(ref word, (expected_word | kExclusiveLockBitMask) & ~kWatchBitMask, expected_word))
                         break;
                 }
                 if (spinCount > 0 && --spinCount <= 0) return false;
@@ -145,7 +151,7 @@ namespace FASTER.core
                 long expected_word = word;
                 if ((expected_word & kExclusiveLockBitMask) == 0)
                 {
-                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
+                    if (expected_word == Interlocked.CompareExchange(ref word, (expected_word | kExclusiveLockBitMask) & ~kWatchBitMask, expected_word))
                         break;
                 }
                 Thread.Yield();
@@ -238,7 +244,7 @@ namespace FASTER.core
                     return false;
                 if ((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
                 {
-                    var new_word = expected_word | kExclusiveLockBitMask;
+                    var new_word = (expected_word | kExclusiveLockBitMask) & ~kWatchBitMask;
                     if ((expected_word & kSharedLockMaskInWord) != 0) // shared lock is not empty
                         new_word -= kSharedLockIncrement;
                     else
@@ -252,11 +258,70 @@ namespace FASTER.core
             return true;
         }
 
+
+        /// <summary>
+        /// Set Watch bit in RecordInfo
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Watch() => TryWatch(spinCount: -1);
+
+        /// <summary>
+        /// Try to set the watch bit of the RecordInfo
+        /// </summary>
+        /// <returns>Whether watch bit bit was set successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryWatch(int spinCount = 1)
+        {
+            while (true)
+            {
+                long expected_word = word;
+                if (IsIntermediateWord(expected_word))
+                    return false;
+                if ((expected_word & kWatchBitMask) == 1)
+                    return true;
+                if ((expected_word & kExclusiveLockBitMask) == 0)
+                {
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kWatchBitMask, expected_word))
+                        break;
+                }
+                if (spinCount > 0 && --spinCount <= 0) return false;
+                Thread.Yield();
+            }
+            return true;
+        }
+
+
+        /// <summary>
+        /// Uwatch RecordInfo that was previously watched
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UnWatch()
+        {
+            // TODO throw if it is not locked excl
+            // Acquire shared lock
+            while (true)
+            {
+                long expected_word = word;
+                if (IsIntermediateWord(expected_word))
+                    continue;
+                if ((expected_word & kWatchBitMask) == 0)
+                    return;
+                if ((expected_word & kWatchBitMask) == 1)
+                {
+                    // This should Always succeed
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kWatchBitMask, expected_word))
+                        return;
+                }
+                Thread.Yield();
+            }
+        }
+
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyLocksFrom(RecordInfo other)
         {
-            word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
-            word |= other.word & (kExclusiveLockBitMask | kSharedLockMaskInWord);
+            word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord | kWatchBitMask);
+            word |= other.word & (kExclusiveLockBitMask | kSharedLockMaskInWord | kWatchBitMask);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

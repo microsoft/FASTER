@@ -101,10 +101,10 @@ namespace FASTER.core
             }
             lte.SUnlock();
 
-            if (!lte.logRecordInfo.IsLocked)
+            if (!lte.logRecordInfo.IsLockedOrWatched)
             {
                 lte.XLock();
-                if (!lte.logRecordInfo.IsLocked && !lte.lockRecordInfo.Invalid)
+                if (!lte.logRecordInfo.IsLockedOrWatched && !lte.lockRecordInfo.Invalid)
                     TryRemoveEntry(lookupKey);
                 lte.XUnlock();
             }
@@ -253,7 +253,7 @@ namespace FASTER.core
         {
             if (lte.lockRecordInfo.Dirty)
                 if (lte.lockRecordInfo.Filler) return false;
-            if (lte.lockRecordInfo.IsLocked)
+            if (lte.lockRecordInfo.IsLockedOrWatched)
                 if (lte.lockRecordInfo.Filler) return false;
             if (!lte.lockRecordInfo.Tentative || lte.lockRecordInfo.Invalid)
                 return false;

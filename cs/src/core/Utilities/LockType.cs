@@ -24,6 +24,12 @@ namespace FASTER.core
         Exclusive,
 
         /// <summary>
+        /// Watch Bit, taken on manually
+        /// </summary>
+        Watch,
+
+
+        /// <summary>
         /// Promote a Shared lock to an Exclusive lock
         /// </summary>
         ExclusiveFromShared

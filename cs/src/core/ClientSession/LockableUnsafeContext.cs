@@ -23,6 +23,7 @@ namespace FASTER.core
         ulong TotalLockCount => sharedLockCount + exclusiveLockCount;
         internal ulong sharedLockCount;
         internal ulong exclusiveLockCount;
+        internal ulong watchedKeysCount;
 
         void CheckAcquired()
         {
@@ -161,6 +162,62 @@ namespace FASTER.core
         /// The session id of FasterSession
         /// </summary>
         public int sessionID { get { return clientSession.ctx.sessionID; } }
+
+        /// <summary>
+        /// Watch the key waiting until it is watched
+        /// </summary>
+        /// <param name="key">The key to lock</param>
+        public unsafe void Watch(ref Key key)
+        {
+            CheckAcquired();
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Lock()");
+            
+            LockOperation lockOp = new(LockOperationType.Lock, LockType.Watch);
+
+
+            OperationStatus status;
+            bool oneMiss = false;
+            do
+                status = clientSession.fht.InternalLock(ref key, lockOp, ref oneMiss, out _);
+            while (status == OperationStatus.RETRY_NOW);
+            Debug.Assert(status == OperationStatus.SUCCESS);
+
+            //++this.watchedKeysCount;
+        }
+
+        /// <summary>
+        /// Watch the key waiting until it is watched
+        /// </summary>
+        /// <param name="key">The key to lock</param>
+        public unsafe void Watch(Key key) => Watch(ref key);
+
+
+        /// <summary>
+        /// Unwatch the key waiting until it is Unwatched
+        /// </summary>
+        /// <param name="key">The key to lock</param>
+        public unsafe void Unwatch(ref Key key)
+        {
+            CheckAcquired();
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Unlock()");
+            LockOperation lockOp = new(LockOperationType.Unlock, LockType.Watch);
+
+            OperationStatus status;
+            bool oneMiss = false;
+            do
+                status = clientSession.fht.InternalLock(ref key, lockOp, ref oneMiss, out _);
+            while (status == OperationStatus.RETRY_NOW);
+            Debug.Assert(status == OperationStatus.SUCCESS);
+
+            //--this.watchedKeysCount;
+        }
+
+        /// <summary>
+        /// Unwatch the key waiting until it is Unwatched
+        /// </summary>
+        /// <param name="key">The key to lock</param>
+        public unsafe void Unwatch(Key key) => Unwatch(ref key);
+
 
         #endregion Key Locking
 

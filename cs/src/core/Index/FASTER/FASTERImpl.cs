@@ -1704,7 +1704,7 @@ namespace FASTER.core
                     recordValue = default;
 
                 // Try to update hash chain and completely elide record only if previous address points to invalid address
-                if (!recordInfo.IsLocked && entry.Address == logicalAddress && recordInfo.PreviousAddress < hlog.BeginAddress)
+                if (!recordInfo.IsLockedOrWatched && entry.Address == logicalAddress && recordInfo.PreviousAddress < hlog.BeginAddress)
                 {
                     var updatedEntry = default(HashBucketEntry);
                     updatedEntry.Tag = 0;
@@ -2015,6 +2015,8 @@ namespace FASTER.core
                         return OperationStatus.RETRY_NOW;
                 }
 
+                // new Record is tentative and trying to transafer locks from locktable and it is waiting for lock to clear tentaive 
+                // since it is changed during the locking we need to retry
                 if (!ok)
                 {
                     LockTable.UnlockOrRemoveTentative(ref key, lockOp.LockType, tentativeLock);
@@ -3403,7 +3405,7 @@ namespace FASTER.core
                                 {
                                     // If it is not Invalid and is locked, we must Seal it so there is no possibility it will be missed while we're in the
                                     // process of transferring it to the Lock Table. Use manualLocking as we want to transfer the locks, not drain them.
-                                    if (!ri.Invalid && ri.IsLocked)
+                                    if (!ri.Invalid && ri.IsLockedOrWatched)
                                     {
                                         // If we fail to seal, it means there is another thread ahead of us, so break out of this key chain.
                                         if (!ri.Seal(manualLocking: true))

@@ -28,7 +28,7 @@ namespace FASTER.core
             {
                 // If it is not Invalid, we must Seal it so there is no possibility it will be missed while we're in the process
                 // of transferring it to the Lock Table. Use manualLocking as we want to transfer the locks, not drain them.
-                if (!info.IsLocked)
+                if (!info.IsLockedOrWatched)
                     continue;
 
                 // Seal it so there is no possibility it will be missed while we're in the process of transferring it to the Lock Table.
