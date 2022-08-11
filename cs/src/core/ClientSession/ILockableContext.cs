@@ -41,12 +41,12 @@ namespace FASTER.core
         /// Determines if the key is locked. Note this value may be obsolete as soon as it returns.
         /// </summary>
         /// <param name="key">The key to lock</param>
-        (bool exclusive, byte shared) IsLocked(ref TKey key);
+        (bool exclusive, byte shared, bool watch) IsLocked(ref TKey key);
 
         /// <summary>
         /// Determines if the key is locked. Note this value may be obsolete as soon as it returns.
         /// </summary>
         /// <param name="key">The key to lock</param>
-        (bool exclusive, byte shared) IsLocked(TKey key);
+        (bool exclusive, byte shared, bool watch) IsLocked(TKey key);
     }
 }

@@ -87,6 +87,8 @@ namespace FASTER.core
 
         public bool IsLockedExclusive => (word & kExclusiveLockBitMask) != 0;
 
+        public bool IsWatched => (word & kWatchBitMask) != 0;
+
         public byte NumLockedShared => (byte)((word & kSharedLockMaskInWord) >> kLockShiftInWord);
 
         public void ClearLocks() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
@@ -277,7 +279,7 @@ namespace FASTER.core
                 long expected_word = word;
                 if (IsIntermediateWord(expected_word))
                     return false;
-                if ((expected_word & kWatchBitMask) == 1)
+                if ((expected_word & kWatchBitMask) != 0)
                     return true;
                 if ((expected_word & kExclusiveLockBitMask) == 0)
                 {
@@ -306,7 +308,30 @@ namespace FASTER.core
                     continue;
                 if ((expected_word & kWatchBitMask) == 0)
                     return;
-                if ((expected_word & kWatchBitMask) == 1)
+                if ((expected_word & kWatchBitMask) != 0)
+                {
+                    // This should Always succeed
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kWatchBitMask, expected_word))
+                        return;
+                }
+                Thread.Yield();
+            }
+        }
+
+        /// <summary>
+        /// Uwatch RecordInfo that was previously watched
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UnWatchRaw()
+        {
+            // TODO throw if it is not locked excl
+            // Acquire shared lock
+            while (true)
+            {
+                long expected_word = word;
+                if ((expected_word & kWatchBitMask) == 0)
+                    return;
+                if ((expected_word & kWatchBitMask) != 0)
                 {
                     // This should Always succeed
                     if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kWatchBitMask, expected_word))

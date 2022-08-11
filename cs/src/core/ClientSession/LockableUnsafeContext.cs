@@ -106,7 +106,7 @@ namespace FASTER.core
 
             if (lockType == LockType.Exclusive)
                 ++this.exclusiveLockCount;
-            else
+            else if(lockType == LockType.Shared)
                 ++this.sharedLockCount;
         }
 
@@ -130,7 +130,7 @@ namespace FASTER.core
 
             if (lockType == LockType.Exclusive)
                 --this.exclusiveLockCount;
-            else
+            else if(lockType == LockType.Shared)
                 --this.sharedLockCount;
         }
 
@@ -138,7 +138,7 @@ namespace FASTER.core
         public void Unlock(Key key, LockType lockType) => Unlock(ref key, lockType);
 
         /// <inheritdoc/>
-        public (bool exclusive, byte shared) IsLocked(ref Key key)
+        public (bool exclusive, byte shared, bool watch) IsLocked(ref Key key)
         {
             CheckAcquired();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for IsLocked()");
@@ -152,11 +152,11 @@ namespace FASTER.core
                 status = clientSession.fht.InternalLock(ref key, lockOp, ref oneMiss, out lockInfo);
             while (status == OperationStatus.RETRY_NOW);
             Debug.Assert(status == OperationStatus.SUCCESS);
-            return (lockInfo.IsLockedExclusive, lockInfo.NumLockedShared);
+            return (lockInfo.IsLockedExclusive, lockInfo.NumLockedShared, lockInfo.IsWatched);
         }
 
         /// <inheritdoc/>
-        public (bool exclusive, byte shared) IsLocked(Key key) => IsLocked(ref key);
+        public (bool exclusive, byte shared, bool watch) IsLocked(Key key) => IsLocked(ref key);
 
         /// <summary>
         /// The session id of FasterSession

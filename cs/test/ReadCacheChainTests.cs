@@ -597,7 +597,7 @@ namespace FASTER.test.ReadCacheTests
                     luContext.CompletePending(wait: true);
 
                     var lockType = locks[key];
-                    var (exclusive, sharedCount) = luContext.IsLocked(key);
+                    var (exclusive, sharedCount, _) = luContext.IsLocked(key);
                     Assert.AreEqual(lockType == LockType.Exclusive, exclusive);
                     Assert.AreEqual(lockType != LockType.Exclusive, sharedCount > 0);
 

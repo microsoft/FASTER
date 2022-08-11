@@ -280,7 +280,7 @@ namespace FASTER.test.LockTests
                     luContext.ResumeThread();
                     for (int key = 0; key < numKeys; key++)
                     {
-                        (bool isExclusive, byte isShared) = luContext.IsLocked(key);
+                        (bool isExclusive, byte isShared, _) = luContext.IsLocked(key);
                         Assert.IsFalse(isExclusive);
                         Assert.AreEqual(0, isShared);
                     }
