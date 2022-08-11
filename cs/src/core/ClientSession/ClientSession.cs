@@ -37,6 +37,7 @@ namespace FASTER.core
 
         UnsafeContext<Key, Value, Input, Output, Context, Functions> uContext;
         LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> luContext;
+        LockableContext<Key, Value, Input, Output, Context, Functions> lContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
@@ -177,6 +178,16 @@ namespace FASTER.core
             this.luContext ??= new(this);
             this.luContext.Acquire();
             return this.luContext;
+        }
+
+        /// <summary>
+        /// Return a new interface to Faster operations that supports manual locking.
+        /// </summary>
+        public LockableContext<Key, Value, Input, Output, Context, Functions> GetLockableContext()
+        {
+            this.lContext ??= new(this);
+            this.lContext.Acquire();
+            return this.lContext;
         }
 
         #region IFasterContext
