@@ -294,7 +294,7 @@ easily create an instance of a local device:
 * `PageSizeBits`: This field (P) is used to indicate the size of each page. It is provided in terms of the number
 of bits. You get the actual size of the page by a simple computation of two raised to the power of the number
 specified (2<sup>P</sup>). For example, when `PageSizeBits` P is set to 12, it represents pages of size 4KB 
-(since 2<sup>P</sup> = 2<sup>10</sup> = 4096 = 4KB). Generally you should not need to adjust page size from its
+(since 2<sup>P</sup> = 2<sup>12</sup> = 4096 = 4KB). Generally you should not need to adjust page size from its
 default value of 25 (= 32MB).
 
 * `MemorySizeBits`: This field (M) indicates the total size of memory used by the log. As before, for a setting

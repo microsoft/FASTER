@@ -2350,6 +2350,27 @@ namespace FASTER.core
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE 
             && HandleRetryStatus(internalStatus, opCtx, currentCtx, fasterSession, ref pendingContext);
 
+        /// <summary>
+        /// Handle retry for operations that will not go pending (e.g., InternalLock)
+        /// </summary>
+        internal bool HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(OperationStatus internalStatus, FasterExecutionContext<Input, Output, Context> currentCtx, FasterSession fasterSession)
+            where FasterSession : IFasterSession
+        {
+            Debug.Assert(epoch.ThisInstanceProtected());
+            switch (internalStatus)
+            {
+                case OperationStatus.RETRY_NOW:
+                    Thread.Yield();
+                    return true;
+                case OperationStatus.RETRY_LATER:
+                    InternalRefresh(currentCtx, fasterSession);
+                    Thread.Yield();
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         private bool HandleRetryStatus<Input, Output, Context, FasterSession>(
             OperationStatus internalStatus,
             FasterExecutionContext<Input, Output, Context> opCtx,

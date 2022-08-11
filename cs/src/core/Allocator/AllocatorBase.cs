@@ -116,7 +116,7 @@ namespace FASTER.core
         internal long HeadOffsetLagAddress;
 
         /// <summary>
-        /// Number of <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions}"/> instances active.
+        /// Number of <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions}"/> or <see cref="LockableContext{Key, Value, Input, Output, Context, Functions}"/> instances active.
         /// </summary>
         internal long NumActiveLockingSessions = 0;
 
