@@ -677,6 +677,9 @@ namespace FASTER.test.statemachine
                 s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
             }
 
+            // Ensure state machine needs no I/O wait during WAIT_FLUSH
+            fht1.Log.ShiftReadOnlyAddress(fht1.Log.TailAddress, true);
+
             // Start session s2 on another thread for testing
             ts = fht1.For(f).CreateThreadSession(f);
             lts = fht1.For(f).CreateLUCThreadSession(f);
