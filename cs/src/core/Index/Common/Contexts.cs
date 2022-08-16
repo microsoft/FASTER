@@ -157,6 +157,9 @@ namespace FASTER.core
             // For flushing head pages on tail allocation.
             internal CompletionEvent flushEvent;
 
+            // For RMW if an allocation caused the source record for a copy to go from readonly to below HeadAddress, or for any operation with CAS failure.
+            internal long retryNewLogicalAddress;
+
             // BEGIN Must be kept in sync with corresponding ReadFlags enum values
             internal const ushort kDisableReadCacheUpdates = 0x0001;
             internal const ushort kDisableReadCacheReads = 0x0002;

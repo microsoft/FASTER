@@ -741,6 +741,7 @@ namespace FASTER.core
             var (actualSize, allocateSize) = hlog.GetRecordSize(ref key, ref value);
             if (!BlockAllocate(allocateSize, out long newLogicalAddress, ref pendingContext, out OperationStatus status))
                 return status;
+
             var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo,
@@ -1159,7 +1160,7 @@ namespace FASTER.core
                 {
                     // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
                     Unseal(unsealPhysicalAddress);
-                    if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)
+                    if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync || status == OperationStatus.RECORD_ON_DISK)
                     {
                         latchDestination = LatchDestination.CreatePendingContext;
                         goto CreatePendingContext;
@@ -1298,11 +1299,12 @@ namespace FASTER.core
         ///     transfer locks from it on success, and unseal it on failure</param>
         /// <param name="unsealPhysicalAddress">The physical address of <paramref name="unsealLogicalAddress"/>; passed to avoid needing a virtual GetPhysicalAddress call</param>
         /// <param name="doingCU">Whether we expect to be doing a CopyUpdate</param>
+        /// <param name="fromPending">Whether we are being called from pending path</param>
         /// <returns></returns>
         private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                           FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, long logicalAddress, 
                                                                                           long physicalAddress, RecordInfo srcRecordInfo, ushort tag, HashBucketEntry entry, long latestLogicalAddress,
-                                                                                          long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealLogicalAddress, long unsealPhysicalAddress, bool doingCU)
+                                                                                          long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealLogicalAddress, long unsealPhysicalAddress, bool doingCU, bool fromPending = false)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             bool forExpiration = false;
@@ -1346,11 +1348,31 @@ namespace FASTER.core
             var (actualSize, allocatedSize) = doingCU ?
                 hlog.GetRecordSize(physicalAddress, ref input, fasterSession) :
                 hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
-            if (!BlockAllocate(allocatedSize, out long newLogicalAddress, ref pendingContext, out OperationStatus status))
+
+            // Use an earlier allocation from a failed operation, if possible.
+            long newLogicalAddress = pendingContext.retryNewLogicalAddress, newPhysicalAddress = 0;
+            pendingContext.retryNewLogicalAddress = 0;
+            if (newLogicalAddress > hlog.HeadAddress && newLogicalAddress > entry.Address)
+            {
+                newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+                long recordSize = *(long*)Unsafe.AsPointer(ref hlog.GetValue(newPhysicalAddress));
+                if (recordSize >= allocatedSize)
+                    goto WriteInfo;
+            }
+            if (!BlockAllocate(allocatedSize, out newLogicalAddress, ref pendingContext, out OperationStatus status))
                 return status;
+            newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
 
-            var newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+            // If doingCU, we need to check that the source record is still in-memory; BlockAllocate may have changed HeadAddress. TODO: stash newLogicalAddress for CAS failures also, in all operations.
+            if (doingCU && logicalAddress < hlog.HeadAddress && !fromPending)
+            {
+                // Store the length into newPhysicalAddress, then stash that in pendingContext.
+                *(long*)Unsafe.AsPointer(ref hlog.GetValue(newPhysicalAddress)) = allocatedSize;
+                pendingContext.retryNewLogicalAddress = newLogicalAddress;
+                return OperationStatus.RECORD_ON_DISK;
+            }
 
+        WriteInfo:
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo, 
                             inNewVersion: sessionCtx.InNewVersion,
@@ -2320,7 +2342,7 @@ namespace FASTER.core
                 status = CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
                         ref pendingContext, fasterSession, sessionCtx, bucket, slot, request.logicalAddress, (long)recordPointer, recordInfo, tag, entry, latestLogicalAddress,
                         prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, Constants.kInvalidAddress, Constants.kInvalidAddress,
-                        (request.logicalAddress >= hlog.BeginAddress) && !recordInfo.Tombstone);
+                        (request.logicalAddress >= hlog.BeginAddress) && !recordInfo.Tombstone, fromPending: true);
 
                 // Retries should drop down to InternalRMW
                 if (!HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext))
@@ -2531,71 +2553,46 @@ namespace FASTER.core
                 int recordSize,
                 out long logicalAddress,
                 ref PendingContext<Input, Output, Context> pendingContext,
-                out OperationStatus internalStatus)
-        {
-            logicalAddress = hlog.TryAllocate(recordSize);
-            if (logicalAddress > 0)
-            {
-                internalStatus = OperationStatus.SUCCESS;
-                return true;
-            }
-            return SpinBlockAllocate(hlog, recordSize, out logicalAddress, ref pendingContext, out internalStatus);
-        }
+                out OperationStatus internalStatus) 
+            => TryBlockAllocate(hlog, recordSize, out logicalAddress, ref pendingContext, out internalStatus);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool BlockAllocateReadCache<Input, Output, Context>(
                 int recordSize,
                 out long logicalAddress,
                 ref PendingContext<Input, Output, Context> pendingContext,
-                out OperationStatus internalStatus)
-        {
-            logicalAddress = readcache.TryAllocate(recordSize);
-            if (logicalAddress > 0)
-            {
-                internalStatus = OperationStatus.SUCCESS;
-                return true;
-            }
-            return SpinBlockAllocate(readcache, recordSize, out logicalAddress, ref pendingContext, out internalStatus);
-        }
+                out OperationStatus internalStatus) 
+            => TryBlockAllocate(readcache, recordSize, out logicalAddress, ref pendingContext, out internalStatus);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool SpinBlockAllocate<Input, Output, Context>(
+        private static bool TryBlockAllocate<Input, Output, Context>(
                 AllocatorBase<Key, Value> allocator,
                 int recordSize,
                 out long logicalAddress,
                 ref PendingContext<Input, Output, Context> pendingContext,
                 out OperationStatus internalStatus)
         {
-            var spins = 0;
-            while (true)
+            pendingContext.flushEvent = allocator.FlushEvent;
+            logicalAddress = allocator.TryAllocate(recordSize);
+            if (logicalAddress > 0)
             {
-                pendingContext.flushEvent = allocator.FlushEvent;
-                logicalAddress = allocator.TryAllocate(recordSize);
-                if (logicalAddress > 0)
-                {
-                    pendingContext.flushEvent = default;
-                    internalStatus = OperationStatus.SUCCESS;
-                    return true;
-                }
-                if (logicalAddress == 0)
-                {
-                    if (spins++ < Constants.kFlushSpinCount)
-                    {
-                        Thread.Yield();
-                        continue;
-                    }
-
-                    // We expect flushEvent to be signaled.
-                    internalStatus = OperationStatus.ALLOCATE_FAILED;
-                    return false;
-                }
-
-                // logicalAddress is < 0 so we do not expect flushEvent to be signaled; return RETRY_LATER to refresh the epoch.
                 pendingContext.flushEvent = default;
-                allocator.TryComplete();
-                internalStatus = OperationStatus.RETRY_LATER;
+                internalStatus = OperationStatus.SUCCESS;
+                return true;
+            }
+
+            if (logicalAddress == 0)
+            {
+                // We expect flushEvent to be signaled.
+                internalStatus = OperationStatus.ALLOCATE_FAILED;
                 return false;
             }
+
+            // logicalAddress is < 0 so we do not expect flushEvent to be signaled; return RETRY_LATER to refresh the epoch.
+            pendingContext.flushEvent = default;
+            allocator.TryComplete();
+            internalStatus = OperationStatus.RETRY_LATER;
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
