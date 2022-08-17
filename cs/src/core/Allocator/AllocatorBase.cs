@@ -1105,9 +1105,14 @@ namespace FASTER.core
             return logicalAddress;
         }
 
-
+        // If the page we are trying to allocate is past the last page with an unclosed address region, 
+        // then we can retry immediately because this is called after NeedToWait, so we know we've 
+        // completed the wait on flushEvent for the necessary pages to be flushed, and are waiting for
+        // OnPagesClosed to be completed.
         private bool CannotAllocate(int page) => page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits);
 
+        // If the page we are trying to allocate is past the last page with an unflushed address region, 
+        // we have to wait for the flushEvent.
         private bool NeedToWait(int page) => page >= BufferSize + (FlushedUntilAddress >> LogPageSizeBits);
 
         /// <summary>

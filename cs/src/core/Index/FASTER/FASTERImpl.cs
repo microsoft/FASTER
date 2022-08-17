@@ -1352,7 +1352,7 @@ namespace FASTER.core
             // Use an earlier allocation from a failed operation, if possible.
             long newLogicalAddress = pendingContext.retryNewLogicalAddress, newPhysicalAddress = 0;
             pendingContext.retryNewLogicalAddress = 0;
-            if (newLogicalAddress > hlog.HeadAddress && newLogicalAddress > entry.Address)
+            if (newLogicalAddress >= hlog.HeadAddress && newLogicalAddress > entry.Address)
             {
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 long recordSize = *(long*)Unsafe.AsPointer(ref hlog.GetValue(newPhysicalAddress));
