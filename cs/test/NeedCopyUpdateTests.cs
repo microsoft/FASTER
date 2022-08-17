@@ -2,7 +2,11 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
+using Microsoft.Extensions.Options;
+using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using NUnit.Framework;
+using System;
+using System.Runtime.CompilerServices;
 using static FASTER.test.TestUtils;
 
 namespace FASTER.test
@@ -16,9 +20,9 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/NeedCopyUpdateTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/NeedCopyUpdateTests.obj.log", deleteOnClose: true);
+            DeleteDirectory(MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(MethodTestDir + "/tests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(MethodTestDir + "/tests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<int, RMWValue>
                 (128,
@@ -36,7 +40,7 @@ namespace FASTER.test
             log = null;
             objlog?.Dispose();
             objlog = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
         [Test]
@@ -91,7 +95,6 @@ namespace FASTER.test
             Assert.IsTrue(status.IsPending, status.ToString());
             session.CompletePending(true);
         }
-    }
 
     internal class RMWValue
     {
@@ -115,39 +118,104 @@ namespace FASTER.test
         }
     }
 
-    internal class TryAddTestFunctions : TryAddFunctions<int, RMWValue, Status>
+        internal class TryAddTestFunctions : TryAddFunctions<int, RMWValue, Status>
+        {
+            internal bool noNeedInitialUpdater;
+
+            public override bool NeedInitialUpdate(ref int key, ref RMWValue input, ref RMWValue output, ref RMWInfo rmwInfo)
+            {
+                return !noNeedInitialUpdater && base.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo);
+            }
+
+            public override bool InitialUpdater(ref int key, ref RMWValue input, ref RMWValue value, ref RMWValue output, ref RMWInfo rmwInfo)
+            {
+                input.flag = true;
+                base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+                return true;
+            }
+
+            public override bool CopyUpdater(ref int key, ref RMWValue input, ref RMWValue oldValue, ref RMWValue newValue, ref RMWValue output, ref RMWInfo rmwInfo)
+            {
+                Assert.Fail("CopyUpdater");
+                return false;
+            }
+
+            public override void RMWCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status, RecordMetadata recordMetadata)
+            {
+                Assert.AreEqual(ctx, status);
+
+                if (!status.Found)
+                    Assert.IsTrue(input.flag); // InitialUpdater is called.
+            }
+
+            public override void ReadCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status, RecordMetadata recordMetadata)
+            {
+                Assert.AreEqual(output.value, input.value);
+            }
+        }
+    }
+
+    [TestFixture]
+    internal class NeedCopyUpdateTestsSinglePage
     {
-        internal bool noNeedInitialUpdater;
+        private FasterKV<long, long> fht;
+        private IDevice log;
 
-        public override bool NeedInitialUpdate(ref int key, ref RMWValue input, ref RMWValue output, ref RMWInfo rmwInfo)
+        const int pageSizeBits = 16;
+        const int recsPerPage = (1 << pageSizeBits) / 24;   // 24 bits in RecordInfo, key, value
+
+        [SetUp]
+        public void Setup()
         {
-            return !noNeedInitialUpdater && base.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo);
+            DeleteDirectory(MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
+
+            fht = new FasterKV<long, long>(128,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = pageSizeBits, PageSizeBits = pageSizeBits });
         }
 
-        public override bool InitialUpdater(ref int key, ref RMWValue input, ref RMWValue value, ref RMWValue output, ref RMWInfo rmwInfo)
+        [TearDown]
+        public void TearDown()
         {
-            input.flag = true;
-            base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
-            return true;
+            fht?.Dispose();
+            fht = null;
+            log?.Dispose();
+            log = null;
+            DeleteDirectory(MethodTestDir);
         }
 
-        public override bool CopyUpdater(ref int key, ref RMWValue input, ref RMWValue oldValue, ref RMWValue newValue, ref RMWValue output, ref RMWInfo rmwInfo)
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+        public void CopyUpdateFromHeadReadOnlyPageTest()
         {
-            Assert.Fail("CopyUpdater");
-            return false;
+            RMWSinglePageFunctions functions = new();
+            using var session = fht.For(functions).NewSession<RMWSinglePageFunctions>();
+
+            // Two records is the most that can "fit" into the first Constants.kFirstValueAddress "range"; therefore when we close pages
+            // after flushing, ClosedUntilAddress will be aligned with the end of the page, so we will succeed in the allocation that
+            // caused the HeadAddress to be moved above logicalAddress in CreateNewRecordRMW.
+            const int padding = 2;
+
+            for (int key = 0; key < recsPerPage - padding; key++)
+            {
+                var status = session.RMW(key, key << 32 + key);
+                Assert.IsTrue(status.IsCompletedSuccessfully, status.ToString());
+            }
+
+            fht.Log.ShiftReadOnlyAddress(fht.Log.TailAddress, wait: true);
+
+            // This should trigger CopyUpdater, after flushing the oldest page (closest to HeadAddress).
+            for (int key = 0; key < recsPerPage - padding; key++)
+            {
+                var status = session.RMW(key, key << 32 + key);
+                if (status.IsPending)
+                    session.CompletePending(wait: true);
+            }
         }
 
-        public override void RMWCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status, RecordMetadata recordMetadata)
+        internal class RMWSinglePageFunctions : SimpleFunctions<long, long>
         {
-            Assert.AreEqual(ctx, status);
-
-            if (!status.Found)
-                Assert.IsTrue(input.flag); // InitialUpdater is called.
-        }
-
-        public override void ReadCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status, RecordMetadata recordMetadata)
-        {
-            Assert.AreEqual(output.value, input.value);
         }
     }
 }

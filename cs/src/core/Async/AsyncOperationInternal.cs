@@ -129,6 +129,7 @@ namespace FASTER.core
                     && Interlocked.CompareExchange(ref CompletionComputeStatus, Completed, Pending) == Pending)
                 {
                     bool hasPendingIO = _asyncOperation.HasPendingIO;
+                    var pendingId = _pendingContext.id;     // _pendingContext.id is overwritten if TryCompleteSync enqueues another IO request
                     try
                     {
                         if (_exception == default)
@@ -138,7 +139,7 @@ namespace FASTER.core
                     {
                         if (hasPendingIO)
                         {
-                            _currentCtx.ioPendingRequests.Remove(_pendingContext.id);
+                            _currentCtx.ioPendingRequests.Remove(pendingId);
                             _currentCtx.asyncPendingCount--;
                             _currentCtx.pendingReads.Remove();
                         }
