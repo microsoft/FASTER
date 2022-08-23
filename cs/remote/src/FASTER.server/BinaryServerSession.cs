@@ -93,7 +93,7 @@ namespace FASTER.server
             if (bytesAvailable < sizeof(int)) return false;
 
             // MSB is 1 to indicate binary protocol
-            var size = -(*(int*)buf);
+            var size = -(*(int*)(buf + readHead));
 
             // Not all of the message has arrived
             if (bytesAvailable < size + sizeof(int)) return false;
