@@ -12,7 +12,7 @@ namespace FASTER.core
     /// <summary>
     /// Faster Context implementation that allows manual control of record locking and epoch management. For advanced use only.
     /// </summary>
-    public sealed class LockableContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, ILockableContext<Key>, IDisposable
+    public sealed class LockableContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, ILockableContext<Key>
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
@@ -67,7 +67,11 @@ namespace FASTER.core
         public int LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
 
         #region Acquire and Dispose
-        internal void Acquire()
+
+        /// <summary>
+        /// Acquire a lockable context
+        /// </summary>
+        public void Acquire()
         {
             this.clientSession.fht.IncrementNumLockingSessions();
             if (this.isAcquired)
@@ -76,15 +80,15 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Does not actually dispose of anything; asserts the epoch has been suspended
+        /// Release a lockable context; does not actually dispose of anything
         /// </summary>
-        public void Dispose()
+        public void Release()
         {
             CheckAcquired();
             if (clientSession.fht.epoch.ThisInstanceProtected())
-                throw new FasterException("Disposing LockableContext with a protected epoch; must call UnsafeSuspendThread");
+                throw new FasterException("Releasing LockableContext with a protected epoch; must call UnsafeSuspendThread");
             if (TotalLockCount > 0)
-                throw new FasterException($"Disposing LockableContext with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
+                throw new FasterException($"Releasing LockableContext with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
             this.isAcquired = false;
             this.clientSession.fht.DecrementNumLockingSessions();
         }

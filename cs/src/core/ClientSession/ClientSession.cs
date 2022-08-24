@@ -186,7 +186,6 @@ namespace FASTER.core
         public LockableContext<Key, Value, Input, Output, Context, Functions> GetLockableContext()
         {
             this.lContext ??= new(this);
-            this.lContext.Acquire();
             return this.lContext;
         }
 
