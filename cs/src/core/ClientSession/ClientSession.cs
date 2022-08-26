@@ -38,6 +38,7 @@ namespace FASTER.core
         UnsafeContext<Key, Value, Input, Output, Context, Functions> uContext;
         LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> luContext;
         LockableContext<Key, Value, Input, Output, Context, Functions> lContext;
+        BasicContext<Key, Value, Input, Output, Context, Functions> bContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
@@ -61,6 +62,8 @@ namespace FASTER.core
             ILoggerFactory loggerFactory = null)
         {
             this.lContext = new(this);
+            this.bContext = new(this);
+
             this.loggerFactory = loggerFactory;
             this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode().ToString("X8")}");
             this.fht = fht;
@@ -191,12 +194,14 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Return a new interface to Faster operations that supports manual locking.
+        /// Return a session wrapper that supports manual locking.
         /// </summary>
-        public LockableContext<Key, Value, Input, Output, Context, Functions> GetLockableContext()
-        {
-            return this.lContext;
-        }
+        public LockableContext<Key, Value, Input, Output, Context, Functions> LockableContext => lContext;
+
+        /// <summary>
+        /// Return a session wrapper struct that passes through to client session
+        /// </summary>
+        public BasicContext<Key, Value, Input, Output, Context, Functions> BasicContext => bContext;
 
         #region IFasterContext
         /// <inheritdoc/>
