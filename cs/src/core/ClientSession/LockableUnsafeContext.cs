@@ -20,10 +20,6 @@ namespace FASTER.core
         internal readonly InternalFasterSession FasterSession;
         bool isAcquired;
 
-        ulong TotalLockCount => sharedLockCount + exclusiveLockCount;
-        internal ulong sharedLockCount;
-        internal ulong exclusiveLockCount;
-
         void CheckAcquired()
         {
             if (!isAcquired)
@@ -79,8 +75,8 @@ namespace FASTER.core
         {
             if (clientSession.fht.epoch.ThisInstanceProtected())
                 throw new FasterException("Disposing LockableUnsafeContext with a protected epoch; must call UnsafeSuspendThread");
-            if (TotalLockCount > 0)
-                throw new FasterException($"Disposing LockableUnsafeContext with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
+            if (clientSession.TotalLockCount > 0)
+                throw new FasterException($"Disposing LockableUnsafeContext with locks held: {clientSession.sharedLockCount} shared locks, {clientSession.exclusiveLockCount} exclusive locks");
             this.isAcquired = false;
             this.clientSession.fht.DecrementNumLockingSessions();
         }
@@ -104,9 +100,9 @@ namespace FASTER.core
             Debug.Assert(status == OperationStatus.SUCCESS);
 
             if (lockType == LockType.Exclusive)
-                ++this.exclusiveLockCount;
+                ++clientSession.exclusiveLockCount;
             else
-                ++this.sharedLockCount;
+                ++clientSession.sharedLockCount;
         }
 
         /// <inheritdoc/>
@@ -128,9 +124,9 @@ namespace FASTER.core
             Debug.Assert(status == OperationStatus.SUCCESS);
 
             if (lockType == LockType.Exclusive)
-                --this.exclusiveLockCount;
+                --clientSession.exclusiveLockCount;
             else
-                --this.sharedLockCount;
+                --clientSession.sharedLockCount;
         }
 
         /// <inheritdoc/>

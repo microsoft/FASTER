@@ -44,6 +44,15 @@ namespace FASTER.core
         readonly ILoggerFactory loggerFactory;
         readonly ILogger logger;
 
+        internal ulong TotalLockCount => sharedLockCount + exclusiveLockCount;
+        internal ulong sharedLockCount;
+        internal ulong exclusiveLockCount;
+
+        /// <summary>
+        /// Local current epoch
+        /// </summary>
+        public int LocalCurrentEpoch => fht.epoch.LocalCurrentEpoch;
+
         internal ClientSession(
             FasterKV<Key, Value> fht,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
@@ -51,6 +60,7 @@ namespace FASTER.core
             SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings,
             ILoggerFactory loggerFactory = null)
         {
+            this.lContext = new(this);
             this.loggerFactory = loggerFactory;
             this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode().ToString("X8")}");
             this.fht = fht;
@@ -185,7 +195,6 @@ namespace FASTER.core
         /// </summary>
         public LockableContext<Key, Value, Input, Output, Context, Functions> GetLockableContext()
         {
-            this.lContext ??= new(this);
             return this.lContext;
         }
 
