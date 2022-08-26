@@ -37,8 +37,8 @@ namespace FASTER.core
 
         UnsafeContext<Key, Value, Input, Output, Context, Functions> uContext;
         LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> luContext;
-        LockableContext<Key, Value, Input, Output, Context, Functions> lContext;
-        BasicContext<Key, Value, Input, Output, Context, Functions> bContext;
+        readonly LockableContext<Key, Value, Input, Output, Context, Functions> lContext;
+        readonly BasicContext<Key, Value, Input, Output, Context, Functions> bContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
