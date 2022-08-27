@@ -27,6 +27,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeResumeThread()
         {
+            clientSession.CheckAcquired();
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread();
         }
@@ -35,6 +36,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeResumeThread(out int resumeEpoch)
         {
+            clientSession.CheckAcquired();
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(out resumeEpoch);
         }
@@ -43,6 +45,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeSuspendThread()
         {
+            clientSession.CheckAcquired();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeSuspendThread();
         }
@@ -57,7 +60,7 @@ namespace FASTER.core
         /// </summary>
         public void Acquire()
         {
-            this.clientSession.fht.IncrementNumLockingSessions();
+            clientSession.Acquire();
         }
 
         /// <summary>
@@ -69,7 +72,7 @@ namespace FASTER.core
                 throw new FasterException("Releasing LockableContext with a protected epoch; must call UnsafeSuspendThread");
             if (clientSession.TotalLockCount > 0)
                 throw new FasterException($"Releasing LockableContext with locks held: {clientSession.sharedLockCount} shared locks, {clientSession.exclusiveLockCount} exclusive locks");
-            this.clientSession.fht.DecrementNumLockingSessions();
+            clientSession.Release();
         }
         #endregion Acquire and Dispose
 
@@ -78,6 +81,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public unsafe void Lock(ref Key key, LockType lockType)
         {
+            clientSession.CheckAcquired();
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread();
             try
@@ -108,6 +112,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public void Unlock(ref Key key, LockType lockType)
         {
+            clientSession.CheckAcquired();
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread();
             try
@@ -138,6 +143,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public (bool exclusive, byte shared) IsLocked(ref Key key)
         {
+            clientSession.CheckAcquired();
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread();
             try
@@ -165,7 +171,7 @@ namespace FASTER.core
         /// <summary>
         /// The session id of FasterSession
         /// </summary>
-        public int sessionID { get { return clientSession.ctx.sessionID; } }
+        public int SessionID { get { return clientSession.ctx.sessionID; } }
 
         #endregion Key Locking
 

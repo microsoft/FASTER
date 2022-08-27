@@ -49,6 +49,34 @@ namespace FASTER.core
         internal ulong sharedLockCount;
         internal ulong exclusiveLockCount;
 
+        bool isAcquired;
+
+        internal void Acquire()
+        {
+            CheckNotAcquired();
+            fht.IncrementNumLockingSessions();
+            isAcquired = true;
+        }
+
+        internal void Release()
+        {
+            CheckAcquired();
+            isAcquired = false;
+            fht.DecrementNumLockingSessions();
+        }
+
+        internal void CheckAcquired()
+        {
+            if (!isAcquired)
+                throw new FasterException("Method call on not-acquired Context");
+        }
+
+        void CheckNotAcquired()
+        {
+            if (isAcquired)
+                throw new FasterException("Method call on acquired Context");
+        }
+
         /// <summary>
         /// Local current epoch
         /// </summary>
@@ -65,7 +93,7 @@ namespace FASTER.core
             this.bContext = new(this);
 
             this.loggerFactory = loggerFactory;
-            this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode().ToString("X8")}");
+            this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
             this.fht = fht;
             this.ctx = ctx;
             this.functions = functions;
@@ -85,7 +113,7 @@ namespace FASTER.core
             }
             else
             {
-                if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
+                if (fht.hlog is not VariableLengthBlittableAllocator<Key, Value>)
                     logger?.LogWarning("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
             }
 
@@ -114,7 +142,7 @@ namespace FASTER.core
 
         private void UpdateVarlen(ref IVariableLengthStruct<Value, Input> variableLengthStruct)
         {
-            if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
+            if (fht.hlog is not VariableLengthBlittableAllocator<Key, Value>)
                 return;
 
             if (typeof(Value) == typeof(SpanByte) && typeof(Input) == typeof(SpanByte))
