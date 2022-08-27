@@ -16,19 +16,7 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
-
         internal readonly InternalFasterSession FasterSession;
-        bool isAcquired;
-
-        ulong TotalLockCount => sharedLockCount + exclusiveLockCount;
-        internal ulong sharedLockCount;
-        internal ulong exclusiveLockCount;
-
-        void CheckAcquired()
-        {
-            if (!isAcquired)
-                throw new FasterException("Method call on not-acquired LockableUnsafeContext");
-        }
 
         internal LockableUnsafeContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
@@ -40,7 +28,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResumeThread()
         {
-            CheckAcquired();
+            clientSession.CheckAcquired();
             clientSession.UnsafeResumeThread();
         }
 
@@ -48,7 +36,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResumeThread(out int resumeEpoch)
         {
-            CheckAcquired();
+            clientSession.CheckAcquired();
             clientSession.UnsafeResumeThread(out resumeEpoch);
         }
 
@@ -56,6 +44,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SuspendThread()
         {
+            clientSession.CheckAcquired();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeSuspendThread();
         }
@@ -66,10 +55,7 @@ namespace FASTER.core
         #region Acquire and Dispose
         internal void Acquire()
         {
-            this.clientSession.fht.IncrementNumLockingSessions();
-            if (this.isAcquired)
-                throw new FasterException("Trying to acquire an already-acquired LockableUnsafeContext");
-            this.isAcquired = true;
+            clientSession.Acquire();
         }
 
         /// <summary>
@@ -79,10 +65,9 @@ namespace FASTER.core
         {
             if (clientSession.fht.epoch.ThisInstanceProtected())
                 throw new FasterException("Disposing LockableUnsafeContext with a protected epoch; must call UnsafeSuspendThread");
-            if (TotalLockCount > 0)
-                throw new FasterException($"Disposing LockableUnsafeContext with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
-            this.isAcquired = false;
-            this.clientSession.fht.DecrementNumLockingSessions();
+            if (clientSession.TotalLockCount > 0)
+                throw new FasterException($"Disposing LockableUnsafeContext with locks held: {clientSession.sharedLockCount} shared locks, {clientSession.exclusiveLockCount} exclusive locks");
+            clientSession.Release();
         }
         #endregion Acquire and Dispose
 
@@ -91,7 +76,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public unsafe void Lock(ref Key key, LockType lockType)
         {
-            CheckAcquired();
+            clientSession.CheckAcquired();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Lock()");
 
             LockOperation lockOp = new(LockOperationType.Lock, lockType);
@@ -104,9 +89,9 @@ namespace FASTER.core
             Debug.Assert(status == OperationStatus.SUCCESS);
 
             if (lockType == LockType.Exclusive)
-                ++this.exclusiveLockCount;
+                ++clientSession.exclusiveLockCount;
             else
-                ++this.sharedLockCount;
+                ++clientSession.sharedLockCount;
         }
 
         /// <inheritdoc/>
@@ -115,7 +100,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public void Unlock(ref Key key, LockType lockType)
         {
-            CheckAcquired();
+            clientSession.CheckAcquired();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Unlock()");
 
             LockOperation lockOp = new(LockOperationType.Unlock, lockType);
@@ -128,9 +113,9 @@ namespace FASTER.core
             Debug.Assert(status == OperationStatus.SUCCESS);
 
             if (lockType == LockType.Exclusive)
-                --this.exclusiveLockCount;
+                --clientSession.exclusiveLockCount;
             else
-                --this.sharedLockCount;
+                --clientSession.sharedLockCount;
         }
 
         /// <inheritdoc/>
@@ -139,7 +124,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public (bool exclusive, byte shared) IsLocked(ref Key key)
         {
-            CheckAcquired();
+            clientSession.CheckAcquired();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for IsLocked()");
 
             LockOperation lockOp = new(LockOperationType.IsLocked, LockType.None);
@@ -160,7 +145,7 @@ namespace FASTER.core
         /// <summary>
         /// The session id of FasterSession
         /// </summary>
-        public int sessionID { get { return clientSession.ctx.sessionID; } }
+        public int SessionID { get { return clientSession.ctx.sessionID; } }
 
         #endregion Key Locking
 

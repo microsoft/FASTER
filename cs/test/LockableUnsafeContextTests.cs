@@ -145,21 +145,21 @@ namespace FASTER.test.LockableUnsafeContext
                 this.fht.Log.FlushAndEvict(wait: true);
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, LockableUnsafeFunctions> luContext)
+        static void ClearCountsOnError(ClientSession<int, int, int, int, Empty, LockableUnsafeFunctions> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
             luContext.exclusiveLockCount = 0;
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
+        static void ClearCountsOnError(ClientSession<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
             luContext.exclusiveLockCount = 0;
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> luContext)
+        static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -409,7 +409,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(luContext);
+                    ClearCountsOnError(session);
                     throw;
                 }
                 finally
@@ -496,7 +496,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
@@ -554,7 +554,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(luContext);
+                    ClearCountsOnError(session);
                     throw;
                 }
                 finally
@@ -705,7 +705,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
@@ -757,7 +757,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
@@ -799,7 +799,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
@@ -846,7 +846,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
@@ -894,7 +894,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
@@ -947,7 +947,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
@@ -1036,7 +1036,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(lockLuContext);
+                ClearCountsOnError(lockSession);
                 throw;
             }
             finally
@@ -1056,7 +1056,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(lockLuContext);
+                    ClearCountsOnError(lockSession);
                     throw;
                 }
                 finally
@@ -1086,7 +1086,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(updateLuContext);
+                    ClearCountsOnError(updateSession);
                     throw;
                 }
                 finally
@@ -1131,7 +1131,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
@@ -1202,7 +1202,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
@@ -1243,7 +1243,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(luContext);
+                    ClearCountsOnError(session);
                     throw;
                 }
                 finally
@@ -1270,7 +1270,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(luContext);
+                    ClearCountsOnError(session);
                     throw;
                 }
                 finally
@@ -1302,7 +1302,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(luContext);
+                    ClearCountsOnError(session);
                     throw;
                 }
                 finally
@@ -1382,7 +1382,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(luc1);
+                    ClearCountsOnError(s1);
                     throw;
                 }
                 finally
@@ -1406,7 +1406,7 @@ namespace FASTER.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(luc1);
+                ClearCountsOnError(s1);
                 throw;
             }
             finally
@@ -1462,7 +1462,7 @@ namespace FASTER.test.LockableUnsafeContext
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(luc1);
+                    ClearCountsOnError(s1);
                     throw;
                 }
                 finally
