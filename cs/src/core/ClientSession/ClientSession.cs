@@ -37,12 +37,50 @@ namespace FASTER.core
 
         UnsafeContext<Key, Value, Input, Output, Context, Functions> uContext;
         LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> luContext;
-        LockableContext<Key, Value, Input, Output, Context, Functions> lContext;
+        readonly LockableContext<Key, Value, Input, Output, Context, Functions> lContext;
+        readonly BasicContext<Key, Value, Input, Output, Context, Functions> bContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
         readonly ILoggerFactory loggerFactory;
         readonly ILogger logger;
+
+        internal ulong TotalLockCount => sharedLockCount + exclusiveLockCount;
+        internal ulong sharedLockCount;
+        internal ulong exclusiveLockCount;
+
+        bool isAcquired;
+
+        internal void Acquire()
+        {
+            CheckNotAcquired();
+            fht.IncrementNumLockingSessions();
+            isAcquired = true;
+        }
+
+        internal void Release()
+        {
+            CheckAcquired();
+            isAcquired = false;
+            fht.DecrementNumLockingSessions();
+        }
+
+        internal void CheckAcquired()
+        {
+            if (!isAcquired)
+                throw new FasterException("Method call on not-acquired Context");
+        }
+
+        void CheckNotAcquired()
+        {
+            if (isAcquired)
+                throw new FasterException("Method call on acquired Context");
+        }
+
+        /// <summary>
+        /// Local current epoch
+        /// </summary>
+        public int LocalCurrentEpoch => fht.epoch.LocalCurrentEpoch;
 
         internal ClientSession(
             FasterKV<Key, Value> fht,
@@ -51,8 +89,11 @@ namespace FASTER.core
             SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings,
             ILoggerFactory loggerFactory = null)
         {
+            this.lContext = new(this);
+            this.bContext = new(this);
+
             this.loggerFactory = loggerFactory;
-            this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode().ToString("X8")}");
+            this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
             this.fht = fht;
             this.ctx = ctx;
             this.functions = functions;
@@ -72,7 +113,7 @@ namespace FASTER.core
             }
             else
             {
-                if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
+                if (fht.hlog is not VariableLengthBlittableAllocator<Key, Value>)
                     logger?.LogWarning("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
             }
 
@@ -101,7 +142,7 @@ namespace FASTER.core
 
         private void UpdateVarlen(ref IVariableLengthStruct<Value, Input> variableLengthStruct)
         {
-            if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
+            if (fht.hlog is not VariableLengthBlittableAllocator<Key, Value>)
                 return;
 
             if (typeof(Value) == typeof(SpanByte) && typeof(Input) == typeof(SpanByte))
@@ -181,14 +222,14 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Return a new interface to Faster operations that supports manual locking.
+        /// Return a session wrapper that supports manual locking.
         /// </summary>
-        public LockableContext<Key, Value, Input, Output, Context, Functions> GetLockableContext()
-        {
-            this.lContext ??= new(this);
-            this.lContext.Acquire();
-            return this.lContext;
-        }
+        public LockableContext<Key, Value, Input, Output, Context, Functions> LockableContext => lContext;
+
+        /// <summary>
+        /// Return a session wrapper struct that passes through to client session
+        /// </summary>
+        public BasicContext<Key, Value, Input, Output, Context, Functions> BasicContext => bContext;
 
         #region IFasterContext
         /// <inheritdoc/>
