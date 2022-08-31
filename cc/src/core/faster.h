@@ -35,6 +35,7 @@
 #include "utility.h"
 #include "log_scan.h"
 #include "compact.h"
+#include "record_scan.h"
 
 using namespace std::chrono_literals;
 
@@ -73,6 +74,9 @@ class alignas(Constants::kCacheLineBytes) ThreadContext {
   uint8_t cur_;
 };
 static_assert(sizeof(ThreadContext) == 448, "sizeof(ThreadContext) != 448");
+
+template<typename F>
+class RecordScan;
 
 /// The FASTER key-value store.
 template <class K, class V, class D>
@@ -325,6 +329,9 @@ class FasterKv {
 
   /// Space for two contexts per thread, stored inline.
   ThreadContext thread_contexts_[Thread::kMaxNumThreads];
+
+template<class F>
+friend class RecordScan;
 };
 
 // Implementations.

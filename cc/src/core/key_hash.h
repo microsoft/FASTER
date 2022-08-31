@@ -48,6 +48,9 @@ struct KeyHash {
       };
       uint64_t control_;
     };
+    
+template<class F>
+friend class RecordScan;
 };
 static_assert(sizeof(KeyHash) == 8, "sizeof(KeyHash) != 8");
 
