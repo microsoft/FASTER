@@ -220,6 +220,11 @@ namespace FASTER.core
         public long KeyHash { get; internal set; }
 
         /// <summary>
+        /// The ID of session context executing the operation
+        /// </summary>
+        public int SessionID { get; internal set; }
+
+        /// <summary>
         /// The header of the record.
         /// </summary>
         public RecordInfo RecordInfo { get; internal set; }

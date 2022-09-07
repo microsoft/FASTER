@@ -1631,6 +1631,7 @@ namespace FASTER.core
             {
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
+                SessionID = sessionCtx.sessionID,
                 Address = logicalAddress,
                 KeyHash = hash
             };
@@ -1817,6 +1818,7 @@ namespace FASTER.core
                                latestLogicalAddress);
                 recordInfo.Tentative = true;
                 hlog.Serialize(ref key, newPhysicalAddress);
+                deleteInfo.SessionID = sessionCtx.sessionID;
                 deleteInfo.Address = newLogicalAddress;
                 deleteInfo.KeyHash = hash;
                 deleteInfo.RecordInfo = recordInfo;
