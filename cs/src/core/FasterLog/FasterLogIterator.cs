@@ -480,10 +480,12 @@ namespace FASTER.core
                     throw;
                 }
                 
+                entry = (byte*)(headerSize + physicalAddress);
+
                 if (isCommitRecord)
                 {
                     FasterLogRecoveryInfo info = new();
-                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
+                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream(entry, entryLength)));
                     if (info.CommitNum != long.MaxValue) continue;
                     
                     // Otherwise, no more entries
@@ -493,7 +495,6 @@ namespace FASTER.core
                     return false;
                 }
                 
-                entry = (byte*)(headerSize + physicalAddress);
                 return true;
             }
         }
