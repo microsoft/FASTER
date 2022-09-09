@@ -748,7 +748,7 @@ namespace FASTER.core
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo,
                            inNewVersion: sessionCtx.InNewVersion,
-                           tombstone: false, dirty: true,
+                           tombstone: false,
                            latestLogicalAddress);
             recordInfo.Tentative = true;
             hlog.Serialize(ref key, newPhysicalAddress);
@@ -1382,7 +1382,7 @@ namespace FASTER.core
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo, 
                             inNewVersion: sessionCtx.InNewVersion,
-                            tombstone: false, dirty: true,
+                            tombstone: false,
                             latestLogicalAddress);
             recordInfo.Tentative = true;
             hlog.Serialize(ref key, newPhysicalAddress);
@@ -1814,7 +1814,7 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
                                inNewVersion: sessionCtx.InNewVersion,
-                               tombstone: true, dirty: true,
+                               tombstone: true,
                                latestLogicalAddress);
                 recordInfo.Tentative = true;
                 hlog.Serialize(ref key, newPhysicalAddress);
@@ -2770,7 +2770,7 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref readcache.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
                                     inNewVersion: false,
-                                    tombstone: false, dirty: false,
+                                    tombstone: false,
                                     entry.Address);
 
                 // Initial readcache entry is tentative.
@@ -2797,7 +2797,7 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
                                 inNewVersion: opCtx.InNewVersion,
-                                tombstone: false, dirty: true,
+                                tombstone: false,
                                 latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
                 upsertInfo.Address = newLogicalAddress;
@@ -3488,6 +3488,73 @@ namespace FASTER.core
                 rcLogicalAddress += rcAllocatedSize;
             }
         }
+        #endregion
+
+        /// <summary>
+        /// if reset is true it simply resets the modified bit for the key
+        /// if reset is false it only checks whether the key is modified or not
+        /// </summary>
+        /// <param name="key">key of the record.</param>
+        /// <param name="modifiedInfo">RecordInfo of the key for checkModified.</param>
+        /// <param name="reset">Operation Type, whether it is reset or check</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OperationStatus InternalModifiedBitOperation(ref Key key, out RecordInfo modifiedInfo, bool reset = true)
+        {
+            Debug.Assert(epoch.ThisInstanceProtected());
+            var bucket = default(HashBucket*);
+            var slot = default(int);
+
+            var hash = comparer.GetHashCode64(ref key);
+            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+#region Trace back for record in in-memory HybridLog
+            var entry = default(HashBucketEntry);
+            FindTag(hash, tag, ref bucket, ref slot, ref entry);
+
+            var logicalAddress = entry.Address;
+
+
+            var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+
+            if (logicalAddress >= hlog.HeadAddress)
+            {
+                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                {
+                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    TraceBackForKeyMatch(ref key,
+                                        logicalAddress,
+                                        hlog.HeadAddress,
+                                        out logicalAddress,
+                                        out physicalAddress);
+                }
+            }
 #endregion
+
+            OperationStatus status;
+            modifiedInfo = default;
+            if (logicalAddress >= hlog.HeadAddress)
+            {
+                ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
+                if (!recordInfo.IsIntermediate(out status))
+                {
+                    if (!reset)
+                        status = OperationStatus.SUCCESS;
+                    else if (!recordInfo.ResetModifiedAtomic())
+                        return OperationStatus.RETRY_LATER;
+                }
+                if (!reset && !recordInfo.Tombstone)
+                    modifiedInfo = recordInfo;
+                return status;
+            }
+            // it the record does not exist we return unmodfied 
+            // if it is in the disk we return modified 
+            if (logicalAddress < hlog.BeginAddress)
+                modifiedInfo.ResetModifiedAtomic();
+            else
+            modifiedInfo.SetModified();
+            // if it is not in the memory we return success
+            return OperationStatus.SUCCESS;
+
+        }
     }
 }
