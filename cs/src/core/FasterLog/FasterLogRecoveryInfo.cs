@@ -218,10 +218,10 @@ namespace FASTER.core
         /// <param name="persistedIterators">Persisted iterators</param>
         public void SnapshotIterators(ConcurrentDictionary<string, FasterLogScanIterator> persistedIterators)
         {
+            Iterators = new Dictionary<string, long>();
+
             if (persistedIterators.Count > 0)
             {
-                Iterators = new Dictionary<string, long>();
-
                 foreach (var kvp in persistedIterators)
                 {
                     Iterators.Add(kvp.Key, kvp.Value.requestedCompletedUntilAddress);
