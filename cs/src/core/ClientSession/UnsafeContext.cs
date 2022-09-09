@@ -358,12 +358,15 @@ namespace FASTER.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResetModified(ref Key key)
-            => clientSession.ResetModified(ref key);
+            => clientSession.fht.InternalModifiedBitOperation(ref key, out _);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsModified(ref Key key)
-            => clientSession.IsModified(ref key);
+        internal bool IsModified(Key key)
+        {
+            clientSession.fht.InternalModifiedBitOperation(ref key, out var modifiedInfo, false);
+            return modifiedInfo.Modified;
+        }
 
         /// <inheritdoc/>
         public void Refresh()
