@@ -463,7 +463,8 @@ namespace FASTER.core
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
                 SessionID = sessionCtx.sessionID,
-                Address = logicalAddress
+                Address = logicalAddress,
+                KeyHash = hash
             };
 
             if (sessionCtx.phase == Phase.REST)
@@ -594,7 +595,7 @@ namespace FASTER.core
             if (latchDestination != LatchDestination.CreatePendingContext)
             {
                 // Immutable region or new record
-                status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, tag, entry,
+                status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, hash, ref pendingContext, fasterSession, sessionCtx, bucket, slot, tag, entry,
                                                latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress);
                 if (!OperationStatusUtils.IsAppend(status))
                 {
@@ -720,6 +721,7 @@ namespace FASTER.core
         /// <param name="input">Input to the operation</param>
         /// <param name="value">The value to insert</param>
         /// <param name="output">The result of IFunctions.SingleWriter</param>
+        /// <param name="keyHash">Hash code of key</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="fasterSession">The current session</param>
         /// <param name="sessionCtx">The current session context</param>
@@ -733,7 +735,7 @@ namespace FASTER.core
         /// <param name="unsealLogicalAddress">The logical address of a record that ConcurrentWriter returned false for; we seal it so another operation cannot IPU it,
         ///     transfer locks from it on success, and unseal it on failure</param>
         /// <param name="unsealPhysicalAddress">The physical address of <paramref name="unsealLogicalAddress"/>; passed to avoid needing a virtual GetPhysicalAddress call</param>
-        private OperationStatus CreateNewRecordUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
+        private OperationStatus CreateNewRecordUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, long keyHash, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                              FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, ushort tag, HashBucketEntry entry,
                                                                                              long latestLogicalAddress, long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealLogicalAddress, long unsealPhysicalAddress) 
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
@@ -746,7 +748,7 @@ namespace FASTER.core
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo,
                            inNewVersion: sessionCtx.InNewVersion,
-                           tombstone: false, dirty: true,
+                           tombstone: false,
                            latestLogicalAddress);
             recordInfo.Tentative = true;
             hlog.Serialize(ref key, newPhysicalAddress);
@@ -757,7 +759,8 @@ namespace FASTER.core
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
                 SessionID = sessionCtx.sessionID,
-                Address = newLogicalAddress
+                Address = newLogicalAddress,
+                KeyHash = keyHash
             };
 
             upsertInfo.RecordInfo = recordInfo;
@@ -999,7 +1002,8 @@ namespace FASTER.core
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
                 SessionID = sessionCtx.sessionID,
-                Address = logicalAddress
+                Address = logicalAddress,
+                KeyHash = hash
             };
 
             if (sessionCtx.phase == Phase.REST && logicalAddress >= hlog.ReadOnlyAddress)
@@ -1147,13 +1151,13 @@ namespace FASTER.core
                 bool doingCU = logicalAddress >= hlog.HeadAddress && !recordInfo.Tombstone;
                 if (doingCU)
                 {
-                    status = CreateNewRecordRMW(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress,
+                    status = CreateNewRecordRMW(ref key, ref input, ref hlog.GetValue(physicalAddress), ref output, hash, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress,
                                                 recordInfo, tag, entry, latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress, doingCU);
                 }
                 else
                 {
                     Value _temp = default;
-                    status = CreateNewRecordRMW(ref key, ref input, ref _temp, ref output, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress,
+                    status = CreateNewRecordRMW(ref key, ref input, ref _temp, ref output, hash, ref pendingContext, fasterSession, sessionCtx, bucket, slot, logicalAddress, physicalAddress,
                                                 recordInfo, tag, entry, latestLogicalAddress, prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, logicalAddress, unsealPhysicalAddress, doingCU);
                 }
                 if (!OperationStatusUtils.IsAppend(status))
@@ -1282,6 +1286,7 @@ namespace FASTER.core
         /// <param name="input">Input to the operation</param>
         /// <param name="value">Old value</param>
         /// <param name="output">The result of IFunctions.SingleWriter</param>
+        /// <param name="keyHash">Hash code of key</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="fasterSession">The current session</param>
         /// <param name="sessionCtx">The current session context</param>
@@ -1301,7 +1306,7 @@ namespace FASTER.core
         /// <param name="doingCU">Whether we expect to be doing a CopyUpdate</param>
         /// <param name="fromPending">Whether we are being called from pending path</param>
         /// <returns></returns>
-        private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
+        private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, long keyHash, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                           FasterExecutionContext<Input, Output, Context> sessionCtx, HashBucket* bucket, int slot, long logicalAddress, 
                                                                                           long physicalAddress, RecordInfo srcRecordInfo, ushort tag, HashBucketEntry entry, long latestLogicalAddress,
                                                                                           long prevHighestReadCacheLogicalAddress, long lowestReadCachePhysicalAddress, long unsealLogicalAddress, long unsealPhysicalAddress, bool doingCU, bool fromPending = false)
@@ -1316,7 +1321,8 @@ namespace FASTER.core
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
                 SessionID = sessionCtx.sessionID,
-                Address = logicalAddress
+                Address = logicalAddress,
+                KeyHash = keyHash
             };
 
             // Perform Need*
@@ -1376,11 +1382,12 @@ namespace FASTER.core
             ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             RecordInfo.WriteInfo(ref recordInfo, 
                             inNewVersion: sessionCtx.InNewVersion,
-                            tombstone: false, dirty: true,
+                            tombstone: false,
                             latestLogicalAddress);
             recordInfo.Tentative = true;
             hlog.Serialize(ref key, newPhysicalAddress);
             rmwInfo.Address = newLogicalAddress;
+            rmwInfo.KeyHash = keyHash;
 
             // Populate the new record
             rmwInfo.RecordInfo = recordInfo;
@@ -1624,7 +1631,9 @@ namespace FASTER.core
             {
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
-                Address = logicalAddress
+                SessionID = sessionCtx.sessionID,
+                Address = logicalAddress,
+                KeyHash = hash
             };
 
 #region Entry latch operation
@@ -1805,11 +1814,13 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
                                inNewVersion: sessionCtx.InNewVersion,
-                               tombstone: true, dirty: true,
+                               tombstone: true,
                                latestLogicalAddress);
                 recordInfo.Tentative = true;
                 hlog.Serialize(ref key, newPhysicalAddress);
+                deleteInfo.SessionID = sessionCtx.sessionID;
                 deleteInfo.Address = newLogicalAddress;
+                deleteInfo.KeyHash = hash;
                 deleteInfo.RecordInfo = recordInfo;
 
                 if (!fasterSession.SingleDeleter(ref key, ref hlog.GetValue(newPhysicalAddress), ref recordInfo, ref deleteInfo))
@@ -2339,7 +2350,7 @@ namespace FASTER.core
                 byte* recordPointer = request.record.GetValidPointer();
                 RecordInfo recordInfo = hlog.GetInfoFromBytePointer(recordPointer); // Not ref, as we don't want to write into request.record
 
-                status = CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
+                status = CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output, hash,
                         ref pendingContext, fasterSession, sessionCtx, bucket, slot, request.logicalAddress, (long)recordPointer, recordInfo, tag, entry, latestLogicalAddress,
                         prevHighestReadCacheLogicalAddress, lowestReadCachePhysicalAddress, Constants.kInvalidAddress, Constants.kInvalidAddress,
                         (request.logicalAddress >= hlog.BeginAddress) && !recordInfo.Tombstone, fromPending: true);
@@ -2746,7 +2757,8 @@ namespace FASTER.core
                 SessionType = fasterSession.SessionType,
                 Version = opCtx.version,
                 SessionID = opCtx.sessionID,
-                Address = Constants.kInvalidAddress
+                Address = Constants.kInvalidAddress,
+                KeyHash = hash
             };
 
             StatusCode advancedStatusCode = StatusCode.Found;
@@ -2758,13 +2770,14 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref readcache.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
                                     inNewVersion: false,
-                                    tombstone: false, dirty: false,
+                                    tombstone: false,
                                     entry.Address);
 
                 // Initial readcache entry is tentative.
                 recordInfo.Tentative = true;
                 readcache.Serialize(ref key, newPhysicalAddress);
                 upsertInfo.Address = Constants.kInvalidAddress;
+                upsertInfo.KeyHash = hash;
                 upsertInfo.RecordInfo = recordInfo;
 
                 if (!fasterSession.SingleWriter(ref key, ref input, ref value,
@@ -2784,10 +2797,11 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 RecordInfo.WriteInfo(ref recordInfo,
                                 inNewVersion: opCtx.InNewVersion,
-                                tombstone: false, dirty: true,
+                                tombstone: false,
                                 latestLogicalAddress);
                 hlog.Serialize(ref key, newPhysicalAddress);
                 upsertInfo.Address = newLogicalAddress;
+                upsertInfo.KeyHash = hash;
                 recordInfo.Tombstone = expired;
                 upsertInfo.RecordInfo = recordInfo;
 
@@ -3474,6 +3488,73 @@ namespace FASTER.core
                 rcLogicalAddress += rcAllocatedSize;
             }
         }
+        #endregion
+
+        /// <summary>
+        /// if reset is true it simply resets the modified bit for the key
+        /// if reset is false it only checks whether the key is modified or not
+        /// </summary>
+        /// <param name="key">key of the record.</param>
+        /// <param name="modifiedInfo">RecordInfo of the key for checkModified.</param>
+        /// <param name="reset">Operation Type, whether it is reset or check</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OperationStatus InternalModifiedBitOperation(ref Key key, out RecordInfo modifiedInfo, bool reset = true)
+        {
+            Debug.Assert(epoch.ThisInstanceProtected());
+            var bucket = default(HashBucket*);
+            var slot = default(int);
+
+            var hash = comparer.GetHashCode64(ref key);
+            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+
+#region Trace back for record in in-memory HybridLog
+            var entry = default(HashBucketEntry);
+            FindTag(hash, tag, ref bucket, ref slot, ref entry);
+
+            var logicalAddress = entry.Address;
+
+
+            var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+
+            if (logicalAddress >= hlog.HeadAddress)
+            {
+                if (!comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                {
+                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    TraceBackForKeyMatch(ref key,
+                                        logicalAddress,
+                                        hlog.HeadAddress,
+                                        out logicalAddress,
+                                        out physicalAddress);
+                }
+            }
 #endregion
+
+            OperationStatus status;
+            modifiedInfo = default;
+            if (logicalAddress >= hlog.HeadAddress)
+            {
+                ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
+                if (!recordInfo.IsIntermediate(out status))
+                {
+                    if (!reset)
+                        status = OperationStatus.SUCCESS;
+                    else if (!recordInfo.ResetModifiedAtomic())
+                        return OperationStatus.RETRY_LATER;
+                }
+                if (!reset && !recordInfo.Tombstone)
+                    modifiedInfo = recordInfo;
+                return status;
+            }
+            // it the record does not exist we return unmodfied 
+            // if it is in the disk we return modified 
+            if (logicalAddress < hlog.BeginAddress)
+                modifiedInfo.ResetModifiedAtomic();
+            else
+            modifiedInfo.SetModified();
+            // if it is not in the memory we return success
+            return OperationStatus.SUCCESS;
+
+        }
     }
 }

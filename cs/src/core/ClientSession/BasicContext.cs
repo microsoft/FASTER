@@ -220,6 +220,16 @@ namespace FASTER.core
             => clientSession.DeleteAsync(key, userContext, serialNo, token);
 
         /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ResetModified(ref Key key)
+            => clientSession.ResetModified(ref key);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsModified(Key key)
+            => clientSession.IsModified(ref key);
+
+        /// <inheritdoc/>
         public void Refresh()
             => clientSession.Refresh();
 

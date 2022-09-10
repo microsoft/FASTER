@@ -510,6 +510,13 @@ namespace FASTER.core
         ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
         ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default);
 
+
+        /// <summary>
+        /// Reset the modified bit of a record (for in memory records)
+        /// </summary>
+        /// <param name="key"></param>
+        void ResetModified(ref Key key);
+
         /// <summary>
         /// Refresh session epoch and handle checkpointing phases. Used only
         /// in case of thread-affinitized sessions (async support is disabled).

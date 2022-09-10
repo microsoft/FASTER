@@ -525,6 +525,16 @@ namespace FASTER.core
             => DeleteAsync(ref key, userContext, serialNo, token);
 
         /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ResetModified(ref Key key)
+            => clientSession.ResetModified(ref key);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsModified(Key key)
+            => clientSession.IsModified(ref key);
+
+        /// <inheritdoc/>
         public void Refresh()
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
@@ -591,14 +601,17 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
-                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
+            {
+                recordInfo.SetDirtyAndModified();
+                _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out bool lockFailed)
             {
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 lockFailed = false;
-                recordInfo.SetDirty();
+                recordInfo.SetDirtyAndModified();
                 return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
             }
             #endregion IFunctions - Upserts
@@ -615,7 +628,10 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
-                => _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+            {
+                recordInfo.SetDirtyAndModified();
+                _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+            }
             #endregion InitialUpdater
 
             #region CopyUpdater
@@ -629,13 +645,17 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
-                => _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+            {
+                recordInfo.SetDirtyAndModified();
+                _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+            }
             #endregion CopyUpdater
 
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed, out OperationStatus status)
             {
+                recordInfo.SetDirtyAndModified();
                 lockFailed = false;
                 return _clientSession.InPlaceUpdater(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
             }
@@ -654,7 +674,7 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
             {
-                recordInfo.SetDirty();
+                recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
             }
 
@@ -662,7 +682,7 @@ namespace FASTER.core
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed)
             {
                 lockFailed = false;
-                recordInfo.SetDirty();
+                recordInfo.SetDirtyAndModified();
                 recordInfo.Tombstone = true;
                 return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo);
             }
