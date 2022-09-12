@@ -1521,18 +1521,20 @@ namespace FASTER.core
 
         private void AutoRefreshSafeTailAddressRunner(bool recurse)
         {
+            long tail = 0;
             do
             {
-                if (TailAddress > SafeTailAddress)
+                tail = TailAddress;
+                if (tail > SafeTailAddress)
                 {
                     if (recurse)
                         Task.Run(EpochProtectAutoRefreshSafeTailAddressRunner);
                     else
-                        epoch.BumpCurrentEpoch(() => AutoRefreshSafeTailAddressBumpCallback(TailAddress));
+                        epoch.BumpCurrentEpoch(() => AutoRefreshSafeTailAddressBumpCallback(tail));
                     return;
                 }
                 _ongoingAutoRefreshSafeTailAddress = 0;
-            } while (TailAddress > SafeTailAddress && _ongoingAutoRefreshSafeTailAddress == 0 && Interlocked.CompareExchange(ref _ongoingAutoRefreshSafeTailAddress, 1, 0) == 0);
+            } while (tail > SafeTailAddress && _ongoingAutoRefreshSafeTailAddress == 0 && Interlocked.CompareExchange(ref _ongoingAutoRefreshSafeTailAddress, 1, 0) == 0);
         }
 
         private void AutoRefreshSafeTailAddressBumpCallback(long tailAddress)
