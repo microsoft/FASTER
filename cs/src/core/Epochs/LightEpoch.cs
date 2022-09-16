@@ -14,6 +14,45 @@ namespace FASTER.core
     /// </summary>
     public unsafe sealed class LightEpoch
     {
+        /// <summary>
+        /// Metadata class to hold the thread static variables to be used inside
+        /// LightEpoch class. Since LightEpoch contains static ctor(), it does not
+        /// optimize the uses of these variables. If we move it to a class that
+        /// does not have static ctor, their access are optimized by .NET.
+        /// </summary>
+        private class Metadata
+        {
+            /// <summary>
+            /// Managed thread id of this thread
+            /// </summary>
+            [ThreadStatic]
+            internal static int threadId;
+
+            /// <summary>
+            /// Start offset to reserve entry in the epoch table
+            /// </summary>
+            [ThreadStatic]
+            internal static ushort startOffset1;
+
+            /// <summary>
+            /// Alternate start offset to reserve entry in the epoch table (to reduce probing if <see cref="startOffset1"/> slot is already filled)
+            /// </summary>
+            [ThreadStatic]
+            internal static ushort startOffset2;
+
+            /// <summary>
+            /// A thread's entry in the epoch table.
+            /// </summary>
+            [ThreadStatic]
+            internal static int threadEntryIndex;
+
+            /// <summary>
+            /// Number of instances using this entry
+            /// </summary>
+            [ThreadStatic]
+            internal static int threadEntryIndexCount;
+        }
+
         private const int kCacheLineBytes = 64;
         /// <summary>
         /// Default invalid index entry.
@@ -53,36 +92,6 @@ namespace FASTER.core
         readonly EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
 
         /// <summary>
-        /// A thread's entry in the epoch table.
-        /// </summary>
-        [ThreadStatic]
-        static int threadEntryIndex;
-
-        /// <summary>
-        /// Number of instances using this entry
-        /// </summary>
-        [ThreadStatic]
-        static int threadEntryIndexCount;
-
-        /// <summary>
-        /// Managed thread id of this thread
-        /// </summary>
-        [ThreadStatic]
-        static int threadId;
-
-        /// <summary>
-        /// Start offset to reserve entry in the epoch table
-        /// </summary>
-        [ThreadStatic]
-        static ushort startOffset1;
-
-        /// <summary>
-        /// Alternate start offset to reserve entry in the epoch table (to reduce probing if <see cref="startOffset1"/> slot is already filled)
-        /// </summary>
-        [ThreadStatic]
-        static ushort startOffset2;
-
-        /// <summary>
         /// Global current epoch value
         /// </summary>
         public int CurrentEpoch;
@@ -95,7 +104,7 @@ namespace FASTER.core
         /// <summary>
         /// Local view of current epoch, for an epoch-protected thread
         /// </summary>
-        public int LocalCurrentEpoch => (*(tableAligned + threadEntryIndex)).localCurrentEpoch;
+        public int LocalCurrentEpoch => (*(tableAligned + Metadata.threadEntryIndex)).localCurrentEpoch;
 
         /// <summary>
         /// Static constructor to setup shared cache-aligned space
@@ -166,7 +175,7 @@ namespace FASTER.core
         /// <returns>Result of the check</returns>
         public bool ThisInstanceProtected()
         {
-            int entry = threadEntryIndex;
+            int entry = Metadata.threadEntryIndex;
             if (kInvalidIndex != entry)
             {
                 if ((*(tableAligned + entry)).threadId == entry)
@@ -181,10 +190,10 @@ namespace FASTER.core
         /// <returns>Result of the check</returns>
         public static bool AnyInstanceProtected()
         {
-            int entry = threadEntryIndex;
+            int entry = Metadata.threadEntryIndex;
             if (kInvalidIndex != entry)
             {
-                return threadEntryIndexCount > 0;
+                return Metadata.threadEntryIndexCount > 0;
             }
             return false;
         }
@@ -196,10 +205,10 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int ProtectAndDrain()
         {
-            int entry = threadEntryIndex;
+            int entry = Metadata.threadEntryIndex;
 
             // Protect CurrentEpoch by making an entry for it in the non-static epoch table so ComputeNewSafeToReclaimEpoch() will see it.
-            (*(tableAligned + entry)).threadId = threadEntryIndex;
+            (*(tableAligned + entry)).threadId = Metadata.threadEntryIndex;
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
 
             if (drainCount > 0)
@@ -305,7 +314,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Mark(int markerIdx, long version)
         {
-            (*(tableAligned + threadEntryIndex)).markers[markerIdx] = (int)version;
+            (*(tableAligned + Metadata.threadEntryIndex)).markers[markerIdx] = (int)version;
         }
 
         /// <summary>
@@ -435,14 +444,14 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Acquire()
         {
-            if (threadEntryIndex == kInvalidIndex)
-                threadEntryIndex = ReserveEntryForThread();
+            if (Metadata.threadEntryIndex == kInvalidIndex)
+                Metadata.threadEntryIndex = ReserveEntryForThread();
 
-            Debug.Assert((*(tableAligned + threadEntryIndex)).localCurrentEpoch == 0,
+            Debug.Assert((*(tableAligned + Metadata.threadEntryIndex)).localCurrentEpoch == 0,
                 "Trying to acquire protected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
             // This corresponds to AnyInstanceProtected(). We do not mark "ThisInstanceProtected" until ProtectAndDrain().
-            threadEntryIndexCount++;
+            Metadata.threadEntryIndexCount++;
         }
 
         /// <summary>
@@ -451,7 +460,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Release()
         {
-            int entry = threadEntryIndex;
+            int entry = Metadata.threadEntryIndex;
 
             Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
                 "Trying to release unprotected epoch. Make sure you do not re-enter FASTER from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
@@ -461,11 +470,11 @@ namespace FASTER.core
             (*(tableAligned + entry)).threadId = 0;
 
             // Decrement "AnyInstanceProtected()" (static thread table)
-            threadEntryIndexCount--;
-            if (threadEntryIndexCount == 0)
+            Metadata.threadEntryIndexCount--;
+            if (Metadata.threadEntryIndexCount == 0)
             {
-                (threadIndexAligned + threadEntryIndex)->threadId = 0;
-                threadEntryIndex = kInvalidIndex;
+                (threadIndexAligned + Metadata.threadEntryIndex)->threadId = 0;
+                Metadata.threadEntryIndex = kInvalidIndex;
             }
         }
 
@@ -479,24 +488,24 @@ namespace FASTER.core
             while (true)
             {
                 // Try to acquire entry
-                if (0 == (threadIndexAligned + startOffset1)->threadId)
+                if (0 == (threadIndexAligned + Metadata.startOffset1)->threadId)
                 {
                     if (0 == Interlocked.CompareExchange(
-                        ref (threadIndexAligned + startOffset1)->threadId,
-                        threadId, 0))
-                        return startOffset1;
+                        ref (threadIndexAligned + Metadata.startOffset1)->threadId,
+                        Metadata.threadId, 0))
+                        return Metadata.startOffset1;
                 }
 
-                if (startOffset2 > 0)
+                if (Metadata.startOffset2 > 0)
                 {
                     // Try alternate entry
-                    startOffset1 = startOffset2;
-                    startOffset2 = 0;
+                    Metadata.startOffset1 = Metadata.startOffset2;
+                    Metadata.startOffset2 = 0;
                 }
-                else startOffset1++; // Probe next sequential entry
-                if (startOffset1 > kTableSize)
+                else Metadata.startOffset1++; // Probe next sequential entry
+                if (Metadata.startOffset1 > kTableSize)
                 {
-                    startOffset1 -= kTableSize;
+                    Metadata.startOffset1 -= kTableSize;
                     Thread.Yield();
                 }
             }
@@ -525,12 +534,12 @@ namespace FASTER.core
         /// <returns>Reserved entry</returns>
         static int ReserveEntryForThread()
         {
-            if (threadId == 0) // run once per thread for performance
+            if (Metadata.threadId == 0) // run once per thread for performance
             {
-                threadId = Environment.CurrentManagedThreadId;
-                uint code = (uint)Murmur3(threadId);
-                startOffset1 = (ushort)(1 + (code % kTableSize));
-                startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
+                Metadata.threadId = Environment.CurrentManagedThreadId;
+                uint code = (uint)Murmur3(Metadata.threadId);
+                Metadata.startOffset1 = (ushort)(1 + (code % kTableSize));
+                Metadata.startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }
             return ReserveEntry();
         }
