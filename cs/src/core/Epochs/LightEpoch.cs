@@ -14,7 +14,10 @@ namespace FASTER.core
     /// </summary>
     public unsafe sealed class LightEpoch
     {
-        private const int kCacheLineBytes = 64;
+        /// <summary>
+        /// Size of cache line in bytes
+        /// </summary>
+        const int kCacheLineBytes = 64;
 
         /// <summary>
         /// Default invalid index entry.
@@ -34,8 +37,8 @@ namespace FASTER.core
         /// <summary>
         /// Thread protection status entries.
         /// </summary>
-        Entry[] tableRaw;
-        Entry* tableAligned;
+        readonly Entry[] tableRaw;
+        readonly Entry* tableAligned;
 #if !NET5_0_OR_GREATER
         GCHandle tableHandle;
 #endif
