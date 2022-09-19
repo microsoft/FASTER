@@ -33,12 +33,11 @@ namespace FasterLogSample
 
             // Create settings to write logs and commits at specified local path
             using var config = new FasterLogSettings("./FasterLogSample", deleteDirOnDispose: true);
-            config.AutoRefreshSafeTailAddress = true;
 
             // FasterLog will recover and resume if there is a previous commit found
             log = new FasterLog(config);
 
-            using (iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true))
+            using (iter = log.Scan(log.BeginAddress, long.MaxValue))
             {
                 if (sync)
                 {
@@ -49,8 +48,8 @@ namespace FasterLogSample
                     new Thread(() => ScanThread()).Start();
 
                     // Threads for reporting, commit
-                    var t = new Thread(new ThreadStart(ReportThread)); //.Start();
-                    //var t = new Thread(new ThreadStart(CommitThread));
+                    new Thread(new ThreadStart(ReportThread)).Start();
+                    var t = new Thread(new ThreadStart(CommitThread));
                     t.Start();
                     t.Join();
                 }
