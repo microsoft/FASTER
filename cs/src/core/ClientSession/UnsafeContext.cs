@@ -48,9 +48,6 @@ namespace FASTER.core
             clientSession.UnsafeSuspendThread();
         }
 
-        /// <inheritdoc/>
-        public long LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
-
         #region Acquire and Dispose
         internal void Acquire()
         {

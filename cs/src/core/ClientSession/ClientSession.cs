@@ -77,11 +77,6 @@ namespace FASTER.core
                 throw new FasterException("Method call on acquired Context");
         }
 
-        /// <summary>
-        /// Local current epoch
-        /// </summary>
-        public long LocalCurrentEpoch => fht.epoch.LocalCurrentEpoch;
-
         internal ClientSession(
             FasterKV<Key, Value> fht,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,

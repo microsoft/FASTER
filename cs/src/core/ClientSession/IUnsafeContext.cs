@@ -18,10 +18,5 @@ namespace FASTER.core
         /// Suspend session on current thread
         /// </summary>
         void SuspendThread();
-
-        /// <summary>
-        /// Current epoch of the session
-        /// </summary>
-        long LocalCurrentEpoch { get; }
     }
 }

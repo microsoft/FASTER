@@ -86,17 +86,12 @@ namespace FASTER.core
         /// <summary>
         /// Global current epoch value
         /// </summary>
-        public long CurrentEpoch;
+        long CurrentEpoch;
 
         /// <summary>
         /// Cached value of latest epoch that is safe to reclaim
         /// </summary>
-        public long SafeToReclaimEpoch;
-
-        /// <summary>
-        /// Local view of current epoch, for an epoch-protected thread
-        /// </summary>
-        public long LocalCurrentEpoch => (*(tableAligned + threadEntryIndex)).localCurrentEpoch;
+        long SafeToReclaimEpoch;
 
         /// <summary>
         /// Static constructor to setup shared cache-aligned space
