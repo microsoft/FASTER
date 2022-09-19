@@ -80,7 +80,7 @@ namespace FASTER.core
         /// <summary>
         /// Local current epoch
         /// </summary>
-        public int LocalCurrentEpoch => fht.epoch.LocalCurrentEpoch;
+        public long LocalCurrentEpoch => fht.epoch.LocalCurrentEpoch;
 
         internal ClientSession(
             FasterKV<Key, Value> fht,
@@ -854,17 +854,6 @@ namespace FASTER.core
         internal void UnsafeResumeThread()
         {
             fht.epoch.Resume();
-            fht.InternalRefresh(ctx, FasterSession);
-        }
-
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
-        /// <param name="resumeEpoch">Epoch that session resumes on; can be saved to see if epoch has changed</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeResumeThread(out int resumeEpoch)
-        {
-            fht.epoch.Resume(out resumeEpoch);
             fht.InternalRefresh(ctx, FasterSession);
         }
 

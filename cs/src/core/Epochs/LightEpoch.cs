@@ -15,6 +15,7 @@ namespace FASTER.core
     public unsafe sealed class LightEpoch
     {
         private const int kCacheLineBytes = 64;
+
         /// <summary>
         /// Default invalid index entry.
         /// </summary>
@@ -85,17 +86,17 @@ namespace FASTER.core
         /// <summary>
         /// Global current epoch value
         /// </summary>
-        public int CurrentEpoch;
+        public long CurrentEpoch;
 
         /// <summary>
         /// Cached value of latest epoch that is safe to reclaim
         /// </summary>
-        public int SafeToReclaimEpoch;
+        public long SafeToReclaimEpoch;
 
         /// <summary>
         /// Local view of current epoch, for an epoch-protected thread
         /// </summary>
-        public int LocalCurrentEpoch => (*(tableAligned + threadEntryIndex)).localCurrentEpoch;
+        public long LocalCurrentEpoch => (*(tableAligned + threadEntryIndex)).localCurrentEpoch;
 
         /// <summary>
         /// Static constructor to setup shared cache-aligned space
@@ -144,7 +145,7 @@ namespace FASTER.core
 
             // Mark all epoch table entries as "available"
             for (int i = 0; i < kDrainListSize; i++)
-                drainList[i].epoch = int.MaxValue;
+                drainList[i].epoch = long.MaxValue;
             drainCount = 0;
         }
 
@@ -176,25 +177,11 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Check whether any epoch instance is protected on this thread
-        /// </summary>
-        /// <returns>Result of the check</returns>
-        public static bool AnyInstanceProtected()
-        {
-            int entry = threadEntryIndex;
-            if (kInvalidIndex != entry)
-            {
-                return threadEntryIndexCount > 0;
-            }
-            return false;
-        }
-
-        /// <summary>
         /// Enter the thread into the protected code region
         /// </summary>
         /// <returns>Current epoch</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int ProtectAndDrain()
+        public void ProtectAndDrain()
         {
             int entry = threadEntryIndex;
 
@@ -206,8 +193,6 @@ namespace FASTER.core
             {
                 Drain((*(tableAligned + entry)).localCurrentEpoch);
             }
-
-            return (*(tableAligned + entry)).localCurrentEpoch;
         }
 
         /// <summary>
@@ -231,16 +216,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Thread resumes its epoch entry
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Resume(out int resumeEpoch)
-        {
-            Acquire();
-            resumeEpoch = ProtectAndDrain();
-        }
-
-        /// <summary>
         /// Increment current epoch and associate trigger action
         /// with the prior epoch
         /// </summary>
@@ -248,15 +223,15 @@ namespace FASTER.core
         /// <returns></returns>
         public void BumpCurrentEpoch(Action onDrain)
         {
-            int PriorEpoch = BumpCurrentEpoch() - 1;
+            long PriorEpoch = BumpCurrentEpoch() - 1;
 
             int i = 0;
             while (true)
             {
-                if (drainList[i].epoch == int.MaxValue)
+                if (drainList[i].epoch == long.MaxValue)
                 {
                     // This was an empty slot. If it still is, assign this action/epoch to the slot.
-                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, int.MaxValue) == int.MaxValue)
+                    if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, long.MaxValue) == long.MaxValue)
                     {
                         drainList[i].action = onDrain;
                         drainList[i].epoch = PriorEpoch;
@@ -271,7 +246,7 @@ namespace FASTER.core
                     if (triggerEpoch <= SafeToReclaimEpoch)
                     {
                         // This was a slot with an epoch that was safe to reclaim. If it still is, execute its trigger, then assign this action/epoch to the slot.
-                        if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, triggerEpoch) == triggerEpoch)
+                        if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, triggerEpoch) == triggerEpoch)
                         {
                             var triggerAction = drainList[i].action;
                             drainList[i].action = onDrain;
@@ -305,7 +280,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Mark(int markerIdx, long version)
         {
-            (*(tableAligned + threadEntryIndex)).markers[markerIdx] = (int)version;
+            Debug.Assert(markerIdx < 6);
+
+            (*(tableAligned + threadEntryIndex)).markers[markerIdx] = version;
         }
 
         /// <summary>
@@ -318,14 +295,16 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool CheckIsComplete(int markerIdx, long version)
         {
+            Debug.Assert(markerIdx < 6);
+
             // check if all threads have reported complete
             for (int index = 1; index <= kTableSize; ++index)
             {
-                int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
-                int fc_version = (*(tableAligned + index)).markers[markerIdx];
+                long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                long fc_version = (*(tableAligned + index)).markers[markerIdx];
                 if (0 != entry_epoch)
                 {
-                    if ((fc_version != (int)version) && (entry_epoch < int.MaxValue))
+                    if ((fc_version != version) && (entry_epoch < long.MaxValue))
                     {
                         return false;
                     }
@@ -338,9 +317,9 @@ namespace FASTER.core
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>
-        int BumpCurrentEpoch()
+        long BumpCurrentEpoch()
         {
-            int nextEpoch = Interlocked.Add(ref CurrentEpoch, 1);
+            long nextEpoch = Interlocked.Increment(ref CurrentEpoch);
 
             if (drainCount > 0)
                 Drain(nextEpoch);
@@ -353,13 +332,13 @@ namespace FASTER.core
         /// </summary>
         /// <param name="currentEpoch">Current epoch</param>
         /// <returns>Safe epoch</returns>
-        int ComputeNewSafeToReclaimEpoch(int currentEpoch)
+        long ComputeNewSafeToReclaimEpoch(long currentEpoch)
         {
-            int oldestOngoingCall = currentEpoch;
+            long oldestOngoingCall = currentEpoch;
 
             for (int index = 1; index <= kTableSize; ++index)
             {
-                int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                 if (0 != entry_epoch)
                 {
                     if (entry_epoch < oldestOngoingCall)
@@ -387,7 +366,7 @@ namespace FASTER.core
                 Thread.MemoryBarrier();
                 for (int index = 1; index <= kTableSize; ++index)
                 {
-                    int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                    long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                     if (0 != entry_epoch)
                     {
                         return;
@@ -403,7 +382,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="nextEpoch">Next epoch</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void Drain(int nextEpoch)
+        void Drain(long nextEpoch)
         {
             ComputeNewSafeToReclaimEpoch(nextEpoch);
 
@@ -413,12 +392,12 @@ namespace FASTER.core
 
                 if (trigger_epoch <= SafeToReclaimEpoch)
                 {
-                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, trigger_epoch) == trigger_epoch)
+                    if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, trigger_epoch) == trigger_epoch)
                     {
                         // Store off the trigger action, then set epoch to int.MaxValue to mark this slot as "available for use".
                         var trigger_action = drainList[i].action;
                         drainList[i].action = null;
-                        drainList[i].epoch = int.MaxValue;
+                        drainList[i].epoch = long.MaxValue;
                         Interlocked.Decrement(ref drainCount);
 
                         // Execute the action
@@ -545,19 +524,19 @@ namespace FASTER.core
             /// Thread-local value of epoch
             /// </summary>
             [FieldOffset(0)]
-            public int localCurrentEpoch;
+            public long localCurrentEpoch;
 
             /// <summary>
             /// ID of thread associated with this entry.
             /// </summary>
-            [FieldOffset(4)]
+            [FieldOffset(8)]
             public int threadId;
 
-            [FieldOffset(8)]
+            [FieldOffset(12)]
             public int reentrant;
 
-            [FieldOffset(12)]
-            public fixed int markers[13];
+            [FieldOffset(16)]
+            public fixed long markers[6];
 
             public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}, re-ent {reentrant}";
         }
