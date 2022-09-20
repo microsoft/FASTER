@@ -714,6 +714,42 @@ namespace FASTER.test.LockableUnsafeContext
             }
         }
 
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void TransferFromEvictionToLockTable()
+        {
+            Populate();
+
+            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var luContext = session.GetLockableUnsafeContext();
+            int key = transferToExistingKey;
+
+            luContext.ResumeThread();
+            try
+            {
+                luContext.Lock(ref key, LockType.Exclusive);
+
+                // Force the eviction which should transfer to lock table.
+                fht.Log.FlushAndEvict(wait: true);
+
+                // Verify the lock table entry.
+                Assert.IsTrue(fht.LockTable.IsActive, "Lock Table should be active");
+                Assert.IsTrue(fht.LockTable.ContainsKey(ref key));
+
+                luContext.Unlock(ref key, LockType.Exclusive);
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(session);
+                throw;
+            }
+            finally
+            {
+                luContext.SuspendThread();
+            }
+        }
+
         void PopulateAndEvict(bool immutable = false)
         {
             Populate();
