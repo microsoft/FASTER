@@ -101,7 +101,6 @@ namespace FASTER.core
         long SafeToReclaimEpoch;
 
         /// <summary>
-        public int LocalCurrentEpoch => (*(tableAligned + Metadata.threadEntryIndex)).localCurrentEpoch;
         /// Static constructor to setup shared cache-aligned space
         /// to store per-entry count of instances using that entry
         /// </summary>
@@ -175,20 +174,6 @@ namespace FASTER.core
             {
                 if ((*(tableAligned + entry)).threadId == entry)
                     return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Check whether any epoch instance is protected on this thread
-        /// </summary>
-        /// <returns>Result of the check</returns>
-        public static bool AnyInstanceProtected()
-        {
-            int entry = Metadata.threadEntryIndex;
-            if (kInvalidIndex != entry)
-            {
-                return Metadata.threadEntryIndexCount > 0;
             }
             return false;
         }
@@ -298,7 +283,7 @@ namespace FASTER.core
         public void Mark(int markerIdx, long version)
         {
             Debug.Assert(markerIdx < 6);
-            (*(tableAligned + Metadata.threadEntryIndex)).markers[markerIdx] = (int)version;
+            (*(tableAligned + Metadata.threadEntryIndex)).markers[markerIdx] = version;
 
         }
 
