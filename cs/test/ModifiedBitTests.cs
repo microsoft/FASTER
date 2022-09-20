@@ -213,7 +213,7 @@ namespace FASTER.test.ModifiedTests
             session.ResetModified(key);
             using (var luContext = session.GetLockableUnsafeContext())
             {
-                luContext.ResumeThread(out var epoch);
+                luContext.ResumeThread();
                 AssertLockandModified(luContext, key, xlock: false, slock: false, modfied: false);
                 luContext.SuspendThread();
             }
@@ -224,7 +224,7 @@ namespace FASTER.test.ModifiedTests
             Status status = default;
             using (var luContext = session.GetLockableUnsafeContext())
             {
-                luContext.ResumeThread(out var epoch);
+                luContext.ResumeThread();
 
                 switch (updateOp)
                 {
@@ -281,7 +281,7 @@ namespace FASTER.test.ModifiedTests
             Status status = default;
             using (var unsafeContext = session.GetLockableUnsafeContext())
             {
-                unsafeContext.ResumeThread(out var epoch);
+                unsafeContext.ResumeThread();
                 switch (updateOp)
                 {
                     case UpdateOp.Upsert:

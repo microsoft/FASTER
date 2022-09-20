@@ -28,11 +28,6 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeResumeThread(out int resumeEpoch)
-            => clientSession.UnsafeResumeThread(out resumeEpoch);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeSuspendThread()
             => clientSession.UnsafeSuspendThread();
 

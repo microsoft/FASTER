@@ -195,7 +195,7 @@ namespace FASTER.test.LockableUnsafeContext
 
             // Copied from UnsafeContextTests to test Async.
             using var luContext = session.GetLockableUnsafeContext();
-            luContext.ResumeThread(out var epoch);
+            luContext.ResumeThread();
 
             try
             {
@@ -314,7 +314,7 @@ namespace FASTER.test.LockableUnsafeContext
 
             using (var luContext = session.GetLockableUnsafeContext())
             {
-                luContext.ResumeThread(out var epoch);
+                luContext.ResumeThread();
 
                 try
                 {
@@ -531,7 +531,7 @@ namespace FASTER.test.LockableUnsafeContext
 
             using (var luContext = session.GetLockableUnsafeContext())
             {
-                luContext.ResumeThread(out var epoch);
+                luContext.ResumeThread();
 
                 try
                 {
