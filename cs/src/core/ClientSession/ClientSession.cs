@@ -77,11 +77,6 @@ namespace FASTER.core
                 throw new FasterException("Method call on acquired Context");
         }
 
-        /// <summary>
-        /// Local current epoch
-        /// </summary>
-        public int LocalCurrentEpoch => fht.epoch.LocalCurrentEpoch;
-
         internal ClientSession(
             FasterKV<Key, Value> fht,
             FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> ctx,
@@ -854,17 +849,6 @@ namespace FASTER.core
         internal void UnsafeResumeThread()
         {
             fht.epoch.Resume();
-            fht.InternalRefresh(ctx, FasterSession);
-        }
-
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
-        /// <param name="resumeEpoch">Epoch that session resumes on; can be saved to see if epoch has changed</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeResumeThread(out int resumeEpoch)
-        {
-            fht.epoch.Resume(out resumeEpoch);
             fht.InternalRefresh(ctx, FasterSession);
         }
 

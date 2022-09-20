@@ -15,19 +15,8 @@ namespace FASTER.core
         void ResumeThread();
 
         /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
-        /// <param name="resumeEpoch">Epoch that the session resumed on; can be saved to see if epoch has changed</param>
-        void ResumeThread(out int resumeEpoch);
-
-        /// <summary>
         /// Suspend session on current thread
         /// </summary>
         void SuspendThread();
-
-        /// <summary>
-        /// Current epoch of the session
-        /// </summary>
-        int LocalCurrentEpoch { get; }
     }
 }

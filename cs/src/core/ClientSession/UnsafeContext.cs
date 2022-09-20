@@ -42,22 +42,11 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResumeThread(out int resumeEpoch)
-        {
-            CheckAcquired();
-            clientSession.UnsafeResumeThread(out resumeEpoch);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SuspendThread()
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeSuspendThread();
         }
-
-        /// <inheritdoc/>
-        public int LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
 
         #region Acquire and Dispose
         internal void Acquire()
