@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
@@ -15,10 +15,7 @@ namespace FASTER.core
     public unsafe sealed class LightEpoch
     {
         /// <summary>
-        /// Size of cache line in bytes
-        /// </summary>
-        const int kCacheLineBytes = 64;
-
+        /// Store thread-static metadata separately; see https://github.com/microsoft/FASTER/pull/746
         /// </summary>
         private class Metadata
         {
@@ -52,6 +49,11 @@ namespace FASTER.core
             [ThreadStatic]
             internal static int threadEntryIndexCount;
         }
+
+        /// <summary>
+        /// Size of cache line in bytes
+        /// </summary>
+        const int kCacheLineBytes = 64;
 
         /// <summary>
         /// Default invalid index entry.
@@ -284,7 +286,6 @@ namespace FASTER.core
         {
             Debug.Assert(markerIdx < 6);
             (*(tableAligned + Metadata.threadEntryIndex)).markers[markerIdx] = version;
-
         }
 
         /// <summary>
@@ -488,7 +489,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="h"></param>
         /// <returns></returns>
-        private static int Murmur3(int h)
+        static int Murmur3(int h)
         {
             uint a = (uint)h;
             a ^= a >> 16;
