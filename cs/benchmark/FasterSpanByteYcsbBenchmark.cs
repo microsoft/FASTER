@@ -125,8 +125,8 @@ namespace FASTER.benchmark
 #endif
 
             var session = store.For(functions).NewSession<FunctionsSB>();
-            var uContext = session.GetUnsafeContext();
-            uContext.ResumeThread();
+            var uContext = session.UnsafeContext;
+            uContext.BeginUnsafe();
 
             try
             {
@@ -203,10 +203,9 @@ namespace FASTER.benchmark
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
 
-            uContext.Dispose();
             session.Dispose();
 
             sw.Stop();
@@ -479,8 +478,8 @@ namespace FASTER.benchmark
             waiter.Wait();
 
             var session = store.For(functions).NewSession<FunctionsSB>();
-            var uContext = session.GetUnsafeContext();
-            uContext.ResumeThread();
+            var uContext = session.UnsafeContext;
+            uContext.BeginUnsafe();
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -531,9 +530,8 @@ namespace FASTER.benchmark
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
-            uContext.Dispose();
             session.Dispose();
         }
 

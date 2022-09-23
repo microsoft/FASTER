@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -12,19 +11,14 @@ namespace FASTER.core
     /// <summary>
     /// Faster Operations implementation that allows manual control of record epoch management. For advanced use only.
     /// </summary>
-    public sealed class UnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, IUnsafeContext, IDisposable
+    public readonly struct UnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, IUnsafeContext
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
-
         internal readonly InternalFasterSession FasterSession;
-        bool isAcquired;
 
-        void CheckAcquired()
-        {
-            if (!isAcquired)
-                throw new FasterException("Method call on not-acquired UnsafeContext");
-        }
+        /// <summary>Indicates whether this struct has been initialized</summary>
+        public bool IsNull => this.clientSession is null;
 
         internal UnsafeContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
@@ -32,40 +26,17 @@ namespace FASTER.core
             FasterSession = new InternalFasterSession(clientSession);
         }
 
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResumeThread()
-        {
-            CheckAcquired();
-            clientSession.UnsafeResumeThread();
-        }
+        #region Begin/EndUnsafe
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SuspendThread()
-        {
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            clientSession.UnsafeSuspendThread();
-        }
+        public void BeginUnsafe() => clientSession.UnsafeResumeThread();
 
-        #region Acquire and Dispose
-        internal void Acquire()
-        {
-            if (this.isAcquired)
-                throw new FasterException("Trying to acquire an already-acquired UnsafeContext");
-            this.isAcquired = true;
-        }
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void EndUnsafe() => clientSession.UnsafeSuspendThread();
 
-        /// <summary>
-        /// Does not actually dispose of anything; asserts the epoch has been suspended
-        /// </summary>
-        public void Dispose()
-        {
-            if (clientSession.fht.epoch.ThisInstanceProtected())
-                throw new FasterException("Disposing UnsafeContext with a protected epoch; must call UnsafeSuspendThread");
-            this.isAcquired = false;
-        }
-        #endregion Acquire and Dispose
+        #endregion Begin/EndUnsafe
 
         #region IFasterContext
 
@@ -347,15 +318,12 @@ namespace FASTER.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResetModified(ref Key key)
-            => clientSession.fht.InternalModifiedBitOperation(ref key, out _);
+            => clientSession.UnsafeResetModified(ref key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool IsModified(Key key)
-        {
-            clientSession.fht.InternalModifiedBitOperation(ref key, out var modifiedInfo, false);
-            return modifiedInfo.Modified;
-        }
+            => clientSession.UnsafeIsModified(ref key);
 
         /// <inheritdoc/>
         public void Refresh()

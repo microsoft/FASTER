@@ -16,6 +16,9 @@ namespace FASTER.core
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
 
+        /// <summary>Indicates whether this struct has been initialized</summary>
+        public bool IsNull => this.clientSession is null;
+
         internal BasicContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             this.clientSession = clientSession;
