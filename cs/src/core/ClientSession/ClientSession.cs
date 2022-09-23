@@ -55,8 +55,21 @@ namespace FASTER.core
         internal void AcquireLockable()
         {
             CheckIsNotAcquiredLockable();
-            fht.IncrementNumLockingSessions();
-            isAcquiredLockable = true;
+
+            while (true)
+            {
+                // Checkpoints cannot complete while we have active locking sessions.
+                while (IsInPreparePhase())
+                    Thread.Yield();
+
+                fht.IncrementNumLockingSessions();
+                isAcquiredLockable = true;
+
+                if (!IsInPreparePhase())
+                    break;
+                InternalReleaseLockable();
+                Thread.Yield();
+            }
         }
 
         internal void ReleaseLockable(string methodName)
@@ -64,6 +77,12 @@ namespace FASTER.core
             CheckIsAcquiredLockable();
             if (TotalLockCount > 0)
                 throw new FasterException($"{methodName} called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
+            InternalReleaseLockable();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void InternalReleaseLockable()
+        {
             isAcquiredLockable = false;
             fht.DecrementNumLockingSessions();
         }
@@ -878,7 +897,7 @@ namespace FASTER.core
         /// <summary>
         /// Return true if Faster State Machine is in PREPARE sate
         /// </summary>
-        public bool IsInPreparePhase()
+        internal bool IsInPreparePhase()
         {
             return this.fht.SystemState.Phase == Phase.PREPARE;
         }
