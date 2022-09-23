@@ -44,7 +44,7 @@ namespace FASTER.core
         public void BeginLockable() => clientSession.AcquireLockable();
 
         /// <inheritdoc/>
-        public void EndLockable() => clientSession.ReleaseLockable("LockableUnsafeContext.EndLockable");
+        public void EndLockable() => clientSession.ReleaseLockable();
         #endregion Begin/EndLockable
 
         #region Key Locking

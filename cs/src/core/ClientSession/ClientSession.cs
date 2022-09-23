@@ -72,11 +72,11 @@ namespace FASTER.core
             }
         }
 
-        internal void ReleaseLockable(string methodName)
+        internal void ReleaseLockable()
         {
             CheckIsAcquiredLockable();
             if (TotalLockCount > 0)
-                throw new FasterException($"{methodName} called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
+                throw new FasterException($"EndLockable called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
             InternalReleaseLockable();
         }
 
