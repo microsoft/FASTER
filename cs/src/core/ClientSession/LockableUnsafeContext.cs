@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -12,11 +11,14 @@ namespace FASTER.core
     /// <summary>
     /// Faster Context implementation that allows manual control of record locking and epoch management. For advanced use only.
     /// </summary>
-    public sealed class LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, ILockableContext<Key>, IUnsafeContext, IDisposable
+    public readonly struct LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, ILockableContext<Key>, IUnsafeContext
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
         internal readonly InternalFasterSession FasterSession;
+
+        /// <summary>Indicates whether this struct has been initialized</summary>
+        public bool IsNull => this.clientSession is null;
 
         internal LockableUnsafeContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
@@ -24,48 +26,33 @@ namespace FASTER.core
             FasterSession = new InternalFasterSession(clientSession);
         }
 
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResumeThread()
-        {
-            clientSession.CheckAcquired();
-            clientSession.UnsafeResumeThread();
-        }
+        #region Begin/EndUnsafe
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SuspendThread()
-        {
-            clientSession.CheckAcquired();
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            clientSession.UnsafeSuspendThread();
-        }
+        public void BeginUnsafe() => clientSession.UnsafeResumeThread();
 
-        #region Acquire and Dispose
-        internal void Acquire()
-        {
-            clientSession.Acquire();
-        }
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void EndUnsafe() => clientSession.UnsafeSuspendThread();
 
-        /// <summary>
-        /// Does not actually dispose of anything; asserts the epoch has been suspended
-        /// </summary>
-        public void Dispose()
-        {
-            if (clientSession.fht.epoch.ThisInstanceProtected())
-                throw new FasterException("Disposing LockableUnsafeContext with a protected epoch; must call UnsafeSuspendThread");
-            if (clientSession.TotalLockCount > 0)
-                throw new FasterException($"Disposing LockableUnsafeContext with locks held: {clientSession.sharedLockCount} shared locks, {clientSession.exclusiveLockCount} exclusive locks");
-            clientSession.Release();
-        }
-        #endregion Acquire and Dispose
+        #endregion Begin/EndUnsafe
+
+        #region Begin/EndLockable
+
+        /// <inheritdoc/>
+        public void BeginLockable() => clientSession.AcquireLockable();
+
+        /// <inheritdoc/>
+        public void EndLockable() => clientSession.ReleaseLockable("LockableUnsafeContext.EndLockable");
+        #endregion Begin/EndLockable
 
         #region Key Locking
 
         /// <inheritdoc/>
         public unsafe void Lock(ref Key key, LockType lockType)
         {
-            clientSession.CheckAcquired();
+            clientSession.CheckIsAcquiredLockable();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Lock()");
 
             LockOperation lockOp = new(LockOperationType.Lock, lockType);
@@ -89,7 +76,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public void Unlock(ref Key key, LockType lockType)
         {
-            clientSession.CheckAcquired();
+            clientSession.CheckIsAcquiredLockable();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Unlock()");
 
             LockOperation lockOp = new(LockOperationType.Unlock, lockType);
@@ -113,7 +100,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public (bool exclusive, byte shared) IsLocked(ref Key key)
         {
-            clientSession.CheckAcquired();
+            clientSession.CheckIsAcquiredLockable();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for IsLocked()");
 
             LockOperation lockOp = new(LockOperationType.IsLocked, LockType.None);
@@ -411,22 +398,18 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified(ref Key key)
-            => clientSession.fht.InternalModifiedBitOperation(ref key, out _);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsModified(Key key)
-        {
-
-            clientSession.fht.InternalModifiedBitOperation(ref key, out var modifiedInfo, false);
-            return modifiedInfo.Modified;
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => DeleteAsync(ref key, userContext, serialNo, token);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ResetModified(ref Key key)
+            => clientSession.UnsafeResetModified(ref key);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsModified(Key key) 
+            => clientSession.UnsafeIsModified(ref key);
 
         /// <inheritdoc/>
         public void Refresh()
