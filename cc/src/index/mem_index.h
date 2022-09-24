@@ -88,7 +88,8 @@ class HashIndex : public IHashIndex<D> {
   Status FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context);
 
   template <class C>
-  Status TryUpdateEntry(ExecutionContext& context, C& pending_context, Address new_address);
+  Status TryUpdateEntry(ExecutionContext& context, C& pending_context,
+                        Address new_address, bool readcache = false);
 
   template <class C>
   Status UpdateEntry(ExecutionContext& context, C& pending_context, Address new_address);
@@ -129,7 +130,7 @@ class HashIndex : public IHashIndex<D> {
   uint64_t new_size() const {
     return table_[1 - this->resize_info.version].size();
   }
-  bool IsSync() const {
+  constexpr static bool IsSync() {
     return true;
   }
 
@@ -299,11 +300,11 @@ inline Status HashIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_contex
 template <class D, class HID>
 template <class C>
 inline Status HashIndex<D, HID>::TryUpdateEntry(ExecutionContext& context, C& pending_context,
-                                                Address new_address) {
+                                                Address new_address, bool readcache) {
   assert(pending_context.atomic_entry != nullptr);
   // Try to atomically update the hash index entry based on expected entry
   key_hash_t hash{ pending_context.get_key_hash() };
-  hash_bucket_entry_t new_entry{ new_address, hash.tag(), false };
+  hash_bucket_entry_t new_entry{ new_address, hash.tag(), false, readcache };
   if (new_address == HashBucketEntry::kInvalidEntry) {
     // To handle InternalDelete's minor optimization that elides a record completely
     new_entry = HashBucketEntry::kInvalidEntry;

@@ -69,7 +69,7 @@ class IHashIndex {
   // Helper functions
   uint64_t size() const;
   uint64_t new_size() const;
-  bool IsSync() const;
+  constexpr static bool IsSync();
 
  public:
   ResizeInfo resize_info;

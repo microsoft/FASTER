@@ -32,6 +32,7 @@
 #include "log_scan.h"
 #include "malloc_fixed_page_size.h"
 #include "persistent_memory_malloc.h"
+#include "read_cache.h"
 #include "record.h"
 #include "recovery_status.h"
 #include "state_transitions.h"
@@ -79,7 +80,7 @@ class alignas(Constants::kCacheLineBytes) ThreadContext {
   ExecutionContext contexts_[2];
   uint8_t cur_;
 };
-static_assert(sizeof(ThreadContext) == 448, "sizeof(ThreadContext) != 448");
+//static_assert(sizeof(ThreadContext) == 448, "sizeof(ThreadContext) != 448");
 
 /// The FASTER key-value store.
 template <class K, class V, class D, class H = HashIndex<D>, class OH = H>
@@ -107,6 +108,8 @@ class FasterKv {
   typedef typename H::key_hash_t key_hash_t;
   typedef FASTER::index::HashBucketEntry HashBucketEntry;
 
+  typedef ReadCache<K, V, D, H> read_cache_t;
+
   /// Contexts that have been deep-copied, for async continuations, and must be accessed via
   /// virtual function calls.
   typedef AsyncPendingReadContext<key_t> async_pending_read_context_t;
@@ -116,14 +119,15 @@ class FasterKv {
   typedef AsyncPendingConditionalInsertContext<key_t> async_pending_ci_context_t;
 
   FasterKv(uint64_t table_size, uint64_t log_size, const std::string& filename,
-           double log_mutable_fraction = 0.9, bool pre_allocate_log = false,
-           const std::string& config = "")
+           double log_mutable_fraction = 0.9, bool use_readcache = false,
+           bool pre_allocate_log = false, const std::string& config = "")
     : min_table_size_{ table_size }
     , disk{ filename, epoch_, config }
     , hlog{ filename.empty() /*hasNoBackingStorage*/, log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
     , system_state_{ Action::None, Phase::REST, 1 }
     , grow_state_{ &hlog }
     , hash_index_{ disk, epoch_, gc_state_, grow_state_ }
+    , read_cache_{ nullptr }
     , num_pending_ios{ 0 }
     , num_compaction_truncs{ 0 }
     , num_active_sessions{ 0 } {
@@ -135,6 +139,11 @@ class FasterKv {
     }
 
     hash_index_.Initialize(table_size);
+
+    if (use_readcache) {
+      read_cache_ = std::make_unique<read_cache_t>(epoch_, hlog, hash_index_, "", log_size,
+                                                  log_mutable_fraction, pre_allocate_log);
+    }
   }
 
   // No copy constructor.
@@ -239,6 +248,7 @@ class FasterKv {
                                       Address min_address, uint8_t side);
 
   inline Address BlockAllocate(uint32_t record_size, other_faster_t* other_store = nullptr);
+  inline Address BlockAllocateReadCache(uint32_t record_size);
 
   inline Status HandleOperationStatus(ExecutionContext& ctx,
                                       pending_context_t& pending_context,
@@ -303,6 +313,10 @@ class FasterKv {
     return thread_contexts_[Thread::id()].prev();
   }
 
+  bool UseReadCache() const {
+    return (read_cache_.get() != nullptr);
+  }
+
  private:
   LightEpoch epoch_;
 
@@ -311,6 +325,7 @@ class FasterKv {
   hlog_t hlog;
 
   hash_index_t hash_index_;
+  std::unique_ptr<read_cache_t> read_cache_;
 
  private:
   static constexpr bool kCopyReadsToTail = false;
@@ -831,6 +846,16 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context
   assert(index_status == Status::Ok);
 
   Address address = pending_context.entry.address();
+  if (UseReadCache()) {
+    Status rc_status = read_cache_->Read(pending_context, address);
+    if (rc_status == Status::Ok) {
+      return OperationStatus::SUCCESS;
+    }
+    assert(rc_status == Status::NotFound);
+    // address should have been modified to point to hlog
+  }
+  assert(!address.in_readcache());
+
   Address begin_address = hlog.begin_address.load();
   Address head_address = hlog.head_address.load();
   Address safe_read_only_address = hlog.safe_read_only_address.load();
@@ -925,9 +950,14 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
 
   HashBucketEntry expected_entry{ pending_context.entry };
   AtomicHashBucketEntry* atomic_entry{ pending_context.atomic_entry };
-
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
+
+  if (UseReadCache()) {
+    address = read_cache_->SkipAndInvalidate(pending_context);
+  }
+  assert(!address.in_readcache());
+
   Address head_address = hlog.head_address.load();
   Address read_only_address = hlog.read_only_address.load();
   uint64_t latest_record_version = 0;
@@ -1088,6 +1118,12 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
 
   // (Note that address will be Address::kInvalidAddress, if the entry was created.)
   Address address = expected_entry.address();
+
+  if (UseReadCache()) {
+    address = read_cache_->Skip(pending_context);
+  }
+  assert(!address.in_readcache());
+
   Address begin_address = hlog.begin_address.load();
   Address head_address = hlog.head_address.load();
   Address read_only_address = hlog.read_only_address.load();
@@ -1210,6 +1246,12 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
 
   // Create a record and attempt RCU.
 create_record:
+  if (UseReadCache()) {
+    // invalidate read cache entries before trying to insert new entry
+    address = read_cache_->SkipAndInvalidate(pending_context);
+  }
+  assert(!address.in_readcache());
+
   const record_t* old_record = nullptr;
   if(address >= head_address) {
     old_record = reinterpret_cast<const record_t*>(hlog.Get(address));
@@ -1326,6 +1368,11 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_conte
   assert(index_status == Status::Ok);
 
   address = expected_entry.address();
+
+  if (UseReadCache()) {
+    address = read_cache_->SkipAndInvalidate(pending_context);
+  }
+
   if(address >= head_address) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
     latest_record_version = record->header.checkpoint_version;
@@ -1629,6 +1676,23 @@ inline Address FasterKv<K, V, D, H, OH>::BlockAllocate(uint32_t record_size,
 }
 
 template <class K, class V, class D, class H, class OH>
+inline Address FasterKv<K, V, D, H, OH>::BlockAllocateReadCache(uint32_t record_size) {
+  uint32_t page;
+  Address retval = read_cache_->read_cache_.Allocate(record_size, page);
+  while (retval < read_cache_->read_cache_.read_only_address.load()) {
+    Refresh();
+    bool page_closed = (retval == Address::kInvalidAddress);
+    while (page_closed) {
+      page_closed = !read_cache_->read_cache_.NewPage(page);
+      Refresh();
+    }
+    retval = read_cache_->read_cache_.Allocate(record_size, page);
+  }
+  return retval;
+}
+
+
+template <class K, class V, class D, class H, class OH>
 void FasterKv<K, V, D, H, OH>::AsyncGetFromDisk(Address address, uint32_t num_records,
     AsyncIOCallback callback, AsyncIOContext& context) {
   if(epoch_.IsProtected()) {
@@ -1721,6 +1785,14 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionC
     }
     else {
       pending_context->Get(record);
+
+      // Try to insert record to read cache
+      if (UseReadCache() && !pending_context->skip_read_cache) {
+        Address insert_address = BlockAllocateReadCache(record->size());
+        Status rc_status = read_cache_->Insert(context, *pending_context, record, insert_address);
+        assert(rc_status == Status::Ok || rc_status == Status::NotFound);
+      }
+
       assert(!kCopyReadsToTail);
       op_status = OperationStatus::SUCCESS;
     }
@@ -1804,6 +1876,11 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingConditionalInse
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
   Address address = expected_entry.address();
 
+  if (UseReadCache()) {
+    address = read_cache_->Skip(*pending_context);
+  }
+  assert(!address.in_readcache());
+
   // Update search range to [prev start search addr, current latest hash entry addr]
   //fprintf(stderr, "MMMM %10llu <- %10llu \n", pending_context->min_search_offset.control(),
   //                  pending_context->start_search_entry.address().control());
@@ -1837,6 +1914,8 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
   assert(status == Status::Ok);
   // Address from new hash index entry
   Address address = pending_context->entry.address();
+  //bool index_points_to_rc = UseReadCache() && pending_context->entry.is_readcache() &&
+  //if (UseReadCache() && )
 
   // Make sure that no other record has been inserted in the meantime
   if(address >= head_address && address != prev_address) {
@@ -2310,6 +2389,11 @@ bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) 
       if(hash_index_.Checkpoint(checkpoint_) != Status::Ok) {
         checkpoint_.failed = true;
       }
+      /*if (UseReadCache()) {
+        if (read_cache_->Checkpoint(checkpoint_) != Status::Ok) {
+          checkpoint_.failed = true;
+        }
+      }*/
       break;
     case Phase::PREPARE:
       // Index checkpoint will never reach this state; and CheckpointHybridLog() will handle this
@@ -2320,8 +2404,14 @@ bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) 
       if(hash_index_.WriteCheckpointMetadata(checkpoint_) != Status::Ok) {
         checkpoint_.failed = true;
       }
+      /*if (UseReadCache()) {
+        if (read_cache_->WriteCheckpointMetadata(checkpoint_) != Status::Ok) {
+          checkpoint_.failed = true;
+        }
+      }*/
+
+      // Notify the host that the index checkpoint has completed.
       if(checkpoint_.index_persistence_callback) {
-        // Notify the host that the index checkpoint has completed.
         checkpoint_.index_persistence_callback(Status::Ok);
       }
       break;
@@ -3295,6 +3385,12 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
 
   HashBucketEntry expected_entry{ pending_context.entry };
   Address address = expected_entry.address();
+
+  if (UseReadCache()) {
+    // entries in readcache do not count as "active"
+    address = read_cache_->Skip(pending_context);
+  }
+  assert(!address.in_readcache());
 
   // (Note that address will be Address::kInvalidAddress, if the entry was created.)
   if (address == Address::kInvalidAddress) {

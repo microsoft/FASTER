@@ -40,6 +40,7 @@ class FasterIndex : public IHashIndex<D> {
   typedef typename D::file_t file_t;
   typedef PersistentMemoryMalloc<disk_t> hlog_t;
 
+  typedef HID hash_index_definition_t;
   typedef typename HID::key_hash_t key_hash_t;
   typedef typename HID::hash_bucket_t hash_bucket_t;
   typedef typename HID::hash_bucket_entry_t hash_bucket_entry_t;
@@ -85,7 +86,8 @@ class FasterIndex : public IHashIndex<D> {
   Status FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context);
 
   template <class C>
-  Status TryUpdateEntry(ExecutionContext& exec_context, C& pending_context, Address new_address);
+  Status TryUpdateEntry(ExecutionContext& exec_context, C& pending_context,
+                        Address new_address, bool readcache = false);
 
   template <class C>
   Status UpdateEntry(ExecutionContext& exec_context, C& pending_context, Address new_address);
@@ -147,7 +149,7 @@ class FasterIndex : public IHashIndex<D> {
   uint64_t new_size() const {
     return store_->Size() + store_->hash_index_.new_size();
   }
-  bool IsSync() const {
+  constexpr static bool IsSync() {
     return false;
   }
 
@@ -220,7 +222,7 @@ inline Status FasterIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_cont
 template <class D, class HID>
 template <class C>
 inline Status FasterIndex<D, HID>::TryUpdateEntry(ExecutionContext& exec_context, C& pending_context,
-                                                Address new_address) {
+                                                Address new_address, bool readcache) {
   pending_context.index_op_type = IndexOperationType::Update;
   return RmwIndexEntry(exec_context, pending_context, new_address, false);
 }

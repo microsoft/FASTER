@@ -82,7 +82,8 @@ class PendingContext : public IAsyncContext {
     , index_op_type{ IndexOperationType::None }
     , index_op_result{ Status::Corruption }
     , entry{ HashBucketEntry::kInvalidEntry }
-    , atomic_entry{ nullptr } {
+    , atomic_entry{ nullptr }
+    , skip_read_cache{ false } {
   }
 
  public:
@@ -98,7 +99,8 @@ class PendingContext : public IAsyncContext {
     , index_op_type{ other.index_op_type }
     , index_op_result{ other.index_op_result }
     , entry{ other.entry }
-    , atomic_entry{ other.atomic_entry } {
+    , atomic_entry{ other.atomic_entry }
+    , skip_read_cache{ other.skip_read_cache } {
   }
 
  public:
@@ -156,8 +158,10 @@ class PendingContext : public IAsyncContext {
   Status index_op_result;
   /// Hash table entry that (indirectly) leads to the record being read or modified.
   HashBucketEntry entry;
-  ///
+  /// Pointer to the atomic hash bucket entry (hot index only; nullptr for cold index)
   AtomicHashBucketEntry* atomic_entry;
+  /// Use (or skip) reading from read cache
+  bool skip_read_cache;
 };
 
 /// FASTER's internal Read() context.
@@ -734,6 +738,7 @@ struct ExecutionContext : public PersistentExecContext {
   /// index-related request.
   concurrent_queue<AsyncIndexIOContext*> index_io_responses;
 };
+//static_assert(sizeof(ExecutionContext) == 216, "sizeof(ExecutionContext) != 216");
 
 }
 } // namespace FASTER::core

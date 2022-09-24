@@ -36,8 +36,8 @@ public:
               bool automatic_compaction = true, double compaction_trigger_perc = 0.9,
               double hot_log_compaction_log_perc = 0.20, double cold_log_compaction_log_perc = 0.1,
               bool pre_allocate_logs = false, const std::string& hot_log_config = "", const std::string& cold_log_config = "")
-  : hot_store{ hot_log_table_size, hot_log_mem_size, hot_log_filename, hot_log_mutable_perc, pre_allocate_logs, hot_log_config }
-  , cold_store{ cold_log_table_size, cold_log_mem_size, cold_log_filename, cold_log_mutable_perc, pre_allocate_logs, cold_log_config }
+  : hot_store{ hot_log_table_size, hot_log_mem_size, hot_log_filename, hot_log_mutable_perc, true, pre_allocate_logs, hot_log_config }
+  , cold_store{ cold_log_table_size, cold_log_mem_size, cold_log_filename, cold_log_mutable_perc, false, pre_allocate_logs, cold_log_config }
   , hot_log_compaction_log_perc_{ hot_log_compaction_log_perc }
   , cold_log_compaction_log_perc_{ cold_log_compaction_log_perc }
   {

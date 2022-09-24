@@ -22,6 +22,8 @@ set (FASTER_HEADERS
   core/native_buffer_pool.h
   core/persistent_memory_malloc.h
   core/phase.h
+  core/read_cache.h
+  core/read_cache_utils.h
   core/record.h
   core/recovery_status.h
   core/state_transitions.h
