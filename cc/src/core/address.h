@@ -30,6 +30,7 @@ class Address {
   /// --of which 48 bits are used for the address. (The remaining 16 bits are used by the hash
   /// table, for control bits and the tag.)
   static constexpr uint64_t kAddressBits = 48;
+  static constexpr uint64_t kReadCacheMask = ((uint64_t)1 << (kAddressBits - 1));
   static constexpr uint64_t kMaxAddress = ((uint64_t)1 << kAddressBits) - 1;
   /// --of which 25 bits are used for offsets into a page, of size 2^25 = 32 MB.
   static constexpr uint64_t kOffsetBits = 25;
@@ -110,6 +111,9 @@ class Address {
   inline uint32_t offset() const {
     return static_cast<uint32_t>(offset_);
   }
+  inline bool in_readcache() const {
+    return (control_ & kReadCacheMask) != 0;
+  }
   inline uint64_t control() const {
     return control_;
   }
@@ -117,9 +121,11 @@ class Address {
  private:
   union {
       struct {
-        uint64_t offset_ : kOffsetBits;         // 25 bits
-        uint64_t page_ : kPageBits;  // 23 bits
-        uint64_t reserved_ : 64 - kAddressBits; // 16 bits
+        uint64_t offset_    : kOffsetBits;              // 25 bits
+        uint64_t page_      : kPageBits;                // 23 bits
+        //uint64_t readcache_ : 1;                      //  1 bit
+        //uint64_t reserved_  : 64 - kAddressBits - 1;  // 15 bits
+        uint64_t reserved_  : 64 - kAddressBits;        // 15 bits
       };
       uint64_t control_;
     };

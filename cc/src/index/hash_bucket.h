@@ -63,12 +63,23 @@ struct HashBucketEntry {
   inline Address address() const {
     return Address{ address_ };
   }
+  inline bool in_readcache() const {
+    return (rc_.readcache_ == 1);
+  }
 
   union {
     struct {
-      uint64_t address_ : 48;   // corresponds to logical address
-      uint64_t reserved_ : 16;  // reserved for internal index use
+      uint64_t address_   : 48;   // corresponds to logical address
+      //uint64_t readcache_ :  1;   // 1 if points to record in readcache
+      uint64_t reserved_  : 16;   // reserved for internal index use
+      //uint64_t reserved_  : 15;   // reserved for internal index use
     };
+    // field struct when using readcache
+    struct {
+      uint64_t address_   : 47;   // corresponds to logical address
+      uint64_t readcache_ :  1;   // 1 if points to record in readcache
+      uint64_t reserved_  : 15;   // reserved for internal index use
+    } rc_;
     uint64_t control_;
   };
 };
@@ -111,8 +122,8 @@ struct IndexHashBucketEntry {
   IndexHashBucketEntry()
     : entry_{ HashBucketEntry::kInvalidEntry } {
   }
-  IndexHashBucketEntry(Address address, uint16_t tag, bool tentative)
-    : entry_{ address.control(), tag, tentative } {
+  IndexHashBucketEntry(Address address, uint16_t tag, bool tentative, uint64_t readcache = 0)
+    : entry_{ address.control(), tag, tentative, readcache } {
   }
   IndexHashBucketEntry(uint64_t code)
     : entry_{ code } {
@@ -156,22 +167,33 @@ union HotLogIndexBucketEntryDef {
   HotLogIndexBucketEntryDef(uint64_t code)
     : control{ code } {
   }
-  HotLogIndexBucketEntryDef(uint64_t address_, uint64_t tag_, uint64_t tentative_)
+  HotLogIndexBucketEntryDef(uint64_t address_, uint64_t tag_, uint64_t tentative_, uint64_t readcache_)
     : address{ address_ }
     , tag{ tag_ }
-    , reserved{ 0 }
     , tentative{ tentative_ } {
+      // set readcache bit
+      rc_.readcache = readcache_;
   }
 
   static constexpr int kTagBits = 14;
   static constexpr int kReservedBits = 1;
 
   struct {
-    uint64_t address    :  48;            // corresponds to logical address
+    uint64_t address    : 48;             // corresponds to logical address
+    //uint64_t readcache  : 1;            // 1 if it points to record in readcache
     uint64_t tag        : kTagBits;       // used to distinguish among different entries in same hash table position
     uint64_t reserved   : kReservedBits;  // not used
     uint64_t tentative  : 1;              // used (internally) to handle concurrent updates to the hash table
   };
+  // field struct when using readcache
+  struct {
+    uint64_t address    : 47;             // corresponds to logical address
+    uint64_t readcache  : 1;              // 1 if it points to record in readcache
+    uint64_t tag        : kTagBits;       // used to distinguish among different entries in same hash table position
+    uint64_t reserved   : kReservedBits;  // not used
+    uint64_t tentative  : 1;              // used (internally) to handle concurrent updates to the hash table
+  } rc_;
+
   uint64_t control;
 };
 typedef IndexHashBucketEntry<HotLogIndexBucketEntryDef> HotLogIndexHashBucketEntry;
@@ -182,22 +204,34 @@ union ColdLogIndexBucketEntryDef {
   ColdLogIndexBucketEntryDef(uint64_t code)
     : control{ code } {
   }
-  ColdLogIndexBucketEntryDef(uint64_t address_, uint64_t tag_, uint64_t tentative_)
+  ColdLogIndexBucketEntryDef(uint64_t address_, uint64_t tag_, uint64_t tentative_, uint64_t readcache_)
     : address{ address_ }
+    //, readcache{ 0 } // ignores readcache arg because readcache is *not* supported in cold index
     , tag{ tag_ }
     , reserved{ 0 }
     , tentative{ tentative_ } {
+      // NOTE: readcache argument is ignored because read cache is *not* supported for non- in-memory indices
   }
 
   static constexpr int kTagBits = 3;
   static constexpr int kReservedBits = 12;
 
   struct {
-    uint64_t address  : 48;             // corresponds to logical address
-    uint64_t tag      : kTagBits;       // used to distinguish among different entries in same hash table position
-    uint64_t reserved : kReservedBits;  // not used by HT -- used by cold index key hash for in-chunk indexing
-    uint64_t tentative: 1;              // used (internally) to handle concurrent updates to the hash table
+    uint64_t address    : 48;             // corresponds to logical address
+    //uint64_t readcache  : 1;              // not used for cold index
+    uint64_t tag        : kTagBits;       // used to distinguish among different entries in same hash table position
+    uint64_t reserved   : kReservedBits;  // not used by HT -- used by cold index key hash for in-chunk indexing
+    uint64_t tentative  : 1;              // used (internally) to handle concurrent updates to the hash table
   };
+  // field struct when using readcache
+  struct {
+    uint64_t address    : 47;             // corresponds to logical address
+    uint64_t readcache  : 1;              // not used for cold index
+    uint64_t tag        : kTagBits;       // used to distinguish among different entries in same hash table position
+    uint64_t reserved   : kReservedBits;  // not used by HT -- used by cold index key hash for in-chunk indexing
+    uint64_t tentative  : 1;              // used (internally) to handle concurrent updates to the hash table
+  } rc_;
+
   uint64_t control;
 };
 typedef IndexHashBucketEntry<ColdLogIndexBucketEntryDef> ColdLogIndexHashBucketEntry;
