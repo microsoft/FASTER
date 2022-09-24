@@ -8,13 +8,18 @@
 #include "hc_internal_contexts.h"
 #include "internal_contexts.h"
 
+#include "index/faster_index.h"
+
 namespace FASTER {
 namespace core {
 
 template<class K, class V, class D>
 class FasterKvHC {
 public:
-  typedef FasterKv<K, V, D> faster_t;
+
+  typedef FasterKv<K, V, D, HashIndex<D>, FasterIndex<D>> hot_faster_store_t;
+  typedef FasterKv<K, V, D, FasterIndex<D>> cold_faster_store_t;
+
   typedef FasterKvHC<K, V, D> faster_hc_t;
   typedef AsyncHotColdReadContext<K, V> async_hc_read_context_t;
   typedef AsyncHotColdRmwContext<K, V> async_hc_rmw_context_t;
@@ -112,9 +117,9 @@ public:
   */
 
   bool CompactHotLog(uint64_t until_address, bool shift_begin_address,
-                      int n_threads = faster_t::kNumCompactionThreads);
+                      int n_threads = hot_faster_store_t::kNumCompactionThreads);
   bool CompactColdLog(uint64_t until_address, bool shift_begin_address,
-                      int n_threads = faster_t::kNumCompactionThreads);
+                      int n_threads = cold_faster_store_t::kNumCompactionThreads);
 
   /// Statistics
   inline uint64_t Size() const {
@@ -128,8 +133,8 @@ public:
   }
 
  public:
-  faster_t hot_store;
-  faster_t cold_store;
+  hot_faster_store_t hot_store;
+  cold_faster_store_t cold_store;
 
   // retry queue
   concurrent_queue<async_hc_rmw_context_t*> retry_rmw_requests;
