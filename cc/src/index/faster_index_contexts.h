@@ -221,6 +221,7 @@ class FasterIndexRmwContext : public FasterIndexContext {
       result = Status::Ok;
     }
     // NOTE: this->entry has the most recent value of atomic_entry
+    assert(entry != HashBucketEntry::kInvalidEntry);
   }
 
  protected:

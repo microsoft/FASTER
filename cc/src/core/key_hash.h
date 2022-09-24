@@ -42,7 +42,7 @@ struct IndexKeyHash {
               "Chunk index bits can cause overflow of uint8_t");
 
   static constexpr uint8_t kInChunkTotalBits = kInChunkIndexBits + kInChunkTagBits;
-  static_assert(kInChunkTotalBits < U::kReservedBits);
+  static_assert(kInChunkTotalBits <= U::kReservedBits);
 
   static constexpr uint64_t kInChunkIndexSize = ((uint64_t)1 << kInChunkIndexBits);
   static constexpr uint64_t kInChunkTagSize = ((uint64_t)1 << kInChunkTagBits);
