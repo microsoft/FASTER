@@ -327,7 +327,7 @@ class PersistentMemoryMalloc {
     flushed_until_address.store(tail_address);
   }
 
-  ~PersistentMemoryMalloc() {
+  virtual ~PersistentMemoryMalloc() {
     if(pages_) {
       for(uint32_t idx = 0; idx < buffer_size_; ++idx) {
         if(pages_[idx]) {
@@ -479,6 +479,7 @@ class PersistentMemoryMalloc {
   /// Allocate memory page, in sector aligned form
   inline void AllocatePage(uint32_t index);
 
+ protected:
   /// Used by several functions to update the variable to newValue. Ignores if newValue is smaller
   /// than the current value.
   template <typename A, typename T>
@@ -515,7 +516,10 @@ class PersistentMemoryMalloc {
   template <class F>
   Status AsyncReadPages(F& read_file, uint32_t file_start_page, uint32_t start_page,
                         uint32_t num_pages, RecoveryStatus& recovery_status);
-  inline void PageAlignedShiftHeadAddress(uint32_t tail_page);
+ protected:
+  virtual void PageAlignedShiftHeadAddress(uint32_t tail_page);
+
+ private:
   inline void PageAlignedShiftReadOnlyAddress(uint32_t tail_page);
 
   /// Every async flush callback tries to update the flushed until address to the latest value
@@ -544,7 +548,7 @@ class PersistentMemoryMalloc {
  public:
   uint32_t sector_size;
 
- private:
+ protected:
   LightEpoch* epoch_;
   disk_t* disk;
 
@@ -570,8 +574,10 @@ class PersistentMemoryMalloc {
   /// by garbage collection.
   AtomicAddress begin_address;
 
- private:
+ protected:
   uint32_t buffer_size_;
+
+ private:
   bool pre_allocate_log_;
 
   /// -- the latest N pages should be mutable.
@@ -992,7 +998,7 @@ void PersistentMemoryMalloc<D>::RecoveryReset(Address begin_address_, Address he
 }
 
 template <class D>
-inline void PersistentMemoryMalloc<D>::PageAlignedShiftHeadAddress(uint32_t tail_page) {
+void PersistentMemoryMalloc<D>::PageAlignedShiftHeadAddress(uint32_t tail_page) {
   //obtain local values of variables that can change
   Address current_head_address = head_address.load();
   Address current_flushed_until_address = flushed_until_address.load();
