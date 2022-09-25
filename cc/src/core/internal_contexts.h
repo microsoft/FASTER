@@ -356,6 +356,8 @@ class AsyncPendingRmwContext : public PendingContext<K> {
 
   /// If false, it will return NOT_FOUND instead of creating a new record
   bool create_if_not_exists;
+  /// Keeps latest hlog address, as found by hash index entry (after skipping read cache)
+  Address prev_address;
 };
 
 /// A synchronous Rmw() context preserves its type information.

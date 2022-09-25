@@ -114,21 +114,31 @@ class Address {
   inline bool in_readcache() const {
     return (control_ & kReadCacheMask) != 0;
   }
+  inline Address readcache_address() const {
+    assert(rc_.readcache_ == 1);
+    return Address{ static_cast<uint32_t>(rc_.page_), static_cast<uint32_t>(rc_.offset_) };
+  }
   inline uint64_t control() const {
     return control_;
   }
 
  private:
   union {
-      struct {
-        uint64_t offset_    : kOffsetBits;              // 25 bits
-        uint64_t page_      : kPageBits;                // 23 bits
-        //uint64_t readcache_ : 1;                      //  1 bit
-        //uint64_t reserved_  : 64 - kAddressBits - 1;  // 15 bits
-        uint64_t reserved_  : 64 - kAddressBits;        // 15 bits
-      };
-      uint64_t control_;
+    struct {
+      uint64_t offset_    : kOffsetBits;              // 25 bits
+      uint64_t page_      : kPageBits;                // 23 bits
+      //uint64_t readcache_ : 1;                      //  1 bit
+      uint64_t reserved_  : 64 - kAddressBits;        // 15 bits
     };
+    struct {
+      uint64_t offset_    : kOffsetBits;              // 25 bits
+      uint64_t page_      : kPageBits - 1;            // 22 bits
+      uint64_t readcache_ : 1;                        //  1 bit
+      uint64_t reserved_  : 64 - kAddressBits;        // 15 bits
+    } rc_;
+
+    uint64_t control_;
+  };
 };
 static_assert(sizeof(Address) == 8, "sizeof(Address) != 8");
 

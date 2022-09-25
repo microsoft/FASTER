@@ -139,6 +139,7 @@ class FasterKv {
     }
 
     hash_index_.Initialize(table_size);
+    //fprintf(stderr, "Read Cache is %d\n", use_readcache);
 
     if (use_readcache) {
       read_cache_ = std::make_unique<read_cache_t>(epoch_, hlog, hash_index_, "", log_size,
@@ -698,7 +699,7 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
         if (pending_context->index_op_type == IndexOperationType::Retrieve) {
           // Resume request with retrieved index hash bucket
           {
-            fprintf(stderr, "RETRIEVE: %d\n", pending_context->index_op_result);
+            //fprintf(stderr, "RETRIEVE: %d\n", pending_context->index_op_result);
             async_pending_ci_context_t* pending_ci_context = \
               static_cast<async_pending_ci_context_t*>(index_io_context->caller_context);
 
@@ -726,7 +727,7 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
             }
           }
         } else if (pending_context->index_op_type == IndexOperationType::Update) {
-          fprintf(stderr, "UPDATE: %d\n", pending_context->index_op_result);
+          //fprintf(stderr, "UPDATE: %d\n", pending_context->index_op_result);
           if (pending_context->index_op_result == Status::Ok) {
             // Request was sucessfully completed!
             pending_context.async = false;
@@ -956,6 +957,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
   if (UseReadCache()) {
     address = read_cache_->SkipAndInvalidate(pending_context);
   }
+  Address hlog_address = address;
   assert(!address.in_readcache());
 
   Address head_address = hlog.head_address.load();
@@ -1072,7 +1074,7 @@ create_record:
   new(record) record_t{
     RecordInfo{
       static_cast<uint16_t>(thread_ctx().version), true, false, false,
-      expected_entry.address() }
+      hlog_address },
   };
   pending_context.write_deep_key_at(const_cast<key_t*>(&record->key()));
   pending_context.Put(record);
@@ -1122,6 +1124,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
   if (UseReadCache()) {
     address = read_cache_->Skip(pending_context);
   }
+  pending_context.prev_address = address;
   assert(!address.in_readcache());
 
   Address begin_address = hlog.begin_address.load();
@@ -1248,7 +1251,10 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
 create_record:
   if (UseReadCache()) {
     // invalidate read cache entries before trying to insert new entry
-    address = read_cache_->SkipAndInvalidate(pending_context);
+    // The following does NOT work (for some reason...)
+    // address = read_cache_->SkipAndInvalidate(pending_context);
+    // This one, works! TODO: find out why...
+    read_cache_->SkipAndInvalidate(pending_context);
   }
   assert(!address.in_readcache());
 
@@ -1277,7 +1283,7 @@ create_record:
   new(new_record) record_t{
     RecordInfo{
       static_cast<uint16_t>(pending_context.version), true, false, false,
-      expected_entry.address() }
+      pending_context.prev_address },
   };
   pending_context.write_deep_key_at(const_cast<key_t*>(&new_record->key()));
 
@@ -1331,6 +1337,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_conte
   pending_context.try_stamp_request(thread_ctx().phase, thread_ctx().version);
 
   Address address;
+  Address hlog_address{ 0 };
   Address head_address = hlog.head_address.load();
   Address read_only_address = hlog.read_only_address.load();
   Address begin_address = hlog.begin_address.load();
@@ -1372,6 +1379,8 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_conte
   if (UseReadCache()) {
     address = read_cache_->SkipAndInvalidate(pending_context);
   }
+  hlog_address = address;
+  assert(!address.in_readcache());
 
   if(address >= head_address) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
@@ -1458,7 +1467,7 @@ create_record:
   new(record) record_t{
     RecordInfo{
       static_cast<uint16_t>(thread_ctx().version), true, true, false,
-      expected_entry.address() },
+      hlog_address },
   };
   pending_context.write_deep_key_at(const_cast<key_t*>(&record->key()));
 
@@ -1488,6 +1497,7 @@ inline Address FasterKv<K, V, D, H, OH>::TraceBackForKeyMatchCtxt(const C& ctxt,
       return from_address;
     } else {
       from_address = record->header.previous_address();
+      assert(!from_address.in_readcache());
       continue;
     }
   }
@@ -1503,6 +1513,7 @@ inline Address FasterKv<K, V, D, H, OH>::TraceBackForKeyMatch(const key_t& key, 
       return from_address;
     } else {
       from_address = record->header.previous_address();
+      assert(!from_address.in_readcache());
       continue;
     }
   }
@@ -1789,8 +1800,10 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionC
       // Try to insert record to read cache
       if (UseReadCache() && !pending_context->skip_read_cache) {
         Address insert_address = BlockAllocateReadCache(record->size());
+        //fprintf(stderr, "%llu\n", insert_address.control());
         Status rc_status = read_cache_->Insert(context, *pending_context, record, insert_address);
-        assert(rc_status == Status::Ok || rc_status == Status::NotFound);
+        //printf("RC INSERT %d %llu\n", rc_status, record->key());
+        assert(rc_status == Status::Ok || rc_status == Status::Aborted);
       }
 
       assert(!kCopyReadsToTail);
@@ -1902,7 +1915,8 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
         io_context.caller_context);
   bool create_if_not_exists = pending_context->create_if_not_exists;
 
-  Address prev_address = pending_context->entry.address();
+  //Address prev_address = pending_context->entry.address();
+  Address prev_address = pending_context->prev_address;
   Address begin_address = hlog.begin_address.load();
 
   // This is an optimization for when index is in-memory (and thus index ops are sync).
@@ -1914,8 +1928,13 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
   assert(status == Status::Ok);
   // Address from new hash index entry
   Address address = pending_context->entry.address();
+
   //bool index_points_to_rc = UseReadCache() && pending_context->entry.is_readcache() &&
-  //if (UseReadCache() && )
+  if (UseReadCache() && !pending_context->skip_read_cache) {
+    address = read_cache_->SkipAndInvalidate(*pending_context);
+  }
+  Address hlog_address = address;
+  assert(!address.in_readcache());
 
   // Make sure that no other record has been inserted in the meantime
   if(address >= head_address && address != prev_address) {
@@ -1961,7 +1980,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
     new(new_record) record_t{
       RecordInfo{
         static_cast<uint16_t>(context.version), true, false, false,
-        expected_entry.address() },
+        hlog_address },
     };
     pending_context->write_deep_key_at(const_cast<key_t*>(&new_record->key()));
     pending_context->RmwInitial(new_record);
@@ -1977,7 +1996,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
     new(new_record) record_t{
       RecordInfo{
         static_cast<uint16_t>(context.version), true, false, false,
-        expected_entry.address() },
+        hlog_address },
     };
     pending_context->write_deep_key_at(const_cast<key_t*>(&new_record->key()));
     if (!is_tombstone) {
