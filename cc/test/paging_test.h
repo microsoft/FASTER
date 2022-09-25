@@ -10,7 +10,21 @@ using namespace FASTER;
 /// Disk's log uses 64 MB segments.
 typedef FASTER::device::FileSystemDisk<handler_t, 67108864L> disk_t;
 
-TEST(CLASS, UpsertRead_Serial) {
+// <# hash index entries, read cache enabled>
+class PagingTestParam : public ::testing::TestWithParam<std::pair<uint32_t, bool>> {
+};
+INSTANTIATE_TEST_CASE_P(
+  PagingTests,
+  PagingTestParam,
+  ::testing::Values(
+    std::pair<uint32_t, bool>(2048, true),
+    std::pair<uint32_t, bool>((1 << 20), true),
+    std::pair<uint32_t, bool>(2048, false),
+    std::pair<uint32_t, bool>((1 << 20), false))
+);
+
+
+TEST_P(PagingTestParam, UpsertRead_Serial) {
   class Key {
    public:
     Key(uint64_t pt1, uint64_t pt2)
@@ -185,12 +199,16 @@ TEST(CLASS, UpsertRead_Serial) {
 
   std::experimental::filesystem::create_directories("logs");
 
+  uint32_t table_size = GetParam().first;
+  bool readcache = GetParam().second;
   // 8 pages!
-  FasterKv<Key, Value, disk_t> store{ 262144, 268435456, "logs", 0.5 };
+  FasterKv<Key, Value, disk_t> store{ table_size, 268435456, "logs", 0.5, readcache };
 
   Guid session_id = store.StartSession();
 
   constexpr size_t kNumRecords = 250000;
+  static std::atomic<uint64_t> records_read{ 0 };
+  static std::atomic<uint64_t> records_updated{ 0 };
 
   // Insert.
   for(size_t idx = 0; idx < kNumRecords; ++idx) {
@@ -208,7 +226,7 @@ TEST(CLASS, UpsertRead_Serial) {
     ASSERT_EQ(Status::Ok, result);
   }
   // Read.
-  static std::atomic<uint64_t> records_read{ 0 };
+  records_read = 0;
   for(size_t idx = 0; idx < kNumRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context{ ctxt };
@@ -235,7 +253,7 @@ TEST(CLASS, UpsertRead_Serial) {
   ASSERT_EQ(kNumRecords, records_read.load());
 
   // Update.
-  static std::atomic<uint64_t> records_updated{ 0 };
+  records_updated = 0;
   for(size_t idx = 0; idx < kNumRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       // Upserts don't go to disk.
@@ -289,7 +307,7 @@ TEST(CLASS, UpsertRead_Serial) {
   store.StopSession();
 }
 
-TEST(CLASS, UpsertRead_Concurrent) {
+TEST_P(PagingTestParam, UpsertRead_Concurrent) {
   class UpsertContext;
   class ReadContext;
 
@@ -466,12 +484,15 @@ TEST(CLASS, UpsertRead_Concurrent) {
 
   std::experimental::filesystem::create_directories("logs");
 
+  uint32_t table_size = GetParam().first;
+  bool readcache = GetParam().second;
   // 8 pages!
-  FasterKv<Key, Value, disk_t> store{ 262144, 268435456, "logs", 0.5 };
+  FasterKv<Key, Value, disk_t> store{ table_size, 256 * (1 << 20), "logs", 0.5, readcache };
 
   static constexpr size_t kNumRecords = 250000;
   static constexpr size_t kNumThreads = 2;
 
+  static std::atomic<uint64_t> records_read{ 0 };
   static std::atomic<uint64_t> num_writes{ 0 };
 
   auto upsert_worker = [](FasterKv<Key, Value, disk_t>* store_,
@@ -499,6 +520,7 @@ TEST(CLASS, UpsertRead_Concurrent) {
   };
 
   // Insert.
+  num_writes = 0;
   std::deque<std::thread> threads{};
   for(size_t idx = 0; idx < kNumThreads; ++idx) {
     threads.emplace_back(upsert_worker, &store, idx, 25);
@@ -512,7 +534,7 @@ TEST(CLASS, UpsertRead_Concurrent) {
   // Read.
   Guid session_id = store.StartSession();
 
-  static std::atomic<uint64_t> records_read{ 0 };
+  records_read = 0;
   for(size_t idx = 0; idx < kNumRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context{ ctxt };
@@ -560,6 +582,7 @@ TEST(CLASS, UpsertRead_Concurrent) {
   static constexpr uint64_t kNewBeginAddress{ 167772160L };
   static std::atomic<bool> truncated{ false };
   static std::atomic<bool> complete{ false };
+
   auto truncate_callback = [](uint64_t offset) {
     ASSERT_LE(offset, kNewBeginAddress);
     truncated = true;
@@ -568,6 +591,7 @@ TEST(CLASS, UpsertRead_Concurrent) {
     complete = true;
   };
 
+  truncated = complete = false;
   result = store.ShiftBeginAddress(Address{ kNewBeginAddress }, truncate_callback, complete_callback);
   ASSERT_TRUE(result);
 
@@ -605,7 +629,7 @@ TEST(CLASS, UpsertRead_Concurrent) {
   store.StopSession();
 }
 
-TEST(CLASS, Rmw) {
+TEST_P(PagingTestParam, Rmw) {
   class Key {
    public:
     Key(uint64_t key)
@@ -712,15 +736,19 @@ TEST(CLASS, Rmw) {
 
   std::experimental::filesystem::create_directories("logs");
 
+  uint32_t table_size = GetParam().first;
+  bool readcache = GetParam().second;
   // 8 pages!
-  FasterKv<Key, Value, disk_t> store{ 262144, 268435456, "logs", 0.5 };
-
-  Guid session_id = store.StartSession();
+  FasterKv<Key, Value, disk_t> store{ table_size, 256 * (1 << 20), "logs", 0.5, readcache };
 
   constexpr size_t kNumRecords = 200000;
 
-  // Initial RMW.
   static std::atomic<uint64_t> records_touched{ 0 };
+
+  Guid session_id = store.StartSession();
+
+  // Initial RMW.
+  records_touched = 0;
   for(size_t idx = 0; idx < kNumRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<RmwContext> context{ ctxt };
@@ -779,7 +807,7 @@ TEST(CLASS, Rmw) {
   store.StopSession();
 }
 
-TEST(CLASS, Rmw_Large) {
+TEST_P(PagingTestParam, Rmw_Large) {
   class Key {
    public:
     Key(uint64_t key)
@@ -887,15 +915,17 @@ TEST(CLASS, Rmw_Large) {
 
   std::experimental::filesystem::create_directories("logs");
 
-  typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t;
-  FasterKv<Key, Value, disk_t> store { 2048, (1 << 20) * 192, "logs", 0.4 };
+  uint32_t table_size = GetParam().first;
+  bool readcache = GetParam().second;
+  FasterKv<Key, Value, disk_t> store { table_size, 256 * (1 << 20), "logs", 0.5, readcache };
+
+  constexpr size_t kNumRecords = 50000;
+  static std::atomic<uint64_t> records_touched{ 0 };
 
   Guid session_id = store.StartSession();
 
-  constexpr size_t kNumRecords = 50000;
-
   // Initial RMW.
-  static std::atomic<uint64_t> records_touched{ 0 };
+  records_touched = 0;
   for(size_t idx = 0; idx < kNumRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<RmwContext> context{ ctxt };
@@ -954,7 +984,7 @@ TEST(CLASS, Rmw_Large) {
   store.StopSession();
 }
 
-TEST(CLASS, Rmw_Concurrent) {
+TEST_P(PagingTestParam, Rmw_Concurrent) {
   class Key {
    public:
     Key(uint64_t key)
@@ -1170,7 +1200,9 @@ TEST(CLASS, Rmw_Concurrent) {
   std::experimental::filesystem::create_directories("logs");
 
   // 8 pages!
-  FasterKv<Key, Value, disk_t> store{ 262144, 268435456, "logs", 0.5 };
+  uint32_t table_size = GetParam().first;
+  bool readcache = GetParam().second;
+  FasterKv<Key, Value, disk_t> store{ table_size, 256 * (1 << 20), "logs", 0.5, readcache };
 
   // Initial RMW.
   std::deque<std::thread> threads{};
@@ -1209,7 +1241,7 @@ TEST(CLASS, Rmw_Concurrent) {
   }
 }
 
-TEST(CLASS, Rmw_Concurrent_Large) {
+TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
   class Key {
    public:
     Key(uint64_t key)
@@ -1345,7 +1377,6 @@ TEST(CLASS, Rmw_Concurrent_Large) {
     uint64_t counter;
   };
 
-  typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t;
   static constexpr size_t kNumRecords = 50000;
   static constexpr size_t kNumThreads = 2;
 
@@ -1426,8 +1457,9 @@ TEST(CLASS, Rmw_Concurrent_Large) {
 
   std::experimental::filesystem::create_directories("logs");
 
-  // 192 MB in memory -- rest on disk
-  FasterKv<Key, Value, disk_t> store { 2048, (1 << 20) * 192, "logs", 0.4 };
+  uint32_t table_size = GetParam().first;
+  bool readcache = GetParam().second;
+  FasterKv<Key, Value, disk_t> store { table_size, 256 * (1 << 20), "logs", 0.5, readcache };
 
   // Initial RMW.
   std::deque<std::thread> threads{};
